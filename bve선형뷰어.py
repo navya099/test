@@ -16,7 +16,7 @@ from collections import Counter
 def create_dxf(filename, coordinates, *args):
     doc = ezdxf.new()
     msp = doc.modelspace()
-
+#테스트
     # Create a polyline entity
     polyline = msp.add_lwpolyline(coordinates)
 
