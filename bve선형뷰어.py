@@ -581,19 +581,19 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
     bearing_list = []
     IP_XY_list = []
     
-    
+    IP_NUMBER = radius.count(0)
     interval_counter = 1  # Counter for interval numbering
 
     for i in range(len(stations)):
-        if i == 0:  # 초기 BC_XY 계산
-            continue  # 첫 번째 반복에서는 계산하지 않고 넘어갑니다.
-
+        print(f' 루트 : {i}')
+        print(f' 길이 = : {len(stations)}')
         if radius[i] == 0:  # 반지름이 0인 경우
             IA = 0
         else:
             IA = interval_distance[i+1] / radius[i]
 
         if IA != 0:
+            print(IA)
             IA_DMS = math.degrees(IA)
 
             
@@ -610,13 +610,19 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
             O_EC_bearing = O_BC_bearing - IA_DMS
             EC_XY = calculate_coordinates(O_XY[0], O_XY[1], O_EC_bearing, radius[i])
             bearing = O_EC_bearing - 90
-            
-            EP_XY = calculate_coordinates(EC_XY[0], EC_XY[1], bearing, interval_distance[i+2])
+
+            count = stations.count(0)
+            count_radius = len(stations) - count
+            if i >= len(stations) - 2 and len(stations) != count_radius * 2 :#12
+                EP_XY  = EC_XY
+            else:
+                print(f' index : {i}')
+                EP_XY = calculate_coordinates(EC_XY[0], EC_XY[1], bearing, interval_distance[i+2])
             TL = radius[i] * math.tan(IA/2)
             strate_bearing = bearing + IA_DMS #bc점 방위각
             
             IP_XY = calculate_coordinates(BC_XY[0], BC_XY[1], strate_bearing, TL)
-            
+            print(f'{i} is  interval_distance: {interval_distance[i+1]}')
             #여기에 출력
             print('--------------\n')
             print('IP NO ', interval_counter)  # Print the interval number
@@ -628,13 +634,13 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
             print('X= ', f"{IP_XY[1]:.4f}")
             print('Y=', f"{IP_XY[0]:.4f}")
             
-            #print('BC_XY', BC_XY)
+            print('BC_XY', BC_XY)
             #print('BC_O_bearing', BC_O_bearing)
             #print('O_XY', O_XY)
             #print('O_EC_bearing', O_EC_bearing)
-            #print('EC_XY', EC_XY)
+            print('EC_XY', EC_XY)
             #print('bearing', bearing)
-            #print('EP_XY', EP_XY)
+            print('EP_XY', EP_XY)
             print('--------------\n')
             
             # 좌표를 리스트에 추가
