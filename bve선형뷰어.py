@@ -16,7 +16,7 @@ from collections import Counter
 def create_dxf(filename, coordinates, *args):
     doc = ezdxf.new()
     msp = doc.modelspace()
-#테스트
+
     # Create a polyline entity
     polyline = msp.add_lwpolyline(coordinates)
 
@@ -53,7 +53,7 @@ def create_dxf(filename, coordinates, *args):
     # Add text labels at each coordinate
     for coord, label in zip(coordinates, labels2):
         if label.strip():  # Check if the label is not empty after stripping whitespace
-            msp.add_text(label, dxfattribs={'insert': coord, 'height': 5, 'color': 11})
+            msp.add_text(label, dxfattribs={'insert': coord, 'height': 5, 'color': 1})
 
         
     # Save the DXF document to a file
@@ -178,6 +178,7 @@ def read_file():
 def read_other_file():
     global lines
     lines = read_file()
+    lines = preprocess_line(lines)
     update_plot()
     canvas.draw()
 
@@ -206,7 +207,7 @@ def parse_track(lines):
             if line.strip() and line[0].isdigit():  # 공백이 아니고, 첫 번째 문자가 숫자인지 확인
                 ixnumber = float(line.strip())
                 stations.append(ixnumber) 
-            elif line.startswith('.curve'):
+            elif line.lower().startswith('.curve'):
                 try:
                     # check if the previous line only contains numbers
                     prev_line = lines[i-1].strip()
@@ -227,19 +228,23 @@ def parse_track(lines):
                         j = i - 1
                         while j >= 0:
                             prev_line = lines[j].strip()
-                            if prev_line.isdigit():
-
+                           
+                            try:
+                                float(prev_line)
+                                
                                 if line.split()[-1].isdigit():
-                                    number = int(prev_line)
+                                    number = float(prev_line)
                                     value = float(line.split()[-1])
                                     radius_station.append(number)
                                     radius.append(value)
                                 else:
-                                    number = int(prev_line)
+                                    number = float(prev_line)
                                     value = float(line.split()[-1].split(';')[0])
                                     radius_station.append(number)
                                     radius.append(value)
                                 break
+                            except ValueError:
+                                print("prev_line is not a floating-point number.")
                             j -= 1
                 except IndexError:
                     pass
@@ -249,10 +254,12 @@ def parse_track(lines):
                     # check if the previous line only contains numbers
                     prev_line = lines[i-1].strip()
                     if prev_line.isnumeric():
-                        number = int(prev_line)
+                        number = float(prev_line)
+                        
                         # Find the substring after '.sta' and before the first semicolon (;)
-                        value1 = line.split('.sta', 1)[-1].split(';', 1)[0].strip()
-                        value1 = value1[5:]
+                        value1 = line.lower().split('.sta')[-1].split(';', 1)[0].strip()
+                        
+                        value1 = value1[0:]
                         sta_station.append(number)
                         sta.append(value1)
                     else:
@@ -261,46 +268,49 @@ def parse_track(lines):
                         while j >= 0:
                             prev_line = lines[j].strip()
                             if prev_line.isnumeric():
-                                number = int(prev_line)
+                                number = float(prev_line)
                                 # Find the substring after '.sta' and before the first semicolon (;)
-                                value1 = line.split('.sta', 1)[-1].split(';', 1)[0].strip()
-                                value1 = value1[5:]
+                                value1 = line.lower().split('.sta')[-1].split(';', 1)[0].strip()
+                                value1 = value1[0:]
                                 sta_station.append(number)
                                 sta.append(value1)
                                 break
                             j -= 1
                 except IndexError:
                     pass
-            elif line.startswith('.pitch'):
+            elif line.lower().startswith('.pitch'):
                 try:
-                    # check if the previous line only contains numbers
+                    # Check if the previous line contains a floating-point number
                     prev_line = lines[i-1].strip()
-                    if prev_line.isdigit():
-
-                        if line.split()[-1].isdigit():
-                            number = int(prev_line)
-                            value = float(line.split()[-1])
+                    try:
+                        float(prev_line)
+                        
+                        # Previous line contains a floating-point number
+                        try:
+                            value = float(line.split()[-1])  # Attempt to convert the last part of the current line to float
+                            number = float(prev_line)
                             pitch_station.append(number)
                             pitch.append(value)
-                        else:
-                            number = int(prev_line)
+                        except ValueError:
+                            # If the last part of the current line cannot be converted to float directly, try extracting and converting the first part before ';'
                             value = float(line.split()[-1].split(';')[0])
+                            number = float(prev_line)
                             pitch_station.append(number)
                             pitch.append(value)
-                    else:
-                        # go up and find the previous line that contains only numbers
+                    except ValueError:
+                        # Previous line does not contain a floating-point number
+                        # Go up and find the previous line that contains only numbers
                         j = i - 1
                         while j >= 0:
                             prev_line = lines[j].strip()
                             if prev_line.isdigit():
-
                                 if line.split()[-1].isdigit():
-                                    number = int(prev_line)
+                                    number = float(prev_line)
                                     value = float(line.split()[-1])
                                     pitch_station.append(number)
                                     pitch.append(value)
                                 else:
-                                    number = int(prev_line)
+                                    number = float(prev_line)
                                     value = float(line.split()[-1].split(';')[0])
                                     pitch_station.append(number)
                                     pitch.append(value)
@@ -553,7 +563,7 @@ def draw_arc(direction,start_point, end_point, center_point):
 
     return x_arc, y_arc 
 
-
+#좌표계산함수(ver 1.1)
 def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_distance):
     IA = []
     O_XY = []
@@ -572,18 +582,17 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
     IP_XY_list = []
     
     IP_NUMBER = radius.count(0)
-    IP_COUNT = len(radius) - IP_NUMBER
+    interval_counter = 1  # Counter for interval numbering
 
     for i in range(len(stations)):
-        if i == 0:  # 초기 BC_XY 계산
-            continue  # 첫 번째 반복에서는 계산하지 않고 넘어갑니다.
-
+        
         if radius[i] == 0:  # 반지름이 0인 경우
             IA = 0
         else:
             IA = interval_distance[i+1] / radius[i]
 
         if IA != 0:
+            
             IA_DMS = math.degrees(IA)
 
             
@@ -600,7 +609,14 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
             O_EC_bearing = O_BC_bearing - IA_DMS
             EC_XY = calculate_coordinates(O_XY[0], O_XY[1], O_EC_bearing, radius[i])
             bearing = O_EC_bearing - 90
-            EP_XY = calculate_coordinates(EC_XY[0], EC_XY[1], bearing, interval_distance[i+2])
+
+            count = stations.count(0)
+            count_radius = len(stations) - count
+            if i >= len(stations) - 2 and len(stations) != count_radius * 2 :#12
+                EP_XY  = EC_XY
+            else:
+                
+                EP_XY = calculate_coordinates(EC_XY[0], EC_XY[1], bearing, interval_distance[i+2])
             TL = radius[i] * math.tan(IA/2)
             strate_bearing = bearing + IA_DMS #bc점 방위각
             
@@ -608,21 +624,24 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
             
             #여기에 출력
             print('--------------\n')
-            print('IP NO ', i // 2 + 1)
+            print('IP NO ', interval_counter)  # Print the interval number
+            interval_counter += 1  # Increment the interval counter
             print('IA= ', degrees_to_dms(IA_DMS))
             print('R= ', radius[i])
             print('TL= ', f"{TL:.2f}")
-            print('CL= ', f"{interval_distance[i+1]:.0f}")
+            print('CL= ', f"{interval_distance[i+1]:.2f}")
             print('X= ', f"{IP_XY[1]:.4f}")
             print('Y=', f"{IP_XY[0]:.4f}")
-            
-            #print('BC_XY', BC_XY)
-            #print('BC_O_bearing', BC_O_bearing)
-            #print('O_XY', O_XY)
-            #print('O_EC_bearing', O_EC_bearing)
-            #print('EC_XY', EC_XY)
-            #print('bearing', bearing)
-            #print('EP_XY', EP_XY)
+
+            '''
+            print('BC_XY', BC_XY)
+            print('BC_O_bearing', BC_O_bearing)
+            print('O_XY', O_XY)
+            print('O_EC_bearing', O_EC_bearing)
+            print('EC_XY', EC_XY)
+            print('bearing', bearing)
+            print('EP_XY', EP_XY)
+            '''
             print('--------------\n')
             
             # 좌표를 리스트에 추가
@@ -686,6 +705,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     
     coord_list = []
     R= []
+    #R 리스트에서 0을 제거
     for r in radius:
          R.append(r)
     while 0 in R:
@@ -736,6 +756,8 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         
         
         BC_STA = IP_STA - TL
+        
+        
         EC_STA = BC_STA + CL
         
         if i == 0:
@@ -751,17 +773,18 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         print('O_BC_bearing',O_BC_bearing)
         print('방위각1= ', degrees_to_dms(bearing1))
         print('방위각2= ', degrees_to_dms(bearing2))
-        
+        print('\n')
         print(Lb0)
         print(Lb1)
+        print('\n')
         print('IA= ', degrees_to_dms(IA))
         print('TL =',f'{TL:.2f}')
         print('CL =',f'{CL:.2f}')
-        
+        print('\n')
         print('IP정측점 = ',format_distance(IP_STA))
         print('BC측점 = ',format_distance(BC_STA))
         print('EC측점 = ',format_distance(EC_STA))
-        
+        print('\n')
         
         if direction == -1:
             print('좌향곡선')
@@ -772,15 +795,18 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         EC_STA_LIST.append(EC_STA)
         
         for j in range(len(station_list)):
-            current_station = station_list[0] + j * 25
+            current_station = station_list[j]
             
             if current_station <= BC_STA:#직선구간
+                #시점으로부터 떨어진 거리 찾기
+                dist_from_reference = current_station - station_list[0]
                 if i ==0 :#초기구간
-                    coord = calculate_coordinates(BP_XY[0], BP_XY[1], h1, j*25)
+                    
+                    coord = calculate_coordinates(BP_XY[0], BP_XY[1], h1, dist_from_reference)
                 else:
-                    coord = calculate_coordinates(EC_XY[i-1][0], EC_XY[i-1][1], h1, j*25)
+                    coord = calculate_coordinates(EC_XY[i-1][0], EC_XY[i-1][1], h1, dist_from_reference)
 
-            elif current_station > BC_STA and current_station < EC_STA:#단곡선구간
+            elif current_station > BC_STA and current_station <= EC_STA:#단곡선구간
                 
                 k = (current_station - BC_STA) / 25  # k 계산
                 
@@ -795,7 +821,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
                     
                 
                 coord = calculate_coordinates(O_XY[i][0], O_XY[i][1], delta_bearing, R[i])
-            elif current_station >= EC_STA and current_station <= stations[-1]:
+            elif current_station > EC_STA and current_station <= stations[-1]:
                 if i ==len(IP_XY)-1:
                     l = (current_station - int(EC_STA)) / 25
                     coord = calculate_coordinates(EC_XY[i][0], EC_XY[i][1], h2, l*25)
@@ -803,16 +829,13 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
             else:
                 continue
 
-            current_station_list.append(current_station)
-            coord_list.append(coord)
-
+            if current_station not in current_station_list:  # 이미 계산된 역이 아니라면 추가
+                current_station_list.append(current_station)
+                coord_list.append(coord)
 
     station_list2 = list(range(int(stations[0]), int(stations[-1])+25, 25))
 
     curve_type5 = []
-
-    BC_STA_LIST = [int(round(x, 2)) for x in BC_STA_LIST]
-    EC_STA_LIST = [int(round(x, 2)) for x in EC_STA_LIST]
     
     for current_station in current_station_list:
         if current_station in BC_STA_LIST:
@@ -820,16 +843,44 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         elif current_station in EC_STA_LIST:
             curve_type5.append('EC')
         else:
-            curve_type5.append(' ')
+            is_curve = False
+            for i in range(len(BC_STA_LIST)):
+                if BC_STA_LIST[i] <= current_station <= EC_STA_LIST[i]:
+                    is_curve = True
+                    break
+            if is_curve:
+                curve_type5.append('')
+            else:
+                curve_type5.append('')
+
     curve_type5[0] = 'BP'
     curve_type5[-1] = 'EP'
-
+    
     return curve_type5, current_station_list, coord_list
+
+def find_25_station(STA, BC_STA, increment, EC_STA):
+    '''
+    STA = 이전 측점
+    BC_STA =BC측점
+    increment = 20m(계산간격)
+    EC_STA = EC측점
+    '''
+      # B27를 float로 변환
+    
+    if STA >= EC_STA:
+        return ""
+    elif STA < BC_STA and BC_STA < math.floor((STA/increment) + 1) * increment:
+        return BC_STA
+    elif STA < EC_STA and EC_STA < math.floor((STA/increment) + 1) * increment:
+        return EC_STA
+    else:
+        return math.floor((STA/increment) + 1) * increment
+
 
 def create_csv(curve_type,station_list,coord_list):
     # write the extracted data to CSV
     output_file = r'c:\temp\bve_route_coords.csv'
-    with open(output_file, 'w', newline='') as f:
+    with open(output_file, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f)
         for curve_type, station, coord in zip(curve_type, station_list, coord_list):
             # Convert station to string
@@ -924,6 +975,7 @@ def get_value_from_index(A_LIST,B_LIST,C_LIST):
     #결과 반환(리스트)
     return values
 
+#입력 리스트에서 중복된 요소를 제거하고 고유한 요소들의 리스트와 중복된 요소들의 인덱스를 추출하여 반환
 def remove_duplicates_and_store_indexes(lst):
     unique_list = []
     duplicate_indexes = {}
@@ -939,7 +991,8 @@ def remove_duplicates_and_store_indexes(lst):
     # 중복된 요소의 인덱스를 사전 대신에 리스트로 변경
     for key in duplicate_indexes:
         duplicate_indexes[key] = list(set(duplicate_indexes[key]))
-    
+
+    #반환 중복값 제거된 리스트,인덱스들 (lst)
     return unique_list, duplicate_indexes
 
 def remove_elements_by_indexes(lst, indexes):
@@ -947,7 +1000,7 @@ def remove_elements_by_indexes(lst, indexes):
     리스트에서 주어진 인덱스의 요소를 제거하는 함수
     :param lst: 요소를 제거할 리스트
     :param indexes: 제거할 요소의 인덱스 리스트
-    :return: 없음 (리스트는 직접 수정됨)
+    :return: 수정된 리스트
     """
     # 인덱스 리스트를 정렬하여 뒤에서부터 제거해야 한 인덱스들이 올바르게 동작함
     
@@ -1166,7 +1219,7 @@ def update_plot(event=None):
     curve_type = calculate_curve_type(stations,radius)
     interval_distance = calculate_interval_distance(stations,radius)
     O_XY, BC_XY, EC_XY, EP_XY,IP_XY = calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_distance)
-
+    print(EP_XY)
     x_arcs = {}  # 변수를 저장할 딕셔너리 생성
     y_arcs = {}
     acr1 = []
@@ -1295,9 +1348,10 @@ def update_plot(event=None):
         ax.text(*station_coordinates[i], sta[i], fontsize=12, ha='left', color='blue')
     #csv 저장함수
     create_csv(curve_type5,current_station_list,coord_list)
-
+    print('csv 저장성공')
     #dxf 저장함수
     create_dxf("example_polyline.dxf", coord_list, current_station_list,curve_type5)
+    print('dxf 저장성공')
     #KML저장용
     
     if 'PCC' in curve_type:#복심곡선용
@@ -1311,25 +1365,11 @@ def update_plot(event=None):
         poly_XY2.insert(0,BP_XY)
         poly_XY2.append(EP_XY)
         Create_KML2(acr1,acr2,poly_XY2,stations3,curve_type4)
-        
+        print('복심곡선용 kml 저장성공')
     else:#일반용
         Create_KML(BP_XY,EP_XY,acr1,acr2,BC_XY,EC_XY,stations)
-
-    #종단뷰 생성
-    
-    
-    
-    v_station_list , elevations = calculate_profile_elevation(fl, pitch_station,pitch)
-    vip_elev_list = get_value_from_index(pitch_station,v_station_list,elevations)
-    draw_profile(vip_elev_list,pitch_station,sta,sta_station)
-        
-    #좌표 찾기
-    unique_values,duplicate_indexes = remove_duplicates_and_store_indexes(v_station_list)
-    duplicate_indexes = list(duplicate_indexes.values())
-    duplicate_indexes = [sublist[0] for sublist in duplicate_indexes]
-    modifed_lst = remove_elements_by_indexes(elevations, duplicate_indexes)
-
-    find_station_coordinates(unique_values, coord_list,modifed_lst)
+        print('단곡선용 kml 저장성공')
+   
     
     # 툴바 추가
     # NavigationToolbar2Tk를 사용하여 그래프 위젯에 툴바 추가
@@ -1341,6 +1381,38 @@ def update_plot(event=None):
     toolbar.update()
     toolbar.grid(row=0, column=0, sticky="we") 
 
+    #calculate_profile_elevation함수호출(fl,구배측점,구배) - 25간격으로 측점과 표고 반환
+    v_station_list , elevations = calculate_profile_elevation(fl, pitch_station,pitch)
+
+    #get_value_from_index 함수호출((lst1,lst2,lst3)
+    #vip점 표고 리스트
+    vip_elev_list = get_value_from_index(pitch_station,v_station_list,elevations)
+    
+        
+    #####좌표 찾기 코드
+    #remove_duplicates_and_store_indexes 함수호출(lst)
+    #입력 리스트에서 중복된 요소를 제거하고 고유한 요소들의 리스트와 중복된 요소들의 인덱스를 추출하여 반환
+    unique_values,duplicate_indexes = remove_duplicates_and_store_indexes(v_station_list)
+    
+    # duplicate_indexes 딕셔너리에서 값들을 리스트로 가져와서 다시 처리하는 부분입니다.
+    #딕셔너리의 값들을 리스트로 변환
+    duplicate_indexes = list(duplicate_indexes.values())
+
+    #리스트 컴프리헨션을 사용하여 duplicate_indexes에 있는 각 중복된 요소들의 인덱스 리스트 중 첫 번째 인덱스만 가져와서 새로운 리스트를 생성
+    duplicate_indexes = [sublist[0] for sublist in duplicate_indexes]
+
+    #remove_elements_by_indexes함수 호출(lst,index)
+    #elevations 리스트에서 첫번째 인덱스 제거
+    elevations = remove_elements_by_indexes(elevations, duplicate_indexes)
+    #####
+    
+    
+    #종단뷰 생성
+    draw_profile(vip_elev_list,pitch_station,sta,sta_station)
+
+    # 현재 측점의 좌표 및 표고찾기
+    find_station_coordinates(unique_values, coord_list,modifed_lst)
+    
     # Run the GUI
     root.geometry("1024x800")
 
