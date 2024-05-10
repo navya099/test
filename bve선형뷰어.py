@@ -697,6 +697,8 @@ def calculate_distance(x1, y1, x2, y2):
     distance_y = abs(y2 - y1)
     return distance
 
+#rev 12
+#계산 간격 로직 수정
 def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     BP_STA = stations[0] #초기 시점STA
     EP_STA = stations[-1]#초기 종점STA
@@ -713,7 +715,9 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     R = [abs(x) for x in R]
     
     current_station_list = []
-    
+    station_list = []
+
+
     for i in range(len(IP_XY)):#IP만큼 반복
         
         bearing1 = calculate_bearingN(BC_XY[i][0],BC_XY[i][1],IP_XY[i][0],IP_XY[i][1])#방위각1
@@ -759,13 +763,32 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         
         
         EC_STA = BC_STA + CL
-        
-        if i == 0:
-            station_list = list(range(int(stations[0]), int(EC_STA)+25, 25))
-        elif i == len(IP_XY)-1:
-            station_list = list(range(int(BP_STA), int(stations[-1])+25, 25))
+
+        increment = 25 #계산간격 default 25
+
+        #엑셀 함수로 시작점에서 끝점까지 increment 배수값을 반환
+
+        #현재 측점 찾기
+        if i ==0:
+            current_station = stations[0]
         else:
-            station_list = list(range(int(BP_STA), int(EC_STA)+25, 25))
+            current_station = BP_STA
+
+        station_list = []#다음 루프시 초기화
+
+        while current_station < EC_STA:
+            next_station = find_25_station(current_station, BC_STA, increment, EC_STA)
+            if next_station == '' or next_station > EC_STA:
+                break  # EC_STA를 초과하면 반복 종료
+            elif next_station == BC_STA or next_station == EC_STA:  # BC_STA와 EC_STA와 같으면 다음 루프로 이동
+                current_station = next_station #스테이션 업데이트
+                continue
+            else:
+                station_list.append(next_station)
+                current_station = next_station
+
+
+        print(station_list)
 
         
         '''
@@ -799,7 +822,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
             
             if current_station <= BC_STA:#직선구간
                 #시점으로부터 떨어진 거리 찾기
-                dist_from_reference = current_station - station_list[0]
+                dist_from_reference = current_station - BP_STA
                 if i ==0 :#초기구간
                     
                     coord = calculate_coordinates(BP_XY[0], BP_XY[1], h1, dist_from_reference)
@@ -808,9 +831,9 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
             elif current_station > BC_STA and current_station <= EC_STA:#단곡선구간
                 
-                k = (current_station - BC_STA) / 25  # k 계산
+                k = (current_station - BC_STA)  # k 계산
                 
-                delta_angle_rad = k * 25 / R[i]
+                delta_angle_rad = k / R[i]
                 delta_angle = math.degrees(delta_angle_rad)
 
                 if direction == 1:
@@ -831,6 +854,8 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
             if current_station not in current_station_list:  # 이미 계산된 역이 아니라면 추가
                 current_station_list.append(current_station)
+                print(f'current_station:{current_station}')
+                print(f'coord:{coord}')
                 coord_list.append(coord)
 
     station_list2 = list(range(int(stations[0]), int(stations[-1])+25, 25))
@@ -874,7 +899,8 @@ def find_25_station(STA, BC_STA, increment, EC_STA):
     elif STA < EC_STA and EC_STA < math.floor((STA/increment) + 1) * increment:
         return EC_STA
     else:
-        return math.floor((STA/increment) + 1) * increment
+        result = math.floor((STA/increment) + 1) * increment
+        return result
 
 
 def create_csv(curve_type,station_list,coord_list):
