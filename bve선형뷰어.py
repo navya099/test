@@ -325,15 +325,43 @@ def parse_track(lines):
     start_station = min(stations)
     end_station = max(stations)
     
-    radius_station.insert(0,start_station)
+
+
+    #찾은 pitch station을 정렬
+    #측점이 오름차순인지 확인
+    if pitch_station != sorted(pitch_station):#오름차순이 아님
+
+        pitch = sort_b_by_a(pitch_station, pitch)#구배를 측점 순에 맞게 정렬
+        pitch_station = sorted(pitch_station)
+    if radius_station != sorted(radius_station):#오름차순이 아님
+
+        radius = sort_b_by_a(radius_station, radius)#구배를 측점 순에 맞게 정렬
+        radius_station = sorted(radius_station)
+    if sta_station != sorted(sta_station):#오름차순이 아님
+
+        sta = sort_b_by_a(sta_station, sta)#구배를 측점 순에 맞게 정렬
+        sta_station = sorted(sta_station)
+
+
+
+    radius_station.insert(0, start_station)
     radius_station.append(end_station)
-    
-    radius.insert(0,0)
+
+    radius.insert(0, 0)
     radius.append(0)
-    
+
     return radius_station, radius, sta_station,sta,pitch_station,pitch
 
-    
+
+def sort_b_by_a(a, b):
+    # a를 오름차순으로 정렬한 인덱스를 가져옴
+    sorted_index = sorted(range(len(a)), key=lambda k: a[k])
+
+    # 정렬된 인덱스를 기준으로 b의 요소를 정렬
+    b_sorted = [b[i] for i in sorted_index]
+
+    return b_sorted
+
 def calculate_coordinates(x1,y1,bearing,distance):
     angle = math.radians(bearing)
     x2 = x1 + distance * math.cos(angle)
@@ -563,7 +591,7 @@ def draw_arc(direction,start_point, end_point, center_point):
 
     return x_arc, y_arc 
 
-
+#좌표계산함수(ver 1.1)
 def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_distance):
     IA = []
     O_XY = []
@@ -585,15 +613,14 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
     interval_counter = 1  # Counter for interval numbering
 
     for i in range(len(stations)):
-        print(f' 루트 : {i}')
-        print(f' 길이 = : {len(stations)}')
+        
         if radius[i] == 0:  # 반지름이 0인 경우
             IA = 0
         else:
             IA = interval_distance[i+1] / radius[i]
 
         if IA != 0:
-            print(IA)
+            
             IA_DMS = math.degrees(IA)
 
             
@@ -616,13 +643,13 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
             if i >= len(stations) - 2 and len(stations) != count_radius * 2 :#12
                 EP_XY  = EC_XY
             else:
-                print(f' index : {i}')
+                
                 EP_XY = calculate_coordinates(EC_XY[0], EC_XY[1], bearing, interval_distance[i+2])
             TL = radius[i] * math.tan(IA/2)
             strate_bearing = bearing + IA_DMS #bc점 방위각
             
             IP_XY = calculate_coordinates(BC_XY[0], BC_XY[1], strate_bearing, TL)
-            print(f'{i} is  interval_distance: {interval_distance[i+1]}')
+            
             #여기에 출력
             print('--------------\n')
             print('IP NO ', interval_counter)  # Print the interval number
@@ -633,14 +660,16 @@ def calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_di
             print('CL= ', f"{interval_distance[i+1]:.2f}")
             print('X= ', f"{IP_XY[1]:.4f}")
             print('Y=', f"{IP_XY[0]:.4f}")
-            
+
+            '''
             print('BC_XY', BC_XY)
-            #print('BC_O_bearing', BC_O_bearing)
-            #print('O_XY', O_XY)
-            #print('O_EC_bearing', O_EC_bearing)
+            print('BC_O_bearing', BC_O_bearing)
+            print('O_XY', O_XY)
+            print('O_EC_bearing', O_EC_bearing)
             print('EC_XY', EC_XY)
-            #print('bearing', bearing)
+            print('bearing', bearing)
             print('EP_XY', EP_XY)
+            '''
             print('--------------\n')
             
             # 좌표를 리스트에 추가
@@ -696,6 +725,8 @@ def calculate_distance(x1, y1, x2, y2):
     distance_y = abs(y2 - y1)
     return distance
 
+#rev 12
+#계산 간격 로직 수정
 def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     BP_STA = stations[0] #초기 시점STA
     EP_STA = stations[-1]#초기 종점STA
@@ -704,6 +735,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     
     coord_list = []
     R= []
+    #R 리스트에서 0을 제거
     for r in radius:
          R.append(r)
     while 0 in R:
@@ -711,7 +743,9 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     R = [abs(x) for x in R]
     
     current_station_list = []
-    
+    station_list = []
+
+
     for i in range(len(IP_XY)):#IP만큼 반복
         
         bearing1 = calculate_bearingN(BC_XY[i][0],BC_XY[i][1],IP_XY[i][0],IP_XY[i][1])#방위각1
@@ -753,16 +787,37 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
         
         
-        BC_STA = round(IP_STA - TL)
+        BC_STA = IP_STA - TL
         
-        EC_STA = round(BC_STA + CL)
         
-        if i == 0:
-            station_list = list(range(int(stations[0]), int(EC_STA)+25, 25))
-        elif i == len(IP_XY)-1:
-            station_list = list(range(int(BP_STA), int(stations[-1])+25, 25))
+        EC_STA = BC_STA + CL
+
+        increment = 25 #계산간격 default 25
+
+        #엑셀 함수로 시작점에서 끝점까지 increment 배수값을 반환
+
+        #현재 측점 찾기
+        if i ==0:
+            current_station = stations[0]
         else:
-            station_list = list(range(int(BP_STA), int(EC_STA)+25, 25))
+            current_station = BP_STA
+
+        station_list = []#다음 루프시 초기화
+
+        while current_station < EC_STA:
+            next_station = find_25_station(current_station, BC_STA, increment, EC_STA)
+            if next_station == '' or next_station > EC_STA:
+                break  # EC_STA를 초과하면 반복 종료
+            elif next_station == BC_STA or next_station == EC_STA:  # BC_STA와 EC_STA와 같으면 다음 루프로 이동
+                station_list.append(next_station)
+                current_station = next_station #스테이션 업데이트
+                continue
+            else:
+                station_list.append(next_station)
+                current_station = next_station
+
+
+        print(station_list)
 
         
         '''
@@ -770,17 +825,18 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         print('O_BC_bearing',O_BC_bearing)
         print('방위각1= ', degrees_to_dms(bearing1))
         print('방위각2= ', degrees_to_dms(bearing2))
-        
+        print('\n')
         print(Lb0)
         print(Lb1)
+        print('\n')
         print('IA= ', degrees_to_dms(IA))
         print('TL =',f'{TL:.2f}')
         print('CL =',f'{CL:.2f}')
-        
+        print('\n')
         print('IP정측점 = ',format_distance(IP_STA))
         print('BC측점 = ',format_distance(BC_STA))
         print('EC측점 = ',format_distance(EC_STA))
-        
+        print('\n')
         
         if direction == -1:
             print('좌향곡선')
@@ -791,19 +847,22 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         EC_STA_LIST.append(EC_STA)
         
         for j in range(len(station_list)):
-            current_station = station_list[0] + j * 25
+            current_station = station_list[j]
             
             if current_station <= BC_STA:#직선구간
+                #시점으로부터 떨어진 거리 찾기
+                dist_from_reference = current_station - BP_STA
                 if i ==0 :#초기구간
-                    coord = calculate_coordinates(BP_XY[0], BP_XY[1], h1, j*25)
+                    
+                    coord = calculate_coordinates(BP_XY[0], BP_XY[1], h1, dist_from_reference)
                 else:
-                    coord = calculate_coordinates(EC_XY[i-1][0], EC_XY[i-1][1], h1, j*25)
+                    coord = calculate_coordinates(EC_XY[i-1][0], EC_XY[i-1][1], h1, dist_from_reference)
 
             elif current_station > BC_STA and current_station <= EC_STA:#단곡선구간
                 
-                k = (current_station - BC_STA) / 25  # k 계산
+                k = (current_station - BC_STA)  # k 계산
                 
-                delta_angle_rad = k * 25 / R[i]
+                delta_angle_rad = k / R[i]
                 delta_angle = math.degrees(delta_angle_rad)
 
                 if direction == 1:
@@ -816,7 +875,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
                 coord = calculate_coordinates(O_XY[i][0], O_XY[i][1], delta_bearing, R[i])
             elif current_station > EC_STA and current_station <= stations[-1]:
                 if i ==len(IP_XY)-1:
-                    l = (current_station - int(EC_STA)) / 25
+                    l = current_station - EC_STA / 25
                     coord = calculate_coordinates(EC_XY[i][0], EC_XY[i][1], h2, l*25)
                     
             else:
@@ -824,14 +883,13 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
             if current_station not in current_station_list:  # 이미 계산된 역이 아니라면 추가
                 current_station_list.append(current_station)
+                print(f'current_station:{current_station}')
+                print(f'coord:{coord}')
                 coord_list.append(coord)
 
     station_list2 = list(range(int(stations[0]), int(stations[-1])+25, 25))
 
     curve_type5 = []
-
-    BC_STA_LIST = [int(round(x, 2)) for x in BC_STA_LIST]
-    EC_STA_LIST = [int(round(x, 2)) for x in EC_STA_LIST]
     
     for current_station in current_station_list:
         if current_station in BC_STA_LIST:
@@ -853,6 +911,26 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     curve_type5[-1] = 'EP'
     
     return curve_type5, current_station_list, coord_list
+
+def find_25_station(STA, BC_STA, increment, EC_STA):
+    '''
+    STA = 이전 측점
+    BC_STA =BC측점
+    increment = 20m(계산간격)
+    EC_STA = EC측점
+    '''
+      # B27를 float로 변환
+    
+    if STA >= EC_STA:
+        return ""
+    elif STA < BC_STA and BC_STA < math.floor((STA/increment) + 1) * increment:
+        return BC_STA
+    elif STA < EC_STA and EC_STA < math.floor((STA/increment) + 1) * increment:
+        return EC_STA
+    else:
+        result = math.floor((STA/increment) + 1) * increment
+        return result
+
 
 def create_csv(curve_type,station_list,coord_list):
     # write the extracted data to CSV
@@ -952,6 +1030,7 @@ def get_value_from_index(A_LIST,B_LIST,C_LIST):
     #결과 반환(리스트)
     return values
 
+#입력 리스트에서 중복된 요소를 제거하고 고유한 요소들의 리스트와 중복된 요소들의 인덱스를 추출하여 반환
 def remove_duplicates_and_store_indexes(lst):
     unique_list = []
     duplicate_indexes = {}
@@ -967,7 +1046,8 @@ def remove_duplicates_and_store_indexes(lst):
     # 중복된 요소의 인덱스를 사전 대신에 리스트로 변경
     for key in duplicate_indexes:
         duplicate_indexes[key] = list(set(duplicate_indexes[key]))
-    
+
+    #반환 중복값 제거된 리스트,인덱스들 (lst)
     return unique_list, duplicate_indexes
 
 def remove_elements_by_indexes(lst, indexes):
@@ -975,7 +1055,7 @@ def remove_elements_by_indexes(lst, indexes):
     리스트에서 주어진 인덱스의 요소를 제거하는 함수
     :param lst: 요소를 제거할 리스트
     :param indexes: 제거할 요소의 인덱스 리스트
-    :return: 없음 (리스트는 직접 수정됨)
+    :return: 수정된 리스트
     """
     # 인덱스 리스트를 정렬하여 뒤에서부터 제거해야 한 인덱스들이 올바르게 동작함
     
@@ -1194,7 +1274,7 @@ def update_plot(event=None):
     curve_type = calculate_curve_type(stations,radius)
     interval_distance = calculate_interval_distance(stations,radius)
     O_XY, BC_XY, EC_XY, EP_XY,IP_XY = calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_distance)
-
+    print(EP_XY)
     x_arcs = {}  # 변수를 저장할 딕셔너리 생성
     y_arcs = {}
     acr1 = []
@@ -1356,23 +1436,41 @@ def update_plot(event=None):
     toolbar.update()
     toolbar.grid(row=0, column=0, sticky="we") 
 
-       
+    #calculate_profile_elevation함수호출(fl,구배측점,구배) - 25간격으로 측점과 표고 반환
     v_station_list , elevations = calculate_profile_elevation(fl, pitch_station,pitch)
+
+    #get_value_from_index 함수호출((lst1,lst2,lst3)
+
+    #종단 구현 코드 주석처리
+    '''
+    #vip점 표고 리스트
     vip_elev_list = get_value_from_index(pitch_station,v_station_list,elevations)
     
         
-    #좌표 찾기
+    #####좌표 찾기 코드
+    #remove_duplicates_and_store_indexes 함수호출(lst)
+    #입력 리스트에서 중복된 요소를 제거하고 고유한 요소들의 리스트와 중복된 요소들의 인덱스를 추출하여 반환
     unique_values,duplicate_indexes = remove_duplicates_and_store_indexes(v_station_list)
+    
+    # duplicate_indexes 딕셔너리에서 값들을 리스트로 가져와서 다시 처리하는 부분입니다.
+    #딕셔너리의 값들을 리스트로 변환
     duplicate_indexes = list(duplicate_indexes.values())
-    duplicate_indexes = [sublist[0] for sublist in duplicate_indexes]
-    modifed_lst = remove_elements_by_indexes(elevations, duplicate_indexes)
 
+    #리스트 컴프리헨션을 사용하여 duplicate_indexes에 있는 각 중복된 요소들의 인덱스 리스트 중 첫 번째 인덱스만 가져와서 새로운 리스트를 생성
+    duplicate_indexes = [sublist[0] for sublist in duplicate_indexes]
+
+    #remove_elements_by_indexes함수 호출(lst,index)
+    #elevations 리스트에서 첫번째 인덱스 제거
+    elevations = remove_elements_by_indexes(elevations, duplicate_indexes)
+    #####
     
     
     #종단뷰 생성
     draw_profile(vip_elev_list,pitch_station,sta,sta_station)
 
+    # 현재 측점의 좌표 및 표고찾기
     find_station_coordinates(unique_values, coord_list,modifed_lst)
+    '''
     # Run the GUI
     root.geometry("1024x800")
 
