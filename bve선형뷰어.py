@@ -325,15 +325,43 @@ def parse_track(lines):
     start_station = min(stations)
     end_station = max(stations)
     
-    radius_station.insert(0,start_station)
+
+
+    #찾은 pitch station을 정렬
+    #측점이 오름차순인지 확인
+    if pitch_station != sorted(pitch_station):#오름차순이 아님
+
+        pitch = sort_b_by_a(pitch_station, pitch)#구배를 측점 순에 맞게 정렬
+        pitch_station = sorted(pitch_station)
+    if radius_station != sorted(radius_station):#오름차순이 아님
+
+        radius = sort_b_by_a(radius_station, radius)#구배를 측점 순에 맞게 정렬
+        radius_station = sorted(radius_station)
+    if sta_station != sorted(sta_station):#오름차순이 아님
+
+        sta = sort_b_by_a(sta_station, sta)#구배를 측점 순에 맞게 정렬
+        sta_station = sorted(sta_station)
+
+
+
+    radius_station.insert(0, start_station)
     radius_station.append(end_station)
-    
-    radius.insert(0,0)
+
+    radius.insert(0, 0)
     radius.append(0)
-    
+
     return radius_station, radius, sta_station,sta,pitch_station,pitch
 
-    
+
+def sort_b_by_a(a, b):
+    # a를 오름차순으로 정렬한 인덱스를 가져옴
+    sorted_index = sorted(range(len(a)), key=lambda k: a[k])
+
+    # 정렬된 인덱스를 기준으로 b의 요소를 정렬
+    b_sorted = [b[i] for i in sorted_index]
+
+    return b_sorted
+
 def calculate_coordinates(x1,y1,bearing,distance):
     angle = math.radians(bearing)
     x2 = x1 + distance * math.cos(angle)
@@ -697,8 +725,8 @@ def calculate_distance(x1, y1, x2, y2):
     distance_y = abs(y2 - y1)
     return distance
 
-#rev 12
-#계산 간격 로직 수정
+#rev 13
+#접선 방위각 기능 추가
 def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     BP_STA = stations[0] #초기 시점STA
     EP_STA = stations[-1]#초기 종점STA
@@ -717,7 +745,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     current_station_list = []
     station_list = []
 
-
+    tangent_bearings = []
     for i in range(len(IP_XY)):#IP만큼 반복
         
         bearing1 = calculate_bearingN(BC_XY[i][0],BC_XY[i][1],IP_XY[i][0],IP_XY[i][1])#방위각1
@@ -781,6 +809,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
             if next_station == '' or next_station > EC_STA:
                 break  # EC_STA를 초과하면 반복 종료
             elif next_station == BC_STA or next_station == EC_STA:  # BC_STA와 EC_STA와 같으면 다음 루프로 이동
+                station_list.append(next_station)
                 current_station = next_station #스테이션 업데이트
                 continue
             else:
@@ -788,7 +817,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
                 current_station = next_station
 
 
-        print(station_list)
+        '''print(station_list)'''
 
         
         '''
@@ -816,7 +845,8 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         '''
         BC_STA_LIST.append(BC_STA)
         EC_STA_LIST.append(EC_STA)
-        
+
+
         for j in range(len(station_list)):
             current_station = station_list[j]
             
@@ -826,9 +856,10 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
                 if i ==0 :#초기구간
                     
                     coord = calculate_coordinates(BP_XY[0], BP_XY[1], h1, dist_from_reference)
+                    tangent_bearing = h1
                 else:
                     coord = calculate_coordinates(EC_XY[i-1][0], EC_XY[i-1][1], h1, dist_from_reference)
-
+                    tangent_bearing = h1
             elif current_station > BC_STA and current_station <= EC_STA:#단곡선구간
                 
                 k = (current_station - BC_STA)  # k 계산
@@ -838,17 +869,18 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
                 if direction == 1:
                     delta_bearing = O_BC_bearing - delta_angle
+                    tangent_bearing = delta_bearing -90
                 else:
                     delta_bearing = O_BC_bearing + delta_angle
-                        
-                    
+                    tangent_bearing = delta_bearing + 90
+
                 
                 coord = calculate_coordinates(O_XY[i][0], O_XY[i][1], delta_bearing, R[i])
             elif current_station > EC_STA and current_station <= stations[-1]:
                 if i ==len(IP_XY)-1:
-                    l = (current_station - int(EC_STA)) / 25
+                    l = current_station - EC_STA / 25
                     coord = calculate_coordinates(EC_XY[i][0], EC_XY[i][1], h2, l*25)
-                    
+                    tangent_bearing = h2
             else:
                 continue
 
@@ -857,6 +889,9 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
                 print(f'current_station:{current_station}')
                 print(f'coord:{coord}')
                 coord_list.append(coord)
+
+            #접선 방위각 리스트 추가
+            tangent_bearings.append(tangent_bearing)
 
     station_list2 = list(range(int(stations[0]), int(stations[-1])+25, 25))
 
@@ -881,7 +916,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     curve_type5[0] = 'BP'
     curve_type5[-1] = 'EP'
     
-    return curve_type5, current_station_list, coord_list
+    return curve_type5, current_station_list, coord_list , tangent_bearings
 
 def find_25_station(STA, BC_STA, increment, EC_STA):
     '''
@@ -903,21 +938,42 @@ def find_25_station(STA, BC_STA, increment, EC_STA):
         return result
 
 
-def create_csv(curve_type,station_list,coord_list):
+def create_csv(curve_type,station_list,coord_list , tangent_bearings):
     # write the extracted data to CSV
     output_file = r'c:\temp\bve_route_coords.csv'
     with open(output_file, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f)
-        for curve_type, station, coord in zip(curve_type, station_list, coord_list):
+        # Write header
+        writer.writerow(["Curve Type", "Station", "X", "Y", "Tangent Bearing"])
+
+        for curve_type, station, coord, bearing in zip(curve_type, station_list, coord_list, tangent_bearings):
             # Convert station to string
-            station_str = str(station)
-            
-            # Convert coord list to a string
-            coord_str = ','.join(map(str, coord))
-            
-            # Write row to CSV file
-            writer.writerow([curve_type, station] + list(coord))
-        
+            # Prepare the row data
+            row = [curve_type, station, coord[0], coord[1], bearing]
+            # Write the row to CSV file
+            writer.writerow(row)
+
+
+def create_ip(bp,ep,ip_coords, radii):
+    # Clean and process radii
+    R = [abs(r) for r in radii if r != 0]
+    '''print(R)'''
+    '''print(len(ip_coords))'''
+    output_file = r'c:\temp\ip_coordinates.txt'
+
+    with open(output_file, 'w', encoding='utf-8', newline='') as f:
+        # Write the beginning point
+        f.write(f'BP, {bp[0]}, {bp[1]}\n')
+
+        # Write the intermediate points
+        for i, ((x, y), r) in enumerate(zip(ip_coords, R)):
+            data = f'{i + 1}, {x}, {y}, {r}\n'
+            f.write(data)
+
+        # Write the end point
+        f.write(f'EP, {ep[0]}, {ep[1]}\n')
+
+
 def toggle_aspect_ratio():
     if aspect_var.get() == 1:
         ax.set_aspect('equal', adjustable='box')
@@ -1361,7 +1417,7 @@ def update_plot(event=None):
     canvas.draw()  # Redraw the plot
 
     #좌표출력함수
-    curve_type5, current_station_list, coord_list = calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius)
+    curve_type5, current_station_list, coord_list, tangent_bearings = calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius)
 
     
     #정거장 구현
@@ -1373,8 +1429,11 @@ def update_plot(event=None):
         ax.scatter(*station_coordinates[i], color='blue', marker='o',zorder=10)
         ax.text(*station_coordinates[i], sta[i], fontsize=12, ha='left', color='blue')
     #csv 저장함수
-    create_csv(curve_type5,current_station_list,coord_list)
+    create_csv(curve_type5,current_station_list,coord_list,tangent_bearings)
     print('csv 저장성공')
+    #ip 저장함수
+    create_ip(BP_XY,EP_XY,IP_XY, radius)
+    print('ip좌표 저장성공')
     #dxf 저장함수
     create_dxf("example_polyline.dxf", coord_list, current_station_list,curve_type5)
     print('dxf 저장성공')
@@ -1411,6 +1470,9 @@ def update_plot(event=None):
     v_station_list , elevations = calculate_profile_elevation(fl, pitch_station,pitch)
 
     #get_value_from_index 함수호출((lst1,lst2,lst3)
+
+    #종단 구현 코드 주석처리
+    '''
     #vip점 표고 리스트
     vip_elev_list = get_value_from_index(pitch_station,v_station_list,elevations)
     
@@ -1438,7 +1500,7 @@ def update_plot(event=None):
 
     # 현재 측점의 좌표 및 표고찾기
     find_station_coordinates(unique_values, coord_list,modifed_lst)
-    
+    '''
     # Run the GUI
     root.geometry("1024x800")
 
