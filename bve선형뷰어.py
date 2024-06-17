@@ -13,6 +13,12 @@ import ezdxf
 from tkinter.ttk import Combobox
 from collections import Counter
 
+#전역변수
+#정밀도
+tolerance = 1e-6
+#계산간격
+increment = 25 #계산간격 default 25
+
 def create_dxf(filename, coordinates, *args):
     doc = ezdxf.new()
     msp = doc.modelspace()
@@ -117,6 +123,8 @@ def calc_latlon2TM_array(coords_array):
 
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
+
+
 
 def degrees_to_dms(degrees):
     """
@@ -800,7 +808,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         
         EC_STA = BC_STA + CL
 
-        increment = 25 #계산간격 default 25
+
 
         #엑셀 함수로 시작점에서 끝점까지 increment 배수값을 반환
 
@@ -813,7 +821,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         station_list = []#다음 루프시 초기화
 
         while current_station < EC_STA:
-            next_station = find_25_station(current_station, BC_STA, increment, EC_STA)
+            next_station = find_25_station(current_station, BC_STA, EC_STA)
             if next_station == '' or next_station > EC_STA:
                 break  # EC_STA를 초과하면 반복 종료
             elif next_station == BC_STA or next_station == EC_STA:  # BC_STA와 EC_STA와 같으면 다음 루프로 이동
@@ -926,7 +934,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
     
     return curve_type5, current_station_list, coord_list , tangent_bearings
 
-def find_25_station(STA, BC_STA, increment, EC_STA):
+def find_25_station(STA, BC_STA,EC_STA):
     '''
     STA = 이전 측점
     BC_STA =BC측점
@@ -960,12 +968,14 @@ def create_csv(curve_type,station_list,coord_list , tangent_bearings,elev):
             row = [curve_type, station, f'{coord[0]:.4f}', f'{coord[1]:.4f}', f'{elevation:.2f}' , bearing]
             # Write the row to CSV file
             writer.writerow(row)
-
+    '''
     print(len(curve_type))
     print(len(station_list))
     print(len(coord_list))
     print(len(tangent_bearings))
+    
     print(len(elev))
+    '''
 def create_ip(bp,ep,ip_coords, radii):
     # Clean and process radii
     R = [abs(r) for r in radii if r != 0]
@@ -984,6 +994,26 @@ def create_ip(bp,ep,ip_coords, radii):
 
         # Write the end point
         f.write(f'EP, {ep[0]}, {ep[1]}\n')
+
+def create_vip(vip_el,vip_sta):
+    # Clean and process radii
+
+    output_file = r'c:\temp\vip_result.txt'
+
+    with open(output_file, 'w', encoding='utf-8', newline='') as f:
+
+
+
+        # Write the intermediate points
+        for i, (el, station) in enumerate(zip(vip_el, vip_sta)):
+            if i ==0 :
+                f.write(f'BP, {vip_sta[0]}, {vip_el[1]}\n')
+            elif i == len(vip_el) - 1:
+                f.write(f'EP, {vip_sta[-1]}, {vip_el[-1]}\n')
+            else:
+                f.write(f'vip{i}, {station}, {el}\n')
+
+
 
 
 def toggle_aspect_ratio():
@@ -1018,7 +1048,7 @@ def calculate_profile_elevation(station_list, fl,pitch_station,pitch):
     #FL = 전역변수 FL
     # pitch_station 파싱루트에서 추출한 PVI 측점
     #pitch 파싱루트에서 추출한 PVI구배
-    tolerance = 1e-6 #부동소수점 허용오차
+
     # 25 간격으로 표고값 계산
     elevations = []
     current_station_list = []
@@ -1051,30 +1081,35 @@ def calculate_profile_elevation(station_list, fl,pitch_station,pitch):
     return current_station_list , elevations
 
 #리스트의 인덱스를 반환
-def get_value_from_index(A_LIST,B_LIST,C_LIST):
+def get_value_from_index(A_LIST, B_LIST, C_LIST):
     indices = []
     values = []
-    #A리스트 값에 해당하는 인덱스를 B리스트에서 추출 
+
+    # A 리스트 값에 해당하는 인덱스를 B 리스트에서 추출
     for number in A_LIST:
-        try:
-            index = B_LIST.index(number)
+        index = None
+        for i, b in enumerate(B_LIST):
+            if abs(b - number) < tolerance:
+                index = i
+                break
+        if index is not None:
             indices.append(index)
-        except ValueError:
-            print(f"index error:Station number {number} not found in list.")
-            
-            # 오류가 발생하면 건너뜁니다.
-            pass
-    #B리스트의 인덱스로 C리스트에서 값을 추출
+        else:
+            print(f"index error: Station number {number} not found in list.")
+
+    # B 리스트의 인덱스로 C 리스트에서 값을 추출
     for index in indices:
         try:
             value = C_LIST[index]
             values.append(value)
-        except ValueError:
-            print(f"value error:Station number {number} not found in list.")
+        except IndexError:
+            print(f"value error: Index {index} not found in C_LIST.")
             # 오류가 발생하면 건너뜁니다.
             pass
-    #결과 반환(리스트)
+
+    # 결과 반환(리스트)
     return values
+
 
 #입력 리스트에서 중복된 요소를 제거하고 고유한 요소들의 리스트와 중복된 요소들의 인덱스를 추출하여 반환
 def remove_duplicates_and_store_indexes(lst):
@@ -1207,7 +1242,7 @@ def find_station_coordinates(current_station_list, coord_list,values):
     combobox = ttk.Combobox(root)
     combobox.config(height=5)           # 높이 설정
     combobox.config(values=current_station_list)           # 나타낼 항목 리스트 설정
-    combobox.config(state="normal")   # 콤보 박스에 사용자가 직접 입력 불가
+    combobox.config(state="normal")   # 콤보 박스에 사용자가 직접 입력 가능
     combobox.current(0)                 # 초기 선택값 설정 (첫 번째 항목)
     combobox.grid(row=3, column=2)
     
@@ -1451,6 +1486,9 @@ def update_plot(event=None):
         ax.scatter(*station_coordinates[i], color='blue', marker='o',zorder=10)
         ax.text(*station_coordinates[i], sta[i], fontsize=12, ha='left', color='blue')
 
+    # vip점 표고 리스트
+    vip_elev_list = get_value_from_index(pitch_station, current_station_list, elevations)
+
     #csv 저장함수
     create_csv(curve_type5,current_station_list,coord_list,tangent_bearings, elevations)
     print('csv 저장성공')
@@ -1459,7 +1497,7 @@ def update_plot(event=None):
     print('ip좌표 저장성공')
     # vip 저장함수
 
-    #create_vip(BP_XY, EP_XY, IP_XY, radius)
+    create_vip(vip_elev_list,pitch_station)
     print('vip 저장성공')
 
     #dxf 저장함수
@@ -1482,8 +1520,10 @@ def update_plot(event=None):
     else:#일반용
         Create_KML(BP_XY,EP_XY,acr1,acr2,BC_XY,EC_XY,stations)
         print('단곡선용 kml 저장성공')
-   
-    
+
+    # 종단뷰 생성
+    draw_profile(vip_elev_list, pitch_station, sta, sta_station)
+
     # 툴바 추가
     # NavigationToolbar2Tk를 사용하여 그래프 위젯에 툴바 추가
     # Create a frame to contain both the canvas and the toolbar
@@ -1500,8 +1540,7 @@ def update_plot(event=None):
 
     #종단 구현 코드 주석처리
     '''
-    #vip점 표고 리스트
-    vip_elev_list = get_value_from_index(pitch_station,v_station_list,elevations)
+    
     
         
     #####좌표 찾기 코드
@@ -1522,12 +1561,13 @@ def update_plot(event=None):
     #####
     
     
-    #종단뷰 생성
-    draw_profile(vip_elev_list,pitch_station,sta,sta_station)
+    
+
+    
+    '''
 
     # 현재 측점의 좌표 및 표고찾기
-    find_station_coordinates(unique_values, coord_list,modifed_lst)
-    '''
+    #find_station_coordinates(unique_values, coord_list, modifed_lst)
     # Run the GUI
     root.geometry("1024x800")
 
