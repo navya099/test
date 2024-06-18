@@ -1475,9 +1475,9 @@ def update_plot(event=None):
 
     
     #정거장 구현
-    n_station_list = list(range(int(stations[0]), int(stations[-1])+25, 25))
+
     
-    station_coordinates = get_value_from_index(sta_station,n_station_list,coord_list)
+    station_coordinates = get_value_from_index(sta_station,current_station_list,coord_list)
 
     # calculate_profile_elevation함수호출(fl,구배측점,구배) - 25간격으로 측점과 표고 반환
     v_station_list, elevations = calculate_profile_elevation(current_station_list, fl, pitch_station, pitch)
@@ -1489,22 +1489,38 @@ def update_plot(event=None):
     # vip점 표고 리스트
     vip_elev_list = get_value_from_index(pitch_station, current_station_list, elevations)
 
-    #csv 저장함수
-    create_csv(curve_type5,current_station_list,coord_list,tangent_bearings, elevations)
-    print('csv 저장성공')
-    #ip 저장함수
-    create_ip(BP_XY,EP_XY,IP_XY, radius)
-    print('ip좌표 저장성공')
-    # vip 저장함수
+    try:
+        # CSV 저장 함수
+        try:
+            create_csv(curve_type5, current_station_list, coord_list, tangent_bearings, elevations)
+            print('CSV 저장 성공')
+        except ValueError as e:
+            print(f'CSV 저장 중 에러 발생: {e}')
 
-    create_vip(vip_elev_list,pitch_station)
-    print('vip 저장성공')
+        # IP 저장 함수
+        try:
+            create_ip(BP_XY, EP_XY, IP_XY, radius)
+            print('IP 좌표 저장 성공')
+        except ValueError as e:
+            print(f'IP 좌표 저장 중 에러 발생: {e}')
 
-    #dxf 저장함수
-    create_dxf("example_polyline.dxf", coord_list, current_station_list,curve_type5)
-    print('dxf 저장성공')
-    #KML저장용
-    
+        # VIP 저장 함수
+        try:
+            create_vip(vip_elev_list, pitch_station)
+            print('VIP 저장 성공')
+        except ValueError as e:
+            print(f'VIP 저장 중 에러 발생: {e}')
+
+        # DXF 저장 함수
+        try:
+            create_dxf("example_polyline.dxf", coord_list, current_station_list, curve_type5)
+            print('DXF 저장 성공')
+        except ValueError as e:
+            print(f'DXF 저장 중 에러 발생: {e}')
+
+    except Exception as e:
+        print(f'처리 중 알 수 없는 에러 발생: {e}')
+
     if 'PCC' in curve_type:#복심곡선용
         stations3 = stations2.copy()
         stations3.insert(0,stations[0])
@@ -1567,7 +1583,7 @@ def update_plot(event=None):
     '''
 
     # 현재 측점의 좌표 및 표고찾기
-    #find_station_coordinates(unique_values, coord_list, modifed_lst)
+    find_station_coordinates(current_station_list, coord_list, elevations)
     # Run the GUI
     root.geometry("1024x800")
 
