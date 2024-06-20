@@ -278,14 +278,24 @@ def parse_track(lines):
                         j = i - 1
                         while j >= 0:
                             prev_line = lines[j].strip()
-                            if prev_line.isnumeric():
-                                number = float(prev_line)
-                                # Find the substring after '.sta' and before the first semicolon (;)
-                                value1 = line.lower().split('.sta')[-1].split(';', 1)[0].strip()
-                                value1 = value1[0:]
-                                sta_station.append(number)
-                                sta.append(value1)
+                            try:
+                                float(prev_line)
+
+                                if line.split()[-1].isdigit():
+                                    number = float(prev_line)
+                                    valuex = line.lower().split('.sta')[-1].split(';', 1)[0].strip()
+                                    valuex= valuex[0:]
+                                    sta_station.append(number)
+                                    sta.append(valuex)
+                                else:
+                                    number = float(prev_line)
+                                    valuex = line.lower().split('.sta')[-1].split(';', 1)[0].strip()
+                                    valuex = valuex[0:]
+                                    sta_station.append(number)
+                                    sta.append(valuex)
                                 break
+                            except ValueError:
+                                print("prev_line is not a floating-point number.")
                             j -= 1
                 except IndexError:
                     pass
