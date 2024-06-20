@@ -1,5 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, ttk
+from typing import List
+
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # 추가
 import numpy as np
@@ -344,11 +346,11 @@ def parse_track(lines):
         pitch_station = sorted(pitch_station)
     if radius_station != sorted(radius_station):#오름차순이 아님
 
-        radius = sort_b_by_a(radius_station, radius)#구배를 측점 순에 맞게 정렬
+        radius = sort_b_by_a(radius_station, radius)#곡선반경을 측점 순에 맞게 정렬
         radius_station = sorted(radius_station)
     if sta_station != sorted(sta_station):#오름차순이 아님
 
-        sta = sort_b_by_a(sta_station, sta)#구배를 측점 순에 맞게 정렬
+        sta = sort_b_by_a(sta_station, sta)#정거장 측점을 측점 순에 맞게 정렬
         sta_station = sorted(sta_station)
 
 
@@ -362,8 +364,10 @@ def parse_track(lines):
     #노선 시작,끝 측점 추가
     if pitch_station[0] != start_station:
         pitch_station.insert(0, start_station)
+        pitch.insert(0, 0)
     if pitch_station[-1] != end_station:
         pitch_station.append(end_station)
+        pitch.append(0)
 
 
     return radius_station, radius, sta_station,sta,pitch_station,pitch
@@ -820,11 +824,11 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
         station_list = []#다음 루프시 초기화
 
-        while current_station < EC_STA:
+        while current_station < EC_STA + tolerance:
             next_station = find_25_station(current_station, BC_STA, EC_STA)
-            if next_station == '' or next_station > EC_STA:
+            if next_station == '' or next_station > EC_STA + tolerance:
                 break  # EC_STA를 초과하면 반복 종료
-            elif next_station == BC_STA or next_station == EC_STA:  # BC_STA와 EC_STA와 같으면 다음 루프로 이동
+            elif next_station == BC_STA + tolerance or next_station == EC_STA + tolerance:  # BC_STA와 EC_STA와 같으면 다음 루프로 이동
                 station_list.append(next_station)
                 current_station = next_station #스테이션 업데이트
                 continue
@@ -832,7 +836,8 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
                 station_list.append(next_station)
                 current_station = next_station
 
-        station_list.insert(0, stations[0])
+        if i == 0:
+            station_list.insert(0, stations[0])
         '''print(station_list)'''
 
         
@@ -866,7 +871,7 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
         for j in range(len(station_list)):
             current_station = station_list[j]
             
-            if current_station <= BC_STA:#직선구간
+            if current_station <= BC_STA + tolerance:#직선구간
                 #시점으로부터 떨어진 거리 찾기
                 dist_from_reference = current_station - BP_STA
                 if i ==0 :#초기구간
@@ -876,7 +881,9 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
                 else:
                     coord = calculate_coordinates(EC_XY[i-1][0], EC_XY[i-1][1], h1, dist_from_reference)
                     tangent_bearing = h1
-            elif current_station > BC_STA and current_station <= EC_STA:#단곡선구간
+
+                tangent_bearing = tangent_bearing % 360
+            elif current_station > BC_STA + tolerance and current_station <= EC_STA + tolerance:#단곡선구간
                 
                 k = (current_station - BC_STA)  # k 계산
                 
@@ -885,25 +892,33 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
                 if direction == 1:
                     delta_bearing = O_BC_bearing - delta_angle
-                    tangent_bearing = delta_bearing -90
+                    tangent_bearing = delta_bearing - 90
+
+
                 else:
                     delta_bearing = O_BC_bearing + delta_angle
                     tangent_bearing = delta_bearing + 90
 
+                tangent_bearing = tangent_bearing % 360
                 
                 coord = calculate_coordinates(O_XY[i][0], O_XY[i][1], delta_bearing, R[i])
-            elif current_station > EC_STA and current_station <= stations[-1]:
+            elif current_station > EC_STA + tolerance and current_station <= stations[-1]:
                 if i ==len(IP_XY)-1:
                     l = current_station - EC_STA / 25
                     coord = calculate_coordinates(EC_XY[i][0], EC_XY[i][1], h2, l*25)
                     tangent_bearing = h2
+
+                tangent_bearing = tangent_bearing % 360
             else:
                 continue
 
             if current_station not in current_station_list:  # 이미 계산된 역이 아니라면 추가
                 current_station_list.append(current_station)
-                #print(f'current_station:{current_station}')
-                #print(f'coord:{coord}')
+                '''
+                print(f'current_station:{current_station}')
+                print(f'coord:{coord}')
+                print(f'tangent_bearing:{tangent_bearing}')
+                '''
                 coord_list.append(coord)
 
             #접선 방위각 리스트 추가
@@ -938,7 +953,7 @@ def find_25_station(STA, BC_STA,EC_STA):
     '''
     STA = 이전 측점
     BC_STA =BC측점
-    increment = 20m(계산간격)
+
     EC_STA = EC측점
     '''
       # B27를 float로 변환
@@ -1042,6 +1057,13 @@ def reset_values():
     BP_azimuth_entry.insert(0, '23')
     update_plot()
 
+# Function to find the correct insert position
+def find_insert_position(current_list, station):
+    for i in range(len(current_list)):
+        if current_list[i] > station:
+            return i
+    return len(current_list)
+
 #25간격으로 표고 계산함수
 def calculate_profile_elevation(station_list, fl,pitch_station,pitch):
 
@@ -1051,8 +1073,19 @@ def calculate_profile_elevation(station_list, fl,pitch_station,pitch):
 
     # 25 간격으로 표고값 계산
     elevations = []
-    current_station_list = []
+    #평면 측점 리스트 복사
+    vetical_station_list = station_list.copy()
     next_index = 0  # Initialize next_index outside the loop
+    insert_index = [] #종단 삽입점 저장 리스트
+
+    #종단 측점이 current_station_list에 있는지 체크
+    for station in pitch_station:
+        if not station in vetical_station_list:
+            # Find the correct position to insert the station
+            insert_position = find_insert_position(vetical_station_list, station)
+            # Insert the station at the found position
+            vetical_station_list.insert(insert_position, station)
+            insert_index.append(insert_position)
 
     # Store the ending elevation of the previous segment
     prev_end_elevation = fl
@@ -1062,29 +1095,35 @@ def calculate_profile_elevation(station_list, fl,pitch_station,pitch):
         end_station = pitch_station[i+1]
 
 
-        for j in range(next_index, len(station_list)):
-            current_station = station_list[j]
+        for j in range(next_index, len(vetical_station_list)):
+            current_station = vetical_station_list[j]
             if current_station <= end_station + tolerance:
-                length = current_station - station_list[j-1]
+                length = current_station - vetical_station_list[j-1]
                 height = current_grade / 1000 * length
                 if current_station == start_station:  # Check if it's the first station of the segment
                     fl = prev_end_elevation  # Set initial elevation as the ending elevation of the previous segment
                 else:
                     fl += height  # Accumulate height to initial elevation fl
                 elevations.append(fl)  # Round elevation to 6 decimal places
-                current_station_list.append(current_station)
+
             elif current_station > end_station:
                 next_index = j
                 break
         # Store the ending elevation of the current segment
         prev_end_elevation = fl
-    return current_station_list , elevations
+    return vetical_station_list , elevations , insert_index
 
 #리스트의 인덱스를 반환
 def get_value_from_index(A_LIST, B_LIST, C_LIST):
     indices = []
     values = []
 
+    for station in A_LIST:
+        if station not in B_LIST:
+            # Find the correct position to insert the station
+            insert_position = find_insert_position(B_LIST, station)
+            # Insert the station at the found position
+            B_LIST.insert(insert_position, station)
     # A 리스트 값에 해당하는 인덱스를 B 리스트에서 추출
     for number in A_LIST:
         index = None
@@ -1148,7 +1187,7 @@ def remove_elements_by_indexes(lst, indexes):
     return lst
 
 #종단그리기
-def draw_profile(values,pitch_station,sta,sta_station):
+def draw_profile(value,pitch_station,sta,sta_station):
     # 새로운 subplot을 생성하는 예제
 
     #지반고
@@ -1156,26 +1195,20 @@ def draw_profile(values,pitch_station,sta,sta_station):
     bp = (pitch_station[0],0)
     ep = (pitch_station[-1],0)
 
-    #fl 종선
-    fl_line = (values,0)
-    #종단 스케일 적용400/1000
-    factor = 1
-    multiplied_list = [element * factor for element in values]
-
     #종단 계획선
-    ax2.scatter(pitch_station,multiplied_list, color='red', marker='',zorder=10)
-    ax2.plot(pitch_station,multiplied_list, linestyle='-', color='red')
+    ax2.scatter(pitch_station,value, color='red', marker='',zorder=10)
+    ax2.plot(pitch_station,value, linestyle='-', color='red')
 
     #지반고    
     ax2.plot(*zip(*[bp, ep]), linestyle='-', color='BLACK')
 
     #종단 계획선과 지반고 해칭
-    ax2.fill_between(pitch_station, multiplied_list,0, color='#d2b48c', alpha=1, hatch='')
+    ax2.fill_between(pitch_station, value,0, color='#d2b48c', alpha=1, hatch='')
 
     # 각 계획선의 중심에 기울기 표시
     for i in range(len(pitch_station) - 1):
-        x1, y1 = pitch_station[i], multiplied_list[i]
-        x2, y2 = pitch_station[i + 1], multiplied_list[i + 1]
+        x1, y1 = pitch_station[i], value[i]
+        x2, y2 = pitch_station[i + 1], value[i + 1]
         gradient = (y2 - y1) / (x2 - x1) * 1000 # 기울기 계산
         length = pitch_station[i+1] - pitch_station[i]
         if gradient == 0:
@@ -1199,11 +1232,11 @@ def draw_profile(values,pitch_station,sta,sta_station):
 
         
     # 각 계획선의 정점에서 수직으로 y=0까지 선 추가
-    for x, y in zip(pitch_station, multiplied_list):
+    for x, y in zip(pitch_station, value):
         ax2.plot([x, x], [y, 0], linestyle='-', color='red')
 
     #역에 해당하는 표고 찾기
-    sta_elev = interpolate_coordinates(pitch_station, multiplied_list, sta_station)
+    sta_elev = interpolate_coordinates(pitch_station, value, sta_station)
     
     # 종단뷰에 역명 추가
     for i in range(len(sta_station)):
@@ -1334,7 +1367,13 @@ def update_plot(event=None):
     
     
     ax.clear()
-    
+    ax2.clear()
+
+    ax2.set_aspect(aspect=2.5)
+
+    ax2.set_xlim(0, 1000)
+    ax2.set_ylim(-50, 100)
+
     BP_XY = (float(BP_Y_entry.get()),float(BP_X_entry.get()))
     BP_bearing = float(BP_azimuth_entry.get())
 
@@ -1352,7 +1391,7 @@ def update_plot(event=None):
     direction = define_dirction(radius)
     
     
-    curve_type = calculate_curve_type(stations,radius)
+    curve_type = calculate_curve_type(stations,radius)#원본
     interval_distance = calculate_interval_distance(stations,radius)
     O_XY, BC_XY, EC_XY, EP_XY,IP_XY = calculate_coord(BP_XY, BP_bearing, stations, radius, curve_type, interval_distance)
 
@@ -1387,14 +1426,14 @@ def update_plot(event=None):
     #복심곡선 노선
     if 'PCC' in curve_type:
         print('복심곡선 존재')
-        stations2 = stations.copy() #원본 복사
-        curve_type2 = curve_type.copy() #원본 복사
-        curve_type3 = [] #수정본 저장 리스트
+        stations2 = stations.copy() #원본 복사 후 BP EP제거
+        curve_type2 = curve_type.copy() #원본 복사 후 BP EP제거
+        curve_type3: list[str] = [] #PCC 제거 후 리스트
     
-        del stations2[0]
+        del stations2[0] #BP EP제거
         del stations2[-1]
     
-        del curve_type2[0]
+        del curve_type2[0] #BP EP제거
         del curve_type2[-1]
     
         for a in curve_type2:
@@ -1472,23 +1511,24 @@ def update_plot(event=None):
 
     #좌표출력함수
     curve_type5, current_station_list, coord_list, tangent_bearings = calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius)
-
+    #curve_type5 = 25마다 곡선 시종점 표시 직선은 ''
     
     #정거장 구현
 
     
     station_coordinates = get_value_from_index(sta_station,current_station_list,coord_list)
 
-    # calculate_profile_elevation함수호출(fl,구배측점,구배) - 25간격으로 측점과 표고 반환
-    v_station_list, elevations = calculate_profile_elevation(current_station_list, fl, pitch_station, pitch)
+    # calculate_profile_elevation 함수 호출 (fl,구배 측점,구배) - 25간격 으로 측점과 표고 반환
+    v_station_list, elevations, insert_index = calculate_profile_elevation(current_station_list, fl, pitch_station, pitch)
 
     for i in range(len(station_coordinates)):
         ax.scatter(*station_coordinates[i], color='blue', marker='o',zorder=10)
         ax.text(*station_coordinates[i], sta[i], fontsize=12, ha='left', color='blue')
 
     # vip점 표고 리스트
-    vip_elev_list = get_value_from_index(pitch_station, current_station_list, elevations)
-
+    vip_elev_list = get_value_from_index(pitch_station, v_station_list, elevations)
+    if len(v_station_list) != len(current_station_list):#vip측점이 25의 배수가 아닌경우
+        elevations = remove_elements_by_indexes(elevations,insert_index)#ele리스트에서 vip측점을 제거
     try:
         # CSV 저장 함수
         try:
@@ -1548,39 +1588,7 @@ def update_plot(event=None):
 
     toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
     toolbar.update()
-    toolbar.grid(row=0, column=0, sticky="we") 
-
-
-
-    #get_value_from_index 함수호출((lst1,lst2,lst3)
-
-    #종단 구현 코드 주석처리
-    '''
-    
-    
-        
-    #####좌표 찾기 코드
-    #remove_duplicates_and_store_indexes 함수호출(lst)
-    #입력 리스트에서 중복된 요소를 제거하고 고유한 요소들의 리스트와 중복된 요소들의 인덱스를 추출하여 반환
-    unique_values,duplicate_indexes = remove_duplicates_and_store_indexes(v_station_list)
-    
-    # duplicate_indexes 딕셔너리에서 값들을 리스트로 가져와서 다시 처리하는 부분입니다.
-    #딕셔너리의 값들을 리스트로 변환
-    duplicate_indexes = list(duplicate_indexes.values())
-
-    #리스트 컴프리헨션을 사용하여 duplicate_indexes에 있는 각 중복된 요소들의 인덱스 리스트 중 첫 번째 인덱스만 가져와서 새로운 리스트를 생성
-    duplicate_indexes = [sublist[0] for sublist in duplicate_indexes]
-
-    #remove_elements_by_indexes함수 호출(lst,index)
-    #elevations 리스트에서 첫번째 인덱스 제거
-    elevations = remove_elements_by_indexes(elevations, duplicate_indexes)
-    #####
-    
-    
-    
-
-    
-    '''
+    toolbar.grid(row=0, column=0, sticky="we")
 
     # 현재 측점의 좌표 및 표고찾기
     find_station_coordinates(current_station_list, coord_list, elevations)
