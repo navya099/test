@@ -933,8 +933,8 @@ def calculate_coord_25_XY(stations,BP_XY,BC_XY,EC_XY,O_XY, IP_XY,EP_XY,radius):
 
             #접선 방위각 리스트 추가
             tangent_bearings.append(tangent_bearing)
-
-
+        if i == len(IP_XY)-1:
+            current_station_list[-1] = EP_STA#마지막 측점을 동ㅇ일하게
 
     curve_type5 = []
     
@@ -1127,17 +1127,17 @@ def calculate_profile_elevation(station_list, fl,pitch_station,pitch):
 def get_value_from_index(A_LIST, B_LIST, C_LIST):
     indices = []
     values = []
-
+    D_LIST = B_LIST.copy()
     for station in A_LIST:
-        if station not in B_LIST:
+        if station not in D_LIST:
             # Find the correct position to insert the station
-            insert_position = find_insert_position(B_LIST, station)
+            insert_position = find_insert_position(D_LIST, station)
             # Insert the station at the found position
-            B_LIST.insert(insert_position, station)
+            D_LIST.insert(insert_position, station)
     # A 리스트 값에 해당하는 인덱스를 B 리스트에서 추출
     for number in A_LIST:
         index = None
-        for i, b in enumerate(B_LIST):
+        for i, b in enumerate(D_LIST):
             if abs(b - number) < tolerance:
                 index = i
                 break
@@ -1295,12 +1295,26 @@ def find_station_coordinates(current_station_list, coord_list,values):
     scatter5 = None #종단 x
     scatter6 = None #종단 x선
 
+    global text_station, text_coord, text_elevation
+    # 기존 텍스트 초기화
+    text_station = None #평면 x
+    text_coord = None #평면 x
+    text_elevation = None #평면 x
+
     def update_text():
                
         # 콤보 상자에서 현재 선택된 측정치 가져오기
         current_station = combobox.get()
         global scatter4, scatter5, scatter6
+        global text_station, text_coord, text_elevation
 
+        # 기존 텍스트 객체 제거
+        if text_station:
+            text_station = ""
+        if text_coord:
+            text_coord = ""
+        if text_elevation:
+            text_elevation = ""
         try:
             # 현재 선택된 측정치의 인덱스 찾기
             index = current_station_list.index(int(current_station))
@@ -1328,6 +1342,8 @@ def find_station_coordinates(current_station_list, coord_list,values):
                 scatter5.remove()
             if scatter6:
                 scatter6.remove()
+
+
 
             # 수직선의 y 좌표 범위 (무한대로 설정)
             y_min = -np.inf
@@ -1537,8 +1553,26 @@ def update_plot(event=None):
 
     # vip점 표고 리스트
     vip_elev_list = get_value_from_index(pitch_station, v_station_list, elevations)
-    if len(v_station_list) != len(current_station_list):#vip측점이 25의 배수가 아닌경우
-        elevations = remove_elements_by_indexes(elevations,insert_index)#ele리스트에서 vip측점을 제거
+
+    if v_station_list != current_station_list:#vip측점 리스트와 평면 측점 리스트의 값이 다를경우
+        '''
+        i = 0
+        j = 0
+        while i < len(v_station_list) and j < len(current_station_list):
+            v = v_station_list[i]
+            s = current_station_list[j]
+            if v != s:
+                print(f'v: {v}, s: {s}')
+                i += 1  # v_station_list의 다음 인덱스로 이동
+            else:
+                i += 1
+                j += 1
+        print(v_station_list[-1])
+        print(current_station_list[-1])
+        
+        '''
+        elevations = remove_elements_by_indexes(elevations,insert_index)#elevation 리스트에서 vip측점 인덱스 요소를 제거
+
     try:
         # CSV 저장 함수
         try:
