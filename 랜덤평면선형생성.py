@@ -498,51 +498,32 @@ adjusted_linestring = adjust_linestring(random_linestring, angles)
 #수정된 선형 교각계산
 new_angles = calculate_angles_and_plot(adjusted_linestring)
 
-#경유지 로직
-def input_passpoints():
+#경유지 존재지 경유지 포함
+if ispasspoint:
     passpoint_coordinates = []
     passpoint_name_list = []
-    i = 0
-    ispasspoint = None
-    
+    i= 0
     while True:
-        a = int(input('경유지 유무 1: 있음 0: 없음: '))
+        passpoint_coordinate,passpoint_name = get_valid_coordinates("경유지 입력: ")
+        print(f"경유지: {passpoint_name} = {passpoint_coordinate}")
+        pass_point = Point(calc_pl2xy((passpoint_coordinate[1],passpoint_coordinate[0])))
+        passpoint_coordinates.append(pass_point) # Example passpoint
+        passpoint_name_list.append(passpoint_name)
         
-        if a == 0:  # 사용자에게 경유지 입력을 중단할 옵션 제공
-            print('경유지를 생략합니다.')
-            ispasspoint = False
-            return ispasspoint, passpoint_coordinates, passpoint_name_list
-        else:
-            passpoint_coordinate, passpoint_name = get_valid_coordinates("경유지 입력: ")
-            ispasspoint = True
-            print(f"경유지: {passpoint_name} = {passpoint_coordinate}")
-            pass_point = Point(calc_pl2xy((passpoint_coordinate[1], passpoint_coordinate[0])))
-            passpoint_coordinates.append(pass_point)
-            passpoint_name_list.append(passpoint_name)
-            
-            i += 1
-            continue_input = int(input("계속해서 입력하려면 1을 입력하세요. 경유지 입력 종료는 0 입력: "))
-
-            if continue_input == 0:
-                print(f'경유지 입력이 종료되었습니다. 입력 갯수: {i}')
-                return ispasspoint, passpoint_coordinates, passpoint_name_list
-
-def adjust_linestring_with_passpoints(adjusted_linestring, passpoint_coordinates):
-    for pass_point in passpoint_coordinates:
-        adjusted_linestring = adjust_linestring_for_passpoint(adjusted_linestring, pass_point)
-    return adjusted_linestring
-
-# 경유지 존재시 처리
-ispasspoint, passpoint_coordinates, passpoint_name_list = input_passpoints()
-
-if ispasspoint:
+        i += 1
+        a = int(input("계속해서 입력하려면 1을 입력하세요. 경유지 입력 종료는 0 입력: "))
+        if a == 0:
+            print(f'경유지 입력이 종료되었습니다. 입력 갯수 {i}')
+            break
+        
     # 입력된 경유지를 포함하여 선형 조정
-    adjusted_linestring = adjust_linestring_with_passpoints(adjusted_linestring, passpoint_coordinates)
-    
-    # 수정된 선형에 따라 새로운 각도를 계산
+    for pass_point in passpoint_coordinates:
+        adjusted_linestring = adjust_linestring_for_passpoint(adjusted_linestring,pass_point)
+
+    #다시한번 수정
+    #수정된 선형 교각계산
     new_angles = calculate_angles_and_plot(adjusted_linestring)
-
-
+    
 #초기 랜덤 반경 생성
 radius_list = []
 for i in range(len(new_angles)):
@@ -574,16 +555,7 @@ def check_last_ip_ep(adjusted_linestring, EC_XY, radius_list):
         radius_list[-1] = adjust_radius(radius_list, -1)
         print(f'마지막 반경: {radius_list[-1]}')
         return True
-
-def cal_EP_STA(adjusted_linestring,EC_XY,EC_STA_LIST):
-    LAST_EC_XY = EC_XY[-1]
-    EP = adjusted_linestring.coords[-1]
-    EC_EP_dist = calculate_distance(LAST_EC_XY[0],LAST_EC_XY[1],EP[0],EP[1])
-    EC_STA = EC_STA_LIST[-1]
-    EP_STA = EC_STA + EC_EP_dist
-    return EP_STA
     
-
 def main_loop(adjusted_linestring, radius_list, new_angles):
     j = 0
 
@@ -591,59 +563,37 @@ def main_loop(adjusted_linestring, radius_list, new_angles):
         print(f'루프 {j}회차')
         BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST = calculate_simple_curve(adjusted_linestring, radius_list, new_angles)
         CL_LIST = [ec - bc for ec, bc in zip(EC_STA_LIST, BC_STA_LIST)]
-        EP_STA = cal_EP_STA(adjusted_linestring, EC_XY, EC_STA_LIST)
+        
         isCurveOverlap_list = []
-                            
-        for i in range(len(BC_STA_LIST)):
-            print(f'현재 IP{i+1}')
-            if i == len(BC_STA_LIST) - 1:  # 마지막 인덱스 처리
-                max_R = max(radius_list[i - 1], radius_list[i])
-                bc_to_ec_dist = EP_STA - EC_STA_LIST[i]
-            else:  # 그 외의 경우
-                max_R = max(radius_list[i - 1], radius_list[i], radius_list[i + 1])
-                bc_to_ec_dist = BC_STA_LIST[i + 1] - EC_STA_LIST[i]
-           
+        
+        for i in range(len(BC_STA_LIST) - 1):
+            print(f'현재IP{i+1}')
+            max_R = max(radius_list[i - 1], radius_list[i], radius_list[i + 1])
+            bc_to_ec_dist = BC_STA_LIST[i + 1] - EC_STA_LIST[i]
             print(f'BC = {BC_STA_LIST[i]}, EC = {EC_STA_LIST[i]}, R = {radius_list[i]}')
             
-            if bc_to_ec_dist > 0:  # 겹치지 않은 경우
-                if bc_to_ec_dist < min_arc_to_arc_distance:  # 최소 곡선 거리보다 작은 경우
+            if bc_to_ec_dist > 0:#겹치지 않은경우
+                if bc_to_ec_dist < min_arc_to_arc_distance:#최소곡선길이보다 작으면
                     print(f'경고: IP{i + 2}번의 시작점과 IP{i + 1}번의 종점 간의 거리 {bc_to_ec_dist:.2f}m는 {min_arc_to_arc_distance} 미만입니다.')
-                    if max_R == radius_list[i - 1]:
-                        radius_list[i - 1] = adjust_radius(radius_list, i - 1)
-                    elif max_R == radius_list[i]:
-                        radius_list[i] = adjust_radius(radius_list, i)
-                    elif i != len(BC_STA_LIST) - 1 and max_R == radius_list[i + 1]:
-                        radius_list[i + 1] = adjust_radius(radius_list, i + 1)
-                    else:
-                        print('error')
+                    radius_list[i - 1 if max_R == radius_list[i - 1] else i + 1 if max_R == radius_list[i + 1] else i] = adjust_radius(radius_list, i)
                     isCurveOverlap_list.append(True)
                 else:
                     isCurveOverlap_list.append(False)
             else:
                 print(f'IP{i + 1}번과 IP{i + 2}번 곡선 겹침 L= {bc_to_ec_dist}')
                 
-                if max_R == radius_list[i - 1]:
-                    radius_list[i - 1] = adjust_radius(radius_list, i - 1)
-                elif max_R == radius_list[i]:
-                    radius_list[i] = adjust_radius(radius_list, i)
-                elif i != len(BC_STA_LIST) - 1 and max_R == radius_list[i + 1]:
-                    radius_list[i + 1] = adjust_radius(radius_list, i + 1)
-                else:
-                    print('error')
+                radius_list[i - 1 if max_R == radius_list[i - 1] else i + 1 if max_R == radius_list[i + 1] else i] = adjust_radius(radius_list, i)
                 isCurveOverlap_list.append(True)
-
-        print(f'EP  = {EP_STA}\n')
         islastoverlap = check_last_ip_ep(adjusted_linestring, EC_XY, radius_list)
         
         if all(not overlap for overlap in isCurveOverlap_list) and not islastoverlap:
-            print(f'루프 {j}회차 종료\n')
+            print(f'루프 {j}회차 종료')
             break
         
         j += 1
         print('---------------------------------------------------')
 
-    return BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST
-
+    return  BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST
 # 실행 부분
 BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST =main_loop(adjusted_linestring, radius_list, new_angles)
 
