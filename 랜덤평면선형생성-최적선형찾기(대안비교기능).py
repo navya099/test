@@ -1,6 +1,8 @@
 import random
 from shapely.geometry import Point, LineString
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # 추가
+import numpy as np
 from math import cos, sin, atan2, degrees, radians, pi
 import math
 from tkinter import filedialog, Tk, StringVar, ttk
@@ -12,6 +14,7 @@ import numpy as np
 from geopy.geocoders import Nominatim
 import ezdxf
 import time
+from matplotlib.figure import Figure
 
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
@@ -940,7 +943,7 @@ def generate_and_score_lines(num_iterations):
     # 점수 상위 10개의 선형 선택
     top_10_lines = sorted(scores_and_lines, key=lambda x: x[0], reverse=True)[:10]
 
-    return top_10_lines
+    return top_10_lines, passpoint_coordinates, passpoint_name_list
 
 def create_joined_linestirng(linestring,BC_XY,EC_XY,O_XY,direction):#선과 호를 이어서 새로운 linestring생성
     
@@ -964,7 +967,7 @@ def create_joined_linestirng(linestring,BC_XY,EC_XY,O_XY,direction):#선과 호�
 
 
 
-def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction):
+def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction, passpoint_coordinates, passpoint_name_list):
     """
     선형을 플로팅하는 함수
     """
@@ -993,10 +996,17 @@ def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction):
         if i != 0 and i != len(linestring.coords) - 1:
             ax.text(x, y, f'R={radius_list[i - 1]}', fontsize=12, ha='left', color='b')
 
+    if passpoint_coordinates:
+        for pass_point, name in zip(passpoint_coordinates, passpoint_name_list):
+            x, y = pass_point.x, pass_point.y
+            ax.scatter(x, y, color='r', marker='o', zorder=10)
+            ax.text(x, y, name, fontsize=12, ha='left', color='r')
+            
 
     ax.set_title('Selected LineString')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
+    ax.grid(True)
     ax.set_aspect('equal', adjustable='box')
     plt.draw()  # 플롯 업데이트
 
@@ -1047,12 +1057,12 @@ def main():
     
     num_iterations = 50  # 반복 횟수 설정
 
-    top_10_lines = generate_and_score_lines(num_iterations)
+    top_10_lines, passpoint_coordinates, passpoint_name_list = generate_and_score_lines(num_iterations)
 
     # Tkinter 초기화
     root = Tk()
     root.title("선형 선택")
-    root.geometry("300x100")
+    root.geometry("900x800")
 
     # 콤보박스에 사용할 라벨 생성
     combo_labels = [f'Line {i+1}: Score {top_10_lines[i][0]:.2f}' for i in range(len(top_10_lines))]
@@ -1064,16 +1074,24 @@ def main():
     combobox.bind("<<ComboboxSelected>>", onselect)
     
     # 플롯 생성
-    fig, ax = plt.subplots()
-    plot_line(ax, top_10_lines[0][1], top_10_lines[0][2], top_10_lines[0][3], top_10_lines[0][4], top_10_lines[0][5], top_10_lines[0][6])  # 처음에 첫 번째 선형을 플로팅  # 처음에 첫 번째 선형을 플로팅
+    # Initialize the plot
+    fig = plt.figure(figsize=(6, 6))
+    ax = fig.add_subplot()
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-    plt.show()
+    # Create a frame for the toolbar
+    toolbar_frame = tk.Frame(root)
+    toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+
+    # Add the navigation toolbar
+    toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+    toolbar.update()
+
+    
+    plot_line(ax, top_10_lines[0][1], top_10_lines[0][2], top_10_lines[0][3], top_10_lines[0][4], top_10_lines[0][5], top_10_lines[0][6],passpoint_coordinates, passpoint_name_list)  # 처음에 첫 번째 선형을 플로팅  # 처음에 첫 번째 선형을 플로팅
 
     root.mainloop()
-    
-    
-    
-    plt.show()
     
 if __name__ == "__main__":
     main()
