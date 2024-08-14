@@ -922,7 +922,7 @@ def generate_and_score_lines(num_iterations):
         print(f"Score: {score}")
 
         # 점수와 선형 정보를 저장
-        scores_and_lines.append((score, adjusted_linestring, BC_XY, EC_XY, O_XY, radius_list, direction, BC_STA_LIST, EC_STA_LIST, EP_STA))
+        scores_and_lines.append((score, adjusted_linestring, BC_XY, EC_XY, O_XY, radius_list, direction, BC_STA_LIST, EC_STA_LIST, EP_STA, passpoint_coordinates, passpoint_name_list))
 
 
         # 최고 점수를 가진 선형 저장
@@ -943,7 +943,7 @@ def generate_and_score_lines(num_iterations):
     # 점수 상위 10개의 선형 선택
     top_10_lines = sorted(scores_and_lines, key=lambda x: x[0], reverse=True)[:10]
 
-    return top_10_lines, passpoint_coordinates, passpoint_name_list
+    return top_10_lines
 
 def create_joined_linestirng(linestring,BC_XY,EC_XY,O_XY,direction):#선과 호를 이어서 새로운 linestring생성
     
@@ -1027,7 +1027,7 @@ def export_best_line(best_linestring, save_params, dxf_params):
 def onselect(event):#콤보박스 선택시
     selected_index = combobox.current()  # 콤보박스에서 선택한 인덱스
     selected_line = top_10_lines[selected_index]
-    plot_line(ax, selected_line[1], selected_line[2], selected_line[3], selected_line[4], selected_line[5], selected_line[6])
+    plot_line(ax, selected_line[1], selected_line[2], selected_line[3], selected_line[4], selected_line[5], selected_line[6], selected_line[10], selected_line[11])
     # top10 = (BC_XY, EC_XY, O_XY, radius_list, direction, BC_STA_LIST, EC_STA_LIST, EP_STA)
               #1, 2      3     4        5           6             7               8      9
     #save_params(radius_list, BC_STA_LIST, EC_STA_LIST, EP_STA, direction)
@@ -1057,7 +1057,7 @@ def main():
     
     num_iterations = 50  # 반복 횟수 설정
 
-    top_10_lines, passpoint_coordinates, passpoint_name_list = generate_and_score_lines(num_iterations)
+    top_10_lines = generate_and_score_lines(num_iterations)
 
     # Tkinter 초기화
     root = Tk()
@@ -1089,7 +1089,7 @@ def main():
     toolbar.update()
 
     
-    plot_line(ax, top_10_lines[0][1], top_10_lines[0][2], top_10_lines[0][3], top_10_lines[0][4], top_10_lines[0][5], top_10_lines[0][6],passpoint_coordinates, passpoint_name_list)  # 처음에 첫 번째 선형을 플로팅  # 처음에 첫 번째 선형을 플로팅
+    plot_line(ax, top_10_lines[0][1], top_10_lines[0][2], top_10_lines[0][3], top_10_lines[0][4], top_10_lines[0][5], top_10_lines[0][6], top_10_lines[0][10], top_10_lines[0][11])  # 처음에 첫 번째 선형을 플로팅  # 처음에 첫 번째 선형을 플로팅
 
     root.mainloop()
     
