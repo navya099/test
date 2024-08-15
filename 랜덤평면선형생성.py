@@ -1,9 +1,11 @@
 import random
 from shapely.geometry import Point, LineString
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # 추가
+import numpy as np
 from math import cos, sin, atan2, degrees, radians, pi
 import math
-from tkinter import filedialog
+from tkinter import filedialog, Tk, StringVar, ttk
 import tkinter as tk
 import simplekml
 import pyproj
@@ -12,7 +14,7 @@ import numpy as np
 from geopy.geocoders import Nominatim
 import ezdxf
 import time
-
+from matplotlib.figure import Figure
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
 
@@ -634,7 +636,7 @@ def adjust_linestring_for_passpoint(linestring,passpoint):
 # 테스트할 지명 입력
 def get_valid_coordinates(prompt):
     while True:
-        location_name = str(input(prompt))
+        location_name = prompt
         coordinates = get_coordinates(location_name)
         
         if coordinates is None:
@@ -647,22 +649,18 @@ def get_valid_coordinates(prompt):
 
 
 #경유지 로직
-def input_passpoints():
+def input_passpoints(ispasspoint):
     passpoint_coordinates = []
     passpoint_name_list = []
     i = 0
-    ispasspoint = None
     
     while True:
-        a = int(input('경유지 유무 1: 있음 0: 없음: '))
         
-        if a == 0:  # 사용자에게 경유지 입력을 중단할 옵션 제공
+        if ispasspoint == 0:  # 사용자에게 경유지 입력을 중단할 옵션 제공
             print('경유지를 생략합니다.')
-            ispasspoint = False
-            return ispasspoint, passpoint_coordinates, passpoint_name_list
+            return passpoint_coordinates, passpoint_name_list
         else:
-            passpoint_coordinate, passpoint_name = get_valid_coordinates("경유지 입력: ")
-            ispasspoint = True
+            passpoint_coordinate, passpoint_name = get_valid_coordinates(str(input("경유지 입력: ")))
             print(f"경유지: {passpoint_name} = {passpoint_coordinate}")
             pass_point = Point(calc_pl2xy((passpoint_coordinate[1], passpoint_coordinate[0])))
             passpoint_coordinates.append(pass_point)
@@ -673,7 +671,7 @@ def input_passpoints():
 
             if continue_input == 0:
                 print(f'경유지 입력이 종료되었습니다. 입력 갯수: {i}')
-                return ispasspoint, passpoint_coordinates, passpoint_name_list
+                return passpoint_coordinates, passpoint_name_list
 
 def adjust_linestring_with_passpoints(adjusted_linestring, passpoint_coordinates):
     for pass_point in passpoint_coordinates:
@@ -733,17 +731,17 @@ def main_loop(adjusted_linestring, radius_list, new_angles,min_arc_to_arc_distan
     j = 0
 
     while True:
-        print(f'루프 {j}회차')
+        #print(f'루프 {j}회차')
         BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST = calculate_simple_curve(adjusted_linestring, radius_list, new_angles)
         CL_LIST = [ec - bc for ec, bc in zip(EC_STA_LIST, BC_STA_LIST)]
         EP_STA = cal_EP_STA(adjusted_linestring, EC_XY, EC_STA_LIST)
         isCurveOverlap_list = []
         
-        print(f'BP  = 0km000.00\n')
+        #print(f'BP  = 0km000.00\n')
         
         for i in range(len(BC_STA_LIST)):
             
-            print(f'현재 IP{i+1}')
+            #print(f'현재 IP{i+1}')
             
             if i == len(BC_STA_LIST) - 1:  # 마지막 인덱스 처리
                 max_R = max(radius_list[i - 1], radius_list[i])
@@ -752,16 +750,16 @@ def main_loop(adjusted_linestring, radius_list, new_angles,min_arc_to_arc_distan
                 max_R = max(radius_list[i - 1], radius_list[i], radius_list[i + 1])
                 bc_to_ec_dist = BC_STA_LIST[i + 1] - EC_STA_LIST[i]
            
-            print(f'BC = {format_distance(BC_STA_LIST[i])}, EC = {format_distance(EC_STA_LIST[i])}, R = {radius_list[i]}')
+            #print(f'BC = {format_distance(BC_STA_LIST[i])}, EC = {format_distance(EC_STA_LIST[i])}, R = {radius_list[i]}')
 
             
             #첫번째 곡선 겹침체크
             if BC_STA_LIST[0] < 0:
-                print(f'BP와 IP1번 곡선 겹침 L= {BC_STA_LIST[0]}m')
+                #print(f'BP와 IP1번 곡선 겹침 L= {BC_STA_LIST[0]}m')
                 radius_list[0] = adjust_radius(radius_list, 0)
                 
             if BC_STA_LIST[0] < min_arc_to_arc_distance:
-                print(f'경고: BP와 IP1번간의 거리 {BC_STA_LIST[0]}m는 {min_arc_to_arc_distance}m 미만입니다.')
+                #print(f'경고: BP와 IP1번간의 거리 {BC_STA_LIST[0]}m는 {min_arc_to_arc_distance}m 미만입니다.')
                 
                 radius_list[0] = adjust_radius(radius_list, 0)
             
@@ -770,9 +768,9 @@ def main_loop(adjusted_linestring, radius_list, new_angles,min_arc_to_arc_distan
 
                     #EP체크
                     if i == len(BC_STA_LIST) - 1:
-                        print(f'경고: IP{i + 1}번과 EP간의 거리 {bc_to_ec_dist:.2f}m는 {min_arc_to_arc_distance}m 미만입니다.')
+                        pass#print(f'경고: IP{i + 1}번과 EP간의 거리 {bc_to_ec_dist:.2f}m는 {min_arc_to_arc_distance}m 미만입니다.')
                     else:
-                        print(f'경고: IP{i + 2}번과 IP{i + 1}번간의 거리 {bc_to_ec_dist:.2f}m는 {min_arc_to_arc_distance}m 미만입니다.')
+                        pass#print(f'경고: IP{i + 2}번과 IP{i + 1}번간의 거리 {bc_to_ec_dist:.2f}m는 {min_arc_to_arc_distance}m 미만입니다.')
                         
                     if max_R == radius_list[i - 1]:
                         radius_list[i - 1] = adjust_radius(radius_list, i - 1)
@@ -786,7 +784,7 @@ def main_loop(adjusted_linestring, radius_list, new_angles,min_arc_to_arc_distan
                 else:
                     isCurveOverlap_list.append(False)
             else:
-                print(f'IP{i + 1}번과 IP{i + 2}번 곡선 겹침 L= {bc_to_ec_dist}')
+                #print(f'IP{i + 1}번과 IP{i + 2}번 곡선 겹침 L= {bc_to_ec_dist}')
                 
                 if max_R == radius_list[i - 1]:
                     radius_list[i - 1] = adjust_radius(radius_list, i - 1)
@@ -798,26 +796,30 @@ def main_loop(adjusted_linestring, radius_list, new_angles,min_arc_to_arc_distan
                     print('error')
                 isCurveOverlap_list.append(True)
 
-        print(f'EP  = {format_distance(EP_STA)}\n')
+        #print(f'EP  = {format_distance(EP_STA)}\n')
         islastoverlap = check_last_ip_ep(adjusted_linestring, EC_XY, radius_list)
         
         if all(not overlap for overlap in isCurveOverlap_list) and not islastoverlap:
-            print(f'루프 {j}회차 종료\n')
+            print('\n-------------------------------------')
+            print(f'루프 {j}회차 종료')
+            print('-------------------------------------')
             break
         
         if j >200:
+            print('\n-------------------------------------')
             print('루프 {j}회차 종료. 곡선반경 조정 실패')
+            print('-------------------------------------')
             break
         
         j += 1
-        print('---------------------------------------------------')
+        #print('---------------------------------------------------')
 
     return BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST, EP_STA
 
-def process_coordinates():
+def process_coordinates(start_station,end_station):
     # 유효한 시작 지점과 종료 지점 좌표를 입력받기
-    start_coordinates, start_name = get_valid_coordinates("BP 장소 입력: ")
-    end_coordinates, end_name = get_valid_coordinates("EP 장소 입력: ")
+    start_coordinates, start_name = get_valid_coordinates(start_station)
+    end_coordinates, end_name = get_valid_coordinates(end_station)
 
     print(f"시작 좌표: {start_name} : {start_coordinates}")
     print(f"종료 좌표: {end_name} : {end_coordinates}")
@@ -827,6 +829,7 @@ def process_coordinates():
     return start_point, end_point
 
 def initialize_parameters():
+    global max_points, min_distance, max_distance, min_radius, max_radius, min_arc_to_arc_distance, min_arc_length
     max_points = 100
     min_distance = 3000
     max_distance = 5000
@@ -834,66 +837,163 @@ def initialize_parameters():
     max_radius = 20000
     min_arc_to_arc_distance = 1000
     min_arc_length = 1300
-    return max_points, min_distance, max_distance, min_radius, max_radius, min_arc_to_arc_distance, min_arc_length
+    
 
+def save_files(adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST, EP_STA, direction):
+    # Hide the root window
 
-def plot_results(adjusted_linestring, BC_XY, EC_XY, O_XY, radius_list, direction, passpoint_coordinates, passpoint_name_list):
-    x, y = adjusted_linestring.xy
-    plt.plot(x, y, color='gray', linestyle='--')
+    alignment_file_path = 'c:/temp/alignment_file.txt'
+    if alignment_file_path:
+        with open(alignment_file_path, "w") as file:
+            for i, point in enumerate(adjusted_linestring.coords):
+                x, y = point
+                if i == 0 or i == len(adjusted_linestring.coords) - 1:
+                    file.write(f'{x:.4f},{y:.4f}\n')
+                else:
+                    radius = radius_list[i - 1]
+                    file.write(f'{x:.4f},{y:.4f},{radius}\n')
 
-    x_values = [adjusted_linestring.coords[0][0], BC_XY[0][0]]
-    y_values = [adjusted_linestring.coords[0][1], BC_XY[0][1]]
-    x_values2 = [adjusted_linestring.coords[-1][0], EC_XY[-1][0]]
-    y_values2 = [adjusted_linestring.coords[-1][1], EC_XY[-1][1]]
+    BVE_file_path = 'c:/temp/bve.txt'
 
-    plt.plot(x_values, y_values, color='r')
-    plt.plot(x_values2, y_values2, color='r')
+    if BVE_file_path:
+        with open(BVE_file_path, "w") as file:
+            file.write(f',;BP\n0,.curve 0;\n')
+            for i in range(len(BC_STA_LIST)):
+                BC = BC_STA_LIST[i]
+                EC = EC_STA_LIST[i]
+                minus = direction[i]
+                radius = radius_list[i]
+                curve_str = f'{BC:.2f},.curve {radius};\n' if minus == 1 else f'{BC:.2f},.curve -{radius};\n'
+                file.write(f',;IP{i+1}\n{curve_str}{EC:.2f},.curve 0;\n')
+            file.write(f',;EP\n{EP_STA:.2f},.curve 0;\n')
 
+    try:
+        create_kml(adjusted_linestring.coords)
+        print('kml 저장성공\n')
+    except ValueError as e:
+        print(f'kml 저장 중 에러 발생: {e}')
+
+def calculate_score(length, min_radius, num_curves, cost):
+    """
+    점수 계산 함수
+    - length: 노선 길이 (km)
+    - min_radius: 최소 곡선 반경 (m)
+    - num_curves: 곡선의 개수
+    
+    점수는 임의로 설정한 가중치와 수식으로 계산됩니다.
+    """
+    # 각 평가 요소의 가중치 설정
+    length_weight = 0.25
+    cost_weight = 0.3
+    min_radius_weight = 0.25
+    num_curves_weight  = 0.25
+    score = length * length_weight  + min_radius * min_radius_weight + num_curves * num_curves_weight + cost * cost_weight
+    
+    return score
+
+def generate_and_score_lines(ispasspoint,passpoint_coordinates,passpoint_name_list,start_bearing,end_bearing):
+
+    scores_and_lines = []
+
+    
+    # 랜덤 선형 생성
+    random_linestring = generate_random_linestring_within_radius(start_point, end_point, max_points, min_distance, max_distance)
+    angles = calculate_angles_and_plot(random_linestring)
+    adjusted_linestring = adjust_linestring(random_linestring, angles)
+    new_angles = calculate_angles_and_plot(adjusted_linestring)
+
+    if ispasspoint:
+        adjusted_linestring = adjust_linestring_with_passpoints(adjusted_linestring, passpoint_coordinates)
+        new_angles = calculate_angles_and_plot(adjusted_linestring)
+    if isstaticbearing:
+       adjusted_linestring = static_beating(adjusted_linestring, start_bearing, end_bearing)
+       new_angles = calculate_angles_and_plot(adjusted_linestring)
+       
+    radius_list = [adjust_radius_by_angle(angle, min_radius, max_radius) for angle in new_angles]
+    BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST, EP_STA = main_loop(adjusted_linestring, radius_list, new_angles, min_arc_to_arc_distance)
+
+    
+    new_linestring = create_joined_linestirng(adjusted_linestring,BC_XY,EC_XY,O_XY,direction)
+    
+    # 점수요소계산
+    length_km = new_linestring.length / 1000
+    min_radius_for_alignment = min(radius_list)
+    num_ip = len(BC_XY)
+    cost_per_km = 211
+    
+    total_cost = length_km * cost_per_km
+    formatted_cost = format_cost(total_cost)
+
+    #console_print_line_info(BC_XY,new_linestring,radius_list)
+    
+    score = calculate_score(length_km, min_radius_for_alignment, num_ip, total_cost)
+    #print(f"Score: {score}")
+
+    # 점수와 선형 정보를 저장
+    scores_and_lines.append((score, adjusted_linestring, BC_XY, EC_XY, O_XY, radius_list, direction, BC_STA_LIST, EC_STA_LIST, EP_STA, passpoint_coordinates, passpoint_name_list))
+
+    
+    return scores_and_lines
+
+def create_joined_linestirng(linestring,BC_XY,EC_XY,O_XY,direction):#선과 호를 이어서 새로운 linestring생성
+    
+    #호 리스트 생성
     acr1, acr2 = [], []
     for i in range(len(BC_XY)):
         x_arc, y_arc = draw_arc(direction[i], BC_XY[i], EC_XY[i], O_XY[i])
-        plt.plot(x_arc, y_arc, label='선형', color='RED')
         acr1.append(x_arc)
         acr2.append(y_arc)
-
-        if i < len(BC_XY) - 1:
-            plt.plot(*zip(*[BC_XY[i+1], EC_XY[i]]), linestyle='-', color='r')
 
     acr1 = [item for sublist in acr1 for item in sublist]
     acr2 = [item for sublist in acr2 for item in sublist]
     curve_coords = list(zip(acr1, acr2))
-    combined_coords = [adjusted_linestring.coords[0]] + curve_coords + [adjusted_linestring.coords[-1]]
+    combined_coords = [linestring.coords[0]] + curve_coords + [linestring.coords[-1]]
     new_linestring = LineString(combined_coords)
+    
+    return new_linestring
 
-    print(f'노선연장 : {new_linestring.length / 1000:.2f} km')
+def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction, passpoint_coordinates, passpoint_name_list):
+    """
+    선형을 플로팅하는 함수
+    """
+    ax.clear()  # 이전 플롯을 지움
+    x, y = linestring.xy
+    ax.plot(x, y, color='gray', linestyle='--')
 
-    cost_per_km = 211
-    length_km = new_linestring.length / 1000
-    total_cost = length_km * cost_per_km
-    formatted_cost = format_cost(total_cost)
-    print(f'공사비 : {formatted_cost}')
+    # 첫번째와 마지막 line plot
+    ax.plot([linestring.coords[0][0], BC_XY[0][0]], [linestring.coords[0][1], BC_XY[0][1]], color='r')
+    ax.plot([linestring.coords[-1][0], EC_XY[-1][0]], [linestring.coords[-1][1], EC_XY[-1][1]], color='r')
 
-    min_radius_for_alignment = min(radius_list)
-    print(f'최소곡선반경 R= {min_radius_for_alignment}')
+    # 각 곡선을 플로팅
+    for i in range(len(BC_XY)):
+        x_arc, y_arc = draw_arc(direction[i], BC_XY[i], EC_XY[i], O_XY[i])
+        ax.plot(x_arc, y_arc, label='선형', color='RED')
 
-    for i, point in enumerate(adjusted_linestring.coords):
+        #곡선 사이 직선 플로팅
+        if i < len(BC_XY) - 1:  # EC_XY의 마지막 요소가 BC_XY의 마지막 요소보다 하나 적으므로 이를 고려
+            ax.plot(*zip(*[BC_XY[i+1], EC_XY[i]]), linestyle='-', color='r')
+
+    #곡선반경과 IP넘버 텍스트
+    for i, point in enumerate(linestring.coords):
         x, y = point
-        label = 'BP' if i == 0 else 'EP' if i == len(adjusted_linestring.coords) - 1 else f'IP {i}'
-        plt.text(x, y, label, fontsize=12, ha='right', color='r')
-        if i != 0 and i != len(adjusted_linestring.coords) - 1:
-            plt.text(x, y, f'R={radius_list[i - 1]}', fontsize=12, ha='left', color='b')
+        label = 'BP' if i == 0 else 'EP' if i == len(linestring.coords) - 1 else f'IP {i}'
+        ax.text(x, y, label, fontsize=12, ha='right', color='r')
+        if i != 0 and i != len(linestring.coords) - 1:
+            ax.text(x, y, f'R={radius_list[i - 1]}', fontsize=12, ha='left', color='b')
 
     if passpoint_coordinates:
         for pass_point, name in zip(passpoint_coordinates, passpoint_name_list):
             x, y = pass_point.x, pass_point.y
-            plt.scatter(x, y, color='r', marker='o', zorder=10)
-            plt.text(x, y, name, fontsize=12, ha='left', color='r')
+            ax.scatter(x, y, color='r', marker='o', zorder=10)
+            ax.text(x, y, name, fontsize=12, ha='left', color='r')
+            
 
-    plt.title('Random LineString with Point Numbers and Inner Angles')
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.show()
+    ax.set_title('Selected LineString')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.grid(True)
+    ax.set_aspect('equal', adjustable='box')
+    plt.draw()  # 플롯 업데이트
     
 def save_files(adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST, EP_STA, direction):
     # Hide the root window
@@ -929,40 +1029,248 @@ def save_files(adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST, EP_ST
     except ValueError as e:
         print(f'kml 저장 중 에러 발생: {e}')
 
-    
+def export_best_line(best_linestring, save_params, dxf_params):
+    if best_linestring:
+        save_files(best_linestring, *save_params)
         
+        # DXF 저장
+        try:
+            create_dxf(best_linestring.coords, *dxf_params)
+            print('도면 저장성공\n')
+        except ValueError as e:
+            print(f'도면 저장 중 에러 발생: {e}')
+            
+def exit_program():
+    print("프로그램을 종료합니다.")
+    root.destroy()
+
+def onselect():
+    global start_bearing, end_bearing
+    start_bearing = int(start_bearing_var.get())
+    end_bearing = int(end_bearing_var.get())
+    
+    print(start_bearing)
+    main_cal_logic(ispasspoint)
+    if top_10_lines:
+        selected_line = top_10_lines[0]
+        console_print_line_info(selected_line[2], selected_line[1], selected_line[5])
+        plot_line(ax, selected_line[1], selected_line[2], selected_line[3], selected_line[4], selected_line[5], selected_line[6], selected_line[10], selected_line[11])
+        save_params = (selected_line[5], selected_line[7], selected_line[8], selected_line[9], selected_line[6])
+        dxf_params = (selected_line[2], selected_line[3], selected_line[4], selected_line[5], selected_line[6])
+        export_best_line(selected_line[1], save_params, dxf_params)
+        
+    else:
+        print("No top lines to plot or export.")
+        
+def console_print_line_info(bc,linestring,radius_list):
+    num_ip = len(bc)
+    length_km = linestring.length / 1000
+    cost_per_km = 211
+    min_radius_for_alignment = min(radius_list)   
+    total_cost = length_km * cost_per_km
+    formatted_cost = format_cost(total_cost)
+    print('-------------------------------------')    
+    print('노선정보출력')
+    print(f'IP 갯수 : {num_ip}')
+    print(f'노선연장 : {length_km:.2f} km')
+    print(f'공사비 : {formatted_cost}')
+    print(f'최소곡선반경 R= {min_radius_for_alignment}')
+    print('-------------------------------------')
+
+def rotate_point(origin, point, angle):
+    """Rotate a point counterclockwise around a given origin."""
+    angle_rad = math.radians(angle)
+    ox, oy = origin
+    px, py = point
+    qx = ox + math.cos(angle_rad) * (px - ox) - math.sin(angle_rad) * (py - oy)
+    qy = oy + math.sin(angle_rad) * (px - ox) + math.cos(angle_rad) * (py - oy)
+    return (qx, qy)
+
+
+def static_beating(linestring, start_bearing, end_bearing):
+    """Adjust the linestring based on the start and end bearings."""
+    print('함수접근')
+    if not isstaticbearing:
+        print('고정방위각 없음')
+        return linestring
+
+    coords = list(linestring.coords)
+    
+    if len(coords) < 4:
+        raise ValueError("Linestring must have at least 4 points for static bearing adjustment.")
+    
+    BP = coords[0]
+    IP1 = coords[1]
+    IP_last = coords[-2]
+    EP = coords[-1]
+
+    # Calculate bearings
+    # Calculate bearings
+    bearing_start = calculate_bearing(BP[0], BP[1], IP1[0], IP1[1])
+    print(f'시작방위각: {bearing_start}, {start_bearing}')
+    bearing_end = calculate_bearing(IP_last[0], IP_last[1], EP[0], EP[1])
+    print(f'종점방위각: {bearing_end}, {end_bearing}')
+    
+    # Compute the needed rotations
+    rotate_start = bearing_start - start_bearing
+    print(f'시점 회전할 각도: {rotate_start}')
+    rotate_end = bearing_end - end_bearing
+    print(f'종점 회전할 각도: {rotate_end}')
+    # Apply rotations
+    IP1_rotated = rotate_point(BP, IP1, -rotate_start)
+    lastIP_rotated = rotate_point(EP, IP_last, -rotate_end)
+    
+    # Create the new linestring
+    new_coords = [BP, IP1_rotated] + coords[2:-2] + [lastIP_rotated, EP]
+    new_linestring = LineString(new_coords)
+
+    NBP = new_coords[0]
+    NIP1 = new_coords[1]
+    NIP_last = new_coords[-2]
+    NEP = new_coords[-1]
+    Nbearing_start = calculate_bearing(NBP[0], NBP[1], NIP1[0], NIP1[1])
+    Nbearing_end = calculate_bearing(NIP_last[0], NIP_last[1], NEP[0], NEP[1])
+    
+    print(f'변경된 시점방위각: {Nbearing_start}')
+    print(f'변경된 종점방위각: {Nbearing_end}')
+    return new_linestring
+
+def toggle_ispasspoint():
+    global ispasspoint
+    ispasspoint = ispasspoint_var.get() == 1
+
+def toggle_isstaticbearing():
+    global isstaticbearing
+    isstaticbearing = isstaticbearing_var.get() == 1
+    
+def initial_GUI():
+    global root, ax, start_waypoint, end_waypoint, ispasspoint_var, ispasspoint, isstaticbearing, isstaticbearing_var
+    global start_bearing, start_bearing_var, end_bearing, end_bearing_var
+    # Tkinter 초기화
+    root = Tk()
+    root.title("랜덤 선형뽑기")
+    root.geometry("900x800")
+
+    # 플롯 생성
+    # Initialize the plot
+    fig = plt.figure(figsize=(6, 6))
+    ax = fig.add_subplot()
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    # Create a frame for the toolbar
+    toolbar_frame = tk.Frame(root)
+    toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+
+    # Add the navigation toolbar
+    toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+    toolbar.update()
+
+    # Create a frame to contain buttons
+    button_frame = tk.Frame(root)
+    button_frame.pack(pady=5)
+
+    # Create a frame to contain buttons
+    CHEACK_frame = tk.Frame(root)
+    CHEACK_frame.pack(pady=5)
+    
+    # 다시그리기 버튼 생성
+    redraw_button = tk.Button(button_frame, text="다시그리기", command=onselect)
+    redraw_button.pack(side=tk.LEFT, pady=5, padx=10)
+
+    # 종료 버튼 생성
+    exit_button = tk.Button(button_frame, text="종료", command=exit_program)
+    exit_button.pack(side=tk.LEFT, pady=5, padx=10)
+
+    ispasspoint_var = tk.IntVar(value=0)
+    
+    # Create the checkbox
+    ispasspoint_checkbox = tk.Checkbutton(CHEACK_frame, text="경유지 있음", variable=ispasspoint_var, command=toggle_ispasspoint)
+    ispasspoint_checkbox.pack(side=tk.LEFT, pady=5, padx=10)
+
+    isstaticbearing_var = tk.IntVar(value=0)
+    # Create the checkbox
+    isstaticbearing_checkbox = tk.Checkbutton(CHEACK_frame, text="방위각 고정", variable=isstaticbearing_var, command=toggle_isstaticbearing)
+    isstaticbearing_checkbox.pack(side=tk.LEFT, pady=5, padx=10)
+
+    # Create a frame to contain buttons
+    TEXT_frame = tk.Frame(root)
+    TEXT_frame.pack(pady=5)
+    
+    # Create a frame to contain buttons
+    BOX_frame = tk.Frame(root)
+    BOX_frame.pack(pady=5)
+    
+    tk.Label(TEXT_frame, text="시작점:").pack(side=tk.LEFT, padx=70, pady=5)
+    start_waypoint = tk.Entry(BOX_frame)
+    start_waypoint.pack(side=tk.LEFT, pady=5, padx=10)
+    start_waypoint.insert(0, "함열역")
+
+    
+    tk.Label(TEXT_frame, text="끝점:").pack(side=tk.LEFT,padx=70, pady=5)
+    end_waypoint = tk.Entry(BOX_frame)
+    end_waypoint.pack(side=tk.LEFT, pady=5, padx=10)
+    end_waypoint.insert(0, "소정리역")
+
+    tk.Label(TEXT_frame, text="시작 방위각(도):").pack(side=tk.LEFT,padx=70, pady=5)
+    start_bearing_var = tk.Entry(BOX_frame)
+    start_bearing_var.pack(side=tk.LEFT, pady=5, padx=10)
+    start_bearing_var.insert(0, "24")
+
+    tk.Label(TEXT_frame, text="종점 방위각(도):").pack(side=tk.LEFT,padx=70, pady=5)
+    end_bearing_var = tk.Entry(BOX_frame)
+    end_bearing_var.pack(side=tk.LEFT, pady=5, padx=10)
+    end_bearing_var.insert(0, "34")
+    
+    start_station = start_waypoint.get()
+    end_station = end_waypoint.get()
+
+    start_bearing = int(start_bearing_var.get())
+    end_bearing = int(end_bearing_var.get())
+    
+    ispasspoint = ispasspoint_var.get()
+    isstaticbearing = isstaticbearing_var.get()
+    
+def main_cal_logic(ispasspoint):
+    global passpoint_coordinates, passpoint_name_list, top_10_lines, start_bearing ,end_bearing
+    passpoint_coordinates, passpoint_name_list = input_passpoints(ispasspoint)
+    
+    top_10_lines = generate_and_score_lines(ispasspoint, passpoint_coordinates, passpoint_name_list,start_bearing,end_bearing)
+
 #메인코드
-
 def main():
-    start_point, end_point = process_coordinates()
-    max_points, min_distance, max_distance, min_radius, max_radius, min_arc_to_arc_distance, min_arc_length = initialize_parameters()
+    global start_point, end_point, top_10_lines
+    global start_station, end_station
+    global max_points, min_distance, max_distance, min_radius, max_radius, min_arc_to_arc_distance, min_arc_length
+    global ispasspoint
     
-    random_linestring = generate_random_linestring_within_radius(start_point, end_point, max_points, min_distance, max_distance)
-    angles = calculate_angles_and_plot(random_linestring)
-    adjusted_linestring = adjust_linestring(random_linestring, angles)
-    new_angles = calculate_angles_and_plot(adjusted_linestring)
+    initial_GUI()
 
-    ispasspoint, passpoint_coordinates, passpoint_name_list = input_passpoints()
+    # Retrieve user input for start and end stations
+    start_station = start_waypoint.get()
+    end_station = end_waypoint.get()
     
-    if ispasspoint:
-        adjusted_linestring = adjust_linestring_with_passpoints(adjusted_linestring, passpoint_coordinates)
-        new_angles = calculate_angles_and_plot(adjusted_linestring)
+    start_point, end_point = process_coordinates(start_station, end_station)
+    initialize_parameters()
 
-    radius_list = [adjust_radius_by_angle(angle, min_radius, max_radius) for angle in new_angles]
-    BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST,EP_STA = main_loop(adjusted_linestring, radius_list, new_angles, min_arc_to_arc_distance)
+    '''
+    main_cal_logic(ispasspoint)
+
+    if top_10_lines:
+        first_line = top_10_lines[0]
+        plot_line(ax, first_line[1], first_line[2], first_line[3], first_line[4], first_line[5], first_line[6], first_line[10], first_line[11])
+        save_files(first_line[1], first_line[5], first_line[7], first_line[8], first_line[9], first_line[6])
+
+        try:
+            create_dxf(first_line[1].coords, first_line[2], first_line[3], first_line[4], first_line[5], first_line[6])
+            print('도면 저장 성공\n')
+        except ValueError as e:
+            print(f'도면 저장 중 에러 발생: {e}')
+    else:
+        print("No lines generated.")
+    '''
     
-    print(f'IP좌표출력')
-    print(f'IP 갯수 : {len(adjusted_linestring.coords) - 2}')
-
-    plot_results(adjusted_linestring, BC_XY, EC_XY, O_XY, radius_list, direction, passpoint_coordinates, passpoint_name_list)
-    save_files(adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST,EP_STA, direction)
-
-    #dxf저장
-    try:
-        create_dxf(adjusted_linestring.coords, BC_XY, EC_XY, O_XY, radius_list, direction)
-        print('도면 저장성공\n')
-    except ValueError as e:
-        print(f'도면 저장 중 에러 발생: {e}')
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
