@@ -508,6 +508,7 @@ def create_kml(point_list):  # kml작성함수
     # Open the saved KML file
     os.system(f'start {kml_file}')  # This command works on Windows
 
+
 def get_random_radius(min_radius, max_radius):
     # min_radius와 max_radius 사이의 가장 작은 1000의 배수 구하기
     start = (min_radius + 1000) // 1000 * 1000
@@ -816,16 +817,44 @@ def main_loop(adjusted_linestring, radius_list, new_angles,min_arc_to_arc_distan
 
     return BC_XY, EC_XY, O_XY, direction, BC_STA_LIST, EC_STA_LIST, EP_STA
 
-def process_coordinates(start_station,end_station):
-    # 유효한 시작 지점과 종료 지점 좌표를 입력받기
-    start_coordinates, start_name = get_valid_coordinates(start_station)
-    end_coordinates, end_name = get_valid_coordinates(end_station)
+def is_number(s):
+    """Check if the string s represents a number."""
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+    
+def process_coordinates(start_station, end_station):
+    """Process start and end coordinates and return Points."""
+    # Initialize variables
+    start_coordinates, start_name = None, None
+    end_coordinates, end_name = None, None
+
+    # Check if start_station and end_station are numbers
+    if is_number(start_station):
+        start_coordinates = start_station # Adjust this if needed
+        start_name = f'BP'
+    else: 
+        start_coordinates, start_name = get_valid_coordinates(start_station)
+    
+    if is_number(end_station):
+        end_coordinates = end_station # Adjust this if needed
+        end_name = f'EP'
+        
+    else:
+        end_coordinates, end_name = get_valid_coordinates(end_station)
+
+    if start_coordinates is None or end_coordinates is None:
+        raise ValueError("Failed to determine valid coordinates for start or end points.")
 
     print(f"시작 좌표: {start_name} : {start_coordinates}")
     print(f"종료 좌표: {end_name} : {end_coordinates}")
 
+    # Convert coordinates to Points
     start_point = Point(calc_pl2xy((start_coordinates[1], start_coordinates[0])))
     end_point = Point(calc_pl2xy((end_coordinates[1], end_coordinates[0])))
+    
     return start_point, end_point
 
 def initialize_parameters():
@@ -995,7 +1024,7 @@ def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction, passpo
     ax.set_aspect('equal', adjustable='box')
     plt.draw()  # 플롯 업데이트
     
-def save_files(adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST, EP_STA, direction):
+def export_txt(adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST, EP_STA, direction):
     # Hide the root window
 
     alignment_file_path = 'c:/temp/alignment_file.txt'
@@ -1023,16 +1052,15 @@ def save_files(adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST, EP_ST
                 file.write(f',;IP{i+1}\n{curve_str}{EC:.2f},.curve 0;\n')
             file.write(f',;EP\n{EP_STA:.2f},.curve 0;\n')
 
+def export_kml(adjusted_linestring):
     try:
         create_kml(adjusted_linestring.coords)
         print('kml 저장성공\n')
     except ValueError as e:
         print(f'kml 저장 중 에러 발생: {e}')
 
-def export_best_line(best_linestring, save_params, dxf_params):
+def export_dxf(best_linestring, dxf_params):
     if best_linestring:
-        save_files(best_linestring, *save_params)
-        
         # DXF 저장
         try:
             create_dxf(best_linestring.coords, *dxf_params)
@@ -1045,19 +1073,34 @@ def exit_program():
     root.destroy()
 
 def onselect():
-    global start_bearing, end_bearing
+    global start_bearing, end_bearing, start_station, end_station
+    global start_point, end_point, start_waypoint, end_waypoint
+    
     start_bearing = int(start_bearing_var.get())
     end_bearing = int(end_bearing_var.get())
+
+    start_station = start_waypoint.get()
+    end_station = end_waypoint.get()
     
-    print(start_bearing)
+    start_point, end_point = process_coordinates(start_station, end_station)
+    
+    
     main_cal_logic(ispasspoint)
+    
     if top_10_lines:
         selected_line = top_10_lines[0]
+        #adjusted_linestring,BC_XY,EC_XY,O_XY,direction
+        new_linestring = create_joined_linestirng(selected_line[1],selected_line[2], selected_line[3], selected_line[4],selected_line[6])
         console_print_line_info(selected_line[2], selected_line[1], selected_line[5])
         plot_line(ax, selected_line[1], selected_line[2], selected_line[3], selected_line[4], selected_line[5], selected_line[6], selected_line[10], selected_line[11])
-        save_params = (selected_line[5], selected_line[7], selected_line[8], selected_line[9], selected_line[6])
+        txt_params = (selected_line[5], selected_line[7], selected_line[8], selected_line[9], selected_line[6])
         dxf_params = (selected_line[2], selected_line[3], selected_line[4], selected_line[5], selected_line[6])
-        export_best_line(selected_line[1], save_params, dxf_params)
+
+        #(score0, adjusted_linestring1, BC_XY2, EC_XY3, O_XY4, radius_list5, direction6, BC_STA_LIST7, EC_STA_LIST8, EP_STA9,
+        #passpoint_coordinates10, passpoint_name_list11)
+        export_dxf(selected_line[1], dxf_params)
+        export_txt(selected_line[1], *txt_params)
+        export_kml(new_linestring)
         
     else:
         print("No top lines to plot or export.")
@@ -1089,9 +1132,9 @@ def rotate_point(origin, point, angle):
 
 def static_beating(linestring, start_bearing, end_bearing):
     """Adjust the linestring based on the start and end bearings."""
-    print('함수접근')
+    
     if not isstaticbearing:
-        print('고정방위각 없음')
+        
         return linestring
 
     coords = list(linestring.coords)
@@ -1107,15 +1150,15 @@ def static_beating(linestring, start_bearing, end_bearing):
     # Calculate bearings
     # Calculate bearings
     bearing_start = calculate_bearing(BP[0], BP[1], IP1[0], IP1[1])
-    print(f'시작방위각: {bearing_start}, {start_bearing}')
+    
     bearing_end = calculate_bearing(IP_last[0], IP_last[1], EP[0], EP[1])
-    print(f'종점방위각: {bearing_end}, {end_bearing}')
+    
     
     # Compute the needed rotations
     rotate_start = bearing_start - start_bearing
-    print(f'시점 회전할 각도: {rotate_start}')
+    
     rotate_end = bearing_end - end_bearing
-    print(f'종점 회전할 각도: {rotate_end}')
+    
     # Apply rotations
     IP1_rotated = rotate_point(BP, IP1, -rotate_start)
     lastIP_rotated = rotate_point(EP, IP_last, -rotate_end)
@@ -1124,15 +1167,6 @@ def static_beating(linestring, start_bearing, end_bearing):
     new_coords = [BP, IP1_rotated] + coords[2:-2] + [lastIP_rotated, EP]
     new_linestring = LineString(new_coords)
 
-    NBP = new_coords[0]
-    NIP1 = new_coords[1]
-    NIP_last = new_coords[-2]
-    NEP = new_coords[-1]
-    Nbearing_start = calculate_bearing(NBP[0], NBP[1], NIP1[0], NIP1[1])
-    Nbearing_end = calculate_bearing(NIP_last[0], NIP_last[1], NEP[0], NEP[1])
-    
-    print(f'변경된 시점방위각: {Nbearing_start}')
-    print(f'변경된 종점방위각: {Nbearing_end}')
     return new_linestring
 
 def toggle_ispasspoint():
@@ -1146,6 +1180,7 @@ def toggle_isstaticbearing():
 def initial_GUI():
     global root, ax, start_waypoint, end_waypoint, ispasspoint_var, ispasspoint, isstaticbearing, isstaticbearing_var
     global start_bearing, start_bearing_var, end_bearing, end_bearing_var
+    
     # Tkinter 초기화
     root = Tk()
     root.title("랜덤 선형뽑기")
@@ -1250,7 +1285,7 @@ def main():
     start_station = start_waypoint.get()
     end_station = end_waypoint.get()
     
-    start_point, end_point = process_coordinates(start_station, end_station)
+    #start_point, end_point = process_coordinates(start_station, end_station)
     initialize_parameters()
 
     '''
