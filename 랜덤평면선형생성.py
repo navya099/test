@@ -633,31 +633,31 @@ def get_valid_coordinates(prompt):
 
 
 #경유지 로직
-def input_passpoints(ispasspoint):
-    passpoint_coordinates = []
-    passpoint_name_list = []
+def process_passpoint_list(passpoint_input):
+    # Split input by commas
+    parts = [part.strip() for part in passpoint_input.split(',')]
+    
+    passpoint_list = []
     i = 0
     
-    while True:
-        
-        if ispasspoint == 0:  # 사용자에게 경유지 입력을 중단할 옵션 제공
-            print('경유지를 생략합니다.')
-            return passpoint_coordinates, passpoint_name_list
+    while i < len(parts):
+        if is_number(parts[i]):
+            # Handle numeric input (latitude and longitude)
+            if i + 1 < len(parts) and is_number(parts[i + 1]):
+                lat = float(parts[i])
+                lon = float(parts[i + 1])
+                passpoint_list.append((lat, lon))
+                i += 2
+            else:
+                raise ValueError("Latitude and Longitude values are not paired correctly.")
         else:
-            passpoint_coordinate, passpoint_name = get_valid_coordinates(str(input("경유지 입력: ")))
-            print(f"경유지: {passpoint_name} = {passpoint_coordinate}")
-            pass_point = Point(calc_pl2xy((passpoint_coordinate[1], passpoint_coordinate[0])))
-            passpoint_coordinates.append(pass_point)
-            passpoint_name_list.append(passpoint_name)
-            
+            # Handle string input (place names)
+            passpoint_list.append(parts[i])
             i += 1
-            continue_input = int(input("계속해서 입력하려면 1을 입력하세요. 경유지 입력 종료는 0 입력: "))
-
-            if continue_input == 0:
-                print(f'경유지 입력이 종료되었습니다. 입력 갯수: {i}')
-                return passpoint_coordinates, passpoint_name_list
-
-
+    
+    print("경유지 리스트를 처리:", passpoint_list)
+    return passpoint_list
+    
 def is_approximately_equal(a, b, tolerance=1e-5):
     return abs(a - b) < tolerance
 
@@ -934,7 +934,7 @@ def create_joined_linestirng(linestring,BC_XY,EC_XY,O_XY,direction):#선과 호�
 
 def generate_and_score_lines(num_iterations):
     global P1_list, P2_list
-    get_passpoint()
+    get_passpoint(passpoint_list)
     
     best_score = -float('inf')
     best_linestring = None
@@ -1059,10 +1059,21 @@ def save_output_files(base_filename, linestring, *params):
 def get_top_n_lines(scores_and_lines, n):
     return sorted(scores_and_lines, key=lambda x: x[0], reverse=True)[:n]
 
-def get_passpoint():
+def get_passpoint(passpoint_list):
     global passpoint_coordinates, passpoint_name_list
-    passpoint_coordinates, passpoint_name_list = input_passpoints(ispasspoint)
+    passpoint_coordinates, passpoint_name_list = calxy_passpoints(passpoint_list)
 
+def calxy_passpoints(passpoint_list):
+    passpoint_coordinates = []
+    passpoint_name_list = []
+    
+    for prompt in passpoint_list:
+        passpoint_coordinate, passpoint_name = get_valid_coordinates(prompt)
+        pass_point = Point(calc_pl2xy((passpoint_coordinate[1], passpoint_coordinate[0])))
+        passpoint_coordinates.append(pass_point)
+        passpoint_name_list.append(passpoint_name)
+
+    return passpoint_coordinates, passpoint_name_list
 
 def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction):
     """
@@ -1317,6 +1328,14 @@ def generate_random_line(point, end, min_distance, max_distance):
         if new_point1.distance(point) >= min_distance and new_point2.distance(point) >= min_distance:
             return new_point1, new_point2
 
+def is_number(s):
+    """Check if the string can be converted to a float."""
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+    
 def get_opposite_angle(angle):
     opposite_angle = angle + 180
     if opposite_angle >= 360:
@@ -1335,7 +1354,7 @@ def initial_GUI():
     global root, ax, start_waypoint, end_waypoint, ispasspoint_var, ispasspoint, isstaticbearing, isstaticbearing_var
     global start_bearing, start_bearing_var, end_bearing, end_bearing_var
     global combobox
-    global count_iterations_var
+    global count_iterations_var , passpoint_list_var
     
     # Tkinter 초기화
     root = Tk()
@@ -1432,10 +1451,14 @@ def initial_GUI():
     count_iterations_var.pack(side=tk.LEFT, pady=1, padx=3)
     count_iterations_var.insert(0, "10")
 
+    tk.Label(TEXT_frame, text="경유지: ").pack(side=tk.LEFT, padx=20, pady=1)
+    passpoint_list_var = tk.Entry(BOX_frame)
+    passpoint_list_var.pack(side=tk.LEFT, pady=1, padx=3)
+    passpoint_list_var.insert(0, "정안ic,공주ic")
     
 def initial_input_parameters():
     global start_station,end_station, start_bearing,  end_bearing, ispasspoint, isstaticbearing, start_point, end_point
-    global num_iterations
+    global num_iterations , passpoint_list
     
     start_station = start_waypoint.get()
     end_station = end_waypoint.get()
@@ -1449,8 +1472,12 @@ def initial_input_parameters():
     start_point, end_point = process_coordinates(start_station, end_station)
 
     num_iterations = int(count_iterations_var.get())
+
+    # 경유지 입력값 처리
+    passpoint_input = passpoint_list_var.get()
+    passpoint_list = process_passpoint_list(passpoint_input)
     
-    
+
 def main_cal_logic():
     global top_10_lines
     initial_input_parameters()
