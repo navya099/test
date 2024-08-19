@@ -526,7 +526,7 @@ def create_kml(filename, point_list):  # kml작성함수
     kml.save(kml_file)
 
     # Open the saved KML file
-    os.system(f'start {kml_file}')  # This command works on Windows
+    #os.system(f'start {kml_file}')  # This command works on Windows
 
 def get_random_radius(min_radius, max_radius):
     # min_radius와 max_radius 사이의 가장 작은 1000의 배수 구하기
@@ -616,42 +616,6 @@ def point_on_line(P, Q, T):
     # 점 T가 직선 PQ 위에 있는 경우
     return True
 
-def adjust_linestring_for_passpoint(linestring,passpoint):
-    #인수:coordinates as LineString,passpoint as Point
-
-    # LineString의 좌표 가져오기
-    coordinates = list(linestring.coords)
-    
-    # 가장 가까운 선분 찾기
-    min_distance = float('inf')
-    closest_segment_index = None
-    for i in range(len(coordinates) - 1):
-        segment = LineString([coordinates[i], coordinates[i + 1]])
-        distance = segment.distance(passpoint)
-        if distance < min_distance:
-            min_distance = distance
-            closest_segment_index = i
-            
-    # 선택된 선분의 두 끝점
-    start_point = Point(coordinates[closest_segment_index])
-    end_point = Point(coordinates[closest_segment_index + 1])
-
-    #선분의 방향 벡터
-    direction_vector = np.array(end_point.coords[0]) - np.array(start_point.coords[0])
-
-    # 경유지를 선분 위로 이동시키기 위해 필요한 이동 벡터
-    move_vector = np.array(passpoint.coords[0]) - (np.array(start_point.coords[0]) + np.dot(np.array(passpoint.coords[0]) - np.array(start_point.coords[0]), direction_vector) / np.dot(direction_vector, direction_vector) * direction_vector)
-
-    # 평행 이동된 새로운 점들
-    new_start_point = np.array(start_point.coords[0]) + move_vector
-    new_end_point = np.array(end_point.coords[0]) + move_vector
-    
-    # 새로운 좌표 리스트 생성
-    new_coords = coordinates[:closest_segment_index] + [(new_start_point[0], new_start_point[1]), (new_end_point[0], new_end_point[1])] + coordinates[closest_segment_index + 2:]
-
-    # 새로운 LineString 생성
-    return LineString(new_coords)
-
 ## Define start and end points
 # 테스트할 지명 입력
 def get_valid_coordinates(prompt):
@@ -693,11 +657,6 @@ def input_passpoints(ispasspoint):
                 print(f'경유지 입력이 종료되었습니다. 입력 갯수: {i}')
                 return passpoint_coordinates, passpoint_name_list
 
-def adjust_linestring_with_passpoints(adjusted_linestring, passpoint_coordinates):
-    for pass_point in passpoint_coordinates:
-        adjusted_linestring = adjust_linestring_for_passpoint(adjusted_linestring, pass_point)
-    return adjusted_linestring
-
 
 def is_approximately_equal(a, b, tolerance=1e-5):
     return abs(a - b) < tolerance
@@ -718,8 +677,8 @@ def check_last_ip_ep(adjusted_linestring, EC_XY, radius_list):
         return False
     else:
         radius_list[-1] = adjust_radius(radius_list, -1)
-        print('경고: 마지막 곡선과 종점 겹침')
-        print(f'마지막 반경: {radius_list[-1]}')
+        #print('경고: 마지막 곡선과 종점 겹침')
+        #print(f'마지막 반경: {radius_list[-1]}')
         return True
     
 def cal_EP_STA(adjusted_linestring,EC_XY,EC_STA_LIST):
@@ -808,7 +767,7 @@ def main_loop(adjusted_linestring, radius_list, new_angles,min_arc_to_arc_distan
             break
         
         if j >200:
-            print('루프 {j}회차 종료. 곡선반경 조정 실패')
+            print(f'루프 {j}회차 종료. 곡선반경 조정 실패')
             break
         
         j += 1
@@ -974,6 +933,7 @@ def create_joined_linestirng(linestring,BC_XY,EC_XY,O_XY,direction):#선과 호�
     return new_linestring
 
 def generate_and_score_lines(num_iterations):
+    global P1_list, P2_list
     get_passpoint()
     
     best_score = -float('inf')
@@ -983,8 +943,16 @@ def generate_and_score_lines(num_iterations):
 
     for i in range(num_iterations):
         print(f"Iteration {i+1}/{num_iterations}")
-        
-        random_linestring = generate_random_linestring_within_radius(start_point, end_point, max_points, min_distance, max_distance)
+
+        if ispasspoint:
+            P1_list =[]
+            P2_list = []
+            
+            random_linestring, P1_list, P2_list = generate_random_linestring_for_passpoint(start_point, end_point, passpoint_coordinates, max_points, min_distance, max_distance)
+
+        else:
+            random_linestring = generate_random_linestring_within_radius(start_point, end_point, max_points, min_distance, max_distance)
+
         adjusted_linestring, new_angles = process_linestring(random_linestring)
 
         score, new_linestring, params, formatted_cost = evaluate_linestring(adjusted_linestring, new_angles)
@@ -1011,15 +979,49 @@ def generate_and_score_lines(num_iterations):
 
     return top_10_lines
 
+def adjust_linestring_with_passpoint(line_string, p1_points, p2_points, angle_threshold=30):
+    coords = list(line_string.coords)
+    
+    adjusted_points = [coords[0]]  # Start with the first point
+    
+    for i in range(1, len(coords) - 1):
+        current_point = coords[i]
+        
+        # p1, p2, [1] 및 [-2] 점이 예외로 처리됨
+        if current_point in [(p.x, p.y) for p in p1_points] or \
+           current_point in [(p.x, p.y) for p in p2_points] or \
+           current_point == coords[1] or \
+           current_point == coords[-2]:
+            adjusted_points.append(current_point)
+            continue
+        
+        # 이전 점과 다음 점의 벡터를 계산하여 각도를 구함
+        prev_vector = (coords[i][0] - coords[i - 1][0],
+                       coords[i][1] - coords[i - 1][1])
+        next_vector = (coords[i + 1][0] - coords[i][0],
+                       coords[i + 1][1] - coords[i][1])
+        angle_diff = calculate_inner_angle(prev_vector, next_vector)
+        
+        # 각도가 임계값보다 작은 경우만 점을 추가
+        if angle_diff < 180 - angle_threshold:#교각은 180에서 빼야함
+            adjusted_points.append(current_point)
+    
+    # Add the last point if it's not the same as the second last one
+    if adjusted_points[-1] != coords[-1]:
+        adjusted_points.append(coords[-1])
+    
+    return LineString(adjusted_points)
+
 def process_linestring(linestring):
     angles = calculate_angles_and_plot(linestring)
-    adjusted_linestring = adjust_linestring(linestring, angles)
-    new_angles = calculate_angles_and_plot(adjusted_linestring)
-    
-    if ispasspoint:
-        adjusted_linestring = adjust_linestring_with_passpoints(adjusted_linestring, passpoint_coordinates)
-        new_angles = calculate_angles_and_plot(adjusted_linestring)
 
+    if ispasspoint:
+        adjusted_linestring = adjust_linestring_with_passpoint(linestring, P1_list, P2_list, angle_threshold=60)
+        new_angles = calculate_angles_and_plot(adjusted_linestring)
+    else:
+        adjusted_linestring = adjust_linestring(linestring, angles)
+        new_angles = calculate_angles_and_plot(adjusted_linestring)
+        
     if isstaticbearing:
         adjusted_linestring = static_beating(adjusted_linestring, start_bearing, end_bearing)
         new_angles = calculate_angles_and_plot(adjusted_linestring)
@@ -1186,6 +1188,86 @@ def static_beating(linestring, start_bearing, end_bearing):
     new_linestring = LineString(new_coords)
 
     return new_linestring
+
+#경유지로직
+def generate_random_linestring_for_passpoint(start, end, passpoints, max_points, min_distance, max_distance):
+    combined_points = []
+    
+    P1_list = []
+    P2_list = []
+
+    # Generate random points around each pass point
+    for i in range(len(passpoints)):
+        p1, p2 = generate_random_line(passpoints[i], end,  min_distance, max_distance)
+        P1_list.append(p1)
+        P2_list.append(p2)
+
+    # Connect the first passpoint to the start point
+    first_segment = generate_random_linestring_within_radius(start, P1_list[0], max_points, min_distance, max_distance, min_end_distance=2000)
+
+    #라인스트링객체를 분해
+    first_segment = list(first_segment.coords)
+    combined_points.extend(first_segment)
+
+    # Generate segments between the generated points
+    for i in range(len(passpoints) - 1):
+        segment = generate_random_linestring_within_radius(P2_list[i], P1_list[i + 1], max_points, min_distance, max_distance, min_end_distance=2000)
+
+        #라인스트링객체를 분해
+        segment = list(segment.coords)
+        combined_points.extend(segment)
+
+    # Connect the last passpoint to the end point
+    final_segment = generate_random_linestring_within_radius(P2_list[-1], end, max_points, min_distance, max_distance, min_end_distance=2000)
+
+    #라인스트링객체를 분해
+    final_segment = list(final_segment.coords)
+    
+    combined_points.extend(final_segment)
+
+    # Add the end point to the list
+    combined_points.append((end.x, end.y))
+
+    return LineString(combined_points), P1_list, P2_list
+
+def generate_random_line(point, end, min_distance, max_distance):
+    """
+    주어진 점을 중심으로 end 방향으로 대칭적으로 랜덤한 두 점을 생성합니다.
+    
+    인수:
+    - point: 중심이 될 점 (Point 객체)
+    - end: 최종 목적지 (Point 객체)
+    - min_distance: 점들 사이의 최소 거리
+    - max_distance: 점들 사이의 최대 거리
+    
+    반환:
+    - 새로 생성된 두 점 (Point 객체들)
+    """
+    angle_to_end = calculate_angle(point, end)  # start에서 end로 향하는 방향의 각도 계산
+    opposite_angle_to_end = get_opposite_angle(angle_to_end) #시작점은 반대방향에 존재해야함.
+    while True:
+        # end로 향하는 방향을 중심으로 약간의 랜덤 각도를 더해 점을 생성
+        angle = random.uniform(opposite_angle_to_end - pi/4, opposite_angle_to_end + pi/4)  # -45도에서 +45도 사이의 각도
+        distance = random.uniform(min_distance, max_distance)
+        x1 = point.x + distance * cos(angle)
+        y1 = point.y + distance * sin(angle)
+        new_point1 = Point(x1, y1)
+
+        # 첫 번째 점의 각도를 기준으로 대칭되는 점을 생성
+        new_point1_to_point_angle = calculate_angle(new_point1, point)
+        x2 = new_point1.x + distance * 2 * cos(new_point1_to_point_angle)
+        y2 = new_point1.y + distance * 2 * sin(new_point1_to_point_angle)
+        new_point2 = Point(x2, y2)
+
+        # 새로 생성된 두 점이 유효한지를 검사
+        if new_point1.distance(point) >= min_distance and new_point2.distance(point) >= min_distance:
+            return new_point1, new_point2
+
+def get_opposite_angle(angle):
+    opposite_angle = angle + 180
+    if opposite_angle >= 360:
+        opposite_angle -= 360
+    return opposite_angle
 
 def toggle_ispasspoint():
     global ispasspoint
