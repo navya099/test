@@ -1000,10 +1000,10 @@ def adjust_linestring_with_passpoint(line_string, p1_points, p2_points, angle_th
                        coords[i][1] - coords[i - 1][1])
         next_vector = (coords[i + 1][0] - coords[i][0],
                        coords[i + 1][1] - coords[i][1])
-        angle_diff = calculate_inner_angle(prev_vector, next_vector)
+        inner_angle = calculate_inner_angle(prev_vector, next_vector)
         
         # 각도가 임계값보다 작은 경우만 점을 추가
-        if angle_diff < 180 - angle_threshold:#교각은 180에서 빼야함
+        if inner_angle < angle_threshold:#교각보다 작은경우
             adjusted_points.append(current_point)
     
     # Add the last point if it's not the same as the second last one
@@ -1016,7 +1016,7 @@ def process_linestring(linestring):
     angles = calculate_angles_and_plot(linestring)
 
     if ispasspoint:
-        adjusted_linestring = adjust_linestring_with_passpoint(linestring, P1_list, P2_list, angle_threshold=60)
+        adjusted_linestring = adjust_linestring_with_passpoint(linestring, P1_list, P2_list, angle_threshold=40)
         new_angles = calculate_angles_and_plot(adjusted_linestring)
     else:
         adjusted_linestring = adjust_linestring(linestring, angles)
@@ -1123,7 +1123,8 @@ def onselect(event):#콤보박스 선택시
               #1, 2      3     4        5           6             7               8      9
     #save_params(radius_list, BC_STA_LIST, EC_STA_LIST, EP_STA, direction)
     console_print_line_info(selected_line[2],selected_line[1],selected_line[5])
-    
+    console_print_IP_info(selected_line[1],selected_line[5])
+
     
 def console_print_line_info(bc,linestring,radius_list):
     num_ip = len(bc)
@@ -1132,13 +1133,66 @@ def console_print_line_info(bc,linestring,radius_list):
     min_radius_for_alignment = min(radius_list)   
     total_cost = length_km * cost_per_km
     formatted_cost = format_cost(total_cost)
-        
+    print('-------------------------------------------\n')
     print('노선정보출력')
     print(f'IP 갯수 : {num_ip}')
     print(f'노선연장 : {length_km:.2f} km')
     print(f'공사비 : {formatted_cost}')
     print(f'최소곡선반경 R= {min_radius_for_alignment}')
+    print('-------------------------------------------\n')
     
+def console_print_IP_info(linestring, radius_list):
+    print('IP제원출력\n')
+    
+    TL, CL = cal_TL_CL(linestring, radius_list)
+    IA = calculate_angles_and_plot(linestring)
+    
+    for i in range(len(radius_list)):
+        print(f'IPNO.{i + 1}')
+        print(f'IA : {degrees_to_dms(IA[i])}')
+        print(f'R : {radius_list[i]}')
+        print(f'TL : {TL[i]:.2f}')
+        print(f'CL : {CL[i]:.2f}')
+        print(f'X : {linestring.coords[i+1][0]:.4f}')  # IP의 X 좌표 (linestring에서 i+1번째 점)
+        print(f'Y : {linestring.coords[i+1][1]:.4f}\n')  # IP의 Y 좌표 (linestring에서 i+1번째 점)
+
+
+def degrees_to_dms(degrees):
+    """
+    Converts decimal degrees to degrees, minutes, seconds.
+    
+    Args:
+    degrees (float): Decimal degrees value.
+    
+    Returns:
+    tuple: Degrees, minutes, seconds.
+    """
+    if degrees < 0:
+        degrees = degrees * -1
+        
+    deg = int(degrees)
+    minutes = int((degrees - deg) * 60)
+    seconds = (degrees - deg - minutes / 60) * 3600
+
+    
+    return f"{deg}° {minutes}' {seconds:.2f}\""
+
+
+    angle = angle
+    
+def cal_TL_CL(linestring, radius_list):
+    TL = []
+    CL = []
+    IA = calculate_angles_and_plot(linestring)
+    
+    for i in range(len(radius_list)):
+        tl = radius_list[i] * math.tan(math.radians(IA[i]) / 2)  # TL 계산
+        cl = radius_list[i] * math.radians(IA[i])  # CL 계산
+        TL.append(tl)
+        CL.append(cl)
+    
+    return TL, CL
+
 #메인코드
 def rotate_point(origin, point, angle):
     """Rotate a point counterclockwise around a given origin."""
