@@ -572,7 +572,7 @@ def format_cost(cost):
 
 def get_coordinates(location_name):
     # Nominatim 인스턴스 생성
-    geolocator = Nominatim(user_agent = 'South Korea')
+    geolocator = Nominatim(user_agent = 'South Korea', timeout=10)
     
     # 주소 검색
     location = geolocator.geocode(location_name)
@@ -1012,11 +1012,185 @@ def adjust_linestring_with_passpoint(line_string, p1_points, p2_points, angle_th
     
     return LineString(adjusted_points)
 
+def calculate_angle_3_POINT(A, B, C):
+    """
+    A, B, C 세 점을 이용해 각도를 계산합니다.
+    
+    인수:
+    - A: (x, y) 형태의 좌표 튜플
+    - B: (x, y) 형태의 좌표 튜플
+    - C: (x, y) 형태의 좌표 튜플
+    
+    반환:
+    - 각도 (단위: 도)
+    """
+    def vector_angle(v1, v2):
+        """벡터 v1과 v2 사이의 각도를 계산합니다."""
+        dot_product = v1[0] * v2[0] + v1[1] * v2[1]
+        magnitude_v1 = math.sqrt(v1[0] ** 2 + v1[1] ** 2)
+        magnitude_v2 = math.sqrt(v2[0] ** 2 + v2[1] ** 2)
+        # 내적과 크기의 계산 결과를 클리핑하여 안정성을 높임
+        cos_theta = dot_product / (magnitude_v1 * magnitude_v2)
+        # 클리핑: cos_theta가 -1과 1 사이로 유지되도록 조정
+        cos_theta = max(-1, min(cos_theta, 1))
+        angle = math.acos(cos_theta)
+        return math.degrees(angle)
+    
+    v1 = (B[0] - A[0], B[1] - A[1])
+    v2 = (C[0] - B[0], C[1] - B[1])
+    
+    return vector_angle(v1, v2)
+
+def find_point_index(coords, point, tolerance=1e-6):
+    """
+    coords 리스트에서 point에 해당하는 좌표의 인덱스를 찾습니다.
+    tolerance 내에서 좌표가 일치하면 동일한 좌표로 간주합니다.
+    
+    인수:
+    - coords: (x, y) 형태의 좌표 튜플이 포함된 리스트
+    - point: (x, y) 형태의 좌표 튜플 또는 리스트
+    - tolerance: 좌표 비교 시 허용 오차 범위
+    
+    반환:
+    - 좌표가 위치한 인덱스
+    """
+    if isinstance(point, list) and len(point) > 0:
+        point = tuple(point[0])
+    
+    for i, coord in enumerate(coords):
+        if isinstance(coord, tuple) and len(coord) == 2:
+            if abs(coord[0] - point[0]) < tolerance and abs(coord[1] - point[1]) < tolerance:
+                return i
+        else:
+            raise TypeError(f"Coords list contains non-tuple elements or elements with incorrect length: {coord}")
+    
+    raise ValueError(f"Point {point} is not in the coords list.")
+
+def rotate_line(center, point, angle_degrees):
+    """
+    주어진 점을 특정 중심점을 기준으로 주어진 각도만큼 회전시킵니다.
+    
+    인수:
+    - center: 회전의 중심점 (x, y) 튜플
+    - point: 회전할 점 (x, y) 튜플
+    - angle_degrees: 회전할 각도 (도 단위)
+    
+    반환:
+    - 새로운 좌표 (x, y) 튜플
+    """
+    angle_radians = math.radians(angle_degrees)
+    
+    # 점을 중심점 기준으로 이동
+    translated_x = point[0] - center[0]
+    translated_y = point[1] - center[1]
+    
+    # 회전 변환
+    rotated_x = translated_x * math.cos(angle_radians) - translated_y * math.sin(angle_radians)
+    rotated_y = translated_x * math.sin(angle_radians) + translated_y * math.cos(angle_radians)
+    
+    # 원래 위치로 이동
+    new_x = rotated_x + center[0]
+    new_y = rotated_y + center[1]
+    
+    return (new_x, new_y)
+
+def adjustment_func(linestring, P1_list, P2_list, threshold=40):
+    iterations = []  # 각 회전 후의 상태를 저장하기 위한 리스트
+    coords = list(linestring.coords)
+    
+    tolerance = 1e-6
+    
+    print(f'임계각(외각): {threshold}')
+    
+    # p1과 p2를 튜플 형태로 변환
+    p1 = [(p.x, p.y) for p in P1_list]
+    p2 = [(p.x, p.y) for p in P2_list]
+
+    try:
+        # p1과 p2의 인덱스를 찾기 (tolerance 사용)
+        p1_indices = [find_point_index(coords, pt, tolerance) for pt in p1]
+        p2_indices = [find_point_index(coords, pt, tolerance) for pt in p2]
+        print(f"p1 인덱스: {p1_indices}, p2 인덱스: {p2_indices}")
+    except ValueError as e:
+        raise ValueError(f"p1 또는 p2가 coords 리스트에 없습니다: {e}")
+
+    max_iterations = 1000
+    iteration = 0
+    
+    while iteration < max_iterations:
+        angles_changed = False
+        
+        for p1_index, p2_index in zip(p1_indices, p2_indices):
+            A = coords[p1_index - 1] if p1_index > 0 else None
+            B = coords[p2_index + 1] if p2_index < len(coords) - 1 else None
+
+            if A is not None and B is not None:
+                angle_A_P1_P2 = calculate_angle_3_POINT(A, coords[p1_index], coords[p2_index])
+                angle_P1_P2_B = calculate_angle_3_POINT(coords[p1_index], coords[p2_index], B)
+
+
+                # 각도가 임계각보다 큰 경우 회전 적용
+                if angle_A_P1_P2 >= threshold or angle_P1_P2_B >= threshold:
+                    if angle_A_P1_P2 >= threshold:
+                        print(f'p1 교각이 임계각 {threshold}보다 큽니다. {angle_A_P1_P2 - threshold}')
+                    if angle_P1_P2_B >= threshold:
+                        print(f'p2 교각이 임계각 {threshold}보다 큽니다. {angle_P1_P2_B - threshold}')
+
+                    # p1과 p2 사이의 중간점을 계산
+                    midpoint = (
+                        (coords[p1_index][0] + coords[p2_index][0]) / 2,
+                        (coords[p1_index][1] + coords[p2_index][1]) / 2
+                    )
+                    
+                    angle_step = 5  # 회전 각도
+                    coords_before = coords.copy()
+                    
+                    # 회전 방향 결정
+                    for angle_direction in [-angle_step, angle_step]:
+                        process_point_pair(coords, p1_index, p2_index, midpoint, angle_direction)
+                        new_angle_A_P1_P2 = calculate_angle_3_POINT(A, coords[p1_index], coords[p2_index])
+                        new_angle_P1_P2_B = calculate_angle_3_POINT(coords[p1_index], coords[p2_index], B)
+                        
+                        # 각도를 확인하여 최적의 회전 방향 선택
+                        if new_angle_A_P1_P2 <= threshold and new_angle_P1_P2_B <= threshold:
+                            angles_changed = True
+                            break
+                        else:
+                            # 회전이 불필요한 경우 원래 상태로 복원
+                            coords = coords_before
+                    
+                    if angles_changed:
+                        break
+
+        # 각도가 임계값보다 작아지면 종료
+        if not angles_changed:
+            print('통과')
+            break
+
+        # 회전 후의 상태 저장
+        iterations.append(LineString(coords))
+        iteration += 1
+
+    iterations.append(LineString(coords))  # 최종 상태 저장
+
+    return LineString(coords)
+
+def process_point_pair(coords, p1_index, p2_index, midpoint, angle):
+    """
+    p1과 p2에 대해 회전을 수행하는 함수.
+    """
+    new_p1 = rotate_line(midpoint, coords[p1_index], -angle)
+    new_p2 = rotate_line(midpoint, coords[p2_index], -angle)
+    coords[p1_index] = new_p1
+    coords[p2_index] = new_p2
+    
 def process_linestring(linestring):
     angles = calculate_angles_and_plot(linestring)
 
     if ispasspoint:
-        adjusted_linestring = adjust_linestring_with_passpoint(linestring, P1_list, P2_list, angle_threshold=40)
+        adjusted_linestring = adjust_linestring_with_passpoint(linestring, P1_list, P2_list, angle_threshold=40)#1차조정
+        adjusted_linestring = adjustment_func(adjusted_linestring, P1_list, P2_list, threshold=40)#2차조정
+        #adjusted_linestring = adjust_linestring_with_passpoint(adjusted_linestring, P1_list, P2_list, angle_threshold=40)#3차조정
         new_angles = calculate_angles_and_plot(adjusted_linestring)
     else:
         adjusted_linestring = adjust_linestring(linestring, angles)
@@ -1164,8 +1338,8 @@ def console_print_IP_info(linestring, radius_list):
         print(f'R : {radius_list[i]}')
         print(f'TL : {TL[i]:.2f}')
         print(f'CL : {CL[i]:.2f}')
-        print(f'X : {linestring.coords[i+1][0]:.4f}')  # IP의 X 좌표 (linestring에서 i+1번째 점)
-        print(f'Y : {linestring.coords[i+1][1]:.4f}\n')  # IP의 Y 좌표 (linestring에서 i+1번째 점)
+        print(f'X : {linestring.coords[i+1][1]:.4f}')  # IP의 X 좌표 (linestring에서 i+1번째 점)
+        print(f'Y : {linestring.coords[i+1][0]:.4f}\n')  # IP의 Y 좌표 (linestring에서 i+1번째 점)
 
 
 def degrees_to_dms(degrees):
@@ -1454,7 +1628,7 @@ def initial_GUI():
     tk.Label(TEXT_frame, text="경유지: ").pack(side=tk.LEFT, padx=20, pady=1)
     passpoint_list_var = tk.Entry(BOX_frame)
     passpoint_list_var.pack(side=tk.LEFT, pady=1, padx=3)
-    passpoint_list_var.insert(0, "정안ic,공주ic")
+    passpoint_list_var.insert(0, "공주ic,정안ic")
     
 def initial_input_parameters():
     global start_station,end_station, start_bearing,  end_bearing, ispasspoint, isstaticbearing, start_point, end_point
