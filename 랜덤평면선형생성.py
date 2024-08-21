@@ -5,7 +5,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import numpy as np
 from math import cos, sin, atan2, degrees, radians, pi
 import math
-from tkinter import filedialog, Tk, StringVar, ttk
+from tkinter import filedialog, Tk, StringVar, ttk , messagebox
 import tkinter as tk
 import simplekml
 import pyproj
@@ -16,6 +16,7 @@ import ezdxf
 import time
 from matplotlib.figure import Figure
 from random import randint
+import sys
 
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
@@ -818,6 +819,8 @@ def process_coordinates(start_station, end_station):
 
 def initialize_parameters():
     global max_points, min_distance, max_distance, min_radius, max_radius, min_arc_to_arc_distance, min_arc_length
+
+    print("매개변수 초기화 중...")
     max_points = 100
     min_distance = 3000
     max_distance = 5000
@@ -825,6 +828,8 @@ def initialize_parameters():
     max_radius = 20000
     min_arc_to_arc_distance = 1000
     min_arc_length = 1300
+    print("매개변수 초기화 완료.")
+    
     return max_points, min_distance, max_distance, min_radius, max_radius, min_arc_to_arc_distance, min_arc_length
     
 def create_txt(filename, adjusted_linestring, radius_list, BC_STA_LIST, EC_STA_LIST, EP_STA, direction):
@@ -1145,13 +1150,13 @@ def adjustment_func(linestring, P1_list, P2_list, threshold=40):
                     angle_step = 5  # 회전 각도
                     coords_before = coords.copy()
                     
-                    # 회전 방향 결정
+                    # p1과 p2 사이의 중간점을 기준으로 양방향 회전을 시도
                     for angle_direction in [-angle_step, angle_step]:
                         process_point_pair(coords, p1_index, p2_index, midpoint, angle_direction)
                         new_angle_A_P1_P2 = calculate_angle_3_POINT(A, coords[p1_index], coords[p2_index])
                         new_angle_P1_P2_B = calculate_angle_3_POINT(coords[p1_index], coords[p2_index], B)
                         
-                        # 각도를 확인하여 최적의 회전 방향 선택
+                        # 회전 후 각도가 임계각 이하가 되면 성공으로 간주
                         if new_angle_A_P1_P2 <= threshold and new_angle_P1_P2_B <= threshold:
                             angles_changed = True
                             break
@@ -1286,6 +1291,8 @@ def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction):
             
 
     ax.set_title('Selected LineString')
+    ax.set_xlim(150000,250000)
+    
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.grid(True)
@@ -1295,12 +1302,14 @@ def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction):
 def exit_program():
     print("프로그램을 종료합니다.")
     root.destroy()
-
+    logout()
+    
 def redraw():
     main_cal_logic()
 
         
 def onselect(event):#콤보박스 선택시
+    logout()
     selected_index = combobox.current()  # 콤보박스에서 선택한 인덱스
     selected_line = top_10_lines[selected_index]
     plot_line(ax, selected_line[1], selected_line[2], selected_line[3], selected_line[4], selected_line[5], selected_line[6])
@@ -1529,6 +1538,8 @@ def initial_GUI():
     global start_bearing, start_bearing_var, end_bearing, end_bearing_var
     global combobox
     global count_iterations_var , passpoint_list_var
+
+    print("GUI 초기화 중...")
     
     # Tkinter 초기화
     root = Tk()
@@ -1580,6 +1591,10 @@ def initial_GUI():
     exit_button = tk.Button(button_frame, text="종료", command=exit_program)
     exit_button.pack(side=tk.LEFT, pady=5, padx=10)
 
+    # ttk 스타일의 Progressbar 생성
+    progress = ttk.Progressbar(root, orient=tk.HORIZONTAL, length=250, mode='determinate')
+    progress.pack(pady=20)
+    
     ispasspoint_var = tk.IntVar(value=0)
     
     # Create the checkbox
@@ -1613,22 +1628,24 @@ def initial_GUI():
     tk.Label(TEXT_frame, text="시작 방위각(도):").pack(side=tk.LEFT,padx=70, pady=1)
     start_bearing_var = tk.Entry(BOX_frame)
     start_bearing_var.pack(side=tk.LEFT, pady=1, padx=10)
-    start_bearing_var.insert(0, "24")
+    start_bearing_var.insert(0, "100")
 
     tk.Label(TEXT_frame, text="종점 방위각(도):").pack(side=tk.LEFT,padx=10, pady=1)
     end_bearing_var = tk.Entry(BOX_frame)
     end_bearing_var.pack(side=tk.LEFT, pady=1, padx=10)
-    end_bearing_var.insert(0, "34")
+    end_bearing_var.insert(0, "74")
 
     tk.Label(TEXT_frame, text="반복횟수:").pack(side=tk.LEFT, padx=20, pady=1)
     count_iterations_var = tk.Entry(BOX_frame)
     count_iterations_var.pack(side=tk.LEFT, pady=1, padx=3)
-    count_iterations_var.insert(0, "10")
+    count_iterations_var.insert(0, "50")
 
     tk.Label(TEXT_frame, text="경유지: ").pack(side=tk.LEFT, padx=20, pady=1)
     passpoint_list_var = tk.Entry(BOX_frame)
     passpoint_list_var.pack(side=tk.LEFT, pady=1, padx=3)
     passpoint_list_var.insert(0, "공주ic,정안ic")
+
+    print("GUI 초기화 완료.")
     
 def initial_input_parameters():
     global start_station,end_station, start_bearing,  end_bearing, ispasspoint, isstaticbearing, start_point, end_point
@@ -1656,8 +1673,40 @@ def main_cal_logic():
     global top_10_lines
     initial_input_parameters()
     top_10_lines = generate_and_score_lines(num_iterations)
+    task_completed()
+    
+def login():
+    global log_file, original_stdout
+    # 로그 파일 열기
+    log_file = open("c:/temp/log.txt", "w")
+
+    # 기존 stdout을 저장
+    original_stdout = sys.stdout
+
+    # stdout을 로그 파일로 변경
+    sys.stdout = log_file
+
+    # 이 시점부터 출력이 로그 파일에 기록됩니다.
+        
+def logout():
+    global log_file, original_stdout
+    # 다시 원래 stdout으로 복원
+    sys.stdout = original_stdout
+
+    # 로그 파일 닫기
+    log_file.close()
+
+    # 이후에는 다시 콘솔에 출력됩니다.
+
+def task_completed():
+    # 여기에 작업을 수행하는 코드를 넣습니다.
+    print("작업이 완료되었습니다.")
+
+    # 작업 완료 후 팝업 메시지 표시
+    messagebox.showinfo("작업 완료", "작업이 성공적으로 완료되었습니다.")
     
 def main():
+    login()
     initial_GUI()
     
     initialize_parameters()
