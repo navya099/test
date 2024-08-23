@@ -6,6 +6,8 @@ import numpy as np
 import math
 import ezdxf
 from scipy.optimize import minimize
+from shapely.geometry import LineString, Polygon, Point
+from shapely.affinity import rotate
 
 import tkinter as tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -13,19 +15,80 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
 
+def check_polygon_closure(polygon):
+    # 첫 좌표와 마지막 좌표 비교
+    is_closed = polygon.exterior.is_ring
+    is_valid = polygon.is_valid
+
+    return is_closed, is_valid
+
+def plot_polygon_with_area(polygon):
+    # 폴리곤 좌표 추출
+    x, y = polygon.exterior.xy
+    
+    # 플롯 생성
+    fig, ax = plt.subplots()
+    ax.plot(x, y, color='blue', linewidth=2, solid_capstyle='round', zorder=1)
+    
+    # 폴리곤 면적 계산
+    area = polygon.area
+    
+    # 폴리곤 중심 좌표 계산
+    centroid = polygon.centroid
+    
+    # 면적을 폴리곤 내부에 표시
+    ax.text(centroid.x, centroid.y, f'Area: {area:.2f}', fontsize=12, ha='center')
+    
+    # 폴리곤을 그래프의 중앙에 배치하고 보기 좋게 스케일 조정
+    minx, miny, maxx, maxy = polygon.bounds
+    ax.set_xlim([minx - 0.1, maxx + 0.1])
+    ax.set_ylim([miny - 0.1, maxy + 0.1])
+    ax.set_aspect('equal', 'box')
+    
+    # 그래프 제목과 축 제거
+    ax.set_title("Polygon with Area")
+    ax.axis('off')
+    
+    plt.show()
+    
+def arc_to_linestring(center, radius, start_angle, end_angle, num_points=100):
+    """Arc 객체를 다각형으로 변환하기 위해 작은 선분(LineString)으로 분리합니다."""
+    angles = np.linspace(np.radians(start_angle), np.radians(end_angle), num_points)
+    points = [(center[0] + radius * np.cos(angle), center[1] + radius * np.sin(angle)) for angle in angles]
+    return LineString(points)
+
 def tunnel_section_area(params):
-    R1, R1_ANGLE, R2, R2_ANGLE = params
+    R1, TOP_ANGLE, R2, R2_ANGLE = params
+    center_top = (0, s_R1_Y.get())
+    
+    # 좌우 측면의 중심 계산
+    left_center, right_center = find_side_center(center_top, R1, 90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2), R2)
+    
+    # 상단 아크
+    top_arc = arc_to_linestring(center_top, R1, 90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2))
+    
+    # 좌우 측면 아크
+    left_arc = arc_to_linestring(left_center, R2, 90 + (TOP_ANGLE / 2),90 + (TOP_ANGLE / 2) + R2_ANGLE)
+    right_arc = arc_to_linestring(right_center, R2, 90 - (TOP_ANGLE / 2),90 - (TOP_ANGLE / 2) - R2_ANGLE)
+    
+    # 아래 라인 (좌우 아크의 끝점을 연결)
+    bottom_line = LineString([left_arc.coords[-1], right_arc.coords[-1]])
 
-    # 상부 원호의 면적 (반원호의 면적 계산)
-    top_area = 0.5 * np.pi * R1**2 * (R1_ANGLE / 360)
-
-    # 측벽 원호의 면적 (각도에 따른 면적 계산)
-    side_area = R2**2 * np.radians(R2_ANGLE) / 2
-
-    # 총 면적 계산
-    total_area = top_area + 2 * side_area  # 양쪽 측벽의 면적을 더함
-
-    return total_area
+    
+     # 모든 부분을 연결하여 폐합된 다각형 생성
+    # 좌표를 올바른 순서로 나열하여 폐합된 폴리곤 생성
+    polygon_coords = (
+        list(left_arc.coords[::-1]) + #좌측 아크는 역순
+        list(top_arc.coords) + 
+        list(right_arc.coords) +
+        list(bottom_line.coords[::-1]) # 아래 라인은 역순으로
+        
+    )
+    
+    # 폴리곤 생성
+    polygon = Polygon(polygon_coords)
+    
+    return polygon
 
 def drawcad(ax, translate_x=0, translate_y=0):
     # DWG 파일 열기
@@ -151,6 +214,15 @@ def draw_tunnel_section(ax, R1, R1_ANGLE, R2, R2_ANGLE, center_top):
 
     return left_end_point, right_end_point
 
+# Example function to draw a vertical line at D/2
+def draw_axline(ax, D):
+    ax.axvline(x=-D/2, color='gray', linestyle='--', linewidth=1)  # Draw vertical line at D/2
+    ax.axvline(x= origin[0], color='gray', linestyle='--', linewidth=1)  # Draw vertical line at D/2
+    ax.axvline(x= D/2, color='gray', linestyle='--', linewidth=1)  # Draw vertical line at D/2
+    ax.text(-D/2,7.40,'CL of 하선')
+    ax.text( D/2,7.40,'CL of 상선')
+    ax.text(0,7.40,'CL of 터널')
+    
 def update_plot():
     ax.clear()
     ax.set_aspect('equal', adjustable='box')
@@ -177,6 +249,8 @@ def update_plot():
     y_values = [right_end_point[1], right_end_point[1], right_end_point[1] - FL_TO_CULVUT, right_end_point[1] - FL_TO_CULVUT]
     ax.plot(x_values,y_values)
 
+    draw_axline(ax, D)
+    
     params = [R1, TOP_ANGLE, R2, R2_ANGLE]
     params2 = [left_end_point, right_end_point]
     console_print_tunnel_spec(params, params2)
@@ -192,9 +266,24 @@ def update_plot():
 
 def console_print_tunnel_spec(params, params2):
     
-    total_area = tunnel_section_area(params)
-    
-    print(f'내공단면적 {total_area:.2f}m^2')
+    polygon = tunnel_section_area(params)
+
+    #plot_polygon_with_area(polygon)
+
+    # 폐합 여부 확인
+    is_closed, is_valid = check_polygon_closure(polygon)
+
+    if is_closed:
+        print("Polygon is closed.")
+    else:
+        print("Polygon is NOT closed.")
+
+    if is_valid:
+        print("Polygon is valid.")
+    else:
+        print("Polygon is NOT valid.")
+        
+    print(f'내공단면적 {polygon.area:.2f}m^2')
     print(f'R1 : {params[0]:.2f}')
     print(f'Top Angle {params[1]}')
     print(f'R2 : {params[2]}')
@@ -341,16 +430,14 @@ s_D = tk.Scale(slider_root, label='선로중심간격', from_=3.8, to=30.0, reso
 s_D.set(4.4)
 s_D.pack(fill=tk.X, padx=5, pady=5)
 
-s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=0.0, to=5.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=0.0, to=5.0, resolution=0.01, orient=tk.HORIZONTAL, command=lambda x: update_plot())
 s_R1_Y.set(1.572)
 s_R1_Y.pack(fill=tk.X, padx=5, pady=5)
 
 # 다시그리기 버튼 생성
 btn_save_dxf = tk.Button(slider_root, text="도면으로 저장하기", command=save_dxf)
 btn_save_dxf.pack(side=tk.LEFT, pady=5, padx=10)
-    
-# 초기 플롯 그리기
-update_plot()
+
 
 # tkinter 메인 루프 시작
 slider_root.mainloop()
