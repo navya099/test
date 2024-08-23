@@ -7,6 +7,9 @@ import math
 import ezdxf
 from scipy.optimize import minimize
 
+import tkinter as tk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
 
@@ -148,30 +151,28 @@ def draw_tunnel_section(ax, R1, R1_ANGLE, R2, R2_ANGLE, center_top):
 
     return left_end_point, right_end_point
 
-def update(val):
+def update_plot():
     ax.clear()
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True)
-    
-    R1 = s_R1.val
-    TOP_ANGLE = s_TOP_ANGLE.val
-    R2 = s_R2.val
-    R2_ANGLE = s_R2_ANGLE.val
-    D = s_D.val
-    R1_XY = (0, s_R1_Y.val)
 
-    # `R1_ANGLE`을 상부 원호의 각도를 두 부분으로 나누어 정의
+    R1 = s_R1.get()
+    TOP_ANGLE = s_TOP_ANGLE.get()
+    R2 = s_R2.get()
+    R2_ANGLE = s_R2_ANGLE.get()
+    D = s_D.get()
+    R1_XY = (0, s_R1_Y.get())
+
     R1_ANGLE = [90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2)]
-    
+
     drawcad(ax, translate_x=-D/2, translate_y=+RL)
     drawcad(ax, translate_x=D/2, translate_y=+RL)
     left_end_point, right_end_point = draw_tunnel_section(ax, R1, [90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2)], R2, R2_ANGLE, R1_XY)
 
-    #좌측 하반라인
     x_values = [left_end_point[0], left_end_point[0] + side, left_end_point[0] + side , origin[0]]
     y_values = [left_end_point[1], left_end_point[1], left_end_point[1] - FL_TO_CULVUT, left_end_point[1] - FL_TO_CULVUT]
     ax.plot(x_values,y_values)
-    
+
     x_values = [right_end_point[0], right_end_point[0] - side, right_end_point[0] - side , origin[0]]
     y_values = [right_end_point[1], right_end_point[1], right_end_point[1] - FL_TO_CULVUT, right_end_point[1] - FL_TO_CULVUT]
     ax.plot(x_values,y_values)
@@ -180,16 +181,14 @@ def update(val):
     params2 = [left_end_point, right_end_point]
     console_print_tunnel_spec(params, params2)
     check_tunnel_spec(params2)
-    # 최적화 파라미터
-    initial_guess = [R1_XY[0], R1_XY[1]]
 
-    # 최적화 수행
+    initial_guess = [R1_XY[0], R1_XY[1]]
     result = minimize(objective_function, initial_guess, args=(R1, R1_ANGLE, R2, R2_ANGLE, D), method='L-BFGS-B')
 
-    # 최적화 결과
     optimized_R1_XY = result.x
     print(f"찾은 R1_XY: {optimized_R1_XY[1]}")
-    plt.draw()
+
+    canvas.draw()
 
 def console_print_tunnel_spec(params, params2):
     
@@ -239,7 +238,7 @@ def objective_function(params, *args):
     return abs(new_FL)
 
 # 버튼 클릭 이벤트 핸들러
-def save_dxf(event):
+def save_dxf(event=None):
     filename = "C:/TEMP/TUNEEL_output.dxf"  # 저장할 DXF 파일 이름
     save_plot_to_dxf(filename, ax)
     print(f"플롯 상태가 {filename} 파일로 저장되었습니다.")
@@ -305,37 +304,53 @@ TOP_ANGLE = 90 #R1각도
 R2 = 5.54 #R2반경
 R2_ANGLE = 69 #R2각도
 
-# 플롯 생성
-fig, ax = plt.subplots(figsize=(10, 8))
-plt.subplots_adjust(left=0.25, bottom=0.35, right=0.9, top=0.9, hspace=0.4)
+# 슬라이더가 위치할 창을 위한 tkinter 설정
+slider_root = tk.Tk()
+slider_root.title("Slider Control")
 
-# 각 슬라이더의 위치를 조금 더 위로 조정하여 겹치지 않도록 함
-ax_R1 = plt.axes([0.25, 0.35, 0.65, 0.03])
-ax_TOP_ANGLE = plt.axes([0.25, 0.3, 0.65, 0.03])
-ax_R2 = plt.axes([0.25, 0.25, 0.65, 0.03])
-ax_R2_ANGLE = plt.axes([0.25, 0.2, 0.65, 0.03])
-ax_R1_Y = plt.axes([0.25, 0.1, 0.65, 0.03])
-ax_D = plt.axes([0.25, 0.05, 0.65, 0.03])
+# 플롯 창 생성
+plot_root = tk.Toplevel(slider_root)
+plot_root.title("Plot Window")
 
-s_R1 = Slider(ax_R1, 'R1', 5.0, 20.0, valinit=R1)
-s_TOP_ANGLE = Slider(ax_TOP_ANGLE, 'TOP_ANGLE', 60.0, 120.0, valinit=TOP_ANGLE)
-s_R2 = Slider(ax_R2, 'R2', 4.0, 20.0, valinit=R2)
-s_R2_ANGLE = Slider(ax_R2_ANGLE, 'R2_ANGLE', 30.0, 90.0, valinit=R2_ANGLE)
-s_D = Slider(ax_D, '선로중심간격', 3.8, 30, valinit=D)
-s_R1_Y = Slider(ax_R1_Y, 'R1_Y', 0.0, 5.0, valinit=R1_XY[1])
+# Matplotlib 플롯을 위한 설정
+fig, ax = plt.subplots()
+ax.set_aspect('equal', adjustable='box')
+ax.grid(True)
 
-s_R1.on_changed(update)
-s_TOP_ANGLE.on_changed(update)
-s_R2.on_changed(update)
-s_R2_ANGLE.on_changed(update)
-s_D.on_changed(update)
-s_R1_Y.on_changed(update)
+canvas = FigureCanvasTkAgg(fig, master=plot_root)
+canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-# DXF 저장 버튼 추가
-ax_save_dxf = plt.axes([0.25, 0.01, 0.15, 0.04])
-btn_save_dxf = Button(ax_save_dxf, 'Save DXF')
-btn_save_dxf.on_clicked(save_dxf)
+# 슬라이더를 위한 tkinter.Scale 위젯 생성
+s_R1 = tk.Scale(slider_root, label='R1', from_=5.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R1.set(7.166)
+s_R1.pack(fill=tk.X, padx=5, pady=5)
 
-update(None)  # 초기 플롯을 그리기 위해 호출
+s_TOP_ANGLE = tk.Scale(slider_root, label='TOP_ANGLE', from_=60.0, to=120.0, resolution=1.0, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_TOP_ANGLE.set(90)
+s_TOP_ANGLE.pack(fill=tk.X, padx=5, pady=5)
 
-plt.show()
+s_R2 = tk.Scale(slider_root, label='R2', from_=4.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R2.set(5.54)
+s_R2.pack(fill=tk.X, padx=5, pady=5)
+
+s_R2_ANGLE = tk.Scale(slider_root, label='R2_ANGLE', from_=30.0, to=90.0, resolution=1.0, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R2_ANGLE.set(69)
+s_R2_ANGLE.pack(fill=tk.X, padx=5, pady=5)
+
+s_D = tk.Scale(slider_root, label='선로중심간격', from_=3.8, to=30.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_D.set(4.4)
+s_D.pack(fill=tk.X, padx=5, pady=5)
+
+s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=0.0, to=5.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R1_Y.set(1.572)
+s_R1_Y.pack(fill=tk.X, padx=5, pady=5)
+
+# 다시그리기 버튼 생성
+btn_save_dxf = tk.Button(slider_root, text="도면으로 저장하기", command=save_dxf)
+btn_save_dxf.pack(side=tk.LEFT, pady=5, padx=10)
+    
+# 초기 플롯 그리기
+update_plot()
+
+# tkinter 메인 루프 시작
+slider_root.mainloop()
