@@ -241,11 +241,11 @@ def update_plot():
     drawcad(ax, translate_x=D/2, translate_y=+RL)
     left_end_point, right_end_point = draw_tunnel_section(ax, R1, [90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2)], R2, R2_ANGLE, R1_XY)
 
-    x_values = [left_end_point[0], left_end_point[0] + side, left_end_point[0] + side , origin[0]]
+    x_values = [left_end_point[0], left_end_point[0] + sideL, left_end_point[0] + sideL , origin[0]]
     y_values = [left_end_point[1], left_end_point[1], left_end_point[1] - FL_TO_CULVUT, left_end_point[1] - FL_TO_CULVUT]
     ax.plot(x_values,y_values)
 
-    x_values = [right_end_point[0], right_end_point[0] - side, right_end_point[0] - side , origin[0]]
+    x_values = [right_end_point[0], right_end_point[0] - sideR, right_end_point[0] - sideR , origin[0]]
     y_values = [right_end_point[1], right_end_point[1], right_end_point[1] - FL_TO_CULVUT, right_end_point[1] - FL_TO_CULVUT]
     ax.plot(x_values,y_values)
 
@@ -269,7 +269,9 @@ def console_print_tunnel_spec(params, params2):
     polygon = tunnel_section_area(params)
 
     #plot_polygon_with_area(polygon)
-
+    center_top = (0, s_R1_Y.get())
+    TOP_of_Tunnel = center_top[1] + R1 - origin[1]
+    print(f' TOP_of_Tunnel{TOP_of_Tunnel}')
     # 폐합 여부 확인
     is_closed, is_valid = check_polygon_closure(polygon)
 
@@ -282,14 +284,17 @@ def console_print_tunnel_spec(params, params2):
         print("Polygon is valid.")
     else:
         print("Polygon is NOT valid.")
-        
+
+    A = abs(params2[0][0] - origin[0])
+    
     print(f'내공단면적 {polygon.area:.2f}m^2')
     print(f'R1 : {params[0]:.2f}')
     print(f'Top Angle {params[1]}')
     print(f'R2 : {params[2]}')
     print(f'R2 Angle: {params[3]}')
-    print(f'A: {abs(params2[0][0] - origin[0]):.2f}')
-    
+    print(f'A: {A:.2f}')
+    print(f'R2/R1비 : {R2/R1:.2f}')
+    print(f'편평률: {TOP_of_Tunnel / (A*2):.2f}')
 def check_tunnel_spec(params):
     tolerance = 0.02
     new_FL = params[0][1] - FL_TO_CULVUT #FL Y좌표
@@ -382,7 +387,8 @@ def save_plot_to_dxf(filename, ax):
 origin = (0,0) #원점
 FL = 0 #시공기면
 RL = FL + 0.472 #레일면고
-side = 0.8 #공동구 점검원 통로폭
+sideL = 0.8 #좌측 공동구 점검원 통로폭
+sideR = 0.8 #우측 공동구 점검원 통로폭
 FL_TO_CULVUT = 0.472 #공동구 상단에서 FL까지의 높이
 D = 4.4 #선로중심간격
 T = 0.4 #라이닝 두께
@@ -430,7 +436,7 @@ s_D = tk.Scale(slider_root, label='선로중심간격', from_=3.8, to=30.0, reso
 s_D.set(4.4)
 s_D.pack(fill=tk.X, padx=5, pady=5)
 
-s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=0.0, to=5.0, resolution=0.01, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=-5.0, to=5.0, resolution=0.01, orient=tk.HORIZONTAL, command=lambda x: update_plot())
 s_R1_Y.set(1.572)
 s_R1_Y.pack(fill=tk.X, padx=5, pady=5)
 
