@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 import matplotlib.patches as patches
 from matplotlib.patches import Circle, Arc
-import numpy as np
 import math
 import ezdxf
 from scipy.optimize import minimize
@@ -10,42 +9,49 @@ from shapely.geometry import LineString, Polygon, Point
 from shapely.affinity import rotate
 
 import tkinter as tk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # 추가
+import numpy as np
+from tkinter import filedialog, Tk, StringVar, ttk , messagebox
 
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
 
-def draw_angle_annotation(ax, p1, p2, p3, radius=2, arc_color='black', angle_color='black'):
+def draw_angle_annotation(ax, p1, p2, p3, radius=1, angle_color='black'):
     """
     두 선 사이의 각도를 표시합니다.
-    
+
     Parameters:
     - ax: Matplotlib Axes 객체
     - p1, p2, p3: 각도를 나타내는 세 점 (p2는 각도의 중심점)
     - radius: 각도 호의 반지름
-    - arc_color: 각도 호의 색상
     - angle_color: 각도 기호의 색상
     """
     # 벡터 계산
     v1 = np.array(p1) - np.array(p2)
     v2 = np.array(p3) - np.array(p2)
     
-    # 벡터의 각도 계산
+    # 벡터의 각도 계산 (0도에서 시작)
     angle = np.arccos(np.clip(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)), -1.0, 1.0))
     angle_deg = np.degrees(angle)
     
-    # 각도 호 그리기
-    theta = np.linspace(0, angle, 100)
-    arc_x = radius * np.cos(theta)
-    arc_y = radius * np.sin(theta)
+    # 벡터의 방향과 각도를 기반으로 호의 시작각과 끝각 계산
+    angle_start = np.arctan2(v1[1], v1[0])
+    angle_end = np.arctan2(v2[1], v2[0])
+
+    # 호 그리기
+    arc = patches.Arc(p2, 2 * radius, 2 * radius, angle=0, 
+                      theta1=np.degrees(angle_end), theta2=np.degrees(angle_start), 
+                      color=angle_color)
+    ax.add_patch(arc)
+
     
-    arc_x += p2[0]
-    arc_y += p2[1]
     
-    ax.plot(arc_x, arc_y, color=arc_color)
-    
-    # 각도 기호 그리기
-    ax.text(p2[0] + radius * 0.7, p2[1] + radius * 0.7, f'{angle_deg:.1f}°', color=angle_color, fontsize=12, ha='center')
+    # 각도 기호 표시
+    mid_angle = (angle_start + angle_end) / 2
+    ax.text(p2[0] + radius * 0.7 * np.cos(mid_angle), 
+            p2[1] + radius * 0.7 * np.sin(mid_angle),
+            f'{angle_deg:.1f}°', color=angle_color, fontsize=12, ha='center')
+
 
 def find_extreme_x_on_arc(center, radius, start_angle, end_angle):
     """
@@ -318,6 +324,10 @@ def update_plot():
     
     left_end_point, right_end_point = draw_tunnel_section(ax, R1, [90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2)], R2, R2_ANGLE, R1_XY)
 
+    # R2 라인 그리기
+    L_C, R_C = find_side_center(R1_XY, R1, R1_ANGLE[0], R1_ANGLE[1], R2)
+
+
     x_values = [left_end_point[0], left_end_point[0] + sideL, left_end_point[0] + sideL , origin[0]]
     y_values = [left_end_point[1], left_end_point[1], left_end_point[1] - FL_TO_CULVUT, left_end_point[1] - FL_TO_CULVUT]
     ax.plot(x_values,y_values)
@@ -335,7 +345,10 @@ def update_plot():
 
     draw_R1R2_LINE(ax, params, params2)
 
-    draw_angle_annotation(ax, start_point, R1_XY, end_point)
+    #R1, R2각도표시
+    draw_angle_annotation(ax, start_point, R1_XY, end_point)#R1
+    draw_angle_annotation(ax, left_end_point, L_C, start_point)#R2_L
+    draw_angle_annotation(ax, end_point, R_C, right_end_point)#R2_R
     
     initial_guess = [R1_XY[0], R1_XY[1]]
     result = minimize(objective_function, initial_guess, args=(R1, R1_ANGLE, R2, R2_ANGLE, D), method='L-BFGS-B')
@@ -578,6 +591,15 @@ ax.grid(True)
 
 canvas = FigureCanvasTkAgg(fig, master=plot_root)
 canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+# Create a frame for the toolbar
+toolbar_frame = tk.Frame(plot_root)
+toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+
+# Add the navigation toolbar
+toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+toolbar.update()
+
 
 # 슬라이더를 위한 tkinter.Scale 위젯 생성
 s_R1 = tk.Scale(slider_root, label='R1', from_=5.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
