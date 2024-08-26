@@ -15,6 +15,67 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
 
+def draw_angle_annotation(ax, p1, p2, p3, radius=2, arc_color='black', angle_color='black'):
+    """
+    두 선 사이의 각도를 표시합니다.
+    
+    Parameters:
+    - ax: Matplotlib Axes 객체
+    - p1, p2, p3: 각도를 나타내는 세 점 (p2는 각도의 중심점)
+    - radius: 각도 호의 반지름
+    - arc_color: 각도 호의 색상
+    - angle_color: 각도 기호의 색상
+    """
+    # 벡터 계산
+    v1 = np.array(p1) - np.array(p2)
+    v2 = np.array(p3) - np.array(p2)
+    
+    # 벡터의 각도 계산
+    angle = np.arccos(np.clip(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)), -1.0, 1.0))
+    angle_deg = np.degrees(angle)
+    
+    # 각도 호 그리기
+    theta = np.linspace(0, angle, 100)
+    arc_x = radius * np.cos(theta)
+    arc_y = radius * np.sin(theta)
+    
+    arc_x += p2[0]
+    arc_y += p2[1]
+    
+    ax.plot(arc_x, arc_y, color=arc_color)
+    
+    # 각도 기호 그리기
+    ax.text(p2[0] + radius * 0.7, p2[1] + radius * 0.7, f'{angle_deg:.1f}°', color=angle_color, fontsize=12, ha='center')
+
+def find_extreme_x_on_arc(center, radius, start_angle, end_angle):
+    """
+    호의 중심(center), 반지름(radius), 시작 각도(start_angle), 끝 각도(end_angle)를 기반으로
+    호 위의 가장 큰 x값과 가장 작은 x값을 찾습니다.
+    """
+    # 각도를 라디안으로 변환
+    start_angle_rad = np.radians(start_angle)
+    end_angle_rad = np.radians(end_angle)
+    
+    # 시작 각도와 끝 각도 사이의 각도를 샘플링 (더 정밀한 값을 원할 경우 증가)
+    angles = np.linspace(start_angle_rad, end_angle_rad, 1000)
+    
+    # x 좌표 계산
+    x_values = center[0] + radius * np.cos(angles)
+    
+    # Y 좌표 계산
+    y_values = center[1] + radius * np.sin(angles)
+    
+    # x 좌표의 최대값과 최소값 찾기
+    max_x_index = np.argmax(x_values)
+    min_x_index = np.argmin(x_values)
+    
+    # 최대값과 최소값에 해당하는 좌표 (x, y)
+    max_x_point = (x_values[max_x_index], y_values[max_x_index])
+    min_x_point = (x_values[min_x_index], y_values[min_x_index])
+    
+    # 좌표 반환
+    return max_x_point, min_x_point
+
 def check_polygon_closure(polygon):
     # 첫 좌표와 마지막 좌표 비교
     is_closed = polygon.exterior.is_ring
@@ -179,6 +240,15 @@ def find_side_center(top_center, top_radius, top_start_angle, top_end_angle, sid
     
     return left_center, right_center
 
+def find_start_point(center, radius, end_point, angle):
+    end_angle = np.degrees(np.arctan2(end_point[1] - center[1], end_point[0] - center[0]))
+    start_angle = end_angle - angle
+    
+    start_x = center[0] + radius * np.cos(np.radians(start_angle))
+    start_y = center[1] + radius * np.sin(np.radians(start_angle))
+    
+    return (start_x, start_y)
+
 def find_end_point(center, radius, start_point, angle):
     start_angle = np.degrees(np.arctan2(start_point[1] - center[1], start_point[0] - center[0]))
     end_angle = start_angle + angle
@@ -239,6 +309,13 @@ def update_plot():
 
     drawcad(ax, translate_x=-D/2, translate_y=+RL)
     drawcad(ax, translate_x=D/2, translate_y=+RL)
+
+    start_point = (R1_XY[0] + R1 * np.cos(np.radians(R1_ANGLE[0])),
+                   R1_XY[1] + R1 * np.sin(np.radians(R1_ANGLE[0])))
+
+    end_point = (R1_XY[0] + R1 * np.cos(np.radians(R1_ANGLE[1])),
+                 R1_XY[1] + R1 * np.sin(np.radians(R1_ANGLE[1])))
+    
     left_end_point, right_end_point = draw_tunnel_section(ax, R1, [90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2)], R2, R2_ANGLE, R1_XY)
 
     x_values = [left_end_point[0], left_end_point[0] + sideL, left_end_point[0] + sideL , origin[0]]
@@ -256,6 +333,10 @@ def update_plot():
     console_print_tunnel_spec(params, params2)
     check_tunnel_spec(params2)
 
+    draw_R1R2_LINE(ax, params, params2)
+
+    draw_angle_annotation(ax, start_point, R1_XY, end_point)
+    
     initial_guess = [R1_XY[0], R1_XY[1]]
     result = minimize(objective_function, initial_guess, args=(R1, R1_ANGLE, R2, R2_ANGLE, D), method='L-BFGS-B')
 
@@ -264,6 +345,73 @@ def update_plot():
 
     canvas.draw()
 
+def draw_line(ax, start, end, linestyle='--', color='gray'):
+    """
+    두 점 사이에 선을 그리고 주어진 스타일로 설정합니다.
+    """
+    x_values = [start[0], end[0]]
+    y_values = [start[1], end[1]]
+    ax.plot(x_values, y_values, linestyle=linestyle, color=color)
+
+def add_text(ax, position, text, rotation=0, offset=(0, 0)):
+    """
+    텍스트를 주어진 위치에 추가하고, 회전 및 오프셋을 적용합니다.
+    """
+    ax.text(position[0] + offset[0], position[1] + offset[1], text, rotation=rotation)
+
+def calculate_midpoint(p1, p2):
+    """
+    두 점 사이의 중점을 계산합니다.
+    """
+    return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
+
+def draw_R1R2_LINE(ax, params, params2):
+    # R1 라인 그리기
+    center_top = (0, s_R1_Y.get())
+    R1_ANGLE = [90 + (params[1] / 2), 90 - (params[1] / 2)]
+    
+    start_point = (center_top[0] + params[0] * np.cos(np.radians(R1_ANGLE[0])),
+                   center_top[1] + params[0] * np.sin(np.radians(R1_ANGLE[0])))
+    
+    end_point = (center_top[0] + params[0] * np.cos(np.radians(R1_ANGLE[1])),
+                 center_top[1] + params[0] * np.sin(np.radians(R1_ANGLE[1])))
+
+    # 시작선과 끝선 그리기
+    draw_line(ax, center_top, end_point)
+    draw_line(ax, center_top, start_point)
+    
+    # 중점 계산 및 텍스트 추가
+    mid_end = calculate_midpoint(center_top, end_point)
+    add_text(ax, mid_end, f'R1 = {params[0]*1000:.0f}', rotation=R1_ANGLE[1], offset=(-0.25, 0.25))
+
+    mid_start = calculate_midpoint(center_top, start_point)
+    add_text(ax, mid_start, f'R1 = {params[0]*1000:.0f}', rotation=R1_ANGLE[0] + 180, offset=(-0.5, -0.5))
+    
+    # R2 라인 그리기
+    L_C, R_C = find_side_center(center_top, params[0], R1_ANGLE[0], R1_ANGLE[1], params[2])
+
+    # 시작선과 끝선 그리기
+    draw_line(ax, L_C, params2[0])
+    draw_line(ax, R_C, params2[1])
+    
+    # 중점 계산 및 텍스트 추가
+    mid_start_R2 = calculate_midpoint(L_C, params2[0])
+    r2_bearing_start = calculate_bearing(params2[0][0], params2[0][1], L_C[0], L_C[1])
+    add_text(ax, mid_start_R2, f'R2 = {params[2]*1000:.0f}', rotation=r2_bearing_start)
+
+    mid_end_R2 = calculate_midpoint(R_C, params2[1])
+    r2_bearing_end = calculate_bearing(R_C[0], R_C[1], params2[1][0], params2[1][1])
+    add_text(ax, mid_end_R2, f'R2 = {params[2]*1000:.0f}', rotation=r2_bearing_end)
+
+
+    
+def calculate_bearing(x1, y1, x2, y2):
+    # Calculate the bearing (direction) between two points in Cartesian coordinates
+    dx = x2 - x1
+    dy = y2 - y1
+    bearing = math.degrees(math.atan2(dy, dx))
+    return bearing
+
 def console_print_tunnel_spec(params, params2):
     
     polygon = tunnel_section_area(params)
@@ -271,10 +419,11 @@ def console_print_tunnel_spec(params, params2):
     #plot_polygon_with_area(polygon)
     center_top = (0, s_R1_Y.get())
     TOP_of_Tunnel = center_top[1] + R1 - origin[1]
-    print(f' TOP_of_Tunnel{TOP_of_Tunnel}')
+    
     # 폐합 여부 확인
     is_closed, is_valid = check_polygon_closure(polygon)
 
+    '''
     if is_closed:
         print("Polygon is closed.")
     else:
@@ -284,17 +433,31 @@ def console_print_tunnel_spec(params, params2):
         print("Polygon is valid.")
     else:
         print("Polygon is NOT valid.")
-
+    '''
+    
     A = abs(params2[0][0] - origin[0])
     
+    R1_ANGLE = [90 + (params[1] / 2), 90 - (params[1] / 2)]
+    
+    L_C ,R_C = find_side_center(center_top, params[0], R1_ANGLE[0], R1_ANGLE[1], params[2])
+    left_SA = find_start_point(L_C, params[2], params2[0], params[3])
+    
+    p1,p2 = find_extreme_x_on_arc(L_C, params[2], R1_ANGLE[0], R1_ANGLE[0] + params[3])
+
+    ax.axhline(y=p2[1], color='gray', linestyle='--', linewidth=1)  # SL라인 그리기
+    ax.text(p2[0],p2[1],'SL')
+
+    print(f'------------------터널제원출력----------------\n')
     print(f'내공단면적 {polygon.area:.2f}m^2')
     print(f'R1 : {params[0]:.2f}')
     print(f'Top Angle {params[1]}')
     print(f'R2 : {params[2]}')
     print(f'R2 Angle: {params[3]}')
     print(f'A: {A:.2f}')
+    print(f'SL: {p2[1]:.2f}')
     print(f'R2/R1비 : {R2/R1:.2f}')
     print(f'편평률: {TOP_of_Tunnel / (A*2):.2f}')
+    
 def check_tunnel_spec(params):
     tolerance = 0.02
     new_FL = params[0][1] - FL_TO_CULVUT #FL Y좌표
@@ -307,7 +470,8 @@ def check_tunnel_spec(params):
         print('검토결과 : 미달 FL을 내려야 함.')
     else:
         print('검토결과 : 미달 FL을 올려야 함.')
-
+    print('------------------출력종료--------------------------')
+    
 def objective_function(params, *args):
     R1, R1_ANGLE, R2, R2_ANGLE, D = args
     R1_XY = params
