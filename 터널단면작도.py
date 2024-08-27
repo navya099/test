@@ -11,7 +11,7 @@ from shapely.affinity import rotate
 import tkinter as tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # 추가
 import numpy as np
-from tkinter import filedialog, Tk, StringVar, ttk , messagebox
+from tkinter import filedialog, Tk, StringVar, ttk , messagebox, simpledialog
 
 plt.rcParams['font.family'] ='Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] =False
@@ -559,6 +559,23 @@ def save_plot_to_dxf(filename, ax):
 
     doc.saveas(filename)
 
+def set_slider_value(slider, label):
+    # 사용자에게 값을 입력받아 슬라이더 값 설정
+    value = simpledialog.askfloat("입력", f"{label} 값을 입력하세요:", initialvalue=slider.get())
+    if value is not None:
+        slider.set(value)
+        update_plot()
+
+def exit_program():
+    print("프로그램을 종료합니다.")
+    
+    # plot_root가 존재하는지 확인한 후 destroy() 호출
+    if plot_root.winfo_exists():
+        plot_root.destroy()
+    
+    # slider_root가 존재하는지 확인한 후 destroy() 호출
+    if slider_root.winfo_exists():
+        slider_root.destroy()
     
 #초기값          
 origin = (0,0) #원점
@@ -579,10 +596,14 @@ R2_ANGLE = 69 #R2각도
 # 슬라이더가 위치할 창을 위한 tkinter 설정
 slider_root = tk.Tk()
 slider_root.title("Slider Control")
+# 윈도우 크기 설정 (가로 x 세로)
+slider_root.geometry("200x700")  # 가로 800, 세로 400
 
 # 플롯 창 생성
 plot_root = tk.Toplevel(slider_root)
 plot_root.title("Plot Window")
+# 윈도우 크기 설정 (가로 x 세로)
+plot_root.geometry("600x700")  # 가로 800, 세로 400
 
 # Matplotlib 플롯을 위한 설정
 fig, ax = plt.subplots()
@@ -601,35 +622,55 @@ toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
 toolbar.update()
 
 
-# 슬라이더를 위한 tkinter.Scale 위젯 생성
-s_R1 = tk.Scale(slider_root, label='R1', from_=5.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+# 슬라이더 생성 (초기에는 command가 없음)
+s_R1 = tk.Scale(slider_root, label='R1', from_=5.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
 s_R1.set(7.166)
 s_R1.pack(fill=tk.X, padx=5, pady=5)
 
-s_TOP_ANGLE = tk.Scale(slider_root, label='TOP_ANGLE', from_=60.0, to=120.0, resolution=1.0, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_TOP_ANGLE = tk.Scale(slider_root, label='TOP_ANGLE', from_=60.0, to=120.0, resolution=1.0, orient=tk.HORIZONTAL)
 s_TOP_ANGLE.set(90)
 s_TOP_ANGLE.pack(fill=tk.X, padx=5, pady=5)
 
-s_R2 = tk.Scale(slider_root, label='R2', from_=4.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R2 = tk.Scale(slider_root, label='R2', from_=4.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
 s_R2.set(5.54)
 s_R2.pack(fill=tk.X, padx=5, pady=5)
 
-s_R2_ANGLE = tk.Scale(slider_root, label='R2_ANGLE', from_=30.0, to=90.0, resolution=1.0, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R2_ANGLE = tk.Scale(slider_root, label='R2_ANGLE', from_=30.0, to=90.0, resolution=1.0, orient=tk.HORIZONTAL)
 s_R2_ANGLE.set(69)
 s_R2_ANGLE.pack(fill=tk.X, padx=5, pady=5)
 
-s_D = tk.Scale(slider_root, label='선로중심간격', from_=3.8, to=30.0, resolution=0.1, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_D = tk.Scale(slider_root, label='선로중심간격', from_=3.8, to=30.0, resolution=0.1, orient=tk.HORIZONTAL)
 s_D.set(4.4)
 s_D.pack(fill=tk.X, padx=5, pady=5)
 
-s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=-5.0, to=5.0, resolution=0.01, orient=tk.HORIZONTAL, command=lambda x: update_plot())
+s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=-5.0, to=5.0, resolution=0.01, orient=tk.HORIZONTAL)
 s_R1_Y.set(1.572)
 s_R1_Y.pack(fill=tk.X, padx=5, pady=5)
+
+# 슬라이더에 command 설정
+s_R1.config(command=lambda x: update_plot())
+s_TOP_ANGLE.config(command=lambda x: update_plot())
+s_R2.config(command=lambda x: update_plot())
+s_R2_ANGLE.config(command=lambda x: update_plot())
+s_D.config(command=lambda x: update_plot())
+s_R1_Y.config(command=lambda x: update_plot())
+
+# 버튼 생성 및 슬라이더와 연결
+tk.Button(slider_root, text="R1 입력", command=lambda: set_slider_value(s_R1, 'R1')).pack(fill=tk.X, padx=5, pady=5)
+tk.Button(slider_root, text="TOP_ANGLE 입력", command=lambda: set_slider_value(s_TOP_ANGLE, 'TOP_ANGLE')).pack(fill=tk.X, padx=5, pady=5)
+tk.Button(slider_root, text="R2 입력", command=lambda: set_slider_value(s_R2, 'R2')).pack(fill=tk.X, padx=5, pady=5)
+tk.Button(slider_root, text="R2_ANGLE 입력", command=lambda: set_slider_value(s_R2_ANGLE, 'R2_ANGLE')).pack(fill=tk.X, padx=5, pady=5)
+tk.Button(slider_root, text="선로중심간격 입력", command=lambda: set_slider_value(s_D, '선로중심간격')).pack(fill=tk.X, padx=5, pady=5)
+tk.Button(slider_root, text="R1_Y 입력", command=lambda: set_slider_value(s_R1_Y, 'R1_Y')).pack(fill=tk.X, padx=5, pady=5)
+
 
 # 다시그리기 버튼 생성
 btn_save_dxf = tk.Button(slider_root, text="도면으로 저장하기", command=save_dxf)
 btn_save_dxf.pack(side=tk.LEFT, pady=5, padx=10)
 
+# 종료 버튼 생성
+exit_button = tk.Button(slider_root, text="종료", command=exit_program)
+exit_button.pack(side=tk.LEFT, pady=5, padx=10)
 
 # tkinter 메인 루프 시작
 slider_root.mainloop()
