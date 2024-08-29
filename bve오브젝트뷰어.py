@@ -1,19 +1,9 @@
 import numpy as np
 import pyvista as pv
 import os
-from PIL import Image
-
-def convert_bmp_to_png(bmp_file):
-    """Convert BMP file to PNG format and return the path to the new file."""
-    if bmp_file.lower().endswith('.bmp'):
-        png_file = bmp_file.rsplit('.', 1)[0] + '.png'
-        with Image.open(bmp_file) as img:
-            img.save(png_file, format='PNG')
-        return png_file
-    return bmp_file
 
 def parse_txt_file(filename):
-    """Parse a text file with mesh data and return a list of meshes."""
+    # CSV 파일의 디렉토리 경로
     base_dir = os.path.dirname(filename)
     
     with open(filename, 'r', encoding='utf-8') as file:
@@ -43,6 +33,7 @@ def parse_txt_file(filename):
         try:
             if command == "CreateMeshBuilder":
                 if current_vertices:
+                    # Finalize current mesh
                     if current_faces:
                         meshes.append((np.array(current_vertices), current_faces, texture_coords, texture_file))
                     else:
@@ -85,19 +76,18 @@ def parse_txt_file(filename):
     return meshes
 
 def create_mesh(vertices, faces, texture_coords):
-    """Create a PyVista mesh from vertices, faces, and texture coordinates."""
     if len(vertices) == 0:
         raise ValueError("No vertices found. Check the input data.")
     
     if len(faces) == 0:
         raise ValueError("No faces found. Check the input data.")
     
-    # Convert faces to the format expected by PyVista
+    # Convert faces to the format expected by PyVista: [n0, v0, v1, ..., vn] where n0 is the number of vertices in the face
     flat_faces = []
     for face in faces:
         if len(face) > 0:
-            flat_faces.append(len(face))
-            flat_faces.extend(face)
+            flat_faces.append(len(face))  # number of vertices in the face
+            flat_faces.extend(face)        # the indices of the vertices
     
     flat_faces = np.array(flat_faces, dtype=int)
     
@@ -105,49 +95,62 @@ def create_mesh(vertices, faces, texture_coords):
     
     # Apply texture coordinates
     if texture_coords:
-        texture_coords_array = np.full((len(vertices), 2), [0, 0])  # Default UV coordinates
-        for idx, uv in texture_coords.items():
-            if 0 <= idx < len(vertices):
-                texture_coords_array[idx] = uv
-        
-        mesh.point_data['Texture Coordinates'] = texture_coords_array
+        texture_coords = normalize_texture_coords(texture_coords)
+        coords = np.zeros((len(vertices), 2))
+        for idx, coord in texture_coords.items():
+            coords[idx] = coord
+        mesh.point_data['Texture Coordinates'] = coords
     
     return mesh
 
 def visualize_meshes(meshes):
-    """Visualize the list of meshes with optional textures."""
     plotter = pv.Plotter()
     
     for vertices, faces, texture_coords, texture_file in meshes:
         try:
             mesh = create_mesh(vertices, faces, texture_coords)
             
+            # 텍스쳐 파일의 절대 경로 생성
             if texture_file:
-                base, ext = os.path.splitext(texture_file)
-            
-            if texture_file and os.path.isfile(texture_file):
-                texture = pv.read_texture(texture_file)
+                absolute_texture_path = os.path.abspath(texture_file)
+                print(f'현재 텍스쳐 파일: {absolute_texture_path}')
                 
-                # Ensure texture is correctly loaded
-                print(f"Loaded texture from file: {texture_file}")
-                
-                if 'Texture Coordinates' in mesh.point_data:
-                    print("Texture coordinates found in mesh.")
+                if os.path.isfile(absolute_texture_path):
+                    texture = pv.read_texture(absolute_texture_path)
+                    plotter.add_mesh(mesh, style='surface', texture=texture, scalars=None, show_edges=True)
                 else:
-                    print("No texture coordinates found in mesh. Ensure they are set correctly.")
-                
-                # Add the mesh with the texture
-                plotter.add_mesh(mesh, texture=texture, show_edges=True)
+                    print('텍스쳐 파일을 찾을 수 없습니다. 텍스쳐를 로드하지 않습니다.')
+                    plotter.add_mesh(mesh, style='surface', show_edges=True)
             else:
-                print('Texture file not found or not applicable. Not applying texture.')
-                plotter.add_mesh(mesh, show_edges=True)
+                print('텍스쳐 파일이 제공되지 않았습니다. 텍스쳐를 로드하지 않습니다.')
+                plotter.add_mesh(mesh, style='surface', show_edges=True)
         except ValueError as e:
             print(f"Error creating mesh: {e}")
     
     plotter.show()
 
-# Replace with your file path
-filename = "c:/temp/BridgeL.csv"
+def normalize_texture_coords(texture_coords):
+    if not texture_coords:
+        return {}
+    
+    min_u = min(coord[0] for coord in texture_coords.values())
+    max_u = max(coord[0] for coord in texture_coords.values())
+    min_v = min(coord[1] for coord in texture_coords.values())
+    max_v = max(coord[1] for coord in texture_coords.values())
+    
+    range_u = max_u - min_u
+    range_v = max_v - min_v
+    
+    normalized_coords = {}
+    for idx, coord in texture_coords.items():
+        norm_u = (coord[0] - min_u) / range_u if range_u > 0 else 0
+        norm_v = (coord[1] - min_v) / range_v if range_v > 0 else 0
+        normalized_coords[idx] = [norm_u, norm_v]
+    
+    return normalized_coords
+
+# txt 파일 파싱 및 메쉬 생성
+filename = "c:/temp/DikeL.csv"  # CSV 파일 경로
 meshes = parse_txt_file(filename)
 
 try:
