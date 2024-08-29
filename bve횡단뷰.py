@@ -45,8 +45,8 @@ def load_ground_levels():
             reader = csv.reader(file)
             for row in reader:
                 station = row[0]
-                ground_elevation = float(row[1]) * -1 + elevation
-                gl.append([station, ground_elevation])
+                height = float(row[1])
+                gl.append([station, height])
     except FileNotFoundError:
         print("파일을 찾을 수 없습니다.")
     except Exception as e:
@@ -157,7 +157,23 @@ def determate_e_type(fl, gl):
     slope_type = 'fil' if fl > gl else 'cut'
     return slope_type
 
-
+def determate_structure_type(fl, gl):
+    if fl - gl > 15:
+        struct_type = 'bridge'
+    elif fl - gl < -15:
+        struct_type = 'tunnel'
+    else:
+        struct_type = 'earth'
+    
+def determate_bridge_and_tunnel(station, fl_list, gl_list):
+    # Create an instance of Block with the station and structure type
+    block = Block(station, structure_type)
+    
+class Block:
+    def __init__(self, station, structure):
+        self.station = station
+        self.structure = structure
+    
 # 전역 변수 설정
 slope_cut = 1.5  # 절토사면경사
 slope_fill = 1.5  # 성토사면경사
@@ -172,7 +188,7 @@ def update_plot():
     ax.grid(True)
 
     if input_station:
-        selected_station = int(input_station)
+        selected_station = input_station
     else:
         selected_station = station_var.get()
         
@@ -223,20 +239,17 @@ def update_plot():
         # 텍스트 레이블 생성 윈도우창
         text = f'{format_distance(selected_station)}' # Change "Other Text" to whatever you want for direction not equal to 1
         text_label = tk.Label(root, text=text, bg=root.cget('bg'), fg="black", font=custom_font)
-        text_label.place(x=400, y=40)
+        text_label.place(x=410, y=40, anchor='center')
 
         # 플롯 설정
-        ax.axhline(0, color='black', linewidth=0.5)
-        ax.axvline(0, color='black', linewidth=0.5)
         ax.set_ylim(fl_value - 50, fl_value + 50)
-        
+        ax.set_xlim(-50, 50)
         canvas.draw()
     else:
-        print(f"측점 {selected_station}이(가) 목록에 없습니다.")
+        print(f"측점 {selected_station}(가) 목록에 없습니다.")
 
 def load_and_setup_gui():
-    global station_dict, station_list, FL_list, GL_list, slope_type_list , station_var
-    global input_station
+    global station_dict, station_list, FL_list, GL_list, slope_type_list
     
     # GL 및 FL 데이터 로드
     gl = load_ground_levels()
@@ -249,20 +262,17 @@ def load_and_setup_gui():
 
     station_list = [item[0] for item in gl]
     FL_list = [item[1] for item in fl]
-    GL_list = [item[1] for item in gl]
+
+
+    # GL 리스트의 두 번째 요소(지반고 값)만 추출하여 계산
+    gl_values = [item[1] for item in gl]  # GL의 두 번째 요소 추출
+    GL_list = [fl_val - gl_val for fl_val, gl_val in zip(FL_list, gl_values)]
     
     # station_dict: station 이름과 인덱스의 매핑
     station_dict = {station: idx for idx, (station, _) in enumerate(gl)}
 
-    
-
-    # 측점 선택 콤보박스
-    station_var = StringVar(root)
-    station_menu = OptionMenu(root, station_var, *station_list)
-    station_menu.pack()
-
     # 측점 직접 입력 필드
-    entry_label = tk.Label(root, text="직접 측점 입력:")
+    entry_label = tk.Label(root, text="측점 입력")
     entry_label.pack()
 
     station_entry = Entry(root)
@@ -275,17 +285,15 @@ def load_and_setup_gui():
         print(f"입력된 값: {input_value}")  # Print input value for debugging
         # 입력된 측점이 station_dict에 있는지 확인
         try:
-            input_station = int(input_value)
+            input_station = str(int(input_value))
         except ValueError:
             print(f"입력된 측점 {input_value}이(가) 유효한 숫자가 아닙니다.")
             return
 
-        input_station = int(input_station)
-        print(type(input_station))
         if input_station in station_dict:
             update_plot()
         else:
-            print(f"입력된 측점 {input_station}이(가) 목록에 없습니다.")
+            print(f"입력된 측점 {input_station}이 목록에 없습니다.")
 
     update_button = Button(root, text="플롯 업데이트", command=on_update_button_click)
     update_button.pack()
@@ -324,9 +332,6 @@ toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
 toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
 toolbar.update()
 
-# 플롯 업데이트 버튼
-plot_button = Button(root, text="측점 플롯", command=update_plot)
-plot_button.pack(side=tk.LEFT, pady=5, padx=10)
 
 #도면저장 버튼 생성
 btn_save_dxf = tk.Button(root, text="도면으로 저장하기", command=save_dxf)
