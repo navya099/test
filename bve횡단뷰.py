@@ -6,10 +6,47 @@ import csv
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # 추가
 import tkinter as tk
+import ezdxf
+from matplotlib.patches import Circle, Arc
+import matplotlib.patches as patches
+
 
 # matplotlib 설정: 한글 폰트 및 마이너스 기호 지원
 plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] = False
+
+def drawcad(ax, filename, translate_x=0, translate_y=0):
+    # DWG 파일 열기
+    directory = "c:/temp/"
+    dxf_file = directory + filename
+    doc = ezdxf.readfile(dxf_file)
+
+    # 레이아웃 선택 (예: ModelSpace)
+    msp = doc.modelspace()
+
+    # 도형을 Matplotlib에 플롯
+    for entity in msp:
+        if entity.dxftype() == 'LINE':
+            start_point = entity.dxf.start
+            end_point = entity.dxf.end
+            ax.plot([start_point.x + translate_x, end_point.x + translate_x],
+                    [start_point.y + translate_y, end_point.y + translate_y], 'k-')
+
+        elif entity.dxftype() == 'CIRCLE':
+            center = entity.dxf.center
+            radius = entity.dxf.radius
+            circle = plt.Circle((center.x + translate_x, center.y + translate_y), radius, color='r', fill=False)
+            ax.add_patch(circle)
+
+        elif entity.dxftype() == 'ARC':
+            center = entity.dxf.center
+            radius = entity.dxf.radius
+            start_angle = entity.dxf.start_angle
+            end_angle = entity.dxf.end_angle
+            arc = patches.Arc((center.x + translate_x, center.y + translate_y), 2*radius, 2*radius, angle=0,
+                              theta1=start_angle, theta2=end_angle, color='g')
+            ax.add_patch(arc)
+
 
 # 거리를 형식화하는 함수
 def format_distance(number):
@@ -152,27 +189,39 @@ def add_angle_text(p1, p2, position, label):
     if angle < -90:
         angle += 180
     plt.text(position[0], position[1], label, fontsize=9, color='red', ha='center', rotation=angle)
-    
+
+#절성토 판단
 def determate_e_type(fl, gl):
     slope_type = 'fil' if fl > gl else 'cut'
     return slope_type
 
-def determate_structure_type(fl, gl):
-    if fl - gl > 15:
-        struct_type = 'bridge'
-    elif fl - gl < -15:
-        struct_type = 'tunnel'
-    else:
-        struct_type = 'earth'
+#절토성토고 계산
+def calculate_cutfill(STA_LST, FL_LST, GL_LST):
+    new_cutfill = []
     
-def determate_bridge_and_tunnel(station, fl_list, gl_list):
-    # Create an instance of Block with the station and structure type
-    block = Block(station, structure_type)
-    
-class Block:
-    def __init__(self, station, structure):
-        self.station = station
-        self.structure = structure
+    for station, dl, el in zip(STA_LST, FL_LST, GL_LST):  # 지반고 추출
+        height_d = el - dl
+        new_cutfill.append([station, height_d])
+
+    return new_cutfill
+
+
+#구조물판별
+#구조물판별
+def cal_profile_structure(new_cutfill):
+    new_structure = []
+
+    for station, cutfill_d in new_cutfill:
+        if cutfill_d  >= 12:
+             new_structure.append([station , "터널"])
+            
+        elif cutfill_d  <= -12:
+            new_structure.append([station , "교량"])
+        else:
+             new_structure.append([station , "토공"])
+
+    return new_structure
+
     
 # 전역 변수 설정
 slope_cut = 1.5  # 절토사면경사
@@ -196,11 +245,9 @@ def update_plot():
         idx = station_dict[selected_station]
         fl_value = FL_list[idx]
         gl_value = GL_list[idx]
-
-
-        #절성토 판단
-        slope_type = determate_e_type(fl_value, gl_value)
         
+        current_structure = new_structure[idx][1]
+        print(current_structure)
         #지반고 라인 셋팅
         ground_line_points = [(-plot_limit, gl_value), (plot_limit, gl_value)]
         ground_line = LineString(ground_line_points)
@@ -209,23 +256,38 @@ def update_plot():
         fl_point = Point(0, fl_value)
         gl_point = Point(0, gl_value)
 
-        # 노반 좌, 우측 좌표계산
-        left_point, right_point = calculate_slope_points(fl_point, road_width, road_slope)
-        
-        # 지반고와 섹션 플로팅
-        plot_section(fl_point, left_point, right_point)
+        #지반고 라인 플롯
         plot_ground_level(ground_line_points)
 
-        # 사면 경사 계산 및 플로팅
-        
-        left_nori, right_nori = calculate_slope_intersections(left_point, right_point, ground_line, slope_cut, slope_type)
+        #구조물별 로직 실행
+        if current_structure == '교량':
+            drawcad(ax, 'bridge.dxf', translate_x=0, translate_y=fl_value)
+        elif current_structure == '터널':
+            drawcad(ax, 'tunnel.dxf', translate_x=0, translate_y=fl_value)
+        else:#토공인경우
+            
+            #절성토 판단
+            slope_type = determate_e_type(fl_value, gl_value)
 
-        ax.plot([left_point.x, left_nori.x], [left_point.y, left_nori.y], color='skyblue', label='Slope')
-        ax.plot([right_point.x, right_nori.x], [right_point.y, right_nori.y], color='skyblue', label='Slope')
 
-        # 각도 텍스트 추가
-        add_angle_text(left_point, left_nori, ((left_point.x + left_nori.x) / 2, (left_point.y + left_nori.y) / 2), '1:1.5')
-        add_angle_text(right_point, right_nori, ((right_point.x + right_nori.x) / 2, (right_point.y + right_nori.y) / 2), '1:1.5')
+            # 노반 좌, 우측 좌표계산
+            left_point, right_point = calculate_slope_points(fl_point, road_width, road_slope)
+            
+            # 노반플로팅
+            plot_section(fl_point, left_point, right_point)
+            
+
+            # 사면 경사 계산 및 플로팅
+            #조측 우측 사면점 찾기
+            left_nori, right_nori = calculate_slope_intersections(left_point, right_point, ground_line, slope_cut, slope_type)
+
+            #플롯
+            ax.plot([left_point.x, left_nori.x], [left_point.y, left_nori.y], color='skyblue', label='Slope')
+            ax.plot([right_point.x, right_nori.x], [right_point.y, right_nori.y], color='skyblue', label='Slope')
+
+            #경사 텍스트추가
+            add_angle_text(left_point, left_nori, ((left_point.x + left_nori.x) / 2, (left_point.y + left_nori.y) / 2), '1:1.5')
+            add_angle_text(right_point, right_nori, ((right_point.x + right_nori.x) / 2, (right_point.y + right_nori.y) / 2), '1:1.5')
 
         # FL 및 GL 텍스트 추가
         ax.text(fl_point.x, fl_point.y, f'FL = {fl_value:.2f}', fontsize=9, color='red', ha='center')
@@ -250,6 +312,7 @@ def update_plot():
 
 def load_and_setup_gui():
     global station_dict, station_list, FL_list, GL_list, slope_type_list
+    global new_cutfill , new_structure
     
     # GL 및 FL 데이터 로드
     gl = load_ground_levels()
@@ -267,6 +330,11 @@ def load_and_setup_gui():
     # GL 리스트의 두 번째 요소(지반고 값)만 추출하여 계산
     gl_values = [item[1] for item in gl]  # GL의 두 번째 요소 추출
     GL_list = [fl_val - gl_val for fl_val, gl_val in zip(FL_list, gl_values)]
+
+    #절성토고 계산
+    new_cutfill = calculate_cutfill(station_list, FL_list, GL_list)
+    #구조물 판별
+    new_structure = cal_profile_structure(new_cutfill)
     
     # station_dict: station 이름과 인덱스의 매핑
     station_dict = {station: idx for idx, (station, _) in enumerate(gl)}
@@ -306,9 +374,67 @@ def exit_program():
     if root.winfo_exists():
         root.destroy()
         
-def save_dxf():
-    pass
+# 버튼 클릭 이벤트 핸들러
+def save_dxf(event=None):
+    filename = f"C:/TEMP/{input_station}.dxf"  # 저장할 DXF 파일 이름
+    save_plot_to_dxf(filename, ax)
+    print(f"플롯 상태가 {filename} 파일로 저장되었습니다.")
 
+def save_plot_to_dxf(filename, ax):
+    doc = ezdxf.new()
+    msp = doc.modelspace()
+
+    # 선 추가
+    for line in ax.lines:
+        x_data, y_data = line.get_data()
+        for i in range(len(x_data) - 1):
+            start_point = (x_data[i], y_data[i])
+            end_point = (x_data[i + 1], y_data[i + 1])
+            msp.add_line(start=start_point, end=end_point)
+
+    # 원과 원호 추가
+    for patch in ax.patches:
+        if isinstance(patch, Circle):
+            center = patch.center
+            radius = patch.radius
+            msp.add_circle(center=center, radius=radius)
+
+        elif isinstance(patch, Arc):
+            center = patch.center
+            width = patch.width
+            height = patch.height
+            radius = width / 2
+            
+            # Matplotlib의 Arc는 시작 각도와 끝 각도를 0도에서 360도 사이로 사용
+            start_angle = patch.theta1
+            end_angle = patch.theta2
+
+            # DXF의 경우, 시계방향으로 각도를 계산
+            if end_angle < start_angle:
+                end_angle += 360
+            
+            # Arc의 끝 각도가 360도를 넘어가는 경우, 시작 각도와 끝 각도를 조정
+            if end_angle > 360:
+                end_angle -= 360
+
+            # DXF 아크의 각도는 0도에서 360도 사이로 정의
+            start_angle = (start_angle % 360)
+            end_angle = (end_angle % 360)
+
+            msp.add_arc(center=center, radius=radius, start_angle=start_angle, end_angle=end_angle)
+
+    # 텍스트 추가
+    for text in ax.texts:
+        x, y = text.get_position()
+        content = text.get_text()
+        rotation = text.get_rotation()  # 텍스트 회전 각도 추출
+        # matplotlib의 회전 각도를 DXF의 회전 각도로 변환 (matplotlib은 회전 각도를 counter-clockwise로 사용, DXF는 clock-wise 사용)
+        rotation = rotation
+        
+        msp.add_text(content, dxfattribs={'insert': (x, y), 'height': 1, 'rotation': rotation})
+    
+    doc.saveas(filename)
+    
 elevation = 345  # 시공기면고
 
 # Tkinter GUI 구성
