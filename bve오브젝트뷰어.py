@@ -1,9 +1,11 @@
 import numpy as np
 import pyvista as pv
 import os
+import tkinter as tk
+from tkinterdnd2 import TkinterDnD, DND_FILES
+from tkinter import messagebox
 
 def parse_txt_file(filename):
-    # CSV 파일의 디렉토리 경로
     base_dir = os.path.dirname(filename)
     
     with open(filename, 'r', encoding='utf-8') as file:
@@ -31,9 +33,8 @@ def parse_txt_file(filename):
         command = parts[0]
         
         try:
-            if command == "CreateMeshBuilder":
+            if command.lower() == "createmeshbuilder":
                 if current_vertices:
-                    # Finalize current mesh
                     if current_faces:
                         meshes.append((np.array(current_vertices), current_faces, texture_coords, texture_file))
                     else:
@@ -43,24 +44,24 @@ def parse_txt_file(filename):
                     texture_coords = {}
                     texture_file = None
             
-            elif command == "AddVertex":
+            elif command.lower() == "addvertex":
                 vX, vY, vZ = map(float, parts[1:4])
                 nX, nY, nZ = map(float, parts[4:7]) if len(parts) > 4 else (0, 0, 0)
                 current_vertices.append([vX, vY, vZ])
             
-            elif command == "AddFace":
+            elif command.lower() == "addface":
                 indices = list(map(int, parts[1:]))
                 if indices:
                     current_faces.append(indices)
                 else:
                     print(f"Warning: Empty face found at line {line_number}")
             
-            elif command == "SetTextureCoordinates":
+            elif command.lower() == "settexturecoordinates":
                 vertex_index = int(parts[1])
                 u, v = map(float, parts[2:])
                 texture_coords[vertex_index] = [u, v]
             
-            elif command == "LoadTexture":
+            elif command.lower() == "loadtexture":
                 texture_file = os.path.join(base_dir, parts[1])
         
         except ValueError as e:
@@ -82,18 +83,16 @@ def create_mesh(vertices, faces, texture_coords):
     if len(faces) == 0:
         raise ValueError("No faces found. Check the input data.")
     
-    # Convert faces to the format expected by PyVista: [n0, v0, v1, ..., vn] where n0 is the number of vertices in the face
     flat_faces = []
     for face in faces:
         if len(face) > 0:
-            flat_faces.append(len(face))  # number of vertices in the face
-            flat_faces.extend(face)        # the indices of the vertices
+            flat_faces.append(len(face))
+            flat_faces.extend(face)
     
     flat_faces = np.array(flat_faces, dtype=int)
     
     mesh = pv.PolyData(vertices, flat_faces)
     
-    # Apply texture coordinates
     if texture_coords:
         texture_coords = normalize_texture_coords(texture_coords)
         coords = np.zeros((len(vertices), 2))
@@ -109,8 +108,7 @@ def visualize_meshes(meshes):
     for vertices, faces, texture_coords, texture_file in meshes:
         try:
             mesh = create_mesh(vertices, faces, texture_coords)
-            
-            # 텍스쳐 파일의 절대 경로 생성
+            '''
             if texture_file:
                 absolute_texture_path = os.path.abspath(texture_file)
                 print(f'현재 텍스쳐 파일: {absolute_texture_path}')
@@ -124,6 +122,8 @@ def visualize_meshes(meshes):
             else:
                 print('텍스쳐 파일이 제공되지 않았습니다. 텍스쳐를 로드하지 않습니다.')
                 plotter.add_mesh(mesh, style='surface', show_edges=True)
+            '''
+            plotter.add_mesh(mesh, style='surface', show_edges=True)
         except ValueError as e:
             print(f"Error creating mesh: {e}")
     
@@ -149,11 +149,30 @@ def normalize_texture_coords(texture_coords):
     
     return normalized_coords
 
-# txt 파일 파싱 및 메쉬 생성
-filename = "c:/temp/DikeL.csv"  # CSV 파일 경로
-meshes = parse_txt_file(filename)
+def on_drop(event):
+    filename = event.data.strip()
+    if filename and os.path.isfile(filename):
+        try:
+            meshes = parse_txt_file(filename)
+            visualize_meshes(meshes)
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+    else:
+        messagebox.showerror("Error", "The dropped file is not valid or does not exist.")
 
-try:
-    visualize_meshes(meshes)
-except ValueError as e:
-    print(e)
+def main():
+    root = TkinterDnD.Tk()
+    root.title("Mesh Visualizer")
+    
+    # Set up drag-and-drop
+    root.drop_target_register(DND_FILES)
+    root.dnd_bind('<<Drop>>', on_drop)
+    
+    label = tk.Label(root, text="Drag and drop your .txt file here", padx=20, pady=20)
+    label.pack(expand=True, fill=tk.BOTH)
+    
+    root.geometry('400x200')
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
