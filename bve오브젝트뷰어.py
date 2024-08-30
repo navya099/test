@@ -4,8 +4,49 @@ import os
 import tkinter as tk
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from tkinter import messagebox
+import chardet
+import pandas as pd
 
+def detect_encoding(file_path):
+    """파일 인코딩을 감지합니다."""
+    with open(file_path, 'rb') as f:
+        result = chardet.detect(f.read())
+    return result['encoding']
+
+def convert_to_utf8(file_path):
+    """파일을 UTF-8로 변환합니다."""
+
+    supported_extensions = ('.x', '.txt', '.csv')
+    
+    # Check file extension
+    _, file_extension = os.path.splitext(file_path)
+    if file_extension.lower() not in supported_extensions:
+        print(f"File '{file_path}' is not a supported file type. Skipping conversion.")
+        return file_path
+    
+    detected_encoding = detect_encoding(file_path)
+    print(f"Detected encoding: {detected_encoding}")
+
+    # 만약 UTF-8이 아닌 인코딩이 감지되면 변환을 진행합니다.
+    if detected_encoding.lower() != 'utf-8':
+        utf8_file_path = file_path
+        with open(file_path, 'r', encoding=detected_encoding) as f:
+            content = f.read()
+
+        with open(utf8_file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        print(f"File converted to UTF-8 and saved as {utf8_file_path}")
+        return utf8_file_path
+    
 def parse_txt_file(filename):
+
+    # Check if the file has a .csv extension
+    _, file_extension = os.path.splitext(filename)
+    if file_extension.lower() != '.csv':
+        print(f"File '{filename}' is not a CSV file. Skipping parsing.")
+        return []
+    
     base_dir = os.path.dirname(filename)
     
     with open(filename, 'r', encoding='utf-8') as file:
@@ -49,7 +90,7 @@ def parse_txt_file(filename):
                 nX, nY, nZ = map(float, parts[4:7]) if len(parts) > 4 else (0, 0, 0)
                 current_vertices.append([vX, vY, vZ])
             
-            elif command.lower() == "addface":
+            elif command.lower() == "addface" or command.lower() == "addface2":
                 indices = list(map(int, parts[1:]))
                 if indices:
                     current_faces.append(indices)
@@ -156,8 +197,10 @@ def on_drop(event):
     
     if filename and os.path.isfile(filename):
         try:
+            utf8_file = convert_to_utf8(filename)
             meshes = parse_txt_file(filename)
-            visualize_meshes(meshes)
+            if meshes:
+                visualize_meshes(meshes)
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
     else:
