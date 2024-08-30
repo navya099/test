@@ -150,7 +150,10 @@ def normalize_texture_coords(texture_coords):
     return normalized_coords
 
 def on_drop(event):
-    filename = event.data.strip()
+    # Strip the curly braces and normalize the file path
+    filename = event.data.strip().strip("{}").replace("\\", "/")
+    print(f'현재 파일 : {filename}')
+    
     if filename and os.path.isfile(filename):
         try:
             meshes = parse_txt_file(filename)
