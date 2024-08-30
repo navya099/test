@@ -349,6 +349,9 @@ def update_plot():
     draw_angle_annotation(ax, start_point, R1_XY, end_point)#R1
     draw_angle_annotation(ax, left_end_point, L_C, start_point)#R2_L
     draw_angle_annotation(ax, end_point, R_C, right_end_point)#R2_R
+
+    #공동구통로표시
+    plot_safeline(left_end_point, right_end_point)
     
     initial_guess = [R1_XY[0], R1_XY[1]]
     result = minimize(objective_function, initial_guess, args=(R1, R1_ANGLE, R2, R2_ANGLE, D), method='L-BFGS-B')
@@ -577,12 +580,41 @@ def exit_program():
     if slider_root.winfo_exists():
         slider_root.destroy()
     
+def plot_safeline(left_end_point, right_end_point):#안전라인 그리기
+    #좌측
+    x = [left_end_point[0], left_end_point[0] ,left_end_point[0] + sideL, left_end_point[0] +sideL]
+    y = [left_end_point[1], left_end_point[1] + safeheight, left_end_point[1] + safeheight, left_end_point[1]]
+    ax.plot(x,y, color='gray', linestyle='--')
+
+    #X표시
+    x2 = [left_end_point[0], left_end_point[0] + sideL]
+    y2 = [left_end_point[1] + safeheight,left_end_point[1]]
+    ax.plot(x2,y2, color='gray', linestyle='--')
+    #X표시
+    x2 = [left_end_point[0] + sideL,  left_end_point[0]]
+    y2 = [left_end_point[1] + safeheight,left_end_point[1]]
+    ax.plot(x2,y2, color='gray', linestyle='--')
+    
+    #우측
+    x = [right_end_point[0], right_end_point[0] ,right_end_point[0] - sideL, right_end_point[0] - sideL]
+    y = [right_end_point[1], right_end_point[1] + safeheight, right_end_point[1] + safeheight, left_end_point[1]]
+    ax.plot(x,y, color='gray', linestyle='--')
+
+    #X표시
+    x2 = [right_end_point[0], right_end_point[0] - sideL]
+    y2 = [right_end_point[1] + safeheight,right_end_point[1]]
+    ax.plot(x2,y2, color='gray', linestyle='--')
+    #X표시
+    x2 = [right_end_point[0] - sideL,  right_end_point[0]]
+    y2 = [right_end_point[1] + safeheight,right_end_point[1]]
+    ax.plot(x2,y2, color='gray', linestyle='--')
 #초기값          
 origin = (0,0) #원점
 FL = 0 #시공기면
 RL = FL + 0.472 #레일면고
 sideL = 0.8 #좌측 공동구 점검원 통로폭
 sideR = 0.8 #우측 공동구 점검원 통로폭
+safeheight = 2.1#안전반경높이
 FL_TO_CULVUT = 0.472 #공동구 상단에서 FL까지의 높이
 D = 4.4 #선로중심간격
 T = 0.4 #라이닝 두께
@@ -623,27 +655,27 @@ toolbar.update()
 
 
 # 슬라이더 생성 (초기에는 command가 없음)
-s_R1 = tk.Scale(slider_root, label='R1', from_=5.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
+s_R1 = tk.Scale(slider_root, label='R1', from_=1.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
 s_R1.set(7.166)
 s_R1.pack(fill=tk.X, padx=5, pady=5)
 
-s_TOP_ANGLE = tk.Scale(slider_root, label='TOP_ANGLE', from_=60.0, to=120.0, resolution=1.0, orient=tk.HORIZONTAL)
+s_TOP_ANGLE = tk.Scale(slider_root, label='TOP_ANGLE', from_=0.0, to=180.0, resolution=1.0, orient=tk.HORIZONTAL)
 s_TOP_ANGLE.set(90)
 s_TOP_ANGLE.pack(fill=tk.X, padx=5, pady=5)
 
-s_R2 = tk.Scale(slider_root, label='R2', from_=4.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
+s_R2 = tk.Scale(slider_root, label='R2', from_=1.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
 s_R2.set(5.54)
 s_R2.pack(fill=tk.X, padx=5, pady=5)
 
-s_R2_ANGLE = tk.Scale(slider_root, label='R2_ANGLE', from_=30.0, to=90.0, resolution=1.0, orient=tk.HORIZONTAL)
+s_R2_ANGLE = tk.Scale(slider_root, label='R2_ANGLE', from_=0.0, to=180.0, resolution=1.0, orient=tk.HORIZONTAL)
 s_R2_ANGLE.set(69)
 s_R2_ANGLE.pack(fill=tk.X, padx=5, pady=5)
 
-s_D = tk.Scale(slider_root, label='선로중심간격', from_=3.8, to=30.0, resolution=0.1, orient=tk.HORIZONTAL)
+s_D = tk.Scale(slider_root, label='선로중심간격', from_=0.0, to=30.0, resolution=0.1, orient=tk.HORIZONTAL)
 s_D.set(4.4)
 s_D.pack(fill=tk.X, padx=5, pady=5)
 
-s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=-5.0, to=5.0, resolution=0.01, orient=tk.HORIZONTAL)
+s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=-10.0, to=10.0, resolution=0.01, orient=tk.HORIZONTAL)
 s_R1_Y.set(1.572)
 s_R1_Y.pack(fill=tk.X, padx=5, pady=5)
 
