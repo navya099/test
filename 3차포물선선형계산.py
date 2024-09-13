@@ -292,7 +292,8 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
     
     BP_STA = 0
     BP_STA_LIST = [0]
-    
+
+    station_coordlist = []
     for i in range(len(linestring.coords)-2):
         IA_rad = math.radians(angles[i])
         IA_DEGREE = angles[i]
@@ -332,7 +333,7 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
             curvedirection = 'RIGHT CURVE'
         else:
             curvedirection = 'LEFT CURVE'
-        if i ==1:
+        if 0:
             #3차포물선 제원 출력
             print("\n------------------\n")
             print("\n3차포물선 제원 출력\n")
@@ -389,7 +390,7 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
             cubic_parabola_STA_list.append([SP_STA, PC_STA, CP_STA, PS_STA])
         
         
-        if i==1:
+        if 0:
             print(f'IPNO.{i+1}')
             print(f'BP = {BP_XY}')
             print(f'방위각1 = {h1}')
@@ -405,36 +406,54 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
             print(f'CP = {CP_STA}')
             print(f'PS = {PS_STA}')
             
-        if i == 0:
-            # unit 간격으로 PS_STA까지 스테이션 리스트 생성
-            unit = 20
-            station_list = [sta for sta in range(0, int(PS_STA) + unit, unit)]
+        
+        # unit 간격으로 PS_STA까지 스테이션 리스트 생성
+        # Ensure BP_STA and PS_STA are integers
+        BP_STA_int = int(round(BP_STA))
+        PS_STA_int = int(round(PS_STA))
 
-            # 최종적으로 station과 coord의 딕셔너리 리턴
-            station_coordlist = {}
+        # unit 간격으로 PS_STA까지 스테이션 리스트 생성
+        unit = 20
+        station_list = generate_integers(BP_STA_int, PS_STA_int, unit)
 
-            # 스테이션 리스트에 있는 각 sta에 대해 좌표 계산
-            for j, sta in enumerate(station_list):
-                if j ==0:
-                    lable = 'B  P'
-                else:
-                    lable = get_station_label(sta, SP_STA, PC_STA, CP_STA, PS_STA, PS_STA)#제원문자
-                print(lable)
-                if j ==0:
-                    StationOffset = 0
-                else:
-                    StationOffset = calculate_StationOffset(lable, SP_STA, PC_STA, CP_STA, PS_STA, BP_STA)#측거
-                print(StationOffset)
-                shiftx =  cal_spiral_shiftx(sta, SP_STA, PC_STA, CP_STA, PS_STA, StationOffset, W13, L)
-                print(shiftx)
-                shifty =  cal_spiral_shifty(sta, SP_STA, PC_STA, CP_STA, PS_STA, shiftx, W13, x1)
-                print(shifty)
-                
-                coord = calculate_coordinates(sta, SP_STA, PC_STA, CP_STA, PS_STA, h1, h2, SP_PC_bearing, StationOffset, W13, shiftx, shifty, BP_XY[0], BP_XY[1], SP_XY[0], SP_XY[1], CURVE_CENTER[0], CURVE_CENTER[1], PS_XY[0], PS_XY[1])
-                # 각 sta에 대한 좌표를 딕셔너리에 추가
-                #station_coordlist[sta] = coord
+        # 최종적으로 station과 coord의 리스트 리턴
+        station_coordlist = []
+
+        # 스테이션 리스트에 있는 각 sta에 대해 좌표 계산
+        for j, sta in enumerate(station_list):
+            if j ==0:
+                lable = 'B  P'
+            else:
+                lable = get_station_label(sta, SP_STA, PC_STA, CP_STA, PS_STA, PS_STA)#제원문자
+            #print(lable)
+            if j ==0:
+                StationOffset = 0
+            else:
+                StationOffset = calculate_station_offset(sta, SP_STA, PC_STA, CP_STA, PS_STA, BP_STA)#측거
+            #print(StationOffset)
+            shiftx =  cal_spiral_shiftx(sta, SP_STA, PC_STA, CP_STA, PS_STA, StationOffset, W13, L)
+            #print(shiftx)
+            shifty =  cal_spiral_shifty(sta, SP_STA, PC_STA, CP_STA, PS_STA, shiftx, W13, x1)
+            #print(shifty)
+            
+            coord = calculate_coordinates(sta,
+                                          SP_STA, PC_STA, CP_STA, PS_STA,
+                                          h1, h2, SP_PC_bearing,
+                                          StationOffset, W13,
+                                          shiftx, shifty,
+                                          BP_XY[0], BP_XY[1],
+                                          SP_XY[0], SP_XY[1],
+                                          CURVE_CENTER[0], CURVE_CENTER[1],
+                                          PS_XY[0], PS_XY[1])
+
+            # 각 sta에 대한 좌표를 추가
+            # Create a list for the current station's data
+            station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty])
+        final_result.append([station_coordlist])
+    return final_result
+
 #이정량 x,y                
-def cal_spiral_shiftx(B27, H20, H21, H22, H23, D27, W13, D13):
+def cal_spiral_shiftx(B27, H20, H21, H22, H23, D27, W13, D13, epsilon=1e-9):
     '''
     Args:
     B27 = 측점
@@ -442,23 +461,25 @@ def cal_spiral_shiftx(B27, H20, H21, H22, H23, D27, W13, D13):
     D27 = 측거
     W13 = -곡선반경
     D13 = 캔트
+    epsilon = tolerance for floating-point comparison
     
     Returns:
     A calculated value based on the conditions in the Excel formula.
     '''
     
-    if H20 >= B27:
-        return ""
-    elif H21 > B27:
+    if abs(H20 - B27) < epsilon:
+        return 0
+    elif abs(H21 - B27) < epsilon:
         return D27 - (D27**5 / (40 * W13**2 * D13**2))
-    elif H22 >= B27:
-        return ""
-    elif H23 >= B27:
+    elif abs(H22 - B27) < epsilon:
+        return 0
+    elif abs(H23 - B27) < epsilon:
         return D27 - (D27**5 / (40 * W13**2 * D13**2))
     else:
         return 0
+
 #이정량y
-def cal_spiral_shifty(B27, H20, H21, H22, H23, V27, W13, P11):
+def cal_spiral_shifty(B27, H20, H21, H22, H23, V27, W13, P11, epsilon=1e-9):
     '''
     Args:
     B27 = 측점
@@ -466,63 +487,66 @@ def cal_spiral_shifty(B27, H20, H21, H22, H23, V27, W13, P11):
     V27 = 이정량x
     W13 = -곡선반경
     P11 = x1
+    epsilon = tolerance for floating-point comparison
     
     Returns:
     A calculated value based on the conditions in the Excel formula.
     '''
     
-    if H20 >= B27:
-        return ""
-    elif H21 > B27:
+    if abs(H20 - B27) < epsilon:
+        return 0
+    elif abs(H21 - B27) < epsilon:
         return V27**3 / (6 * W13 * P11)
-    elif H22 >= B27:
-        return ""
-    elif H23 >= B27:
+    elif abs(H22 - B27) < epsilon:
+        return 0
+    elif abs(H23 - B27) < epsilon:
         return V27**3 / (6 * W13 * P11)
     else:
         return 0
 
 
 #측점제원문자
-def get_station_label(B28, H20, H21, H22, H23, W21):
+def get_station_label(B28, H20, H21, H22, H23, W21, epsilon=1e-9):
     '''
     Args:
     B28 = 측점
-    H20, H21, H22, H23 = sp,pc,cp,ps 측점
-    w21 = ps 측점
-    Y8 = "3차 포물선"인지 여부
+    H20, H21, H22, H23 = sp, pc, cp, ps 측점
+    W21 = ps 측점
+    epsilon = tolerance for floating-point comparison
+    
+    Returns:
+    A string representing the station label.
     '''
     
-    if B28 == H20:
-
+    if abs(B28 - H20) < epsilon:
         return "S P"
-
-    elif B28 == H21:
-
+    elif abs(B28 - H21) < epsilon:
         return "P C"
-    elif B28 == H22:
-
+    elif abs(B28 - H22) < epsilon:
         return "C P"
-
-    elif B28 == H23:
-
+    elif abs(B28 - H23) < epsilon:
         return "P S"
-
-    elif B28 == W21:
+    elif abs(B28 - W21) < epsilon:
         return "E P"
     else:
         return ""
 
 #측거
-def calculate_StationOffset(B28, H20, H21, H22, H23, X13):
-    '''args
-    B28 = 측점
-    H20, H21, H22, H23 = sp,pc,cp,ps 측점
-    x13 = bp sta
+def calculate_station_offset(B28, H20, H21, H22, H23, X13, epsilon=1e-9):
     '''
-    if B28 == "":
-        return 0
+    Args:
+    B28 = 측점 (Station point)
+    H20, H21, H22, H23 = 스테이션 값 (Station values)
+    X13 = BP STA (Base point)
+    epsilon = tolerance for floating-point comparison
     
+    Returns:
+    A calculated offset value.
+    '''
+    
+    if abs(B28 - H20) < epsilon or abs(B28 - H21) < epsilon or abs(B28 - H22) < epsilon or abs(B28 - H23) < epsilon:
+        return 0
+
     if B28 <= H20:
         return B28 - X13
     elif B28 < H21:
@@ -533,6 +557,7 @@ def calculate_StationOffset(B28, H20, H21, H22, H23, X13):
         return H23 - B28
     else:
         return B28 - H23
+
 
 #선형 좌표계산함수
 def calculate_coordinates(B27, H20, H21, H22, H23, V10, V11, W18, D27, W13, V27, W27, X14, X15, K20, N20, J9, N9, K23, N23):
@@ -591,6 +616,15 @@ def calculate_coordinates(B27, H20, H21, H22, H23, V10, V11, W18, D27, W13, V27,
 
     return (X_result, Y_result)
 
+def generate_integers(start, end, inc):
+    # Round the start to the nearest increment
+    start_rounded = (start + inc - 1) // inc * inc
+    # Round the end to the nearest increment
+    end_rounded = end // inc * inc
+    
+    return list(range(start_rounded, end_rounded + inc, inc))
+
+    
 def calculate_distance(x1, y1, x2, y2):
     # 거리계산함수
     distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
@@ -600,31 +634,23 @@ def calculate_distance(x1, y1, x2, y2):
 
 
 
-def create_dat(data, data2):
-    file_path = 'C:/Users/KDB/Downloads/cloxy3w/data.dat'
+def write_data(data):
+    file_path = 'C:/temp/data.txt'
     with open(file_path, 'w', encoding='utf-8') as file:
-        # Extract coordinates from the LineString object
-        coords = list(data[4].coords)
-        ip_x = [coord[0] for coord in coords[1:-1]]  # Extract X coordinates
-        ip_y = [coord[1] for coord in coords[1:-1]]  # Extract Y coordinates
+        for sublist in data:
+            if isinstance(sublist, list):
+                for station_data in sublist:
+                    if isinstance(station_data, list):
+                        # Create a formatted line for the current station's data
+                        # Assuming each station_data is [lable, sta, StationOffset, coord, shiftx, shifty]
+                        lable, sta, StationOffset, coord, shiftx, shifty = station_data
+                        coord_str = f"({coord[0]}, {coord[1]})" if isinstance(coord, tuple) else str(coord)
+                        line = f"{lable}, {sta}, {StationOffset}, {coord_str}, {shiftx}, {shifty}"
+                        file.write(line + '\n')
+                # Add a blank line between different sublists (optional)
+                file.write('\n')
+
         
-        
-        file.write(f'{" " * 1}{len(data[2])}\n')#총 IP갯수
-        for i in range(len(data[2])):
-            # Write each line with appropriate formatting
-            #IPNO,R,L,B,A',D
-            file.write(f'{" " * 4}{i+1}{" " * 3}{data[0][i]:.6f}{" " * 4}{data[1][i][0]:.6f}{" " * 5}{data[1][i][1]:.6f}{" " * 5}{data[1][i][2]:.6f}{" " * 6}{data[1][i][3]:.6f}\n')
-            if i == 0:
-                file.write(f'{" " * 3}{data[2][i]:.6f}{" " * 2}{data[3][i]:.6f}\n')#IPSTA,IA
-            else:
-                file.write(f'{" " * 2}{data[2][i]:.6f}{" " * 2}{data[3][i]:.6f}\n')#IPSTA,IA
-            file.write(f'{" " * 1}{data2[0][i]:.6f}{" " * 2}{data2[1][i]}{" " * 5}20.00000\n')#BC,EC,DISTANE
-            file.write('y\n')
-            if i == 0:
-                file.write(f'{" " * 2}{ip_x[i]:.6f}{" " * 2}{ip_y[i]:.6f}{" " * 2}{data[5][i]:.6f}{" " * 2}{data[6][i]:.6f}\n')#IPX,Y,H1,H2
-            else:
-                file.write(f'{" " * 2}{ip_x[i]:.6f}{" " * 2}{ip_y[i]:.6f}{" " * 3}{data[5][i]:.6f}{" " * 2}{data[6][i]:.6f}\n')#IPX,Y,H1,H2
-            
 def main():
     lines = read_file()
     if not lines:
@@ -640,10 +666,9 @@ def main():
     parameters = cal_parameter(Radius_list)
     
     
-    calculate_spiral(linestring, Radius_list, ia_list, parameters)
-    
-    #data = [radius_list, parameters, IP_STA_list, ia_list, linestring, prebearing_list, nextbearing_list]
-    #create_dat(data, data2)
+    final_result = calculate_spiral(linestring, Radius_list, ia_list, parameters)
+
+    write_data(final_result)
     
     print('작업완료')
 if __name__ == '__main__':
