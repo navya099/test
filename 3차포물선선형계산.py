@@ -90,13 +90,6 @@ def find_direction(d10, v10, v11):
         return 1
     else:
         return -1
-
-#O>PC 방위각
-def calculate_O_PC_angle(v10, x10, direction):
-    if direction > 0:
-        return (v10 + x10 - 90) % 360
-    else:
-        return (v10 - x10 + 90) % 360
     
 def calculate_V(Cm, Cd, R, maxV):
     V = int(math.sqrt((Cm +  Cd) * R / 11.8))  # 정수로 변환
@@ -220,16 +213,23 @@ def calculate_CP_XY(K21, N21, W13, W18, P10, V11):
 
 #O>PC방위각
 def calculate_O_PC_bearing(V10, X10, W13):
-    if W13 > 0:
-        result = V10 + X10 - 90
-        if result < 0:
-            result += 360
-    else:
-        result = V10 - X10 + 90
-        if result > 360:
-            result -= 360
+    '''args
+    W13 = W13
+    V10 = 방위각1
+    X10 = THITA
+    '''
+    X10 = math.degrees(X10)
     
-    return result
+    if W13 > 0:
+        if V10 + X10 - 90 < 0:
+            return V10 + X10 - 90 + 360
+        else:
+            return V10 + X10 - 90
+    else:
+        if V10 - X10 + 90 > 360:
+            return V10 - X10 + 90 - 360
+        else:
+            return V10 - X10 + 90
 
 #PC점의 접선각
 def calculate_theta_pc(m, z, Rc):
@@ -323,9 +323,9 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
         x1, x2, W13, L, Y, W15, F, S, K, W, TL, Lc, CL = calculate_cubic_parabola_parameter(m, z, direction, theta_pc, Rc, IA_rad)#파라매터
 
         
-        O_PC_bearing = calculate_O_PC_bearing(h1, theta_pc, Rc)#O>PC 방위각(도)
+        O_PC_bearing = calculate_O_PC_bearing(h1, theta_pc, W13)#O>PC 방위각(도)
         
-        SP_PC_bearing = calculate_SP_PC_bearing(Rc, h1, math.degrees(theta_pc))#SP>PC방위각(도)
+        SP_PC_bearing = calculate_SP_PC_bearing(W13, h1, math.degrees(theta_pc))#SP>PC방위각(도)
 
         TL_LIST.append(TL)
         
@@ -358,7 +358,7 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
         
 
         #좌표계산
-        SP_XY, PC_XY, CP_XY, PS_XY = calculate_spiral_coordinates(BP_XY, IP_XY, EP_XY, h1, h2, TL, x1, Y, SP_PC_bearing, Rc, Lc)
+        SP_XY, PC_XY, CP_XY, PS_XY = calculate_spiral_coordinates(BP_XY, IP_XY, EP_XY, h1, h2, TL, x1, W15, SP_PC_bearing, Rc, Lc)
 
         CURVE_CENTER = (math.cos(math.radians(O_PC_bearing + 180)) * Rc + PC_XY[0], #CURVE CENTER
                         math.sin(math.radians(O_PC_bearing + 180)) * Rc + PC_XY[1])
@@ -413,7 +413,7 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
         PS_STA_int = int(round(PS_STA))
 
         # unit 간격으로 PS_STA까지 스테이션 리스트 생성
-        unit = 20
+        unit = 40
         station_list = generate_integers(BP_STA_int, PS_STA_int, unit)
 
         # 최종적으로 station과 coord의 리스트 리턴
@@ -435,13 +435,16 @@ def calculate_spiral(linestring, Radius_list, angles, parameters):
             #print(shiftx)
             shifty =  cal_spiral_shifty(sta, SP_STA, PC_STA, CP_STA, PS_STA, shiftx, W13, x1)
             #print(shifty)
-            
+            if i ==0:
+                PBP_XY = BP_XY
+            else:
+                PBP_XY = cubic_parabola_XY_list[i-1][3]
             coord = calculate_coordinates(sta,
                                           SP_STA, PC_STA, CP_STA, PS_STA,
                                           h1, h2, SP_PC_bearing,
                                           StationOffset, W13,
                                           shiftx, shifty,
-                                          BP_XY[0], BP_XY[1],
+                                          PBP_XY[0], PBP_XY[1],
                                           SP_XY[0], SP_XY[1],
                                           CURVE_CENTER[0], CURVE_CENTER[1],
                                           PS_XY[0], PS_XY[1])
@@ -462,23 +465,23 @@ def cal_spiral_shiftx(B27, H20, H21, H22, H23, D27, W13, D13, epsilon=1e-9):
     W13 = -곡선반경
     D13 = 캔트
     epsilon = tolerance for floating-point comparison
-    
+
     Returns:
     A calculated value based on the conditions in the Excel formula.
     '''
-    
-    if abs(H20 - B27) < epsilon:
+
+    if H20 >= B27:
         return 0
-    elif abs(H21 - B27) < epsilon:
-        return D27 - (D27**5 / (40 * W13**2 * D13**2))
-    elif abs(H22 - B27) < epsilon:
+    elif H21 > B27:
+        return D27 - (D27 ** 5 / (40 * W13 ** 2 * D13 ** 2))
+    elif H22 >= B27:
         return 0
-    elif abs(H23 - B27) < epsilon:
-        return D27 - (D27**5 / (40 * W13**2 * D13**2))
+    elif H23 >= B27:
+        return D27 - (D27 ** 5 / (40 * W13 ** 2 * D13 ** 2))
     else:
         return 0
 
-#이정량y
+#이정량Y
 def cal_spiral_shifty(B27, H20, H21, H22, H23, V27, W13, P11, epsilon=1e-9):
     '''
     Args:
@@ -488,19 +491,19 @@ def cal_spiral_shifty(B27, H20, H21, H22, H23, V27, W13, P11, epsilon=1e-9):
     W13 = -곡선반경
     P11 = x1
     epsilon = tolerance for floating-point comparison
-    
+
     Returns:
     A calculated value based on the conditions in the Excel formula.
     '''
-    
-    if abs(H20 - B27) < epsilon:
+
+    if H20 >= B27:
         return 0
-    elif abs(H21 - B27) < epsilon:
-        return V27**3 / (6 * W13 * P11)
-    elif abs(H22 - B27) < epsilon:
+    elif H21 > B27:
+        return V27 ** 3 / (6 * W13 * P11)
+    elif H22 >= B27:
         return 0
-    elif abs(H23 - B27) < epsilon:
-        return V27**3 / (6 * W13 * P11)
+    elif H23 >= B27:
+        return V27 ** 3 / (6 * W13 * P11)
     else:
         return 0
 
@@ -635,21 +638,38 @@ def calculate_distance(x1, y1, x2, y2):
 
 
 def write_data(data):
-    file_path = 'C:/temp/data.txt'
-    with open(file_path, 'w', encoding='utf-8') as file:
-        for sublist in data:
-            if isinstance(sublist, list):
-                for station_data in sublist:
-                    if isinstance(station_data, list):
-                        # Create a formatted line for the current station's data
-                        # Assuming each station_data is [lable, sta, StationOffset, coord, shiftx, shifty]
-                        lable, sta, StationOffset, coord, shiftx, shifty = station_data
-                        coord_str = f"({coord[0]}, {coord[1]})" if isinstance(coord, tuple) else str(coord)
-                        line = f"{lable}, {sta}, {StationOffset}, {coord_str}, {shiftx}, {shifty}"
-                        file.write(line + '\n')
-                # Add a blank line between different sublists (optional)
-                file.write('\n')
+    """
+    Writes the given data to a CSV file in the specified format:
+    type, sta, stationoffset, coordx, coordy, shiftx, shifty
 
+    Args:
+    - data (list of lists): The data to be written to the file. Each inner list represents a station's data.
+    """
+    file_path = 'C:/temp/data.csv'
+    
+    try:
+        with open(file_path, 'w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            
+            # Write the header
+            writer.writerow(['type', 'sta', 'stationoffset', 'coordx', 'coordy', 'shiftx', 'shifty'])
+            
+            # Flatten the final_result and write data
+            for station_group in data:
+                for station_data in station_group:
+                    for row in station_data:  # Iterate through the innermost list
+                        if len(row) == 6:
+                            lable, sta, station_offset, coord, shiftx, shifty = row
+                            coordx, coordy = coord  # Unpack the coord tuple
+                            
+                            # Write the data into the CSV file
+                            writer.writerow([lable, sta, station_offset, coordx, coordy, shiftx, shifty])
+                        else:
+                            print(f"Unexpected data format: {row}")
+        
+        print(f'Data successfully written to {file_path}')
+    except Exception as e:
+        print(f'An error occurred while writing to the file: {e}')
         
 def main():
     lines = read_file()
