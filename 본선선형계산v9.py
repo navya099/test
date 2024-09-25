@@ -2,7 +2,9 @@ from tkinter import filedialog
 import csv
 from shapely.geometry import LineString
 import math
-    
+import pandas as pd
+from openpyxl import Workbook, load_workbook
+
 def pasing_ip(lines):
     alignment = []
     for line in lines:
@@ -368,6 +370,8 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
 
     END_STA_list = []
     END_XY_list =[]
+
+    alignment_report_variable_list = []
     
     for i in range(len(linestring.coords)-2):
         IA_rad = math.radians(angles[i])
@@ -623,7 +627,56 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 # Create a list for the current station's data
                 station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty])
         final_result.append([station_coordlist])
-    return final_result
+
+        ######선형계산서 리스트 저장#######
+        if curvetype == 'simplecurve':#단곡선
+            
+            alignment_report_variable_list.append(
+                [
+                    i+1,
+                    IP_XY,
+                    curvetype,
+                    curvedirection,
+                    h1, h2,
+                    IA_DEGREE,
+                    CURVE_CENTER,
+                    Rc,
+                    IP_distnace1, IP_distnace2,
+                    m, z, v,
+                    simplecurve_parameter,
+                    O_PC_bearing,
+                    SP_PC_bearing,
+                    theta_pc,
+                    IP_STA,
+                    BC_STA, EC_STA,  # Corrected typo here
+                    BC_XY, EC_XY
+                ]
+            )
+        else:#3차포물선
+            alignment_report_variable_list.append(
+                [
+                    i+1,
+                    IP_XY,
+                    curvetype,
+                    curvedirection,
+                    h1, h2,
+                    IA_DEGREE,
+                    CURVE_CENTER,
+                    Rc,
+                    IP_distnace1, IP_distnace2,
+                    m, z, v,
+                    cubic_parameter,
+                    O_PC_bearing,
+                    SP_PC_bearing,
+                    theta_pc,
+                    IP_STA,
+                    SP_STA, PC_STA, CP_STA, PS_STA,# Corrected typo here
+                    SP_XY, PC_XY ,CP_XY, PS_XY
+                ]
+            )
+            
+                                            
+    return final_result, alignment_report_variable_list
 
 def calculate_simplecurve_coordinates(V10, V11, D12, IP):
     '''
@@ -859,7 +912,164 @@ def write_data(data):
         print(f'Data successfully written to {file_path}')
     except Exception as e:
         print(f'An error occurred while writing to the file: {e}')
+
+def write_report(data, data2):
+    """
+    Saves the alignment report to an Excel file, writing data into specific sheets using openpyxl.
+    
+    Parameters:
+    data (list): The list of report variables for each curve.
+    """
+
+    filename = 'c:/temp/alignmentreport.xlsx'
+
+    # Create a new workbook or load an existing one
+    # Create a new workbook, overwriting any existing file
+    workbook = Workbook()
+    
+    for i, entry in enumerate(data):
+        # Create a new sheet or access the existing one dynamically based on i (IP1, IP2, ...)
+        sheetname = f'IP{entry[0]}' # Dynamic sheet name like IP1, IP2, etc.
+
+        # Check if the sheet already exists, if not create a new one
+        if sheetname in workbook.sheetnames:
+            sheet = workbook[sheetname]
+        else:
+            sheet = workbook.create_sheet(title=sheetname)
+
+        if entry[2] == 'simplecurve':  # Simple curve case
+            
+            sheet['A3'] = f"'===================〈 IP  NO. {entry[0]} >==================="#IPNO
+            sheet['A4'] = f'I P [ X ] = {entry[1][0]:.4f}' # Write IP_X to cell F5
+            sheet['D4'] = f'I P [ Y ] = {entry[1][1]:.4f}' # Write IP_Y to cell L5
+            sheet['F6'] = '단곡선' #curvetype
+            sheet['D6'] = f'({entry[3]})' #curvedirection
+            sheet['A5'] = f"방위각 1 = {degrees_to_dms(entry[4])}" #방위각1
+            sheet['D5'] = f"방위각 2 = {degrees_to_dms(entry[5])}" #방위각2
+            sheet['A6'] = f'교각(IA) = {degrees_to_dms(entry[6])}'  #교각
+            sheet['A7'] = 'CURVE CENTER'
+            sheet['C7'] = f'X = {entry[7][0]:.4f}' # CENTER X
+            sheet['F7'] = f'Y = {entry[7][1]:.4f}' # CENTER X
+            sheet['A8'] = f'R = {entry[8]:.3f}' # R
+            sheet['C8'] = f'IP 연장1 = {entry[9]:.3f}' #ip연장1
+            
+            sheet['A9'] = f'M = 0.000' #M
+            sheet['C9'] = f'V = {entry[13]:.3f}' #V
+            sheet['F9'] = f'Z = {entry[12] * 0.001:.3f}' #Z
+            sheet['A10'] = f'TL = {entry[14][0]:.3f}' #TL
+            sheet['C10'] = f'CL = {entry[14][1]:.3f}' #CL
+            sheet['F10'] = f'SL = {entry[14][2]:.3f}' #SL
+            sheet['A11'] = f'IP 정측점 = {format_distance(entry[18])}' #IP정측점
+            sheet['B12'] = f'BC = {format_distance(entry[19])}' #BC측점
+            sheet['B13'] = f'EC = {format_distance(entry[20])}' #EC측점
+            sheet['D12'] = f'{entry[21][0]:.4f}' #BC_X
+            sheet['F12'] = f'{entry[21][1]:.4f}' #BC_Y
+            sheet['D13'] = f'{entry[22][0]:.4f}' #EC_X
+            sheet['F13'] = f'{entry[22][1]:.4f}' #EC_Y
+            
+        else:  # Cubic parabola case
+            sheet['A3'] = f"'===================< IP  NO. {entry[0]} >==================="#IPNO
+            sheet['A4'] = f'I P [ X ]  = {entry[1][0]:.4f}' # Write IP_X to cell F5
+            sheet['D4'] = f'I P [ Y ]  = {entry[1][1]:.4f}' # Write IP_Y to cell L5
+            sheet['F6'] = '3차포물선' #curvetype
+            sheet['D6'] = f'({entry[3]})' #curvedirection
+            sheet['A5'] = f"방위각 1  = {degrees_to_dms(entry[4])}" #방위각1
+            sheet['D5'] = f"방위각 2  = {degrees_to_dms(entry[5])}" #방위각2
+            sheet['A6'] = f'교각(IA)  = {degrees_to_dms(entry[6])}'  #교각
+            sheet['A7'] = 'CURVE CENTER'
+            sheet['C7'] = f'X  = {entry[7][0]:.4f}' # CENTER X
+            sheet['F7'] = f'Y  = {entry[7][1]:.4f}' # CENTER X
+            sheet['A8'] = f'R  = {entry[8]:.3f}' # R
+            sheet['C8'] = f'IP 연장1  = {entry[9]:.3f}' #ip연장1
+            
+            sheet['A9'] = f'M  = {entry[11]:.3f}' #M
+            sheet['C9'] = f'V  = {entry[13]:.3f}' #V
+            sheet['F9'] = f'Z  = {entry[12] * 0.001:.3f}' #Z
+            sheet['A12'] = f'X1  = {entry[14][0]:.3f}' #X1
+            sheet['A10'] = f'TL  = {entry[14][10]:.3f}' #TL
+            sheet['C10'] = f'CL  = {entry[14][12]:.3f}' #CL
+            sheet['A11'] = f'LC  = {entry[14][11]:.3f}' #lc
+            sheet['C12'] = f'Y1  = {entry[14][4]:.3f}' #Y1
+            sheet['C11'] = f'L  = {entry[14][3]:.3f}' #L
+            sheet['F10'] = f'SL  = ' #SL
+            
+            #sheet['H13'] = f'W = {entry[14][9]:.3f}' #W
+            #sheet['L13'] = f'X2 = {entry[14][1]:.3f}' #X2
+            #sheet['P13'] = f'S = {entry[14][7]:.3f}' #S
+            #sheet['P14'] = f'F = {entry[14][6]:.3f}' #F
+            #sheet['C16'] = f'THITA = {degrees_to_dms(entry[17])}' #PC점의 접선각
+            #sheet['H16'] = f'Θ3 = {degrees_to_dms(entry[16])}' #SP>PC점의 방위각
+            #sheet['M16'] = f'O→PC = {degrees_to_dms(entry[15])}' #O>PC점 방위각
+
+            sheet['A13'] = 'B  = '#B
+            sheet['D13'] = 'THITA  = '#THITA
+            sheet['A14'] = 'C  = '#C
+            sheet['D14'] = '원곡선교각  = '#원곡선교각
+
+
+            
+            sheet['A15'] = f'IP 정측점  = {format_distance(entry[18])}' #IP정측점
+            sheet['D15'] = f'IP 역측점  = {format_distance(entry[18])}' #IP정측점
+            
+            sheet['B16'] = f'SP  = {format_distance(entry[19])}' #SP측점
+            sheet['B17'] = f'PC  = {format_distance(entry[20])}' #PC측점
+            sheet['B18'] = f'CP  = {format_distance(entry[21])}' #CP측점
+            sheet['B19'] = f'PS  = {format_distance(entry[22])}' #PS측점
+            sheet['D16'] = f'X  = {entry[23][0]:.4f}' #SP_X
+            sheet['F16'] = f'Y  = {entry[23][1]:.4f}' #SP_Y
+            sheet['D17'] = f'X  = {entry[24][0]:.4f}' #PC_X
+            sheet['F17'] = f'Y  = {entry[24][1]:.4f}' #PC_Y
+            sheet['D18'] = f'X  = {entry[25][0]:.4f}' #CP_X
+            sheet['F18'] = f'Y  = {entry[25][1]:.4f}' #CP_Y
+            sheet['D19'] = f'X  = {entry[26][0]:.4f}' #PS_X
+            sheet['F19'] = f'Y  = {entry[26][1]:.4f}' #PS_Y
+
+        #공통
+        sheet['B21'] = 'CHAINAGE'
+        sheet['D21'] = 'X(North)'
+        sheet['F21'] = 'Y(East)'
+        # Write the relevant station data for the current entry
+        if i < len(data2):  # Ensure you do not exceed data2 bounds
+            station_group = data2[i]  # Get the corresponding station group for the current entry
+            start_row = 22  # Start writing station data from row 21
+
+            for station_data in station_group:
+                for row in station_data:  # Iterate through the innermost list
+                    lable, sta, station_offset, coord, shiftx, shifty = row
+                    # Write values into the sheet
+                    sheet[f'A{start_row}'] = lable
+                    sheet[f'B{start_row}'] = sta
+                    #sheet[f'C{start_row}'] = station_offset
+                    sheet[f'D{start_row}'] = coord[0]
+                    sheet[f'F{start_row}'] = coord[1]
+                    #sheet[f'F{start_row}'] = shiftx
+                    #sheet[f'G{start_row}'] = shifty
+
+                    start_row += 1  # Move to the next row
+            
+    # Remove default sheet if it exists (usually "Sheet" when a new workbook is created)
+    if 'Sheet' in workbook.sheetnames:
+        del workbook['Sheet']
+
+    # Save the workbook
+    workbook.save(filename)
+    print(f"Data successfully written to {filename}")
+
+def format_distance(number):
+    negative = False
+    if number < 0:
+        negative = True
+        number = abs(number)
         
+    km = int(number) // 1000
+    remainder = "{:.2f}".format(number % 1000)
+    formatted_distance = "{:d}km{:06.2f}".format(km, float(remainder))
+    
+    if negative:
+        formatted_distance = "-" + formatted_distance
+    
+    return formatted_distance
+
 def main():
     user_input1 = input('계산 간격 입력: (기본값 20) ')
     unit = int(user_input1) if user_input1 else 20
@@ -880,9 +1090,14 @@ def main():
     parameters = cal_parameter(Radius_list)
     
     
-    final_result = calculate_curve(linestring, Radius_list, ia_list, parameters, unit, start_STA)
+    final_result, alignment_report_variable_list = calculate_curve(linestring, Radius_list, ia_list, parameters, unit, start_STA)
 
-    write_data(final_result)
+    
+    #좌표출력
+    #write_data(final_result)
+    #print(final_result)
+    #선형계산서 출력
+    write_report(alignment_report_variable_list, final_result)
     
     print('작업완료')
 if __name__ == '__main__':
