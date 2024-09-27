@@ -5,7 +5,54 @@ import math
 import pandas as pd
 from openpyxl import Workbook, load_workbook
 import time
+import ezdxf
 
+def create_dxf(filename, coordinates, *args):
+    doc = ezdxf.new()
+    msp = doc.modelspace()
+
+    # Create a polyline entity
+    polyline = msp.add_lwpolyline(coordinates)
+
+    # Set the color of the polyline to red (color index 1)
+    '''#ACI인덱스
+    0: BYBLOCK
+    1: Red
+    2: Yellow
+    3: Green
+    4: Cyan
+    5: Blue
+    6: Magenta
+    7: White
+    8: Gray
+    9: BYLAYER
+    '''
+    
+    # Set polyline properties if needed
+    polyline.dxf.layer = 'MyLayer'
+    
+    # Set the color of the polyline to red
+    red_color_index = 1  # Get color index for 'red'
+    polyline.dxf.color = red_color_index
+    
+    text_color_index = 7
+    text_height = 3
+    
+    labels1, labels2 = args
+    
+    # Add text labels at each coordinate
+    for coord, label in zip(coordinates, labels1):
+        msp.add_text(label, dxfattribs={'insert': coord, 'height': text_height, 'color': 11})
+
+    # Add text labels at each coordinate
+    for coord, label in zip(coordinates, labels2):
+        if label.strip():  # Check if the label is not empty after stripping whitespace
+            msp.add_text(label, dxfattribs={'insert': coord, 'height': 5, 'color': 1})
+
+        
+    # Save the DXF document to a file
+    doc.saveas("C:/temp/" + filename)
+    
 def save_with_retry(workbook, filename, max_retries=100, delay=1):
     # Try saving the file, retrying if there's a PermissionError
     for attempt in range(max_retries):
@@ -425,6 +472,9 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
             curvedirection = 'RIGHT CURVE'
         else:
             curvedirection = 'LEFT CURVE'
+
+        #마지막 IP변수
+        is_last_ip = (i == len(linestring.coords) - 3 if len(linestring.coords) > 3 else i == len(linestring.coords) - 2)
         
         if curvetype == 'simplecurve':#단곡선
             theta_pc = 0
@@ -465,7 +515,7 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 simplecurve_STA_list.append([BC_STA, EC_STA])
                 
                 END_STA_list.append(EC_STA)
-                if i == len(linestring.coords) - 3:#마지막IP
+                if is_last_ip:#마지막IP
                     EC_EP_distance = calculate_distance(EC_XY[0], EC_XY[1], EP_XY[0], EP_XY[1]) #EC와 EP거리
                     EP_STA = EC_STA + EC_EP_distance
         else:#3차포물선
@@ -516,10 +566,14 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 
                 END_STA_list.append(PS_STA)
 
-                if i == len(linestring.coords) - 3:#마지막IP
+                if is_last_ip:#마지막IP
                     EC_EP_distance = calculate_distance(PS_XY[0], PS_XY[1], EP_XY[0], EP_XY[1]) #EC와 EP거리
                     EP_STA = PS_STA + EC_EP_distance
 
+            #경고추가
+            if BP_STA>SP_STA:
+                print(f'경고! 곡선겹침 IP{i+1}: BP={format_distance(BP_STA)}, SP={format_distance(SP_STA)}')
+                
         TL_LIST.append(TL)
         
         
@@ -534,18 +588,20 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
         
         # Ensure BP_STA and PS_STA are integers
 
+        
+        
         if curvetype == 'simplecurve':#단곡선
             BP_STA_int = int(round(BP_STA))
             EC_STA_int = int(round(EC_STA))
 
 
             # unit 간격으로 PS_STA까지 스테이션 리스트 생성
-            if i == len(linestring.coords) - 3:  # 마지막IP
+            if is_last_ip: #마지막IP
                 EP_STA_int = int(round(EP_STA))
                 station_list = generate_integers(BP_STA_int, EP_STA_int, unit)
             else:
                 station_list = generate_integers(BP_STA_int, EC_STA_int, unit)
-
+                
             #BC와 EC측점 추가
             station_list.extend([BP_STA, BC_STA, EC_STA])
 
@@ -556,15 +612,13 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
             for j, sta in enumerate(station_list):
                 if j ==0:
                     lable = 'BP'
+                    StationOffset = 0
                 else:
-                    if i == len(linestring.coords) - 3:  # 마지막IP
+                    if is_last_ip:#마지막 IP
                         lable = get_station_label(curvetype, sta, BC_STA, BC_STA, EC_STA, EC_STA, EP_STA)  # 제원문자
                     else:
                         lable = get_station_label(curvetype, sta, BC_STA, BC_STA, EC_STA, EC_STA, EC_STA)#제원문자
-                #print(lable)
-                if j ==0:
-                    StationOffset = 0
-                else:
+
                     StationOffset = calculate_station_offset(sta, BC_STA, BC_STA, EC_STA, EC_STA, BP_STA)#측거
                 #print(StationOffset)
                 shiftx =  0
@@ -593,41 +647,103 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
 
 
             # unit 간격으로 PS_STA까지 스테이션 리스트 생성
-            if i == len(linestring.coords) - 3:  # 마지막IP
+            if is_last_ip: #마지막IP
+                
                 EP_STA_int = int(round(EP_STA))
                 station_list = generate_integers(BP_STA_int, EP_STA_int, unit)
             else:
 
                 station_list = generate_integers(BP_STA_int, PS_STA_int, unit)
-
+            
             #BP, SP,PC,CP ,PS점 추가
-            station_list.extend([BP_STA, SP_STA, PC_STA, CP_STA, PS_STA])
-
-            if i == len(linestring.coords) - 3:  # 마지막IP
+            if BP_STA % unit == 0:#배수인경우 BP_STA 추가안함
+                station_list.extend([SP_STA, PC_STA, CP_STA, PS_STA])
+            else:
+                station_list.extend([BP_STA, SP_STA, PC_STA, CP_STA, PS_STA])
+            
+            if is_last_ip: #마지막IP
                 station_list.append(EP_STA)
-
+            
             #리스트 정렬
             station_list.sort()
 
             # 스테이션 리스트에 있는 각 sta에 대해 좌표 계산
             for j, sta in enumerate(station_list):
-                if j ==0:
+                if j == 0:
                     lable = 'B  P'
-                else:
-                    if i == len(linestring.coords) - 3:  # 마지막IP
-                        lable = get_station_label(curvetype, sta, SP_STA, PC_STA, CP_STA, PS_STA, EP_STA)  # 제원문자
-                    else:
-                        lable = get_station_label(curvetype, sta, SP_STA, PC_STA, CP_STA, PS_STA, PS_STA)#제원문자
-                #print(lable)
-                if j ==0:
                     StationOffset = 0
                 else:
+                    end_sta = EP_STA if is_last_ip else PS_STA
+                    lable = get_station_label(curvetype, sta, SP_STA, PC_STA, CP_STA, PS_STA, end_sta)  # 제원문자
+
                     StationOffset = calculate_station_offset(sta, SP_STA, PC_STA, CP_STA, PS_STA, BP_STA)#측거
-                #print(StationOffset)
+
+                #이정량X
                 shiftx =  cal_spiral_shiftx(sta, SP_STA, PC_STA, CP_STA, PS_STA, StationOffset, W13, L)
-                #print(shiftx)
+                #이정량Y
                 shifty =  cal_spiral_shifty(sta, SP_STA, PC_STA, CP_STA, PS_STA, shiftx, W13, x1)
-                #print(shifty)
+
+                #사거리 S ageori
+                sageoriS = math.sqrt(shiftx**2 + shifty**2)
+                
+                
+                if PC_STA < sta < CP_STA:#단곡선구간
+                    
+                    #사거리S
+                    sageoriS = 2 * Rc * math.sin((((StationOffset/Lc) * RIA) / 2))
+                    
+                    #편기각 Q                   
+                    Q = StationOffset / Rc #type 라디안
+                    
+                    #방위각 A(도)
+                    Azimuth = h1 + math.degrees(theta_pc) + math.degrees(Q) if direction == 1 else h1 - math.degrees(theta_pc) - math.degrees(Q) 
+                    Azimuth = 360 - Azimuth if Azimuth >=360 else Azimuth
+                    #접선방위각 Ta
+                    Ta = h1 + math.degrees(theta_pc) + (2 * math.degrees(Q)) if direction == 1 else h1 - math.degrees(theta_pc) - (2 * math.degrees(Q))
+
+                    Ta = 360 - Ta if Ta >=360 else Ta
+                    
+                    
+                elif SP_STA <=sta <= PC_STA:#SP>PC
+                    #편기각 Q
+                    Q = math.atan(shiftx**2 / (6 * Rc * x1)) #type 라디안
+                    
+                    #접선각 Tangent
+                    T = (180*shiftx**2) / (6 * math.pi * Rc * L)*3 #type 도
+                
+                    #방위각 Azimuth
+                
+                    Azimuth = h1 + math.degrees(Q) if direction == 1 else h1 - math.degrees(Q)#도
+                
+                    #접선방위각 Ta
+                    Ta = h1 + T + (2 * math.degrees(Q)) if direction == 1 else h1 - T - (2 * math.degrees(Q))
+                elif CP_STA <=sta <= PS_STA:#CP>PS
+                    #편기각 Q
+                    Q = math.atan(shiftx**2 / (6 * Rc * x1))#type 라디안
+                    
+                    #접선각 Tangent
+                    T = (180*shiftx**2) / (6 * math.pi * Rc * L)*3 #type 도
+                
+                    #방위각 Azimuth
+                
+                    Azimuth = h1 + math.degrees(Q) if direction == 1 else h1 - math.degrees(Q)#도
+                
+                    #접선방위각 Ta
+                    Ta = h1 + T + (2 * math.degrees(Q)) if direction == 1 else h1 - T - (2 * math.degrees(Q))
+                elif sta < SP_STA:#BP - SP
+                    sageoriS = 0
+                    Ta = h1
+                    Q =0
+                    T = 0
+                    Azimuth = 0
+                    
+                elif PS_STA < sta: #PS>EP
+                    sageoriS = 0
+                    Ta = h2
+                    Q =0
+                    T = 0
+                    Azimuth = 0
+                        
                 if i ==0:
                     PBP_XY = BP_XY
                 else:
@@ -644,7 +760,7 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
 
                 # 각 sta에 대한 좌표를 추가
                 # Create a list for the current station's data
-                station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty])
+                station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty, Ta, sageoriS , Q, T, Azimuth])
         final_result.append([station_coordlist])
 
         ######선형계산서 리스트 저장#######
@@ -841,24 +957,32 @@ def calculate_coordinates(B27, H20, H21, H22, H23, V10, V11, W18, D27, W13, V27,
     J9, N9 = CENTER X, CENTER Y
     N20, N23 = SP[Y], PS[Y]
     '''
+
+    #부동소수점 문제처리를 위해 int로 변경
+    B27 = int(B27)#STA
+    H20 = int(H20)#SP
+    H21 = int(H21)#PC
+    H22 = int(H22)#CP
+    H23 = int(H23)#PS
+    
     if B27 == "":
         return (0,0)
 
     # X coordinate calculation
-    if B27 <= H20:
+    if B27 <= H20:#BP_SP
         X_result = math.cos(math.radians(V10)) * D27 + X14
-    elif B27 < H21:
+    elif B27 < H21:#SP-PC
         X_result = (math.cos(math.radians(V10 + 90)) * W27 +
                     math.cos(math.radians(V10)) * V27 +
                     K20)
-    elif B27 <= H22:
+    elif B27 <= H22:#PC-CP
         X_result = (math.cos(math.radians(W18 - 90 + (180 * D27) / math.pi / W13)) * W13 +
                     J9)
-    elif B27 <= H23:
+    elif B27 <= H23:#CP-PS
         X_result = (math.cos(math.radians(V11 + 90)) * W27 +
                     math.cos(math.radians(V11 + 180)) * V27 +
                     K23)
-    else:
+    else:#PS-EP
         X_result = (math.cos(math.radians(V11)) * D27 + K23)
 
     # Y coordinate calculation
@@ -913,7 +1037,7 @@ def write_data(data):
             writer = csv.writer(file)
             
             # Write the header
-            writer.writerow(['type', 'sta', 'stationoffset', 'coordx', 'coordy', 'shiftx', 'shifty'])
+            writer.writerow(['구분', '측점', '곡선거리', 'X', 'Y', '이정량x', '이정량y'])
             
             # Flatten the final_result and write data
             for station_group in data:
@@ -941,7 +1065,7 @@ def write_report(data, data2):
     """
 
     #환경변수 설정
-    km_precision = 3 #측점 자릿수
+    km_precision = 2 #측점 자릿수
     coord_precision = 4 #좌표 자릿수
     dimention = 3#기타 숫자 자릿수
     filename = 'c:/temp/alignmentreport.xlsx'
@@ -1058,14 +1182,20 @@ def write_report(data, data2):
 
             for station_data in station_group:
                 for row in station_data:  # Iterate through the innermost list
-                    lable, sta, station_offset, coord, shiftx, shifty = row
+                    lable, sta, station_offset, coord, shiftx, shifty , Ta, sageoriS , Q, T, Azimuth = row
                     # Write values into the sheet
                     sheet[f'A{start_row}'] = lable
-                    sheet[f'B{start_row}'] = sta
+                    sheet[f'B{start_row}'] = format_distance(sta, decimal_places=km_precision)
                     #sheet[f'C{start_row}'] = station_offset
                     sheet[f'D{start_row}'] = coord[0]
                     sheet[f'F{start_row}'] = coord[1]
-                    #sheet[f'F{start_row}'] = shiftx
+
+                    sheet[f'G{start_row}'] = Ta #degrees_to_dms(Ta) #접선방위각
+                    sheet[f'H{start_row}'] = sageoriS
+                    sheet[f'I{start_row}'] = Q #degrees_to_dms(Q) #편기각
+                    sheet[f'J{start_row}'] = T #degrees_to_dms(T) #접선각
+                    sheet[f'K{start_row}'] = Azimuth #degrees_to_dms(Azimuth) #방위각
+                    
                     #sheet[f'G{start_row}'] = shifty
 
                     start_row += 1  # Move to the next row
@@ -1079,7 +1209,7 @@ def write_report(data, data2):
     #workbook.save(filename)
     print(f"Data successfully written to {filename}")
 
-'''
+
 def format_distance(number, decimal_places=2):
     negative = False
     if number < 0:
@@ -1087,13 +1217,10 @@ def format_distance(number, decimal_places=2):
         number = abs(number)
         
     km = int(number) // 1000
-    remainder = number % 1000  # Keep the full remainder without pre-formatting
-
-    # Dynamically generate the format string using variables for field width and precision
-    format_string = f"{{:d}}km{{:06.{decimal_places}f}}"
+    remainder = round(number % 1000, decimal_places)  # Round remainder to the specified decimal places
     
-    # Use the dynamically created format string
-    formatted_distance = format_string.format(km, remainder)
+    # Format the remainder to have at least 'decimal_places' digits after the decimal point
+    formatted_distance = "{:d}km{:0{}.{}f}".format(km, remainder, 4 + decimal_places, decimal_places)
     
     if negative:
         formatted_distance = "-" + formatted_distance
@@ -1114,7 +1241,7 @@ def format_distance(number, decimal_places=2):
         formatted_distance = "-" + formatted_distance
     
     return formatted_distance
-
+'''
 def main():
     #변수입력받기
     user_input1 = input('계산 간격 입력: (기본값 20) ')
