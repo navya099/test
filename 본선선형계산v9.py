@@ -687,24 +687,26 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 sageoriS = math.sqrt(shiftx**2 + shifty**2)
                 
                 
-                if PC_STA < sta < CP_STA:#단곡선구간
+                if PC_STA <= sta <= CP_STA:#단곡선구간
                     
                     #사거리S
-                    sageoriS = 2 * Rc * math.sin((((StationOffset/Lc) * RIA) / 2))
+                    sageoriS = 2 * Rc * math.sin((((K86/$G$25)*$G$22)/2)*PI()/180)
                     
                     #편기각 Q                   
-                    Q = StationOffset / Rc #type 라디안
-                    
-                    #방위각 A(도)
-                    Azimuth = h1 + math.degrees(theta_pc) + math.degrees(Q) if direction == 1 else h1 - math.degrees(theta_pc) - math.degrees(Q) 
-                    Azimuth = 360 - Azimuth if Azimuth >=360 else Azimuth
-                    #접선방위각 Ta
-                    Ta = h1 + math.degrees(theta_pc) + (2 * math.degrees(Q)) if direction == 1 else h1 - math.degrees(theta_pc) - (2 * math.degrees(Q))
+                    Q = (180 / (2 * math.pi)) * (StationOffset / Rc)#라디안
 
-                    Ta = 360 - Ta if Ta >=360 else Ta
+                    # 방위각 A(도) (Azimuth in degrees)
+                    Azimuth = h1 + math.degrees(theta_pc) + math.degrees(Q) if direction == 1 else h1 - math.degrees(
+                        theta_pc) - math.degrees(Q)
+
+
+                    # 접선방위각 Ta (Tangent Azimuth in degrees)
+                    Ta = h1 + math.degrees(theta_pc) + 2 * math.degrees(Q) if direction == 1 else h1 - math.degrees(
+                        theta_pc) - 2 * math.degrees(Q)
+
                     
                     
-                elif SP_STA <=sta <= PC_STA:#SP>PC
+                elif SP_STA < sta < PC_STA:#SP>PC
                     #편기각 Q
                     Q = math.atan(shiftx**2 / (6 * Rc * x1)) #type 라디안
                     
@@ -717,7 +719,7 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 
                     #접선방위각 Ta
                     Ta = h1 + T + (2 * math.degrees(Q)) if direction == 1 else h1 - T - (2 * math.degrees(Q))
-                elif CP_STA <=sta <= PS_STA:#CP>PS
+                elif CP_STA < sta < PS_STA:#CP>PS
                     #편기각 Q
                     Q = math.atan(shiftx**2 / (6 * Rc * x1))#type 라디안
                     
@@ -726,18 +728,18 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 
                     #방위각 Azimuth
                 
-                    Azimuth = h1 + math.degrees(Q) if direction == 1 else h1 - math.degrees(Q)#도
+                    Azimuth = h2 + math.degrees(Q) if direction == 1 else h2 - math.degrees(Q)#도
                 
                     #접선방위각 Ta
-                    Ta = h1 + T + (2 * math.degrees(Q)) if direction == 1 else h1 - T - (2 * math.degrees(Q))
-                elif sta < SP_STA:#BP - SP
+                    Ta = h2 + T + (2 * math.degrees(Q)) if direction == 1 else h2 - T - (2 * math.degrees(Q))
+                elif sta <= SP_STA:#BP - SP
                     sageoriS = 0
                     Ta = h1
                     Q =0
                     T = 0
                     Azimuth = 0
                     
-                elif PS_STA < sta: #PS>EP
+                elif PS_STA <= sta: #PS>EP
                     sageoriS = 0
                     Ta = h2
                     Q =0
@@ -912,28 +914,36 @@ def get_station_label(curve_type, station, SP_STA, PC_STA, CP_STA, PS_STA, EP_ST
 
 
 #측거
-def calculate_station_offset(B28, H20, H21, H22, H23, X13, epsilon=1e-9):
+
+
+def calculate_station_offset(B28, H20, H21, H22, H23, X13):
     '''
     Args:
     B28 = 측점 (Station point)
     H20, H21, H22, H23 = 스테이션 값 (Station values)
     X13 = BP STA (Base point)
     epsilon = tolerance for floating-point comparison
-    
+
     Returns:
     A calculated offset value.
     '''
-    
-    if abs(B28 - H20) < epsilon or abs(B28 - H21) < epsilon or abs(B28 - H22) < epsilon or abs(B28 - H23) < epsilon:
-        return 0
+    #인트로 변환
+    B28_int = int(B28)
+    H20_int = int(H20)
+    H21_int = int(H21)
+    H22_int = int(H22)
+    H23_int = int(H23)
+    X13_int = int(X13)
 
-    if B28 <= H20:
+    if B28_int == "":
+        return ""
+    elif B28_int <= H20_int:
         return B28 - X13
-    elif B28 < H21:
+    elif B28_int < H21_int:
         return B28 - H20
-    elif B28 <= H22:
+    elif B28_int <= H22_int:
         return B28 - H21
-    elif B28 <= H23:
+    elif B28_int <= H23_int:
         return H23 - B28
     else:
         return B28 - H23
@@ -1175,6 +1185,14 @@ def write_report(data, data2):
         sheet['B21'] = 'CHAINAGE'
         sheet['D21'] = 'X(North)'
         sheet['F21'] = 'Y(East)'
+
+        #임시 방위각 출력
+        sheet['G21'] = '접선방위각'
+        sheet['H21'] = '사거리'
+        sheet['I21'] = '편기각'
+        sheet['J21'] = '접선각'
+        sheet['K21'] = '방위각'
+
         # Write the relevant station data for the current entry
         if i < len(data2):  # Ensure you do not exceed data2 bounds
             station_group = data2[i]  # Get the corresponding station group for the current entry
