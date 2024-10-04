@@ -690,19 +690,22 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 if PC_STA <= sta <= CP_STA:#단곡선구간
                     
                     #사거리S
-                    sageoriS = 2 * Rc * math.sin((((K86/$G$25)*$G$22)/2)*PI()/180)
+                    sageoriS = 2 * Rc * math.sin((((StationOffset / Lc) * RIA) / 2) * math.pi / 180)
                     
                     #편기각 Q                   
-                    Q = (180 / (2 * math.pi)) * (StationOffset / Rc)#라디안
+                    Q = (180 / (2 * math.pi)) * (StationOffset / Rc)#도
 
+                    #접선각 T
+                    T = math.degrees(theta_pc) #도
+                    
                     # 방위각 A(도) (Azimuth in degrees)
-                    Azimuth = h1 + math.degrees(theta_pc) + math.degrees(Q) if direction == 1 else h1 - math.degrees(
-                        theta_pc) - math.degrees(Q)
+                    Azimuth = h1 + math.degrees(theta_pc) + Q if direction == 1 else h1 - math.degrees(
+                        theta_pc) - Q
 
 
                     # 접선방위각 Ta (Tangent Azimuth in degrees)
-                    Ta = h1 + math.degrees(theta_pc) + 2 * math.degrees(Q) if direction == 1 else h1 - math.degrees(
-                        theta_pc) - 2 * math.degrees(Q)
+                    Ta = h1 + math.degrees(theta_pc) + 2 * Q if direction == 1 else h1 - math.degrees(
+                        theta_pc) - 2 * Q
 
                     
                     
@@ -718,8 +721,10 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                     Azimuth = h1 + math.degrees(Q) if direction == 1 else h1 - math.degrees(Q)#도
                 
                     #접선방위각 Ta
-                    Ta = h1 + T + (2 * math.degrees(Q)) if direction == 1 else h1 - T - (2 * math.degrees(Q))
+                    Ta = h1 + T if direction == 1 else h1 - T
+                    
                 elif CP_STA < sta < PS_STA:#CP>PS
+                    
                     #편기각 Q
                     Q = math.atan(shiftx**2 / (6 * Rc * x1))#type 라디안
                     
@@ -728,10 +733,11 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 
                     #방위각 Azimuth
                 
-                    Azimuth = h2 + math.degrees(Q) if direction == 1 else h2 - math.degrees(Q)#도
+                    Azimuth = h2 - math.degrees(Q) if direction == 1 else h2 + math.degrees(Q)#도
                 
                     #접선방위각 Ta
-                    Ta = h2 + T + (2 * math.degrees(Q)) if direction == 1 else h2 - T - (2 * math.degrees(Q))
+                    Ta = h2 - T if direction == 1 else h2 + T
+                    
                 elif sta <= SP_STA:#BP - SP
                     sageoriS = 0
                     Ta = h1
@@ -1260,6 +1266,46 @@ def format_distance(number, decimal_places=2):
     
     return formatted_distance
 '''
+
+def get_station_coordinates(data1, data2, input_station):
+    # input_station은 어느 IP에 속하는지 찾기
+
+    for entry in data1:
+        IPN0 = entry[0]  # IP번호
+        
+        try:
+            if entry[2] == 'simplecurve':
+                BC_STA, EC_STA = entry[19], entry[20]  # Simple curve case
+                SP_STA, PC_STA, CP_STA, PS_STA =0, 0, 0, 0
+            else:
+                BC_STA, EC_STA = 0, 0  # Non-simple curve case
+                SP_STA, PC_STA, CP_STA, PS_STA = entry[19], entry[20], entry[21], entry[22]
+            h1 ,h2 = entry[4], entry[5]
+            
+            SP_PC_bearing = 1
+            coord = calculate_coordinates(input_station,
+                                              SP_STA, PC_STA, CP_STA, PS_STA,
+                                              h1, h2, SP_PC_bearing,
+                                              StationOffset, W13,
+                                              shiftx, shifty,
+                                              PBP_XY[0], PBP_XY[1],
+                                              SP_XY[0], SP_XY[1],
+                                              CURVE_CENTER[0], CURVE_CENTER[1],
+                                              PS_XY[0], PS_XY[1])
+                
+                
+        except IndexError:
+            print(f"Entry doesn't have enough data or is malformed: {entry}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
+
+
+
+
+
+
+        
 def main():
     #변수입력받기
     user_input1 = input('계산 간격 입력: (기본값 20) ')
@@ -1318,7 +1364,40 @@ def main():
     
     #선형계산서 출력
     write_report(alignment_report_variable_list, final_result)
-    
-    print('작업완료')
+    print('선형계산서 출력완료')
+    a= 0
+    while 1:
+        
+        
+        print('원하는 작업을 선택하세요')
+        print('1. 도면출력')
+        print('2. 측점으로 좌표계산')
+        print('3. 좌표로 측점찾기')
+        print('4. 프로그램 종료')     
+        a =  int(input(' 번호 입력: '))
+        if a== 1:
+            print('도면출력')
+        elif a ==2:
+            print('2. 측점으로 좌표계산')
+            while 1:
+                input_station = float(input('측점 입력: '))
+
+                '''        
+                find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
+                print(f'찾은 좌표 X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
+
+                '''
+
+                print('계산이 종료되었습니다. 다른 측점 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요')
+                number = int(input('번호 입력: '))
+                if number == 1:
+                    continue
+                elif number ==2:
+                    break
+        elif a ==3:
+            print('3. 좌표로 측점찾기')
+        elif a== 4:
+            print('프로그램 종료')
+            break
 if __name__ == '__main__':
     main()
