@@ -1,18 +1,21 @@
 from tkinter import filedialog
 import csv
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 import math
 import pandas as pd
 from openpyxl import Workbook, load_workbook
 import time
 import ezdxf
 
-def create_dxf(filename, coordinates, *args):
+def create_dxf(coordinates, filename='test.dxf',  *args):
     doc = ezdxf.new()
     msp = doc.modelspace()
 
+    # 각 튜플의 요소들을 뒤집기(토목좌표를 수학좌표로 변환)
+    coordinates_math = [(y, x) for x, y in coordinates]
+    
     # Create a polyline entity
-    polyline = msp.add_lwpolyline(coordinates)
+    polyline = msp.add_lwpolyline(coordinates_math)
 
     # Set the color of the polyline to red (color index 1)
     '''#ACI인덱스
@@ -37,7 +40,8 @@ def create_dxf(filename, coordinates, *args):
     
     text_color_index = 7
     text_height = 3
-    
+
+    '''
     labels1, labels2 = args
     
     # Add text labels at each coordinate
@@ -49,7 +53,8 @@ def create_dxf(filename, coordinates, *args):
         if label.strip():  # Check if the label is not empty after stripping whitespace
             msp.add_text(label, dxfattribs={'insert': coord, 'height': 5, 'color': 1})
 
-        
+    '''
+    
     # Save the DXF document to a file
     doc.saveas("C:/temp/" + filename)
     
@@ -438,7 +443,8 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
     END_XY_list =[]
 
     alignment_report_variable_list = []
-    
+
+    polycurve = []
     for i in range(len(linestring.coords)-2):
         IA_rad = math.radians(angles[i])
         IA_DEGREE = angles[i]
@@ -769,8 +775,10 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                 # 각 sta에 대한 좌표를 추가
                 # Create a list for the current station's data
                 station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty, Ta, sageoriS , Q, T, Azimuth])
+                polycurve.append(coord)
         final_result.append([station_coordlist])
 
+        
         ######선형계산서 리스트 저장#######
         if curvetype == 'simplecurve':#단곡선
             
@@ -819,7 +827,7 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
             )
             
                                             
-    return final_result, alignment_report_variable_list
+    return final_result, alignment_report_variable_list ,polycurve
 
 def calculate_simplecurve_coordinates(V10, V11, D12, IP):
     '''
@@ -1270,42 +1278,256 @@ def format_distance(number, decimal_places=2):
 def get_station_coordinates(data1, data2, input_station):
     # input_station은 어느 IP에 속하는지 찾기
 
-    for entry in data1:
+    for i, entry in enumerate(data1):
         IPN0 = entry[0]  # IP번호
+        #print(f'data2길이 : {len(data2)}')
+        station_group = data2[i]  # Get the corresponding station group for the current entry
+        
+        BP_STA = station_group[0][0][1]
+        EP_STA = station_group[0][-1][1]
+
+        BPXY = (station_group[0][0][3][0], station_group[0][0][3][1])
+
+        
+        '''
+        print(f' BP_STA = {BP_STA}')
+        print(f' EP_STA = {EP_STA}')
+        print(f' BPXY = {BPXY}')
+        '''
+        
+        
+        
         
         try:
-            if entry[2] == 'simplecurve':
-                BC_STA, EC_STA = entry[19], entry[20]  # Simple curve case
-                SP_STA, PC_STA, CP_STA, PS_STA =0, 0, 0, 0
-            else:
-                BC_STA, EC_STA = 0, 0  # Non-simple curve case
-                SP_STA, PC_STA, CP_STA, PS_STA = entry[19], entry[20], entry[21], entry[22]
             h1 ,h2 = entry[4], entry[5]
+            W13 = entry[8] if entry[3] == 'RIGHT CURVE' else entry[8] * -1
+
             
-            SP_PC_bearing = 1
-            coord = calculate_coordinates(input_station,
+            if entry[2] == 'simplecurve':#단곡선
+                BC_STA, EC_STA = entry[19], entry[20]
+                
+                if BP_STA<= input_station <= EP_STA:#해당IP인지 체크
+                    
+                    #맞으면 좌표계산 수행
+                    
+                    StationOffset = calculate_station_offset(input_station, BC_STA, BC_STA, EC_STA, EC_STA, BP_STA)#측거
+
+                    BC_XY = entry[21]
+                    EC_XY = entry[22]
+                    
+                    CURVE_CENTER = entry[7]
+                    
+                    coord = calculate_coordinates(input_station,
+                                                  BC_STA, BC_STA, EC_STA, EC_STA,
+                                                  h1, h2, h1,
+                                                  StationOffset, W13,
+                                                  0, 0,
+                                                  BPXY[0], BPXY[1],
+                                                  BC_XY[0], BC_XY[1],
+                                                  CURVE_CENTER[0], CURVE_CENTER[1],
+                                                  EC_XY[0], EC_XY[1])
+
+                    if coord:#좌표를 찾은경우 반복문 탈출
+                        break
+                else:#해당 IP가 아니면 건너뛰고 다음 IP계산 수행
+                    continue
+                
+            else:#3차포물선인경우
+                
+                SP_STA, PC_STA, CP_STA, PS_STA = entry[19], entry[20], entry[21], entry[22]
+               
+                StationOffset = calculate_station_offset(input_station, SP_STA, PC_STA, CP_STA, PS_STA, BP_STA)#측거
+                
+                if BP_STA<= input_station <= EP_STA:#해당IP인지 체크
+                    
+                    SP_PC_bearing = entry[16]
+                    L = entry[14][3]
+                    x1 = entry[14][0]
+                    
+                    #이정량X
+                    shiftx =  cal_spiral_shiftx(input_station, SP_STA, PC_STA, CP_STA, PS_STA, StationOffset, W13, L)
+                    #이정량Y
+                    shifty =  cal_spiral_shifty(input_station, SP_STA, PC_STA, CP_STA, PS_STA, shiftx, W13, x1)
+
+                    SP_XY = entry[23]
+                    PS_XY = entry[26]
+                    
+                    CURVE_CENTER = entry[7]
+                    
+                    coord = calculate_coordinates(input_station,
                                               SP_STA, PC_STA, CP_STA, PS_STA,
                                               h1, h2, SP_PC_bearing,
                                               StationOffset, W13,
                                               shiftx, shifty,
-                                              PBP_XY[0], PBP_XY[1],
+                                              BPXY[0], BPXY[1],
                                               SP_XY[0], SP_XY[1],
                                               CURVE_CENTER[0], CURVE_CENTER[1],
                                               PS_XY[0], PS_XY[1])
                 
+                    if coord:#좌표를 찾은경우 반복문 탈출
+                        break
+                    
+                else:#해당 IP가 아니면 건너뛰고 다음 IP계산 수행
+                    continue
+            if not coord:
+                 print('측점이 범위를 벗어났습니다.')
+                 return None
                 
         except IndexError:
             print(f"Entry doesn't have enough data or is malformed: {entry}")
         except Exception as e:
             print(f"An error occurred: {e}")
 
+    return coord
 
+def create_civil3d_xlsx(data):
+    filename = 'c:/temp/AlignmentExample.xlsx'
 
+    # Create a new workbook or load an existing one
+    # Create a new workbook, overwriting any existing file
+    workbook = Workbook()
+    sheetname = 'Sheet1' # Dynamic sheet name like IP1, IP2, etc.
 
+    # Check if the sheet already exists, if not create a new one
+    if sheetname in workbook.sheetnames:
+        sheet = workbook[sheetname]
+    else:
+        sheet = workbook.create_sheet(title=sheetname)
+            
+    sheet['A1'] = 'Previous Entity ID'
+    sheet['B1'] = 'Next Entity ID'
+    sheet['C1'] = 'Radius'
+    sheet['D1'] = 'Spiral Length'
+    start_row = 2
+    #data1에서 unwrap
+    for i, entry in enumerate(data):
+        R = entry[8]
+        L = entry[14][3] if entry[2] == 'cubic' else ''
+        sheet[f'A{start_row}'] = entry[0]
+        sheet[f'B{start_row}'] = entry[0] +1
+        sheet[f'C{start_row}'] = R
+        sheet[f'D{start_row}'] = L
 
-
-
+        start_row += 1  # Move to the next row
         
+    # Remove default sheet if it exists (usually "Sheet" when a new workbook is created)
+    if 'Sheet' in workbook.sheetnames:
+        del workbook['Sheet']
+
+    # Save the workbook
+    save_with_retry(workbook, filename, max_retries=100, delay=1)
+    #workbook.save(filename)
+    print(f"Data successfully written to {filename}")
+
+
+def distance_to_segment(x1, y1, x2, y2, coord):
+    x, y = coord
+    # 선분의 방향 벡터 계산
+    direction_vector_x = x2 - x1
+    direction_vector_y = y2 - y1
+
+    # 점과 선분 시작점 사이의 벡터 계산
+    start_to_point_vector_x = x - x1
+    start_to_point_vector_y = y - y1
+
+    # 선분의 길이
+    segment_length = math.sqrt(direction_vector_x ** 2 + direction_vector_y ** 2)
+
+    # 선분의 방향 벡터 단위화
+    if segment_length == 0:
+        raise ValueError("선분의 길이가 0입니다.")
+    
+    normalized_direction_vector_x = direction_vector_x / segment_length
+    normalized_direction_vector_y = direction_vector_y / segment_length
+
+    # 점과 선분의 시작점 사이의 내적 계산
+    dot_product = (start_to_point_vector_x * normalized_direction_vector_x + 
+                   start_to_point_vector_y * normalized_direction_vector_y)
+
+    # 점이 선분의 시작점 또는 끝점 범위를 벗어난 경우
+    if dot_product < 0 or dot_product > segment_length:
+        return None  # 점이 선분 범위 밖에 있음을 나타냄
+
+    # 점이 선분 사이에 있는 경우
+    perpendicular_distance = abs((x1 - x) * (y2 - y) - (y1 - y) * (x2 - x)) / segment_length
+    perpendicular_point_x = x1 + normalized_direction_vector_x * dot_product
+    perpendicular_point_y = y1 + normalized_direction_vector_y * dot_product
+
+    # 측점 계산용 거리
+    perpendicular_distance2 = math.sqrt((perpendicular_point_x - x1) ** 2 + 
+                                        (perpendicular_point_y - y1) ** 2)
+
+    # 결과 반환: [수직 거리, 투영된 점의 X 좌표, 투영된 점의 Y 좌표, 측점 거리, 선분 시작점의 X 좌표]
+    result = [perpendicular_distance, perpendicular_point_x, perpendicular_point_y, perpendicular_distance2, x1]
+    return result
+
+# 폴리라인 상의 수직 투영점을 찾는 함수
+def find_perpendicular_point(coord, polyline):
+    xcoord, ycoord = coord
+    result = None
+    result2 = None
+    for i in range(len(polyline) - 1):  # 마지막 점을 포함할 수 있도록 수정
+        x1 = polyline[i][0]
+        y1 = polyline[i][1]
+        x2 = polyline[i+1][0]
+        y2 = polyline[i+1][1]
+        
+        result2 = distance_to_segment(x1, y1, x2, y2, coord)
+        
+        if result2:
+            distance = result2[0]
+            perpendicular_x = result2[1]
+            perpendicular_y = result2[2]
+            station = result2[3]
+            xcoordinate = result2[4]
+            
+            print(f"수직 거리: {distance}")
+            print(f"수직 투영된 점: ({perpendicular_x}, {perpendicular_y})")
+            print(f"측점 거리: {station}")
+            print(f"선분 시작점의 X좌표: {xcoordinate}")
+            
+            # 필요한 경우 result에 저장
+            result = result2
+            break
+        else:
+            #print("점이 선분 범위 밖에 있음")
+            pass
+    return result
+
+def get_station_from_coordinates(linestring, coord, data):
+    tolerance = 1e-6
+    #폴리라인 상의 수직 투영점을 찾는 함수
+    #반환값
+    find_station = None
+    
+    result2 = find_perpendicular_point(coord, linestring)
+
+    distance = result2[0]
+    perpendicular_x = result2[1]
+    perpendicular_y = result2[2]
+    station = result2[3]
+    xcoordinate = result2[4]
+            
+    #선분 시작점의 좌표를 data 리스트에서 찾기
+    for i , group in enumerate(data):
+        for j, entry in enumerate(group):
+            for k, row in enumerate(entry):
+                destinate_coord = row[3][0]
+                if abs(xcoordinate - destinate_coord) < tolerance:  # e.g., tolerance = 1e-6
+                    find_station = row[1]
+                    break
+    
+    if find_station:
+        final_station = station + find_station
+        print(f"최종 측점: {final_station}")
+        print(f'offset: {distance:.2f}')
+        print(f'좌표: X = {perpendicular_x:.4f}, Y = {perpendicular_y:.4f}')     
+        
+    else:
+        print("sta 값을 찾을 수 없습니다.")
+    
+    return final_station
+
 def main():
     #변수입력받기
     user_input1 = input('계산 간격 입력: (기본값 20) ')
@@ -1356,7 +1578,7 @@ def main():
         parameters = cal_parameter(Radius_list, designSpeed, ballast)
     
     
-    final_result, alignment_report_variable_list = calculate_curve(linestring, Radius_list, ia_list, parameters, unit, start_STA)
+    final_result, alignment_report_variable_list , polycurve = calculate_curve(linestring, Radius_list, ia_list, parameters, unit, start_STA)
     
     #좌표출력
     #write_data(final_result)
@@ -1365,7 +1587,14 @@ def main():
     #선형계산서 출력
     write_report(alignment_report_variable_list, final_result)
     print('선형계산서 출력완료')
+
+    #CIVIL3D성과물 생성
+    create_civil3d_xlsx(alignment_report_variable_list)
+    print('CIVIL3D 성과물 출력완료')
+    
     a= 0
+
+    
     while 1:
         
         
@@ -1373,29 +1602,79 @@ def main():
         print('1. 도면출력')
         print('2. 측점으로 좌표계산')
         print('3. 좌표로 측점찾기')
-        print('4. 프로그램 종료')     
+        print('4. 프로그램 종료')
+        
         a =  int(input(' 번호 입력: '))
+        
         if a== 1:
-            print('도면출력')
-        elif a ==2:
-            print('2. 측점으로 좌표계산')
+            print('선택한 메뉴 : 도면출력')
             while 1:
-                input_station = float(input('측점 입력: '))
-
-                '''        
-                find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
-                print(f'찾은 좌표 X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
-
-                '''
-
-                print('계산이 종료되었습니다. 다른 측점 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요')
+                create_dxf(polycurve, filename='본선평면선형.dxf')
+                create_dxf(list(linestring.coords), filename='IP라인.dxf')
+                print('도면출력이 완료됐습니다.')
+                print('이전 메뉴로 돌아가려면 2를 입력하세요')
                 number = int(input('번호 입력: '))
                 if number == 1:
                     continue
-                elif number ==2:
+                elif number == 2:
                     break
-        elif a ==3:
-            print('3. 좌표로 측점찾기')
+                
+        elif a ==2:
+            print('선택한 메뉴 : 측점으로 좌표계산')
+            
+            while 1:
+                input_station = float(input('측점 입력: '))
+
+                
+                find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
+
+                if find_coord:
+                    print(f'찾은 좌표 X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
+
+                
+
+                    print('계산이 종료되었습니다. 다른 측점 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요')
+                    number = int(input('번호 입력: '))
+                    if number == 1:
+                        continue
+                    elif number ==2:
+                        break
+                else:#좌표를 못찾은경우 다른 측점 입력해야함.
+                    print('좌표를 못찾았습니다. 다른 측점을 입력하세요')
+                    continue
+        elif a == 3:
+            print('선택한 메뉴: 좌표로 측점찾기')
+            
+            while 1:
+                # 사용자로부터 좌표 입력을 받음
+                input_coordinates = input('좌표 입력 (쉼표로 구분): ')
+                
+                # 입력받은 좌표를 쉼표로 구분하여 X, Y 값을 실수로 변환
+                try:
+                    x, y = map(float, input_coordinates.split(','))
+                    
+                    # 좌표로 측점 찾는 로직을 여기에 추가
+                    print(f'입력된 좌표: X = {x}, Y = {y}')
+                    #좌표를 튜플로 묶음
+                    input_xy = (x,y)
+                    
+                    # 이후 처리 로직 (예: 좌표를 사용하여 측점 계산 함수 호출)
+                    print('통과')
+                    # 중복 제거
+                    unique_data = list(set(polycurve))
+                    find_station = get_station_from_coordinates(unique_data, input_xy, final_result)
+                    print(f'찾은 측점: {format_distance(find_station)}')
+
+                    print('계산이 종료되었습니다. 다른 좌표 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요')
+                    number = int(input('번호 입력: '))
+                    if number == 1:
+                        continue
+                    elif number ==2:
+                        break
+
+                except ValueError as e:
+                    print(e)
+             
         elif a== 4:
             print('프로그램 종료')
             break
