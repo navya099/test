@@ -6,17 +6,28 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 import time
 import ezdxf
+import numpy as np
+import matplotlib.pyplot as plt
 
-def create_dxf(coordinates, filename='test.dxf',  *args):
+def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale=1000):
     doc = ezdxf.new()
     msp = doc.modelspace()
 
+    scale = scale / 1000 #1단위로 변환
+    
+    #data1 = 선형계산데이터
+    #data2 = 좌표데이터
+
+    
     # 각 튜플의 요소들을 뒤집기(토목좌표를 수학좌표로 변환)
     coordinates_math = [(y, x) for x, y in coordinates]
+    linestring_math = [(y, x) for x, y in linestring.coords]
     
     # Create a polyline entity
-    polyline = msp.add_lwpolyline(coordinates_math)
-
+    ippolyline = msp.add_lwpolyline(linestring_math)#ip라인
+    polyline = msp.add_lwpolyline(coordinates_math)#선형
+    
+    
     # Set the color of the polyline to red (color index 1)
     '''#ACI인덱스
     0: BYBLOCK
@@ -32,32 +43,168 @@ def create_dxf(coordinates, filename='test.dxf',  *args):
     '''
     
     # Set polyline properties if needed
-    polyline.dxf.layer = 'MyLayer'
+    polyline.dxf.layer = 'FL'
+    ippolyline.dxf.layer = 'IP라인'
     
     # Set the color of the polyline to red
-    red_color_index = 1  # Get color index for 'red'
-    polyline.dxf.color = red_color_index
+    
+    polyline.dxf.color = 1
+    ippolyline.dxf.color = 9
+
+    #폴리선굵기
+    polyline.dxf.lineweight  = scale
     
     text_color_index = 7
-    text_height = 3
+    text_height = 3 * scale
 
-    '''
-    labels1, labels2 = args
+    #IP좌표테이블
+    '''구성
+    IPNO.1
+    IA = 7D 9' 10"
+    R= 600
+    TL =145.15
+    CL = 145.24
+    X = 24236.26
+    Y=2515235
     
-    # Add text labels at each coordinate
-    for coord, label in zip(coordinates, labels1):
-        msp.add_text(label, dxfattribs={'insert': coord, 'height': text_height, 'color': 11})
-
-    # Add text labels at each coordinate
-    for coord, label in zip(coordinates, labels2):
-        if label.strip():  # Check if the label is not empty after stripping whitespace
-            msp.add_text(label, dxfattribs={'insert': coord, 'height': 5, 'color': 1})
-
     '''
+    dimention = 2
+    coord_precision = 4
+    km_precision = 2
     
+    for i, entry in enumerate(data1):
+        IP_number = f'IP  NO. {entry[0]}'
+        IA = f'IA = {degrees_to_dms(entry[6])}'
+        R= f'R = {entry[8]:.{dimention}f}' # R
+        if entry[2] == 'simplecurve':  # Simple curve case
+            TL = f'TL = {entry[14][0]:.{dimention}f}' #TL
+            CL = f'CL = {entry[14][1]:.{dimention}f}' #CL
+        else:
+            TL = f'TL = {entry[14][10]:.{dimention}f}' #TL
+            CL = f'CL = {entry[14][12]:.{dimention}f}' #CL
+
+        X = entry[1][0]
+        Y = entry[1][1]
+        
+        X_TEXT= f'X = {entry[1][0]:.{coord_precision}f}'
+        Y_TEXT = f'Y = {entry[1][1]:.{coord_precision}f}'
+
+        '''
+        #텍스트 좌표
+        # Text coordinates
+        text_offsets = [0, -10, -20, -30, -40, -50, -60]
+        text_labels = [IP_number, IA, R, TL, CL, X_TEXT, Y_TEXT]
+
+        for offset, label in zip(text_offsets, text_labels):
+            coord = (Y, X + offset)
+            msp.add_text(label, dxfattribs={'insert': coord, 'height': text_height, 'color': text_color_index, 'layer': 'table'})
+        '''
+
+        # Create block definition with the text elements
+        block_name = f"IP_Block_{i}"
+        block = doc.blocks.new(name=block_name)
+        
+        text_labels = [IP_number, IA, R, TL, CL, X_TEXT, Y_TEXT]
+        text_offsets = [0 * scale, -10 * scale, -20 * scale, -30 * scale, -40 * scale, -50 * scale, -60 * scale]
+        
+        for offset, label in zip(text_offsets, text_labels):
+            coord = (entry[1][1], entry[1][0] + offset)
+            block.add_text(label, dxfattribs={
+                'insert': coord, 
+                'height': text_height, 
+                'color': text_color_index,
+                'layer': 'table'
+            })
+        
+        # Insert block into the model space at IP location
+        msp.add_blockref(block_name, insert=(0, 0))
+        
+        #선형제원문자
+        # Write the relevant station data for the current entry
+        if j < len(data2):  # Ensure you do not exceed data2 bounds
+            station_group = data2[j]  # Get the corresponding station group for the current entry
+            for station_data in station_group:
+                for row in station_data:  # Iterate through the innermost list
+                    lable, sta, station_offset, coord, shiftx, shifty , Ta, sageoriS , Q, T, Azimuth = row
+
+                    #토목좌표를 수학좌표로 변환
+                    x, y = coord
+                    coord_math = (y ,x)
+
+                    #접선방위각을 수학각도로 변환
+                    Ta_math = (450 - Ta) % 360
+                    
+                    #km문자
+                    if sta % 1000 == 0 or sta == 0:#1000의 배수인경우(0포함)
+                        #원그리기
+                        msp.add_circle(coord_math, radius = 2 * scale, dxfattribs={'layer': 'km심볼', 'color': 1})
+                        #원그리기
+                        msp.add_circle(coord_math, radius = 1.5 * scale, dxfattribs={'layer': '200심볼', 'color' : 1})
+                        
+                        #문자
+                        kmtext = f'{sta // 1000}km'
+                        msp.add_text(kmtext, dxfattribs={'layer': 'km문자', 'insert': coord_math, 'height': text_height, 'color': 1, 'rotation': Ta_math})
+
+                        #선그리기
+                        #시작점과 끝점 계산
+                        start_point = calculate_destination_coordinates(y, x, Ta_math + 90, 1.5 * scale)
+                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, -1.5 * scale)
+                        msp.add_line(start_point, end_point, dxfattribs={'layer': '보조측점', 'color': 1})#중심점,길이
+                        
+                    #200문자
+                    elif sta % 200 == 0:#200의 배수인경우(0포함)
+                        #원그리기
+                        msp.add_circle(coord_math, radius = 1.5 * scale, dxfattribs={'layer': '200심볼', 'color' : 1})
+                        #200 텍스트
+                        text200 = str(sta % 1000)
+                        msp.add_text(text200, dxfattribs={'layer': '200문자', 'insert': coord_math, 'height': text_height, 'color': 1, 'rotation': Ta_math})
+
+                        #선그리기
+                        #시작점과 끝점 계산
+                        start_point = calculate_destination_coordinates(y, x, Ta_math + 90, 1.5 * scale)
+                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, -1.5 * scale)
+                        msp.add_line(start_point, end_point, dxfattribs={'layer': '보조측점', 'color': 1})#중심점,길이
+                        
+                    #보조측점선
+                    elif sta % unit == 0:
+                        
+                        #선그리기
+                        #시작점과 끝점 계산
+                        start_point = calculate_destination_coordinates(y, x, Ta_math + 90, 1.5 * scale)
+                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, -1.5 * scale)
+                        msp.add_line(start_point, end_point, dxfattribs={'layer': '보조측점', 'color': 1})#중심점,길이
+
+
+                        
+                    #완화곡선인출선
+                    else:
+                        #시작점과 끝점 계산
+                        start_point = coord_math
+                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, 50 * scale) if entry[3] == 'LEFT CURVE' else calculate_destination_coordinates(y, x, Ta_math - 90, 50 * scale)
+                        msp.add_line(start_point, end_point, dxfattribs={'layer': '곡선인출선', 'color': 1})#중심점,길이
+
+                        #제원문자
+                        text_rotation = Ta_math + 90 if entry[3] == 'LEFT CURVE' else Ta_math - 90
+                        msp.add_text(lable + '=' + str(format_distance(sta, decimal_places=km_precision)), dxfattribs={'layer': '곡선제원문자', 'insert': coord_math, 'height': text_height, 'color': 1, 'rotation': text_rotation})
+                       
     # Save the DXF document to a file
-    doc.saveas("C:/temp/" + filename)
+    dxf_save_with_retry(doc, filename, max_retries=100, delay=1)
     
+
+def dxf_save_with_retry(doc, filename, max_retries=100, delay=1):
+    # Try saving the file, retrying if there's a PermissionError
+    for attempt in range(max_retries):
+        try:
+            doc.saveas("C:/temp/" + filename)
+            print(f"File saved successfully: {filename}")
+            break
+        except PermissionError:
+            print(f"Attempt {attempt + 1}: Permission denied while saving {filename}. Retrying in {delay} seconds...")
+            time.sleep(delay)
+    else:
+        print(f"Failed to save the file after {max_retries} attempts.")
+
+            
 def save_with_retry(workbook, filename, max_retries=100, delay=1):
     # Try saving the file, retrying if there's a PermissionError
     for attempt in range(max_retries):
@@ -1420,115 +1567,152 @@ def create_civil3d_xlsx(data):
     print(f"Data successfully written to {filename}")
 
 
-def distance_to_segment(x1, y1, x2, y2, coord):
-    x, y = coord
-    # 선분의 방향 벡터 계산
-    direction_vector_x = x2 - x1
-    direction_vector_y = y2 - y1
 
-    # 점과 선분 시작점 사이의 벡터 계산
-    start_to_point_vector_x = x - x1
-    start_to_point_vector_y = y - y1
+def find_perpendicular_projection(coord, linestring):
 
-    # 선분의 길이
-    segment_length = math.sqrt(direction_vector_x ** 2 + direction_vector_y ** 2)
-
-    # 선분의 방향 벡터 단위화
-    if segment_length == 0:
-        raise ValueError("선분의 길이가 0입니다.")
+    # coord가 (x, y) 튜플일 경우 Point 객체로 변환
+    if not isinstance(coord, Point):
+        point = Point(coord)  # 튜플을 Point 객체로 변환
+    else:
+        point = coord
     
-    normalized_direction_vector_x = direction_vector_x / segment_length
-    normalized_direction_vector_y = direction_vector_y / segment_length
-
-    # 점과 선분의 시작점 사이의 내적 계산
-    dot_product = (start_to_point_vector_x * normalized_direction_vector_x + 
-                   start_to_point_vector_y * normalized_direction_vector_y)
-
-    # 점이 선분의 시작점 또는 끝점 범위를 벗어난 경우
-    if dot_product < 0 or dot_product > segment_length:
-        return None  # 점이 선분 범위 밖에 있음을 나타냄
-
-    # 점이 선분 사이에 있는 경우
-    perpendicular_distance = abs((x1 - x) * (y2 - y) - (y1 - y) * (x2 - x)) / segment_length
-    perpendicular_point_x = x1 + normalized_direction_vector_x * dot_product
-    perpendicular_point_y = y1 + normalized_direction_vector_y * dot_product
-
-    # 측점 계산용 거리
-    perpendicular_distance2 = math.sqrt((perpendicular_point_x - x1) ** 2 + 
-                                        (perpendicular_point_y - y1) ** 2)
-
-    # 결과 반환: [수직 거리, 투영된 점의 X 좌표, 투영된 점의 Y 좌표, 측점 거리, 선분 시작점의 X 좌표]
-    result = [perpendicular_distance, perpendicular_point_x, perpendicular_point_y, perpendicular_distance2, x1]
-    return result
-
-# 폴리라인 상의 수직 투영점을 찾는 함수
-def find_perpendicular_point(coord, polyline):
-    xcoord, ycoord = coord
-    result = None
-    result2 = None
-    for i in range(len(polyline) - 1):  # 마지막 점을 포함할 수 있도록 수정
-        x1 = polyline[i][0]
-        y1 = polyline[i][1]
-        x2 = polyline[i+1][0]
-        y2 = polyline[i+1][1]
+    # linestring이 Shapely LineString 객체인지 확인
+    if not isinstance(linestring, LineString):
+        print("linestring은 Shapely LineString 객체여야 합니다.")
+        #Shapely LineString 객체로 변환
+        linestring = LineString(linestring)
         
-        result2 = distance_to_segment(x1, y1, x2, y2, coord)
+    # Project the point onto the LineString
+    projected_distance = linestring.project(point)
+    
+    
+    # 점을 linestring에 투영
+    projection_point = linestring.interpolate(projected_distance)
+    
+    # 투영된 점의 거리에 해당하는 선형 길이 찾기
+    projected_length = linestring.project(point)
+
+    # 투영된 점이 속한 segment의 시작 좌표를 찾기 위해 각 세그먼트를 순회
+    for i, (start, end) in enumerate(zip(linestring.coords[:-1], linestring.coords[1:])):
+        segment = LineString([start, end])
+        segment_length = segment.length
         
-        if result2:
-            distance = result2[0]
-            perpendicular_x = result2[1]
-            perpendicular_y = result2[2]
-            station = result2[3]
-            xcoordinate = result2[4]
-            
-            print(f"수직 거리: {distance}")
-            print(f"수직 투영된 점: ({perpendicular_x}, {perpendicular_y})")
-            print(f"측점 거리: {station}")
-            print(f"선분 시작점의 X좌표: {xcoordinate}")
-            
-            # 필요한 경우 result에 저장
-            result = result2
+        # 투영된 거리가 현재 segment 내에 있는지 확인
+        if projected_length <= segment_length:
+            start_coordinate = Point(start)
             break
         else:
-            #print("점이 선분 범위 밖에 있음")
-            pass
+            projected_length -= segment_length
+    
+    # 점과 투영된 좌표 간의 거리 (오프셋 거리)
+    offset_distance = point.distance(projection_point)
+
+    # 투영된 좌표와 시작 좌표 간의 수평 거리
+    horizen_distance = projection_point.distance(start_coordinate)
+        
+    # 결과 반환: [오프셋 거리, 투영된 좌표, 수평 거리, 시작 좌표]
+    result = [offset_distance, projection_point, horizen_distance, start_coordinate]
+
+    print(f' projection_point = {projection_point}')
+    
     return result
 
+def plot_projection(point, projection_point, linestring):
+
+    # linestring이 Shapely LineString 객체인지 확인
+    if not isinstance(linestring, LineString):
+        print("linestring은 Shapely LineString 객체여야 합니다.")
+        #Shapely LineString 객체로 변환
+        linestring = LineString(linestring)
+        
+    # coord가 (x, y) 튜플일 경우 Point 객체로 변환
+    if not isinstance(point, Point):
+        point = Point(point)  # 튜플을 Point 객체로 변환
+    else:
+        point = coord    
+    # Extract x and y coordinates from LineString
+    x, y = linestring.xy
+
+    # Create a plot
+    plt.figure(figsize=(6, 6))
+    
+    # Plot LineString
+    plt.plot(x, y, label="LineString", color='blue', linewidth=2)
+
+    # Plot original point
+    plt.plot(point.x, point.y, 'ro', label="Original Point", markersize=8)
+
+    # Plot projection point
+    plt.plot(projection_point.x, projection_point.y, 'go', label="Projection Point", markersize=8)
+
+    # Draw a line between the original point and the projection point
+    plt.plot([point.x, projection_point.x], [point.y, projection_point.y], 'k--', label="Perpendicular Line")
+
+    # Add labels
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.axis('equal')
+    
+    plt.legend()
+
+    # Show the plot
+    plt.grid(True)
+    plt.show()
+    
 def get_station_from_coordinates(linestring, coord, data):
     tolerance = 1e-6
-    #폴리라인 상의 수직 투영점을 찾는 함수
-    #반환값
-    find_station = None
     
-    result2 = find_perpendicular_point(coord, linestring)
+    #찾을 station
+    find_station = None
 
-    distance = result2[0]
-    perpendicular_x = result2[1]
-    perpendicular_y = result2[2]
-    station = result2[3]
-    xcoordinate = result2[4]
-            
+    #토목좌표를 수학좌표로 변환
+    # 각 튜플의 요소들을 뒤집기(토목좌표를 수학좌표로 변환)
+    linestring_math = [(y, x) for x, y in linestring]
+
+    
+    #튜플뒤집기(토목좌표를 수학좌표로 변환)
+    coord_math = (coord[1],coord[0])
+
+    
+    
+    #주어진 점을 선분에 수직으로 투영하는 함수호출
+    result2 = find_perpendicular_projection(coord_math, linestring_math)#입력좌표,polycurve
+
+    distance = result2[0]#offset 거리
+    horizen_distance = result2[2]#시작점에서 투영점까지의 거리
+    
+    # result2[3]이 Point 객체라면 x, y 속성을 사용하여 튜플로 변환
+    start_coordinate = (result2[3].x, result2[3].y)  # Point 객체에서 x, y 좌표 추출
+    perpendicular_coord = (result2[1].x, result2[1].y)  # Point 객체에서 x, y 좌표 추출
+
+    
     #선분 시작점의 좌표를 data 리스트에서 찾기
     for i , group in enumerate(data):
         for j, entry in enumerate(group):
             for k, row in enumerate(entry):
-                destinate_coord = row[3][0]
-                if abs(xcoordinate - destinate_coord) < tolerance:  # e.g., tolerance = 1e-6
+                destinate_coord = row[3][1]
+                
+                if abs(start_coordinate[0] - destinate_coord) < tolerance:  # e.g., tolerance = 1e-6
                     find_station = row[1]
+                    print(f"선형계산서 측점: {find_station}")
                     break
     
     if find_station:
-        final_station = station + find_station
+        final_station = horizen_distance + find_station
         print(f"최종 측점: {final_station}")
         print(f'offset: {distance:.2f}')
-        print(f'좌표: X = {perpendicular_x:.4f}, Y = {perpendicular_y:.4f}')     
+        print(f'좌표: X = {perpendicular_coord[0]:.4f}, Y = {perpendicular_coord[1]:.4f}')     
         
     else:
         print("sta 값을 찾을 수 없습니다.")
-    
+        final_station = 0
+
+
+    plot_projection(coord_math, result2[1], linestring_math)
     return final_station
 
 def main():
+    global unit
     #변수입력받기
     user_input1 = input('계산 간격 입력: (기본값 20) ')
     unit = int(user_input1) if user_input1 else 20
@@ -1606,18 +1790,18 @@ def main():
         
         a =  int(input(' 번호 입력: '))
         
-        if a== 1:
+        if a == 1:
             print('선택한 메뉴 : 도면출력')
-            while 1:
-                create_dxf(polycurve, filename='본선평면선형.dxf')
-                create_dxf(list(linestring.coords), filename='IP라인.dxf')
-                print('도면출력이 완료됐습니다.')
-                print('이전 메뉴로 돌아가려면 2를 입력하세요')
-                number = int(input('번호 입력: '))
-                if number == 1:
-                    continue
-                elif number == 2:
-                    break
+            while True:
+                user_input10 = input('도면축척 입력 (기본값 1:1000): ')  # Get input as a string
+                if user_input10.isdigit() or user_input10 == '':
+                    scale = int(user_input10) if user_input10 else 1000
+                    print(f'현재 도면축척 1:{scale}')                 
+                    create_dxf(polycurve, linestring, alignment_report_variable_list, final_result, filename='본선평면선형.dxf', scale=scale)
+                    print('도면출력이 완료됐습니다.')
+                    break  # Exit the loop after successful creation
+                else:
+                    print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
                 
         elif a ==2:
             print('선택한 메뉴 : 측점으로 좌표계산')
@@ -1661,10 +1845,12 @@ def main():
                     # 이후 처리 로직 (예: 좌표를 사용하여 측점 계산 함수 호출)
                     print('통과')
                     # 중복 제거
+                    
                     unique_data = list(set(polycurve))
+                    
                     find_station = get_station_from_coordinates(unique_data, input_xy, final_result)
                     print(f'찾은 측점: {format_distance(find_station)}')
-
+                    
                     print('계산이 종료되었습니다. 다른 좌표 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요')
                     number = int(input('번호 입력: '))
                     if number == 1:
