@@ -52,7 +52,7 @@ def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale
     ippolyline.dxf.color = 9
 
     #폴리선굵기
-    polyline.dxf.lineweight  = scale
+    polyline.dxf.const_width  = scale
     
     text_color_index = 7
     text_height = 3 * scale
@@ -74,7 +74,7 @@ def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale
     
     for i, entry in enumerate(data1):
         IP_number = f'IP  NO. {entry[0]}'
-        IA = f'IA = {degrees_to_dms(entry[6])}'
+        IA = f'IA = {degrees_to_dms2(entry[6])}'
         R= f'R = {entry[8]:.{dimention}f}' # R
         if entry[2] == 'simplecurve':  # Simple curve case
             TL = f'TL = {entry[14][0]:.{dimention}f}' #TL
@@ -113,7 +113,7 @@ def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale
                 'insert': coord, 
                 'height': text_height, 
                 'color': text_color_index,
-                'layer': 'table'
+                'layer': 'IP제원표'
             })
         
         # Insert block into the model space at IP location
@@ -121,10 +121,15 @@ def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale
         
         #선형제원문자
         # Write the relevant station data for the current entry
-        if j < len(data2):  # Ensure you do not exceed data2 bounds
-            station_group = data2[j]  # Get the corresponding station group for the current entry
+        if i < len(data2):  # Ensure you do not exceed data2 bounds
+            station_group = data2[i]  # Get the corresponding station group for the current entry
             for station_data in station_group:
+                if i != 0:
+                    station_data.pop(0)
+                
+                
                 for row in station_data:  # Iterate through the innermost list
+                    
                     lable, sta, station_offset, coord, shiftx, shifty , Ta, sageoriS , Q, T, Azimuth = row
 
                     #토목좌표를 수학좌표로 변환
@@ -178,15 +183,62 @@ def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale
                         
                     #완화곡선인출선
                     else:
+                        
                         #시작점과 끝점 계산
                         start_point = coord_math
                         end_point = calculate_destination_coordinates(y, x, Ta_math + 90, 50 * scale) if entry[3] == 'LEFT CURVE' else calculate_destination_coordinates(y, x, Ta_math - 90, 50 * scale)
                         msp.add_line(start_point, end_point, dxfattribs={'layer': '곡선인출선', 'color': 1})#중심점,길이
 
                         #제원문자
-                        text_rotation = Ta_math + 90 if entry[3] == 'LEFT CURVE' else Ta_math - 90
-                        msp.add_text(lable + '=' + str(format_distance(sta, decimal_places=km_precision)), dxfattribs={'layer': '곡선제원문자', 'insert': coord_math, 'height': text_height, 'color': 1, 'rotation': text_rotation})
-                       
+                        text_rotation = Ta_math - 90
+                        reverse_rotaion = Ta_math + 90 + 180 if entry[3] == 'LEFT CURVE' else Ta_math - 90 + 180
+                        
+                        if sta / 1000 < 10:
+                            text_position = calculate_destination_coordinates(y, x, reverse_rotaion, -20 * scale)
+                        elif sta / 1000 < 100:
+                            text_position = calculate_destination_coordinates(y, x, reverse_rotaion, -16 * scale)
+                        else:
+                            text_position = calculate_destination_coordinates(y, x, reverse_rotaion, -12 * scale)
+                            
+                        if entry[3] == 'LEFT CURVE':
+                            msp.add_text(lable + '=' + str(format_distance(sta, decimal_places=km_precision)), dxfattribs={'layer': '곡선제원문자', 'insert': end_point, 'height': text_height, 'color': 1, 'rotation': text_rotation})
+                        else:
+                            msp.add_text(lable + '=' + str(format_distance(sta, decimal_places=km_precision)), dxfattribs={'layer': '곡선제원문자', 'insert': text_position, 'height': text_height, 'color': 1, 'rotation': text_rotation})
+
+                     #정거장중심
+                     #todo
+    #IP좌표 선
+    for i in range(len(linestring_math)-2):
+
+        x1, y1  = linestring_math[i]
+        x2, y2 = linestring_math[i+1]
+        x3 , y3 = linestring_math[i+2]
+        
+        #v1 계산
+        v1 = calculate_bearing(x1, y1, x2, y2)
+        v2 = calculate_bearing(x2, y2, x3, y3)
+        
+        #v1 시작점 계산
+        start_point1 = calculate_destination_coordinates(x2 ,y2 , v1 +180, 7 * scale)
+        end_point1 = calculate_destination_coordinates(x2 ,y2,  v1, 3 * scale)
+
+        msp.add_line(start_point1, end_point1, dxfattribs={'layer': 'IP교점선', 'color': 1})#중심점,길이
+        
+        #v2 시작점 계산
+        start_point2 = (x2, y2)
+        end_point2 = calculate_destination_coordinates(x2 ,y2 ,  v2, 7* scale)
+        msp.add_line(start_point2, end_point2, dxfattribs={'layer': 'IP교점선', 'color': 1})#중심점,길이
+
+        #문자
+        msp.add_text(f'IP NO.{i+1}' , dxfattribs={
+            'layer': 'IP문자',
+            'insert': start_point2,
+            'height': text_height,
+            'color': 1,
+            'rotation': 0
+            })
+
+        
     # Save the DXF document to a file
     dxf_save_with_retry(doc, filename, max_retries=100, delay=1)
     
@@ -400,6 +452,26 @@ def degrees_to_dms(degrees):
 
     
     return f"{deg}도  {minutes}분  {seconds:.2f}초"
+
+def degrees_to_dms2(degrees):
+    """
+    Converts decimal degrees to degrees, minutes, seconds.
+    
+    Args:
+    degrees (float): Decimal degrees value.
+    
+    Returns:
+    tuple: Degrees, minutes, seconds.
+    """
+    if degrees < 0:
+        degrees = degrees * -1
+        
+    deg = int(degrees)
+    minutes = int((degrees - deg) * 60)
+    seconds = (degrees - deg - minutes / 60) * 3600
+
+    
+    return f"{deg}° {minutes}' {seconds:.2f}\""
 
 #SP>PC 방위각
 def calculate_SP_PC_bearing(W13, V10, X10):
@@ -792,8 +864,44 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
                                               CURVE_CENTER[0], CURVE_CENTER[1],
                                               EC_XY[0], EC_XY[1])
                 # 각 sta에 대한 좌표를 추가
-                # Create a list for the current station's data
-                station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty])
+
+                
+                if BC_STA < sta <= EC_STA:#단곡선구간
+                    #사거리S
+                    sageoriS = 2 * Rc * math.sin((((StationOffset / CL) * IA_rad) / 2) * math.pi / 180)
+                    
+                    #편기각 Q                   
+                    Q = (180 / (2 * math.pi)) * (StationOffset / Rc)#도
+
+                    #접선각 T
+                    T = math.degrees(theta_pc) #도
+                    
+                    # 방위각 A(도) (Azimuth in degrees)
+                    Azimuth = h1 + math.degrees(theta_pc) + Q if direction == 1 else h1 - math.degrees(
+                        theta_pc) - Q
+
+
+                    # 접선방위각 Ta (Tangent Azimuth in degrees)
+                    Ta = h1 + math.degrees(theta_pc) + 2 * Q if direction == 1 else h1 - math.degrees(
+                        theta_pc) - 2 * Q
+
+                elif sta <= BC_STA:#BP - SP
+                    sageoriS = 0
+                    Ta = h1
+                    Q =0
+                    T = 0
+                    Azimuth = 0
+                    
+                elif EC_STA <= sta: #PS>EP
+                    sageoriS = 0
+                    Ta = h2
+                    Q =0
+                    T = 0
+                    Azimuth = 0
+                    
+                station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty, Ta, sageoriS , Q, T, Azimuth])
+                
+                polycurve.append(coord)
         else:#3차포물선
             BP_STA_int = int(round(BP_STA))
             PS_STA_int = int(round(PS_STA))
@@ -823,7 +931,7 @@ def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_
             # 스테이션 리스트에 있는 각 sta에 대해 좌표 계산
             for j, sta in enumerate(station_list):
                 if j == 0:
-                    lable = 'B  P'
+                    lable = 'BP'
                     StationOffset = 0
                 else:
                     end_sta = EP_STA if is_last_ip else PS_STA
@@ -988,11 +1096,11 @@ def calculate_simplecurve_coordinates(V10, V11, D12, IP):
     '''
     F5 = IP[0]
     L5 = IP[1]
-    
-    BC_XY = (math.cos(math.radians(V10+180))*(D12) + F5,
-             math.sin(math.radians(V10+180))*(D12) + L5)
-    EC_XY = (math.cos(math.radians(V11+180))*(D12) + F5,
-             math.sin(math.radians(V10+180))*(D12) + L5)
+    #COS((V10+180)*PI()/180)*D12+F5)
+    BC_XY = (math.cos((V10 + 180) * math.pi/180) * D12 + F5,
+             math.sin((V10 + 180) * math.pi/180) * D12 + L5)
+    EC_XY = (math.cos((V11) * math.pi/180) * D12 + F5,
+             math.sin((V11) * math.pi/180) * D12 + L5)
 
     coords = [BC_XY, EC_XY]
     return coords
@@ -1271,7 +1379,7 @@ def write_report(data, data2):
             sheet['A8'] = f'R = {entry[8]:.{dimention}f}' # R
             sheet['C8'] = f'IP 연장1 = {entry[9]:.{dimention}f}' #ip연장1
             
-            sheet['A9'] = f'M = 0:.{dimention}f' #M
+            sheet['A9'] = 'M = 0' #M
             sheet['C9'] = f'V = {entry[13]:.{dimention}f}' #V
             sheet['F9'] = f'Z = {entry[12] * 0.001:.{dimention}f}' #Z
             sheet['A10'] = f'TL = {entry[14][0]:.{dimention}f}' #TL
@@ -1280,10 +1388,10 @@ def write_report(data, data2):
             sheet['A11'] = f'IP 정측점 = {format_distance(entry[18], decimal_places=km_precision)}' #IP정측점
             sheet['B12'] = f'BC = {format_distance(entry[19], decimal_places=km_precision)}' #BC측점
             sheet['B13'] = f'EC = {format_distance(entry[20], decimal_places=km_precision)}' #EC측점
-            sheet['D12'] = f'{entry[21][0]:.{coord_precision}f}' #BC_X
-            sheet['F12'] = f'{entry[21][1]:.{coord_precision}f}' #BC_Y
-            sheet['D13'] = f'{entry[22][0]:.{coord_precision}f}' #EC_X
-            sheet['F13'] = f'{entry[22][1]:.{coord_precision}f}' #EC_Y
+            sheet['D12'] = f'X  = {entry[21][0]:.{coord_precision}f}' #BC_X
+            sheet['F12'] = f'Y  = {entry[21][1]:.{coord_precision}f}' #BC_Y
+            sheet['D13'] = f'X  = {entry[22][0]:.{coord_precision}f}' #EC_X
+            sheet['F13'] = f'Y  = {entry[22][1]:.{coord_precision}f}' #EC_Y
             
         else:  # Cubic parabola case
             sheet['A3'] = f"'===================< IP  NO. {entry[0]} >==================="#IPNO
@@ -1348,12 +1456,14 @@ def write_report(data, data2):
         sheet['F21'] = 'Y(East)'
 
         #임시 방위각 출력
+        '''
         sheet['G21'] = '접선방위각'
         sheet['H21'] = '사거리'
         sheet['I21'] = '편기각'
         sheet['J21'] = '접선각'
         sheet['K21'] = '방위각'
-
+        '''
+        
         # Write the relevant station data for the current entry
         if i < len(data2):  # Ensure you do not exceed data2 bounds
             station_group = data2[i]  # Get the corresponding station group for the current entry
@@ -1361,6 +1471,7 @@ def write_report(data, data2):
 
             for station_data in station_group:
                 for row in station_data:  # Iterate through the innermost list
+
                     lable, sta, station_offset, coord, shiftx, shifty , Ta, sageoriS , Q, T, Azimuth = row
                     # Write values into the sheet
                     sheet[f'A{start_row}'] = lable
@@ -1368,7 +1479,8 @@ def write_report(data, data2):
                     #sheet[f'C{start_row}'] = station_offset
                     sheet[f'D{start_row}'] = coord[0]
                     sheet[f'F{start_row}'] = coord[1]
-
+                    
+                    '''
                     sheet[f'G{start_row}'] = Ta #degrees_to_dms(Ta) #접선방위각
                     sheet[f'H{start_row}'] = sageoriS
                     sheet[f'I{start_row}'] = Q #degrees_to_dms(Q) #편기각
@@ -1376,7 +1488,7 @@ def write_report(data, data2):
                     sheet[f'K{start_row}'] = Azimuth #degrees_to_dms(Azimuth) #방위각
                     
                     #sheet[f'G{start_row}'] = shifty
-
+                    '''
                     start_row += 1  # Move to the next row
             
     # Remove default sheet if it exists (usually "Sheet" when a new workbook is created)
