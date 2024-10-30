@@ -1823,26 +1823,117 @@ def get_station_from_coordinates(linestring, coord, data):
     plot_projection(coord_math, result2[1], linestring_math)
     return final_station
 
+#좌표로 측점찾기
+def perpendicular_point_on_curve(p, curve):
+    px, py = p  # 임의의 점 p의 좌표
+
+    
+    # 곡선의 모든 인접한 두 점을 순회
+    for i in range(len(curve) - 1):
+        x1, y1 = curve[i]
+        x2, y2 = curve[i + 1]
+
+        # 직선 벡터와 점 벡터 구하기
+        line_vec = np.array([x2 - x1, y2 - y1])
+        point_vec = np.array([px - x1, py - y1])
+
+        # 직선 벡터의 크기 제곱
+        line_len_sq = np.dot(line_vec, line_vec)
+        if line_len_sq == 0:
+            continue  # 두 점이 같은 위치일 경우 패스
+
+        # 수선의 발의 위치를 직선 상의 비율로 찾기
+        t = np.dot(point_vec, line_vec) / line_len_sq
+
+        # 수직인 점이 선분 내부에 있는지 확인
+        if 0 <= t <= 1:
+            ax = x1 + t * line_vec[0]
+            ay = y1 + t * line_vec[1]
+            return (ax, ay) , i # 수선의 발 a의 좌표를 반환
+
+    return None  # 수직인 점을 찾지 못한 경우
+
+def get_station_at_coordinates(p, curve, data):
+
+    curve = [(y, x) for x, y in curve]#토목조표를 수학좌표로 변환
+    
+    apoint , index = perpendicular_point_on_curve(p, curve)  # 수선의 발
+
+    #인덱스에 해당하는 좌표 반환
+    destination_coord = curve[index]
+
+    # 좌표 비교 (소수점 4자리로 반올림)
+    destination_coord_x, destination_coord_y = destination_coord
+    destination_coord_x_int = int(destination_coord_x)
+    destination_coord_y_int = int(destination_coord_y)
+
+    # `data`에서 좌표가 수직점과 일치하는지 확인
+    for i, group in enumerate(data):
+        for subgroup in group:
+            for row in subgroup:
+                label, sta, station_offset, coord, shiftx, shifty, Ta, sageoriS, Q, T, Azimuth = row
+
+                data_coord_y, data_coord_x = coord
+                data_coord_x_int = int(data_coord_x)
+                data_coord_y_int = int(data_coord_y)
+
+                if data_coord_x_int == destination_coord_x_int:                    
+                    distance = calculate_distance(coord[1], coord[0], apoint[0], apoint[1])                    
+                    final_sta = sta + distance
+                    return final_sta  # 찾은 최종 측점 반환
+    return None
+
+
+def is_close(a, b, tol=1e-4):
+    return abs(a - b) < tol
+
+
 def main():
     global unit
+    
     #변수입력받기
-    user_input1 = input('계산 간격 입력: (기본값 20) ')
-    unit = int(user_input1) if user_input1 else 20
     
-    user_input2 = input('시작 측점 입력: (기본값 0) ')
-    start_STA = float(user_input2) if user_input2 else 0
-    
-    user_input3 = input('설계최고속도 입력: (기본값 250) ')
-    designSpeed = int(user_input3) if user_input3 else 250
-    
-    user_input4 = input('구간내 적용 도상입력 0자갈도상 1콘크리트도상 : (기본값 자갈도상) ')
-    
-    if user_input4 ==0:
-        ballast = '자갈도상'
-    else:
-        ballast = '콘크리트도상'
-    
-    user_input5 = input('M,Z,V 수동입력?: y or n (기본값 아니오) Z단위:MM ').strip().lower()
+    # 사용자 입력 처리
+    while True:
+        try:
+            user_input1 = input('계산 간격 입력: (기본값 20) ')
+            unit = int(user_input1) if user_input1 else 20
+            break
+        except ValueError:
+            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
+            
+    while True:
+        try:
+            user_input2 = input('시작 측점 입력: (기본값 0) ')
+            start_STA = float(user_input2) if user_input2 else 0
+            break
+        except ValueError:
+            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
+            
+    while True:
+        try:
+            user_input3 = input('설계최고속도 입력: (기본값 250) ')
+            designSpeed = int(user_input3) if user_input3 else 250
+            break
+        except ValueError:
+            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
+            
+    while True:
+        user_input4 = input('구간내 적용 도상입력 0자갈도상 1콘크리트도상 : (기본값 자갈도상) ')
+        if user_input4 in ['0', '1', '']:
+            ballast = '자갈도상' if user_input4 == '0' or user_input4 == '' else '콘크리트도상'
+            break
+        else:
+            print("유효하지 않은 입력입니다. 0 또는 1을 입력해주세요.")
+
+    while True:
+        user_input5 = input('M,Z,V 수동입력?: y or n (기본값 아니오) Z단위:MM ').strip().lower()
+        if user_input5 in ['y', 'yes', 'n', 'no', '']:
+            ismanualmzv = user_input5 in ['y', 'yes']
+            break
+        else:
+            print("유효하지 않은 입력입니다. y 또는 n을 입력해주세요.")
+
     
     # Check if the input is "yes" or "y" (indicating manual input)
     ismanualmzv = user_input5 in ['y', 'yes']
@@ -1859,19 +1950,34 @@ def main():
     
     ia_list = calculate_angles_and_plot(linestring)
 
-    if user_input5:#수동입력
+    if ismanualmzv:  # 수동입력
         parameters = []
         for i in range(len(Radius_list)):
-            inputvariable = input('Enter M,Z,V (쉼표로 구분): ').split(',')  # Split the input
-            print(f'현재 입력값 IP{i+1}  M = {inputvariable[0]}, Z = {inputvariable[1]} , V= {inputvariable[2]}')
-            
-            
-            inputvariable = [float(x) for x in inputvariable]  # Convert each value to float
-            parameters.append(inputvariable)
-        #잠시 대기
-        print('입력이 완료되었습니다. 계산을 수행합니다.')    
-    else:#자동입력
+            while True:
+                try:
+                    # 입력값을 쉼표로 구분하여 받고, 값이 세 개인지 확인
+                    inputvariable = input(f'IP{i+1}의 M,Z,V 값을 쉼표로 구분하여 입력 (예: 100,200,300): ').split(',')
+                    
+                    # 값이 정확히 3개가 입력되었는지 확인
+                    if len(inputvariable) != 3:
+                        print("세 개의 값을 쉼표로 구분하여 입력해주세요.")
+                        continue
+                    
+                    # 문자열을 실수로 변환
+                    inputvariable = [float(x) for x in inputvariable]
+                    
+                    # 변환이 성공하면 리스트에 추가하고 현재 입력값을 출력
+                    parameters.append(inputvariable)
+                    print(f'현재 입력값 IP{i+1}: M = {inputvariable[0]}, Z = {inputvariable[1]}, V = {inputvariable[2]}')
+                    break  # 다음 IP로 이동
+                    
+                except ValueError:
+                    print("유효하지 않은 입력입니다. 숫자로 구성된 세 개의 값을 쉼표로 구분하여 입력해주세요.")
+        
+        print('모든 입력이 완료되었습니다. 계산을 수행합니다.')
+    else:  # 자동입력
         parameters = cal_parameter(Radius_list, designSpeed, ballast)
+
     
     
     final_result, alignment_report_variable_list , polycurve = calculate_curve(linestring, Radius_list, ia_list, parameters, unit, start_STA)
@@ -1891,90 +1997,108 @@ def main():
     a= 0
 
     
-    while 1:
-        
-        
+    while True:
         print('원하는 작업을 선택하세요')
         print('1. 도면출력')
         print('2. 측점으로 좌표계산')
         print('3. 좌표로 측점찾기')
         print('4. 프로그램 종료')
         
-        a =  int(input(' 번호 입력: '))
-        
+        try:
+            a = int(input(' 번호 입력: '))
+        except ValueError:
+            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
+            continue
+
         if a == 1:
             print('선택한 메뉴 : 도면출력')
             while True:
-                user_input10 = input('도면축척 입력 (기본값 1:1000): ')  # Get input as a string
-                if user_input10.isdigit() or user_input10 == '':
-                    scale = int(user_input10) if user_input10 else 1000
-                    print(f'현재 도면축척 1:{scale}')                 
+                user_input10 = input('도면축척 입력 (기본값 1:1000): ')
+                
+                # 입력이 비어 있으면 기본값 사용, 숫자 확인 후 1000 이상인지 체크
+                if user_input10.isdigit() and int(user_input10) >= 1000:
+                    scale = int(user_input10)
+                    print(f'현재 도면축척 1:{scale}')
                     create_dxf(polycurve, linestring, alignment_report_variable_list, final_result, filename='본선평면선형.dxf', scale=scale)
                     print('도면출력이 완료됐습니다.')
-                    break  # Exit the loop after successful creation
-                else:
-                    print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
+                    break
                 
-        elif a ==2:
+                elif user_input10 == '':  # 기본값 사용
+                    scale = 1000
+                    print(f'현재 도면축척 1:{scale}')
+                    create_dxf(polycurve, linestring, alignment_report_variable_list, final_result, filename='본선평면선형.dxf', scale=scale)
+                    print('도면출력이 완료됐습니다.')
+                    break
+                
+                else:
+                    print("유효하지 않은 입력입니다. 1000 이상의 숫자를 입력해주세요.")
+
+
+        elif a == 2:
             print('선택한 메뉴 : 측점으로 좌표계산')
             
-            while 1:
-                input_station = float(input('측점 입력: '))
-
-                
-                find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
-
-                if find_coord:
-                    print(f'찾은 좌표 X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
-
-                
-
-                    print('계산이 종료되었습니다. 다른 측점 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요')
-                    number = int(input('번호 입력: '))
-                    if number == 1:
+            while True:
+                try:
+                    input_station = float(input('측점 입력: '))
+                    find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
+                    
+                    if find_coord:
+                        print(f'찾은 좌표 X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
+                    else:
+                        print('좌표를 찾을 수 없습니다. 다른 측점을 입력하세요.')
                         continue
-                    elif number ==2:
+                    
+                    # 다음 입력 옵션 제공
+                    while True:
+                        number = input('계산이 종료되었습니다. 다른 측점 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요: ')
+                        if number in {'1', '2'}:
+                            break
+                        else:
+                            print("잘못된 입력입니다. 다시 시도해주세요.")
+                    
+                    if number == '2':
                         break
-                else:#좌표를 못찾은경우 다른 측점 입력해야함.
-                    print('좌표를 못찾았습니다. 다른 측점을 입력하세요')
-                    continue
+                except ValueError:
+                    print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
+
         elif a == 3:
-            print('선택한 메뉴: 좌표로 측점찾기')
-            
-            while 1:
+            print('선택한 메뉴: 좌표로 측점 찾기')
+
+            while True:
                 # 사용자로부터 좌표 입력을 받음
-                input_coordinates = input('좌표 입력 (쉼표로 구분): ')
-                
-                # 입력받은 좌표를 쉼표로 구분하여 X, Y 값을 실수로 변환
+                input_coordinates = input('좌표 입력 수학좌표 (쉼표로 구분): ')
                 try:
                     x, y = map(float, input_coordinates.split(','))
-                    
-                    # 좌표로 측점 찾는 로직을 여기에 추가
+                    input_xy = (x, y)
                     print(f'입력된 좌표: X = {x}, Y = {y}')
-                    #좌표를 튜플로 묶음
-                    input_xy = (x,y)
                     
-                    # 이후 처리 로직 (예: 좌표를 사용하여 측점 계산 함수 호출)
-                    print('통과')
-                    # 중복 제거
+                    # 좌표로 측점 찾기
+                    find_station = get_station_at_coordinates(input_xy, polycurve, final_result)
                     
-                    unique_data = list(set(polycurve))
+                    if find_station is None:
+                        print("입력된 좌표에 수직인 곡선상의 점을 찾을 수 없습니다.")
+                    else:
+                        formatted_station = format_distance(find_station, 2) if 'format_distance' in globals() else find_station
+                        print(f'찾은 측점: {formatted_station}')
                     
-                    find_station = get_station_from_coordinates(unique_data, input_xy, final_result)
-                    print(f'찾은 측점: {format_distance(find_station)}')
+                    # 다음 입력 옵션 제공
+                    while True:
+                        number = input('계산이 종료되었습니다. 다른 좌표 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요: ')
+                        if number in {'1', '2'}:
+                            break
+                        else:
+                            print("잘못된 입력입니다. 다시 시도해주세요.")
                     
-                    print('계산이 종료되었습니다. 다른 좌표 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요')
-                    number = int(input('번호 입력: '))
-                    if number == 1:
-                        continue
-                    elif number ==2:
+                    if number == '2':
                         break
-
-                except ValueError as e:
-                    print(e)
-             
-        elif a== 4:
+                except ValueError:
+                    print("좌표 입력이 올바르지 않습니다. 쉼표로 구분된 두 개의 숫자를 입력해주세요.")
+                 
+        elif a == 4:
             print('프로그램 종료')
             break
+        else:
+            print("유효하지 않은 입력입니다. 1~4 사이의 숫자를 입력해주세요.")
+
 if __name__ == '__main__':
     main()
