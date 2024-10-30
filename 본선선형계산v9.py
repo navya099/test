@@ -1,4 +1,5 @@
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
+import tkinter as tk
 import csv
 from shapely.geometry import LineString, Point
 import math
@@ -1566,7 +1567,7 @@ def get_station_coordinates(data1, data2, input_station):
                 BC_STA, EC_STA = entry[19], entry[20]
                 
                 if BP_STA<= input_station <= EP_STA:#해당IP인지 체크
-                    
+                                
                     #맞으면 좌표계산 수행
                     
                     StationOffset = calculate_station_offset(input_station, BC_STA, BC_STA, EC_STA, EC_STA, BP_STA)#측거
@@ -1624,7 +1625,7 @@ def get_station_coordinates(data1, data2, input_station):
                                               PS_XY[0], PS_XY[1])
                 
                     if coord:#좌표를 찾은경우 반복문 탈출
-                        break
+                        return coord
                     
                 else:#해당 IP가 아니면 건너뛰고 다음 IP계산 수행
                     continue
@@ -1637,7 +1638,7 @@ def get_station_coordinates(data1, data2, input_station):
         except Exception as e:
             print(f"An error occurred: {e}")
 
-    return coord
+    return None
 
 def create_civil3d_xlsx(data):
     filename = 'c:/temp/AlignmentExample.xlsx'
@@ -1888,217 +1889,142 @@ def is_close(a, b, tol=1e-4):
     return abs(a - b) < tol
 
 
-def main():
+def main_gui():
     global unit
     
-    #변수입력받기
-    
-    # 사용자 입력 처리
-    while True:
-        try:
-            user_input1 = input('계산 간격 입력: (기본값 20) ')
-            unit = int(user_input1) if user_input1 else 20
-            break
-        except ValueError:
-            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
-            
-    while True:
-        try:
-            user_input2 = input('시작 측점 입력: (기본값 0) ')
-            start_STA = float(user_input2) if user_input2 else 0
-            break
-        except ValueError:
-            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
-            
-    while True:
-        try:
-            user_input3 = input('설계최고속도 입력: (기본값 250) ')
-            designSpeed = int(user_input3) if user_input3 else 250
-            break
-        except ValueError:
-            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
-            
-    while True:
-        user_input4 = input('구간내 적용 도상입력 0자갈도상 1콘크리트도상 : (기본값 자갈도상) ')
-        if user_input4 in ['0', '1', '']:
-            ballast = '자갈도상' if user_input4 == '0' or user_input4 == '' else '콘크리트도상'
-            break
-        else:
-            print("유효하지 않은 입력입니다. 0 또는 1을 입력해주세요.")
+    root = tk.Tk()
+    root.title("Railway Alignment Tool")
 
-    while True:
-        user_input5 = input('M,Z,V 수동입력?: y or n (기본값 아니오) Z단위:MM ').strip().lower()
-        if user_input5 in ['y', 'yes', 'n', 'no', '']:
-            ismanualmzv = user_input5 in ['y', 'yes']
-            break
-        else:
-            print("유효하지 않은 입력입니다. y 또는 n을 입력해주세요.")
+    # Default values
+    unit = 20
+    start_STA = 0
+    designSpeed = 250
+    ballast = '자갈도상'
+    ismanualmzv = False
+    parameters = []
 
-    
-    # Check if the input is "yes" or "y" (indicating manual input)
-    ismanualmzv = user_input5 in ['y', 'yes']
-    
-    lines = read_file()
-    if not lines:
-        print('입력된 선형 없음')
-        return
-    
-    alignment = pasing_ip(lines)
-    linestring = create_Linestring(alignment)
-    
-    Radius_list = [point[2] for point in alignment[1:-1]]
-    
-    ia_list = calculate_angles_and_plot(linestring)
-
-    if ismanualmzv:  # 수동입력
-        parameters = []
-        for i in range(len(Radius_list)):
-            while True:
-                try:
-                    # 입력값을 쉼표로 구분하여 받고, 값이 세 개인지 확인
-                    inputvariable = input(f'IP{i+1}의 M,Z,V 값을 쉼표로 구분하여 입력 (예: 100,200,300): ').split(',')
-                    
-                    # 값이 정확히 3개가 입력되었는지 확인
-                    if len(inputvariable) != 3:
-                        print("세 개의 값을 쉼표로 구분하여 입력해주세요.")
-                        continue
-                    
-                    # 문자열을 실수로 변환
-                    inputvariable = [float(x) for x in inputvariable]
-                    
-                    # 변환이 성공하면 리스트에 추가하고 현재 입력값을 출력
-                    parameters.append(inputvariable)
-                    print(f'현재 입력값 IP{i+1}: M = {inputvariable[0]}, Z = {inputvariable[1]}, V = {inputvariable[2]}')
-                    break  # 다음 IP로 이동
-                    
-                except ValueError:
-                    print("유효하지 않은 입력입니다. 숫자로 구성된 세 개의 값을 쉼표로 구분하여 입력해주세요.")
-        
-        print('모든 입력이 완료되었습니다. 계산을 수행합니다.')
-    else:  # 자동입력
-        parameters = cal_parameter(Radius_list, designSpeed, ballast)
-
-    
-    
-    final_result, alignment_report_variable_list , polycurve = calculate_curve(linestring, Radius_list, ia_list, parameters, unit, start_STA)
-    
-    #좌표출력
-    #write_data(final_result)
-    #print(final_result)
-    
-    #선형계산서 출력
-    write_report(alignment_report_variable_list, final_result)
-    print('선형계산서 출력완료')
-
-    #CIVIL3D성과물 생성
-    create_civil3d_xlsx(alignment_report_variable_list)
-    print('CIVIL3D 성과물 출력완료')
-    
-    a= 0
-
-    
-    while True:
-        print('원하는 작업을 선택하세요')
-        print('1. 도면출력')
-        print('2. 측점으로 좌표계산')
-        print('3. 좌표로 측점찾기')
-        print('4. 프로그램 종료')
+    def get_input_values():
+        nonlocal start_STA, designSpeed, ballast, ismanualmzv
+        global final_result, alignment_report_variable_list, polycurve, linestring
         
         try:
-            a = int(input(' 번호 입력: '))
+            unit = int(entry_unit.get()) if entry_unit.get() else 20
+            start_STA = float(entry_start_STA.get()) if entry_start_STA.get() else 0
+            designSpeed = int(entry_designSpeed.get()) if entry_designSpeed.get() else 250
+            ballast = '자갈도상' if ballast_var.get() == 0 else '콘크리트도상'
+            ismanualmzv = manual_var.get() == 1
+
+            lines = read_file()
+            if not lines:
+                messagebox.showerror("Error", "No alignment data found.")
+                return
+
+            alignment = pasing_ip(lines)
+            linestring = create_Linestring(alignment)
+            Radius_list = [point[2] for point in alignment[1:-1]]
+            ia_list = calculate_angles_and_plot(linestring)
+
+            if ismanualmzv:
+                parameters = []
+            else:
+                parameters = cal_parameter(Radius_list, designSpeed, ballast)
+
+            final_result, alignment_report_variable_list, polycurve = calculate_curve(
+                linestring, Radius_list, ia_list, parameters, unit, start_STA
+            )
+
+            write_report(alignment_report_variable_list, final_result)
+            create_civil3d_xlsx(alignment_report_variable_list)
+            messagebox.showinfo("Success", "Report and Civil3D output generated successfully!")
+
         except ValueError:
-            print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
-            continue
+            messagebox.showerror("Input Error", "Please enter valid numerical values.")
+    
+    def create_drawing():
+        try:
+            scale = int(entry_scale.get()) if entry_scale.get() else 1000
+            if scale < 1000:
+                raise ValueError("Scale must be 1000 or greater.")
+            create_dxf(polycurve, linestring, alignment_report_variable_list, final_result, filename='본선평면선형.dxf', scale=scale)
+            messagebox.showinfo("Success", "Drawing created successfully!")
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
 
-        if a == 1:
-            print('선택한 메뉴 : 도면출력')
-            while True:
-                user_input10 = input('도면축척 입력 (기본값 1:1000): ')
-                
-                # 입력이 비어 있으면 기본값 사용, 숫자 확인 후 1000 이상인지 체크
-                if user_input10.isdigit() and int(user_input10) >= 1000:
-                    scale = int(user_input10)
-                    print(f'현재 도면축척 1:{scale}')
-                    create_dxf(polycurve, linestring, alignment_report_variable_list, final_result, filename='본선평면선형.dxf', scale=scale)
-                    print('도면출력이 완료됐습니다.')
-                    break
-                
-                elif user_input10 == '':  # 기본값 사용
-                    scale = 1000
-                    print(f'현재 도면축척 1:{scale}')
-                    create_dxf(polycurve, linestring, alignment_report_variable_list, final_result, filename='본선평면선형.dxf', scale=scale)
-                    print('도면출력이 완료됐습니다.')
-                    break
-                
-                else:
-                    print("유효하지 않은 입력입니다. 1000 이상의 숫자를 입력해주세요.")
-
-
-        elif a == 2:
-            print('선택한 메뉴 : 측점으로 좌표계산')
+    def calculate_station_coordinates():
+        try:
+            input_station = float(entry_station.get())
             
-            while True:
-                try:
-                    input_station = float(input('측점 입력: '))
-                    find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
-                    
-                    if find_coord:
-                        print(f'찾은 좌표 X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
-                    else:
-                        print('좌표를 찾을 수 없습니다. 다른 측점을 입력하세요.')
-                        continue
-                    
-                    # 다음 입력 옵션 제공
-                    while True:
-                        number = input('계산이 종료되었습니다. 다른 측점 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요: ')
-                        if number in {'1', '2'}:
-                            break
-                        else:
-                            print("잘못된 입력입니다. 다시 시도해주세요.")
-                    
-                    if number == '2':
-                        break
-                except ValueError:
-                    print("유효하지 않은 입력입니다. 숫자를 입력해주세요.")
+            find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
+            if find_coord:
+                messagebox.showinfo("Result", f'Coordinates found: X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
+            else:
+                messagebox.showerror("Error", "Coordinates not found.")
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter a valid station value.")
 
-        elif a == 3:
-            print('선택한 메뉴: 좌표로 측점 찾기')
+    def find_station_by_coordinates():
+        try:
+            x, y = map(float, entry_coordinates.get().split(','))
+            input_xy = (x, y)
+            find_station = get_station_at_coordinates(input_xy, polycurve, final_result)
+            if find_station is not None:
+                messagebox.showinfo("Result", f'Found station: {find_station}')
+            else:
+                messagebox.showerror("Error", "No station found for given coordinates.")
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter valid coordinates separated by a comma.")
 
-            while True:
-                # 사용자로부터 좌표 입력을 받음
-                input_coordinates = input('좌표 입력 수학좌표 (쉼표로 구분): ')
-                try:
-                    x, y = map(float, input_coordinates.split(','))
-                    input_xy = (x, y)
-                    print(f'입력된 좌표: X = {x}, Y = {y}')
-                    
-                    # 좌표로 측점 찾기
-                    find_station = get_station_at_coordinates(input_xy, polycurve, final_result)
-                    
-                    if find_station is None:
-                        print("입력된 좌표에 수직인 곡선상의 점을 찾을 수 없습니다.")
-                    else:
-                        formatted_station = format_distance(find_station, 2) if 'format_distance' in globals() else find_station
-                        print(f'찾은 측점: {formatted_station}')
-                    
-                    # 다음 입력 옵션 제공
-                    while True:
-                        number = input('계산이 종료되었습니다. 다른 좌표 계산은 1, 이전 메뉴로 돌아가려면 2를 입력하세요: ')
-                        if number in {'1', '2'}:
-                            break
-                        else:
-                            print("잘못된 입력입니다. 다시 시도해주세요.")
-                    
-                    if number == '2':
-                        break
-                except ValueError:
-                    print("좌표 입력이 올바르지 않습니다. 쉼표로 구분된 두 개의 숫자를 입력해주세요.")
-                 
-        elif a == 4:
-            print('프로그램 종료')
-            break
-        else:
-            print("유효하지 않은 입력입니다. 1~4 사이의 숫자를 입력해주세요.")
+    def exit_program():
+        print("프로그램을 종료합니다.")
+        root.destroy()
+    
+    # User Interface
+    tk.Label(root, text="계산 간격 입력: (기본값 20)").grid(row=0, column=0)
+    entry_unit = tk.Entry(root)
+    entry_unit.grid(row=0, column=1)
 
+    tk.Label(root, text="시작 측점 입력: (기본값 0)").grid(row=1, column=0)
+    entry_start_STA = tk.Entry(root)
+    entry_start_STA.grid(row=1, column=1)
+
+    tk.Label(root, text="설계 최고 속도 입력: (기본값 250)").grid(row=2, column=0)
+    entry_designSpeed = tk.Entry(root)
+    entry_designSpeed.grid(row=2, column=1)
+
+    tk.Label(root, text="구간내 적용 도상 입력").grid(row=3, column=0)
+    ballast_var = tk.IntVar(value=0)
+    tk.Radiobutton(root, text="자갈도상", variable=ballast_var, value=0).grid(row=3, column=1)
+    tk.Radiobutton(root, text="콘크리트도상", variable=ballast_var, value=1).grid(row=3, column=2)
+
+    tk.Label(root, text="M,Z,V 수동 입력? (기본값 아니오)").grid(row=4, column=0)
+    manual_var = tk.IntVar(value=0)
+    tk.Radiobutton(root, text="아니오", variable=manual_var, value=0).grid(row=4, column=1)
+    tk.Radiobutton(root, text="예", variable=manual_var, value=1).grid(row=4, column=2)
+
+    tk.Button(root, text="계산 시작", command=get_input_values).grid(row=5, columnspan=3, pady=10)
+
+    # Additional menu options
+    tk.Label(root, text="도면 출력 (축척)").grid(row=6, column=0)
+    entry_scale = tk.Entry(root)
+    entry_scale.insert(0, "1000")
+    entry_scale.grid(row=6, column=1)
+    tk.Button(root, text="도면 출력", command=create_drawing).grid(row=6, column=2)
+
+    tk.Label(root, text="측점으로 좌표 계산").grid(row=7, column=0)
+    entry_station = tk.Entry(root)
+    entry_station.grid(row=7, column=1)
+    tk.Button(root, text="좌표 계산", command=calculate_station_coordinates).grid(row=7, column=2)
+
+    tk.Label(root, text="좌표로 측점 찾기").grid(row=8, column=0)
+    entry_coordinates = tk.Entry(root)
+    entry_coordinates.grid(row=8, column=1)
+    tk.Button(root, text="측점 찾기", command=find_station_by_coordinates).grid(row=8, column=2)
+
+    tk.Button(root, text="프로그램 종료", command=exit_program).grid(row=9, columnspan=3, pady=10)
+
+    root.mainloop()
+
+
+    
 if __name__ == '__main__':
-    main()
+    main_gui()
