@@ -243,7 +243,20 @@ def find_object_index(sta, sections, tag_mapping):
                     if key in tag_mapping:
                         return tag_mapping[key]
     return None
+def create_curve_post_txt(data_list):
+    """
+    결과 데이터를 받아 파일로 저장하는 함수.
+    """
+    output_file = work_directory + "curve_post.txt"  # 저장할 파일 이름
+    with open(output_file, "w", encoding="utf-8") as file:
+        if isinstance(data_list, list):  # data_list가 리스트인 경우
+            # 리스트 요소들을 문자열로 변환하고 파일에 작성
+            file.write("".join(map(str, data_list)))
+        else:
+            # data_list가 문자열이라면 바로 작성
+            file.write(str(data_list))
 
+        
 # 파일 읽기
 data = read_file()
 
@@ -365,12 +378,26 @@ sections = parse_sections(lines1)
 tag_mapping = parse_object_index(lines2)
 
 # STA 값 검색
-sta_value = 8525  # 예제 STA 값
-result = find_object_index(sta_value, sections, tag_mapping)
+result_list =[]
 
-# 결과 출력
-if result:
-    print(f"STA {sta_value}에 대한 오브젝트 인덱스: {result}")
-else:
-    print(f"STA {sta_value}에 대한 오브젝트 인덱스를 찾을 수 없습니다.")
-    
+for section_id, entries in sections.items():  # 모든 구간을 순회
+    for sta_value, radius, tags in entries:  # 각 구간의 엔트리를 순회
+
+        result = find_object_index(sta_value, sections, tag_mapping)
+
+        '''
+        # 결과 출력
+        if result:
+            print(f"STA {sta_value}에 대한 오브젝트 인덱스: {result}")
+        else:
+            print(f"STA {sta_value}에 대한 오브젝트 인덱스를 찾을 수 없습니다.")
+        '''
+
+        if not result == None:
+            result_data = f'{sta_value},.freeobj 0;{result};\n'
+            result_list.append(result_data)
+        
+#csv작성
+create_curve_post_txt(result_list)
+
+
