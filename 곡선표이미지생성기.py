@@ -52,6 +52,24 @@ def read_file():
             return []
     return lines
 
+def remove_duplicate_radius(data):
+    filtered_data = []
+    previous_radius = None
+
+    for row in data:
+        try:
+            station, radius = map(float, row)
+            station = int(station)
+        except ValueError:
+            print(f"잘못된 데이터 형식: {row}")
+            continue
+
+        if radius != previous_radius:
+            filtered_data.append((station, radius))
+            previous_radius = radius
+
+    return filtered_data
+
 def process_sections(data):
     sections = []
     current_section = []
@@ -243,6 +261,7 @@ def find_object_index(sta, sections, tag_mapping):
                     if key in tag_mapping:
                         return tag_mapping[key]
     return None
+
 def create_curve_post_txt(data_list):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
@@ -256,22 +275,32 @@ def create_curve_post_txt(data_list):
             # data_list가 문자열이라면 바로 작성
             file.write(str(data_list))
 
-        
+
 # 파일 읽기
 data = read_file()
 
 if not data:
     print("데이터가 비어 있습니다.")
 else:
+    # 중복 제거
+    unique_data = remove_duplicate_radius(data)
+    
     # 구간 정의 및 처리
-    sections = process_sections(data)
+    sections = process_sections(unique_data)
     annotated_sections = annotate_sections(sections)
 
     # 결과 파일 저장
-    output_file = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("txt files", "*.txt"), ("All files", "*.*")])
+    output_file = work_directory + '주석처리된파일.txt'
+    unique_file = work_directory + '1532326.txt'
+    
     if not output_file:
         print("출력 파일을 선택하지 않았습니다.")
     else:
+        with open(unique_file, 'w', encoding='utf-8') as file:
+            for station, radius in unique_data:
+                file.write(f"{station},{radius}\n")
+
+        output_file = output_file
         with open(output_file, 'w', encoding='utf-8') as file:
             for i, section in enumerate(annotated_sections, start=1):
                 file.write(f"구간 {i}:\n")
@@ -362,8 +391,7 @@ else:
     create_object_index(objec_index_name)
 
 # 데이터 파싱
-opendata = work_directory + '1532326.txt'
-with open(opendata, 'r', encoding='utf-8') as file:
+with open(output_file, 'r', encoding='utf-8') as file:
             reader1 = csv.reader(file)
             lines1 = list(reader1)
             
@@ -400,4 +428,6 @@ for section_id, entries in sections.items():  # 모든 구간을 순회
 #csv작성
 create_curve_post_txt(result_list)
 
-
+# 파일 삭제
+os.remove(unique_file)
+os.remove(output_file)
