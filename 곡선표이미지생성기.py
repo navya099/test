@@ -3,6 +3,27 @@ from tkinter import filedialog
 from PIL import Image, ImageDraw, ImageFont
 import os
 
+'''
+BVE곡선파일을 바탕으로 곡선표(준고속용)을 설치하는 프로그램
+-made by dger -
+
+
+입력파일:BVE에서 추출한 곡선파일(CURVE_INFO.TXT)
+
+CURVE_INFO샘플
+275,0
+300,0
+325,0
+350,-632.636
+375,-632.636
+400,679.461
+425,679.461
+450,0
+475,0
+
+출력파일: OBJECT인덱스 파일 , FREEOBJ구문파일, CSV오브젝트파일, PNG텍스쳐파일
+
+'''
 # 기본 작업 디렉토리
 default_directory = 'c:/temp/object/'
 work_directory = None
@@ -185,7 +206,7 @@ def create_csv(filename):
         content += '\nCreateMeshBuilder\n'
         content += 'Cylinder, 6, 0.05, 0.05, 2\n'
         content += 'Translate, 0.2, -1, 0.1\n'
-        content += 'TranslateAll, -0.2, 2, 0\n'
+        content += '\nTranslateAll, -0.2, 2, 0\n'
         content += ';EOF'
         
         file.write(content)
@@ -257,7 +278,7 @@ def find_object_index(sta, sections, tag_mapping):
         for i, (start_sta, _, tags) in enumerate(points):
             if sta == start_sta:  # STA가 정확히 일치하는 경우
                 for tag in tags:
-                    key = f"구간{section_id}_{tag}"
+                    key = f"IP{section_id}_{tag}"
                     if key in tag_mapping:
                         return tag_mapping[key]
     return None
@@ -315,7 +336,6 @@ else:
     last_PC_radius = None  # 마지막 PC 반지름을 추적
     objec_index_name = ''
     image_names = []
-    objec_index_counter = 2025  # 시작 번호 설정
     
     for i, section in enumerate(annotated_sections, start=1):
         # 1구간에 SP와 PS만 있는 경우를 확인
@@ -337,12 +357,12 @@ else:
                 if 'SP' in line:
                     img_text = f'SP= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (34, 139, 34)
-                    img_f_name = f'구간{i}_SP'
+                    img_f_name = f'IP{i}_SP'
                     
                 elif 'PC' in line:
                     img_text = f'PC= {format_distance(sta, decimal_places=2)}\nR={radius}\nC=60'
                     img_bg_color = (255, 0, 0)
-                    img_f_name = f'구간{i}_PC'
+                    img_f_name = f'IP{i}_PC'
                     PC_R_LIST.append(radius)
                     last_PC_radius = radius
                     
@@ -352,36 +372,36 @@ else:
                     else:
                         img_text = f'CP= {format_distance(sta, decimal_places=2)}\nR=Unknown\nC=60'
                     img_bg_color = (255, 0, 0)
-                    img_f_name = f'구간{i}_CP'
+                    img_f_name = f'IP{i}_CP'
                     
                 elif 'PS' in line:
                     img_text = f'PS= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (34, 139, 34)
-                    img_f_name = f'구간{i}_PS'
+                    img_f_name = f'IP{i}_PS'
 
                 elif 'BC' in line:
                     img_text = f'BC= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (255, 0, 0)
-                    img_f_name = f'구간{i}_BC'
+                    img_f_name = f'IP{i}_BC'
 
                 elif 'EC' in line:
                     img_text = f'EC= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (255, 0, 0)
-                    img_f_name = f'구간{i}_EC'
+                    img_f_name = f'IP{i}_EC'
                     
                 else:
                     print('에러')
-                    img_text = 'DPFJ'
+                    img_text = 'XXXX'
                     img_bg_color = (0, 0, 0)
-                    img_f_name = '에러'
+                    img_f_name = 'X'
                     
                 create_text_image(img_text, img_bg_color, img_f_name, image_size=(500, 300), font_size=40)
                 create_csv(img_f_name)
                 image_names.append(img_f_name)
-                
-        #2025부터 끝까지                 
+                                 
         # 객체 인덱스 생성
         objec_index_name = ""
+        objec_index_counter = 2025
         for img_name in image_names:
             objec_index_name += f".freeobj({objec_index_counter}) abcdefg/{img_name}.CSV\n"
             objec_index_counter += 1  # 카운터 증가
