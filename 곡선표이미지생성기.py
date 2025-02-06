@@ -1,7 +1,10 @@
 import csv
 from tkinter import filedialog
+import tkinter as tk
 from PIL import Image, ImageDraw, ImageFont
 import os
+import pandas as pd
+import math
 
 '''
 BVE곡선파일을 바탕으로 곡선표(준고속용)을 설치하는 프로그램
@@ -20,6 +23,9 @@ CURVE_INFO샘플
 425,679.461
 450,0
 475,0
+
+준비파일: base 오브젝트 sp토공용.csv 등
+csv파일에는 텍스쳐명이 sp와 r 이어야함
 
 출력파일: OBJECT인덱스 파일 , FREEOBJ구문파일, CSV오브젝트파일, PNG텍스쳐파일
 
@@ -154,7 +160,7 @@ def annotate_sections(sections):
     return annotated_sections
 
 
-def create_text_image(text, bg_color, filename, image_size=(500, 300), font_size=40):
+def create_text_image(text, bg_color, filename, text_color, image_size=(500, 300), font_size=40):
     # 이미지 생성 (배경색: 검정색)
     img = Image.new('RGB', image_size, color=bg_color)
     
@@ -175,8 +181,6 @@ def create_text_image(text, bg_color, filename, image_size=(500, 300), font_size
         (image_size[1] - text_height) // 2  # 세로 중앙
     )
     
-    # 글자 색상 설정 (빨간색)
-    text_color = (255, 255, 255)
 
     # 이미지에 글자 추가
     draw.text(text_position, text, font=font, fill=text_color)
@@ -187,30 +191,33 @@ def create_text_image(text, bg_color, filename, image_size=(500, 300), font_size
         filename += '.png'
     final_dir = work_directory + filename
     img.save(final_dir)
-
-def create_csv(filename):
-    output_file = work_directory + filename + '.csv'
+    
+def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100):
+    # Define the input and output file paths
+    open_file = work_directory + open_filename + '.csv'
+    output_file = work_directory + output_filename + '.csv'
+    
+    # List to store modified lines
+    new_lines = []
+        
+    # Open the input file for reading
+    with open(open_file, 'r', encoding='utf-8') as file:
+        # Iterate over each line in the input file
+        for line in file:
+            # Replace 'LoadTexture, SP.png,' with 'LoadTexture, output_filename.png,' if found
+            if 'LoadTexture, SP.png,' in line:
+                line = line.replace('LoadTexture, SP.png,', f'LoadTexture, {output_filename}.png,')
+            if isSPPS:
+                line = line.replace('LoadTexture, R.png,', f'LoadTexture, {R}.png,')
+            
+            # Append the modified line to the new_lines list
+            new_lines.append(line)
+    
+    # Open the output file for writing the modified lines
     with open(output_file, 'w', encoding='utf-8') as file:
-        content = ";Create By dger\n"
-        content += '\nCreateMeshBuilder\n'
-        content += 'AddVertex, 0,0,0\n'   
-        content += 'AddVertex, 0.5,0,0\n'
-        content += 'AddVertex, 0.5,-0.4,0\n'
-        content += 'AddVertex, 0,-0.4,0\n'
-        content += 'AddFace , 0,1,2,3\n'
-        content += f'LoadTexture, {filename}.png\n'
-        content += 'SetTextureCoordinates, 0, 0, 0\n'
-        content += 'SetTextureCoordinates, 1, 1, 0\n'
-        content += 'SetTextureCoordinates, 2, 1, 1\n'
-        content += 'SetTextureCoordinates, 3, 0, 1\n'
-        content += '\nCreateMeshBuilder\n'
-        content += 'Cylinder, 6, 0.05, 0.05, 2\n'
-        content += 'Translate, 0.2, -1, 0.1\n'
-        content += '\nTranslateAll, -0.2, 2, 0\n'
-        content += ';EOF'
-        
-        file.write(content)
-        
+        # Write the modified lines to the output file
+        file.writelines(new_lines)
+
 def create_object_index(data):
     output_file = work_directory + 'object_index.txt'
     with open(output_file, 'w', encoding='utf-8') as file:
@@ -296,10 +303,69 @@ def create_curve_post_txt(data_list):
             # data_list가 문자열이라면 바로 작성
             file.write(str(data_list))
 
+def find_structure_section(filepath):
+    """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
+    structure_list = {'bridge': [], 'tunnel': []}
+    
+    # xlsx 파일 읽기
+    df_bridge = pd.read_excel(filepath, sheet_name='교량', header=None)
+    df_tunnel = pd.read_excel(filepath, sheet_name='터널', header=None)
+
+    # 열 개수 확인
+    print(df_tunnel.shape)  # (행 개수, 열 개수)
+    print(df_tunnel.head())  # 데이터 확인
+
+     # 첫 번째 행을 열 제목으로 설정
+    df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
+    df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
+    
+    # 교량 구간과 터널 구간 정보
+    for _, row in df_bridge.iterrows():
+        structure_list['bridge'].append((row['br_START_STA'], row['br_END_STA']))
+    
+    for _, row in df_tunnel.iterrows():
+        structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
+    
+    return structure_list
+
+def isbridge_tunnel(sta, structure_list):
+    """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
+    for start, end in structure_list['bridge']:
+        if start <= sta <= end:
+            return '교량'
+    
+    for start, end in structure_list['tunnel']:
+        if start <= sta <= end:
+            return '터널'
+    
+    return '토공'
+
+def open_excel_file():
+    """파일 선택 대화 상자를 열고, 엑셀 파일 경로를 반환하는 함수"""
+    root = tk.Tk()
+    root.withdraw()  # Tkinter 창을 숨김
+    file_path = filedialog.askopenfilename(
+        title="엑셀 파일 선택",
+        filetypes=[("Excel Files", "*.xlsx")]
+    )
+    
+    return file_path
+
+#함수 종료
+#MAIN 시작
 
 # 파일 읽기
 data = read_file()
 
+# 구조물 정보 파일 경로 지정
+openexcelfile = open_excel_file()
+# 선택된 파일로 구조물 정보 가져오기
+if openexcelfile:
+    structure_list = find_structure_section(openexcelfile)
+    print("구조물 정보가 성공적으로 로드되었습니다.")
+else:
+    print("엑셀 파일을 선택하지 않았습니다.")
+    
 if not data:
     print("데이터가 비어 있습니다.")
 else:
@@ -336,7 +402,8 @@ else:
     last_PC_radius = None  # 마지막 PC 반지름을 추적
     objec_index_name = ''
     image_names = []
-    
+    isSPPS = False
+    text_color = (255,255,255)
     for i, section in enumerate(annotated_sections, start=1):
         # 1구간에 SP와 PS만 있는 경우를 확인
         if len(section) == 2 and 'SP' in section[0] and 'PS' in section[1]:
@@ -349,6 +416,7 @@ else:
                 sta = int(parts[0])
                 parts2 =  parts[1].split(';')
                 radius = float(parts2[0])
+                structure = isbridge_tunnel(sta, structure_list)
                 
                 if radius < 0:
                     radius *= -1
@@ -358,6 +426,8 @@ else:
                     img_text = f'SP= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (34, 139, 34)
                     img_f_name = f'IP{i}_SP'
+                    openfile_name = 'SP_' + structure + '용'
+                    isSPPS = True
                     
                 elif 'PC' in line:
                     img_text = f'PC= {format_distance(sta, decimal_places=2)}\nR={radius}\nC=60'
@@ -365,6 +435,8 @@ else:
                     img_f_name = f'IP{i}_PC'
                     PC_R_LIST.append(radius)
                     last_PC_radius = radius
+                    openfile_name = 'PC_' + structure + '용'
+
                     
                 elif 'CP' in line:
                     if last_PC_radius is not None:
@@ -373,21 +445,26 @@ else:
                         img_text = f'CP= {format_distance(sta, decimal_places=2)}\nR=Unknown\nC=60'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_CP'
+                    openfile_name = 'CP_' + structure + '용'
                     
                 elif 'PS' in line:
                     img_text = f'PS= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (34, 139, 34)
                     img_f_name = f'IP{i}_PS'
+                    openfile_name = 'PS_' + structure + '용'
+                    isSPPS = True
 
                 elif 'BC' in line:
                     img_text = f'BC= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_BC'
-
+                    openfile_name = 'BC_' + structure + '용'
+                    
                 elif 'EC' in line:
                     img_text = f'EC= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_EC'
+                    openfile_name = 'EC_' + structure + '용'
                     
                 else:
                     print('에러')
@@ -395,10 +472,15 @@ else:
                     img_bg_color = (0, 0, 0)
                     img_f_name = 'X'
                     
-                create_text_image(img_text, img_bg_color, img_f_name, image_size=(500, 300), font_size=40)
-                create_csv(img_f_name)
+                create_text_image(img_text, img_bg_color, img_f_name, text_color, image_size=(500, 300), font_size=40)
+                copy_and_export_csv(openfile_name, img_f_name,isSPPS,last_PC_radius)
                 image_names.append(img_f_name)
-                                 
+                if isSPPS and last_PC_radius is not None:
+                    #기존곡선표
+                    img_bg_color_for_prev = (0,0,255)
+                    img_f_name_for_prev = str(int(last_PC_radius))
+
+                    create_text_image(img_f_name_for_prev, img_bg_color_for_prev, img_f_name_for_prev, text_color, image_size=(500, 300), font_size=40)
         # 객체 인덱스 생성
         objec_index_name = ""
         objec_index_counter = 2025
