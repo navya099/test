@@ -5,6 +5,9 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import pandas as pd
 import math
+import re
+import textwrap
+
 
 '''
 BVE곡선파일을 바탕으로 곡선표(준고속용)을 설치하는 프로그램
@@ -161,38 +164,47 @@ def annotate_sections(sections):
 
 
 def create_text_image(text, bg_color, filename, text_color, image_size=(500, 300), font_size=40):
-    # 이미지 생성 (배경색: 검정색)
+    # 이미지 생성
     img = Image.new('RGB', image_size, color=bg_color)
-    
-    # 드로잉 객체 생성
     draw = ImageDraw.Draw(img)
     
-    # 폰트 설정 (굴림체 폰트 사용)
+    # 폰트 설정
     font = ImageFont.truetype("gulim.ttc", font_size)
-    
-    # 텍스트 경계 상자 계산
-    text_bbox = draw.textbbox((0, 0), text, font=font)
+
+    # 텍스트 박스 크기 (25px 여백 적용)
+    box_x1, box_y1 = 25, 25
+    box_x2, box_y2 = image_size[0] - 25, image_size[1] - 25
+    box_width = box_x2 - box_x1
+    box_height = box_y2 - box_y1
+
+    # 줄바꿈 적용
+    wrapped_text = textwrap.fill(text, width=15)  # 글자 수 제한
+    text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
     text_width = text_bbox[2] - text_bbox[0]
     text_height = text_bbox[3] - text_bbox[1]
-    
-    # 중앙에 배치할 텍스트의 좌상단 시작 위치 계산
-    text_position = (
-        (image_size[0] - text_width) // 2,  # 가로 중앙
-        (image_size[1] - text_height) // 2  # 세로 중앙
-    )
-    
 
-    # 이미지에 글자 추가
-    draw.text(text_position, text, font=font, fill=text_color)
+    # 폰트 크기가 박스를 넘으면 자동 조정
+    while text_width > box_width or text_height > box_height:
+        font_size -= 2
+        font = ImageFont.truetype("gulim.ttc", font_size)
+        text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+
+    # 중앙 정렬
+    text_x = box_x1 + (box_width - text_width) // 2
+    text_y = box_y1 + (box_height - text_height) // 2
+
+    # 이미지에 텍스트 추가
+    draw.text((text_x, text_y), wrapped_text, font=font, fill=text_color)
 
     # 이미지 저장
-    # 파일 확장자 추가
     if not filename.endswith('.png'):
         filename += '.png'
     final_dir = work_directory + filename
     img.save(final_dir)
     
-def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100):
+def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP'):
     # Define the input and output file paths
     open_file = work_directory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
@@ -205,8 +217,8 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
         # Iterate over each line in the input file
         for line in file:
             # Replace 'LoadTexture, SP.png,' with 'LoadTexture, output_filename.png,' if found
-            if 'LoadTexture, SP.png,' in line:
-                line = line.replace('LoadTexture, SP.png,', f'LoadTexture, {output_filename}.png,')
+            if f'LoadTexture, {curvetype}.png,' in line:
+                line = line.replace(f'LoadTexture, {curvetype}.png,', f'LoadTexture, {output_filename}.png,')
             if isSPPS:
                 line = line.replace('LoadTexture, R.png,', f'LoadTexture, {R}.png,')
             
@@ -290,19 +302,17 @@ def find_object_index(sta, sections, tag_mapping):
                         return tag_mapping[key]
     return None
 
-def create_curve_post_txt(data_list):
+def create_curve_post_txt(data_list,comment):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
     output_file = work_directory + "curve_post.txt"  # 저장할 파일 이름
+    #리스트에서 '\n'을 제거
+    data_list = [data.strip() for data in data_list]
     with open(output_file, "w", encoding="utf-8") as file:
-        if isinstance(data_list, list):  # data_list가 리스트인 경우
-            # 리스트 요소들을 문자열로 변환하고 파일에 작성
-            file.write("".join(map(str, data_list)))
-        else:
-            # data_list가 문자열이라면 바로 작성
-            file.write(str(data_list))
-
+         for data, comm in zip(data_list, comment):  # 두 리스트를 동시에 순회
+            file.write(f"{data},;{comm}\n")  # 원하는 형식으로 저장
+            
 def find_structure_section(filepath):
     """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
     structure_list = {'bridge': [], 'tunnel': []}
@@ -404,23 +414,43 @@ else:
     image_names = []
     isSPPS = False
     text_color = (255,255,255)
+    structure_comment = []
+    
     for i, section in enumerate(annotated_sections, start=1):
         # 1구간에 SP와 PS만 있는 경우를 확인
         if len(section) == 2 and 'SP' in section[0] and 'PS' in section[1]:
             section[0] = section[0].replace(";SP", ";BC")  # SP를 BC로 변경
             section[1] = section[1].replace(";PS", ";EC")  # PS를 EC로 변경
+       
         for line in section:
+            #IP별 곡선반경 추출
+            if 'PC' in line:
+            
+                match = re.search(r",(-?[\d.]+);", line)
+
+                if match:
+                    extracted_number = int(float(match.group(1)))  # float → int 변환
+                    PC_R_LIST.append((i, extracted_number))  # 올바르게 리스트에 추가
+          
+        for line in section:        
+            #곡선형식별 처리
             if 'BC' in line or 'EC' in line or 'SP' in line or 'PC' in line or 'CP' in line or 'PS' in line:
                 
                 parts = line.split(',')
                 sta = int(parts[0])
                 parts2 =  parts[1].split(';')
-                radius = float(parts2[0])
+                
+                # 반경 찾기 (PC_R_LIST에서 현재 구간(i)과 일치하는 반경을 찾음)
+                radius = next((r for sec, r in PC_R_LIST if sec == i), None)
+                if radius is None:
+                    radius = 0  # 기본값 (에러 방지)
+                    
                 structure = isbridge_tunnel(sta, structure_list)
                 
                 if radius < 0:
                     radius *= -1
                 sec = parts2[1] if len(parts2) > 1 else None
+
                 
                 if 'SP' in line:
                     img_text = f'SP= {format_distance(sta, decimal_places=2)}'
@@ -428,24 +458,22 @@ else:
                     img_f_name = f'IP{i}_SP'
                     openfile_name = 'SP_' + structure + '용'
                     isSPPS = True
+                    curvetype = 'SP'
                     
                 elif 'PC' in line:
                     img_text = f'PC= {format_distance(sta, decimal_places=2)}\nR={radius}\nC=60'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_PC'
-                    PC_R_LIST.append(radius)
-                    last_PC_radius = radius
                     openfile_name = 'PC_' + structure + '용'
-
+                    curvetype = 'PC'
                     
                 elif 'CP' in line:
-                    if last_PC_radius is not None:
-                        img_text = f'CP= {format_distance(sta, decimal_places=2)}\nR={last_PC_radius}\nC=60'
-                    else:
-                        img_text = f'CP= {format_distance(sta, decimal_places=2)}\nR=Unknown\nC=60'
+
+                    img_text = f'CP= {format_distance(sta, decimal_places=2)}\nR={radius}\nC=60'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_CP'
                     openfile_name = 'CP_' + structure + '용'
+                    curvetype = 'CP'
                     
                 elif 'PS' in line:
                     img_text = f'PS= {format_distance(sta, decimal_places=2)}'
@@ -453,38 +481,45 @@ else:
                     img_f_name = f'IP{i}_PS'
                     openfile_name = 'PS_' + structure + '용'
                     isSPPS = True
-
+                    curvetype = 'PS'
+                    
                 elif 'BC' in line:
                     img_text = f'BC= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_BC'
                     openfile_name = 'BC_' + structure + '용'
+                    curvetype = 'BC'
                     
                 elif 'EC' in line:
                     img_text = f'EC= {format_distance(sta, decimal_places=2)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_EC'
                     openfile_name = 'EC_' + structure + '용'
-                    
+                    curvetype = 'EC'
                 else:
                     print('에러')
                     img_text = 'XXXX'
                     img_bg_color = (0, 0, 0)
                     img_f_name = 'X'
-                    
-                create_text_image(img_text, img_bg_color, img_f_name, text_color, image_size=(500, 300), font_size=40)
-                copy_and_export_csv(openfile_name, img_f_name,isSPPS,last_PC_radius)
+                    curvetype = 'ERROR'
+            
+                create_text_image(img_text, img_bg_color, img_f_name, text_color, image_size=(300, 200), font_size=40)
+                copy_and_export_csv(openfile_name, img_f_name,isSPPS,radius,curvetype)
                 image_names.append(img_f_name)
-                if isSPPS and last_PC_radius is not None:
+                structure_comment.append(img_f_name + '-' + structure)
+                
+                if isSPPS and radius !=0:
                     #기존곡선표
                     img_bg_color_for_prev = (0,0,255)
-                    img_f_name_for_prev = str(int(last_PC_radius))
+                    img_f_name_for_prev = str(int(radius))
 
-                    create_text_image(img_f_name_for_prev, img_bg_color_for_prev, img_f_name_for_prev, text_color, image_size=(500, 300), font_size=40)
+                    create_text_image(img_f_name_for_prev, img_bg_color_for_prev, img_f_name_for_prev, text_color, image_size=(500, 300), font_size=240)
+
+        
         # 객체 인덱스 생성
         objec_index_name = ""
         objec_index_counter = 2025
-        for img_name in image_names:
+        for img_name, stru in zip(image_names, structure_comment):
             objec_index_name += f".freeobj({objec_index_counter}) abcdefg/{img_name}.CSV\n"
             objec_index_counter += 1  # 카운터 증가
 
@@ -528,7 +563,7 @@ for section_id, entries in sections.items():  # 모든 구간을 순회
             result_list.append(result_data)
         
 #csv작성
-create_curve_post_txt(result_list)
+create_curve_post_txt(result_list, structure_comment)
 
 # 파일 삭제
 os.remove(unique_file)
