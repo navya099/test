@@ -7,6 +7,7 @@ import pandas as pd
 import math
 import re
 import textwrap
+import fitz  # pymupdf
 
 
 '''
@@ -46,25 +47,11 @@ if not os.path.exists(work_directory):
 
 print(f"작업 디렉토리: {work_directory}")
     
-def format_distance(number, decimal_places=2):
-    negative = False
-    if number < 0:
-        negative = True
-        number = abs(number)
-        
-    km = int(number) // 1000
-    remainder = round(number % 1000, decimal_places)  # Round remainder to the specified decimal places
-    
-    # Format the remainder to have at least 'decimal_places' digits after the decimal point
-    formatted_distance = "{:d}km{:0{}.{}f}".format(km, remainder, 4 + decimal_places, decimal_places)
-    
-    if negative:
-        formatted_distance = "-" + formatted_distance
-    
-    return formatted_distance
+def format_distance(number):
+    return f"{number / 1000:.3f}"
 
 def read_file():
-    file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("txt files", "*.txt"), ("All files", "*.*")])
+    file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("txt files", "curve_info.txt"), ("All files", "*.*")])
     print('현재파일:', file_path)
     
     try:
@@ -361,6 +348,86 @@ def open_excel_file():
     
     return file_path
 
+def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 'output.png' ,isSPPS = True):
+    
+    ai_file = work_directory + type1 + '.AI'
+    
+    doc = fitz.open(ai_file)
+
+    # 자간 조정값 설정 (예: 2pt 간격을 두고 텍스트 삽입)
+    letter_spacing = 2  # 자간 (pt 단위)
+
+
+    # 텍스트 정보 (소수점 자릿수 계산)
+    text_parts = text1.split('.')  # 소수점을 기준으로 나누기
+    if len(text_parts) == 2:  # 소수점이 있는 경우
+        digit = len(text_parts[0])  # 소수점 뒤 자릿수
+    else:
+        digit = 0  # 소수점이 없으면 자릿수는 0
+    
+        # 조정값 설정 (자리수에 따라 텍스트 좌표를 조정)
+    if digit == 1:
+        cooradjust = 20  # 1자리일 경우 좌표 조정 없음
+    elif digit == 2:
+        cooradjust = 0  # 2자리일 경우 좌표를 왼쪽으로 조정
+    elif digit == 3:
+        cooradjust = -10  # 3자리일 경우 좌표를 더 왼쪽으로 조정
+    else:
+        cooradjust = 0  # 그 외의 경우 오른쪽으로 조정
+
+    if type1 == 'PC' or type1 == 'CP' or type1 == 'BC' or type1 == 'EC':
+        x = 121 + cooradjust
+        y = 92
+    else:
+        x = 121 + cooradjust
+        y = 115
+    # 텍스트 정보(3자리 기준 -10)
+
+    style = "helvetica"
+    size = 160.15  # pt 텍스트크기
+    color = (255/255, 255/255, 255/255)  # 흰색 (0-1 범위로 변환)
+
+    pt =  2.83465
+    # 🔹 mm -> pt 변환 (1mm = 2.83465 pt)
+    x_pt = x * pt
+    y_pt = y * pt
+
+    size_pt = size  # 이미 pt로 제공되므로 그대로 사용
+
+
+
+    # 🔹 텍스트 삽입
+    insert_x = x_pt
+    insert_y = y_pt
+
+    if not isSPPS:
+        for page in doc:
+            # 텍스트 삽입
+            page.insert_text((insert_x, insert_y), text1, fontname=style, fontsize=size_pt, color=color)
+
+    if isSPPS:
+        # 각 문자에 대해 자간을 적용하여 삽입
+        current_x = insert_x  # 초기 x좌표 설정
+        for char in text:
+            page.insert_text((current_x, insert_y), char, fontname=style, fontsize=size_pt, color=color)
+            current_x += size_pt * 0.75 + letter_spacing  # 문자 사이에 자간을 추가
+    
+    # 🔹 원본 크기 가져오기
+    page = doc[0]  # 첫 번째 페이지 기준
+    pix = page.get_pixmap()
+    orig_width, orig_height = pix.width, pix.height
+
+    # 🔹 비율 유지하여 300x200에 맞게 조정
+    target_width, target_height = 300, 200
+    scale = min(target_width / orig_width, target_height / orig_height)  # 가장 작은 비율 선택
+    new_width = int(orig_width * scale)
+    new_height = int(orig_height * scale)
+
+    # 🔹 변환 적용 및 PNG 저장
+    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+    save_file = work_directory + filename + '.png'
+    pix.save(save_file)
+
 #함수 종료
 #MAIN 시작
 
@@ -453,7 +520,7 @@ else:
 
                 
                 if 'SP' in line:
-                    img_text = f'SP= {format_distance(sta, decimal_places=2)}'
+                    img_text = f'{format_distance(sta)}'
                     img_bg_color = (34, 139, 34)
                     img_f_name = f'IP{i}_SP'
                     openfile_name = 'SP_' + structure + '용'
@@ -461,7 +528,7 @@ else:
                     curvetype = 'SP'
                     
                 elif 'PC' in line:
-                    img_text = f'PC= {format_distance(sta, decimal_places=2)}\nR={radius}\nC=60'
+                    img_text = f'{format_distance(sta)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_PC'
                     openfile_name = 'PC_' + structure + '용'
@@ -469,14 +536,14 @@ else:
                     
                 elif 'CP' in line:
 
-                    img_text = f'CP= {format_distance(sta, decimal_places=2)}\nR={radius}\nC=60'
+                    img_text = f'{format_distance(sta)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_CP'
                     openfile_name = 'CP_' + structure + '용'
                     curvetype = 'CP'
                     
                 elif 'PS' in line:
-                    img_text = f'PS= {format_distance(sta, decimal_places=2)}'
+                    img_text = f'{format_distance(sta)}'
                     img_bg_color = (34, 139, 34)
                     img_f_name = f'IP{i}_PS'
                     openfile_name = 'PS_' + structure + '용'
@@ -484,14 +551,14 @@ else:
                     curvetype = 'PS'
                     
                 elif 'BC' in line:
-                    img_text = f'BC= {format_distance(sta, decimal_places=2)}'
+                    img_text = f'{format_distance(sta)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_BC'
                     openfile_name = 'BC_' + structure + '용'
                     curvetype = 'BC'
                     
                 elif 'EC' in line:
-                    img_text = f'EC= {format_distance(sta, decimal_places=2)}'
+                    img_text = f'{format_distance(sta)}'
                     img_bg_color = (255, 0, 0)
                     img_f_name = f'IP{i}_EC'
                     openfile_name = 'EC_' + structure + '용'
@@ -503,7 +570,7 @@ else:
                     img_f_name = 'X'
                     curvetype = 'ERROR'
             
-                create_text_image(img_text, img_bg_color, img_f_name, text_color, image_size=(300, 200), font_size=40)
+                create_png_from_ai(curvetype, img_text,text2 = '150', filename = img_f_name, isSPPS)
                 copy_and_export_csv(openfile_name, img_f_name,isSPPS,radius,curvetype)
                 image_names.append(img_f_name)
                 structure_comment.append(img_f_name + '-' + structure)
