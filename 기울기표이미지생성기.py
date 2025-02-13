@@ -172,48 +172,174 @@ def annotate_sections(sections):
 
     return annotated_sections
 
+class TextImageCreator:
+    def __init__(self, work_directory='c:/temp/pitch/', font_path="gulim.ttc", font_size=60):
+        self.work_directory = work_directory
+        self.font_path = font_path
+        self.font_size = font_size
+        
+      
 
-def create_text_image(text, bg_color, filename, text_color, image_size=(500, 300), font_size=40):
-    # 이미지 생성
-    img = Image.new('RGB', image_size, color=bg_color)
-    draw = ImageDraw.Draw(img)
-    
-    # 폰트 설정
-    font = ImageFont.truetype("gulim.ttc", font_size)
+    def create_image(self, bg_color,img_size, text1, text2, pitch_type, seg_type, text_color, filename):
+        """이미지를 생성하고 텍스트 및 호를 그리는 함수"""
+        
+        # 이미지 생성
+        img = Image.new('RGB', img_size, bg_color)
+        draw = ImageDraw.Draw(img)
 
-    # 텍스트 박스 크기 (25px 여백 적용)
-    box_x1, box_y1 = 25, 25
-    box_x2, box_y2 = image_size[0] - 25, image_size[1] - 25
-    box_width = box_x2 - box_x1
-    box_height = box_y2 - box_y1
+        # 폰트 로드
+        try:
+            font = ImageFont.truetype(self.font_path, self.font_size)
+        except IOError:
+            print(f"⚠️ 폰트 파일 {self.font_path}을(를) 찾을 수 없습니다. 기본 폰트로 진행합니다.")
+            font = ImageFont.load_default()
 
-    # 줄바꿈 적용
-    wrapped_text = textwrap.fill(text, width=15)  # 글자 수 제한
-    text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
-    text_width = text_bbox[2] - text_bbox[0]
-    text_height = text_bbox[3] - text_bbox[1]
+        # 측점 텍스트 추가
+        self.draw_text1(draw, text1, font, text_color)
+        
+        # 구배 텍스트 추가
+        text2_x, text2_y = self.get_text2_position(pitch_type)
+        self.draw_text_with_format(draw, text2, font, text_color, text2_x, text2_y)
 
-    # 폰트 크기가 박스를 넘으면 자동 조정
-    while text_width > box_width or text_height > box_height:
-        font_size -= 2
-        font = ImageFont.truetype("gulim.ttc", font_size)
-        text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
+        # 호 그리기
+        self.draw_arc(draw, pitch_type, seg_type, text_color)
 
-    # 중앙 정렬
-    text_x = box_x1 + (box_width - text_width) // 2
-    text_y = box_y1 + (box_height - text_height) // 2
+        # 저장 경로 설정
+        if not filename.endswith('.png'):
+            filename += '.png'
+        final_dir = os.path.join(self.work_directory, filename)
 
-    # 이미지에 텍스트 추가
-    draw.text((text_x, text_y), wrapped_text, font=font, fill=text_color)
+        # 이미지 저장 (예외 처리 추가)
+        try:
+            img.save(final_dir)
+            print(f"✅ 이미지 저장 완료: {final_dir}")
+        except IOError as e:
+            print(f"❌ 이미지 저장 실패: {e}")
 
-    # 이미지 저장
-    if not filename.endswith('.png'):
-        filename += '.png'
-    final_dir = work_directory + filename
-    img.save(final_dir)
+    def draw_text1(self, draw, text1, font, text_color):
+        """이미지에 측점 텍스트 추가하는 함수"""
+        
+        text1_x, text1_y = self.get_text1_position(text1)
+        draw.text((text1_x, text1_y), text1, font=font, fill=text_color)
 
+    def draw_text_with_format(self, draw, text, font, text_color, base_x, base_y):
+        """text2 값을 형식에 맞게 분리하여 그리는 함수"""
+        
+        is_negative = text.startswith('-')
+        integer_part, decimal_part = text.lstrip('-').split('.') if '.' in text else (text.lstrip('-'), None)
+
+        # 텍스트 길이에따라 조정
+        if is_negative or decimal_part is not None:
+            if int(integer_part) > 10:
+                scale_x = 0.5
+            else:
+                scale_x = 0.8
+            self.resize_text(draw, text, font, text_color, (base_x,base_y), scale_x=scale_x, scale_y=1.0)
+        else:
+            draw.text((base_x, base_y), text, font=font, fill=text_color)
+
+    def resize_text(self, draw, text, font, text_color, position, scale_x=1.0, scale_y=1.0):
+        """텍스트를 별도의 이미지에 그린 후 크기를 조정하여 원본 이미지에 배치"""
+        
+        # 텍스트를 그릴 임시 이미지 생성 (투명 배경)
+        temp_img = Image.new("RGBA", (500, 500), (255, 255, 255, 0))
+        temp_draw = ImageDraw.Draw(temp_img)
+        
+        # 텍스트 그리기
+        temp_draw.text((position[0], position[1]), text, font=font, fill=text_color)
+        
+        # 여백 자르기
+        bbox = temp_img.getbbox()
+        extra_padding = (0, 0)
+        
+        if bbox:
+            left, top, right, bottom = bbox
+            right += extra_padding[0]
+            bottom += extra_padding[1]
+            cropped_temp_img = temp_img.crop((left, top, right, bottom))
+        else:
+            cropped_temp_img = temp_img
+
+        # 텍스트 이미지를 리사이즈 (가로/세로 크기 조정)
+        new_width = int(cropped_temp_img.width * scale_x)
+        new_height = int(cropped_temp_img.height * scale_y)
+        resized_text = cropped_temp_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # 투명 배경을 흰색으로 채우기
+        background = Image.new('RGB', resized_text.size, (255, 255, 255))
+        background.paste(resized_text, (0, 0), resized_text)
+
+        background.save(os.path.join(self.work_directory, 'temp_resized.png'))
+
+    def get_text1_position(self, text1):
+        """측점 위치를 반환하는 함수"""
+        
+        pos_map = {
+            5: (90, 20),
+            6: (75, 20),
+            7: (45, 20)
+        }
+        
+        return pos_map.get(len(text1), (45, 20))
+
+    def get_text2_position(self, pitch_type):
+        """pitch_type에 따라 (x, y) 좌표 반환"""
+        
+        pos_table = {
+            'BVC': (75,115),
+            'EVC': (220,115),
+            'VIP': (90, 120)
+        }
+
+        return pos_table.get(pitch_type,(40, 115))
+
+    def get_arc_params(self, pitch_type, seg_type):
+        """호를 그리기 위한 중심점, 반지름, 각도 반환"""
+        
+        params = {
+            '오목형': {
+                'BVC': {'center': (250, 60), 'R': 106.2435, 'angle': (50, 130)},
+                'EVC': {'center': (140, 60), 'R': 106.2435, 'angle': (50, 130)},
+                'VIP': {'center': (200, -190), 'R': 316, 'angle': (68, 112)}
+            },
+            '볼록형': {
+                'BVC': {'center': (250, 250), 'R': 106.2435, 'angle': (-130, -50)},
+                'EVC': {'center': (140, 250), 'R': 106.2435, 'angle': (-130, -50)},
+                'VIP': {'center': (200, 415), 'R': 316, 'angle': (-112, -68)}
+            }
+        }
+        
+        return params.get(seg_type, {}).get(pitch_type, None)
+
+    def draw_arc(self, draw, pitch_type, seg_type, text_color):
+        """호를 이미지에 추가하는 함수"""
+        
+        arc_params = self.get_arc_params(pitch_type, seg_type)
+        if not arc_params:
+            return  
+
+        center, R, (start_angle, end_angle) = arc_params['center'], arc_params['R'], arc_params['angle']
+
+        bbox = (
+            center[0] - R, center[1] - R,
+            center[0] + R, center[1] + R
+        )
+
+        draw.arc(bbox, start_angle, end_angle, fill=text_color, width=6)
+
+    def paste_resized_image(self, base_image_name, resized_image_name, save_name, p1,p2):
+        base_path = os.path.join(self.work_directory, base_image_name  + ".png" )
+        resized_path = resized_path = os.path.join(self.work_directory, resized_image_name + ".png")
+        save_path = os.path.join(self.work_directory, save_name  + ".png" )
+        
+        if os.path.exists(resized_path):
+            
+            im1 = Image.open(base_path)
+            im2 = Image.open(resized_path)
+            back_im = im1.copy()
+            back_im.paste(im2, (p1,p2))
+            back_im.save(save_path)
+            
 #기울기표용
 def create_text_image3(text, text2 , bg_color, filename, text_color, image_size=(500, 300), font_size=40):
     # 이미지 생성
@@ -283,7 +409,7 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
         file.writelines(new_lines)
 
 def create_object_index(data):
-    output_file = work_directory + 'object_index.txt'
+    output_file = work_directory + 'pitch_index.txt'
     with open(output_file, 'w', encoding='utf-8') as file:
         file.write(data)
 
@@ -358,7 +484,7 @@ def create_curve_post_txt(data_list,comment):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
-    output_file = work_directory + "curve_post.txt"  # 저장할 파일 이름
+    output_file = work_directory + "pitch_post.txt"  # 저장할 파일 이름
     #리스트에서 '\n'을 제거
     data_list = [data.strip() for data in data_list]
     with open(output_file, "w", encoding="utf-8") as file:
@@ -443,6 +569,9 @@ def calculate_vertical_curve_radius(length, start_grade, end_grade):
     radius = length / delta_g
     return abs(radius) * 1000  # 반지름은 항상 양수
 
+def format_grade(value):
+    return f"{value:.1f}".rstrip('0').rstrip('.')  # 소수점 이하 0 제거
+
 #함수 종료
 #MAIN 시작
 
@@ -501,6 +630,7 @@ else:
     isSPPS = False
     text_color = (0,0,0)
     structure_comment = []
+    creator = TextImageCreator(work_directory=work_directory, font_path="gulim.ttc", font_size=60)
     
     for i, section in enumerate(annotated_sections, start=1):
         for line in section:
@@ -592,45 +722,81 @@ else:
                 
                 if 'BVC' in line:
                     pitchtype = 'BVC'
-                    img_text = f'{format_distance(sta)}\n{prev_grade}'
+                    grade_text = format_grade(prev_grade)
+                    station_text = f'{format_distance(sta)}'
                     img_bg_color = (255, 255, 255)
                     img_f_name = f'VIP{i}_{pitchtype}'
                     openfile_name = f'{pitchtype}_{structure}용'
+
+                    #create_text_image(station_text, grade_text,  pitchtype, isSagCrest , img_bg_color, img_f_name)
+                    creator.create_image(img_bg_color, (345,200),station_text, grade_text, pitchtype, isSagCrest, (0,0,0), img_f_name)
+                    p1, p2 = creator.get_text2_position(pitchtype)
+                    try:
+                        is_negative = grade_text.startswith('-')
+                        integer_part, decimal_part = grade_text.lstrip('-').split('.') if '.' in grade_text else (grade_text.lstrip('-'), None)
+                        if is_negative or decimal_part:
+                            creator.paste_resized_image(img_f_name, 'temp_resized', img_f_name, p1,p2)
+                        
+                    except ValueError as e:
+                        print(f'리사이즈실행실패:{e}')
                     
                 elif 'EVC' in line:
                     pitchtype = 'EVC'
-                    img_text = f'{format_distance(sta)}\n{current_grade}'
+                    grade_text = format_grade(current_grade)
+                    station_text = f'{format_distance(sta)}'
                     img_bg_color = (255, 255, 255)
                     img_f_name = f'VIP{i}_{pitchtype}'
                     openfile_name = f'{pitchtype}_{structure}용'
+                    #create_text_image(station_text, grade_text,  pitchtype, isSagCrest , img_bg_color, img_f_name, text_color, image_size=(345, 200), font_size=60)
+                    creator.create_image(img_bg_color, (345,200), station_text, grade_text, pitchtype, isSagCrest, (0,0,0), img_f_name)
+                    p1, p2 = creator.get_text2_position(pitchtype)
+
+                    try:
+                        is_negative = grade_text.startswith('-')
+                        integer_part, decimal_part = grade_text.lstrip('-').split('.') if '.' in grade_text else (grade_text.lstrip('-'), None)
+                        if is_negative or decimal_part:
+                            creator.paste_resized_image(img_f_name, 'temp_resized', img_f_name, p1,p2)
+                        
+                    except ValueError as e:
+                        print(f'리사이즈실행실패:{e}')
                     
-                
                 elif 'VIP' in line:
+                    
                     pitchtype = 'VIP'
-                    img_text = f'{format_distance(sta)}\n{R}'#종곡선표
-                    img_text2 = f'{current_grade}'#기울기표 구배문자
-                    img_text3 = f'L={current_distance}' #기울기표 거리문자
+                    #종곡선표
+                    R_text = f'{R}'
+                    station_text = f'{format_distance(sta)}'
                     img_bg_color = (255, 212, 0) #기울기표 배경
-                    img_bg_color2 = (255, 255, 255) #기울기표 문자색
                     img_f_name = f'VIP{i}_{pitchtype}'#종곡선표 파일명
-                    img_f_name2 = f'VIP{i}_{pitchtype}_기울기표'#기울기표 파일명
                     openfile_name = f'{pitchtype}_{structure}용'
+
+                    #종곡선표 출력
+                    creator.create_image(img_bg_color,(345,200),station_text, R_text, pitchtype, isSagCrest, (0,0,0), img_f_name)
+                    
+                    #기울기표
+                    img_text2 = f'{current_grade}'#기울기표 구배문자
+                    img_text3 = f'L={current_distance}' #기울기표 거리문자                    
+                    img_bg_color2 = (255, 255, 255) #기울기표 문자                     
+                    img_f_name2 = f'VIP{i}_{pitchtype}_기울기표'#기울기표 파일명
                     openfile_name2 = f'기울기표_{structure}용'
+                    
+                    
                     #기울기표 출력
                     create_text_image3(img_text2, img_text3, img_bg_color2, img_f_name2, text_color, image_size=(500, 400), font_size=40)
-                    
+                    #create_text_image(station_text, f'{R}',  pitchtype, isSagCrest , img_bg_color, img_f_name, text_color, image_size=(345, 200), font_size=60)
+
                 else:
                     print('에러')
+                    station_text = '2'
                     img_text = 'XXXX'
                     img_bg_color = (0, 0, 0)
                     img_f_name = 'X'
                     pitchtype = 'ERROR'
                     openfile_name = 'UNNKOWN'
-
+                
                 #종곡선표 출력
-                create_text_image(img_text, img_bg_color, img_f_name, text_color, image_size=(345, 200), font_size=40)
-
-
+                
+                
                 copy_and_export_csv(openfile_name, img_f_name,isSPPS,current_grade,pitchtype)
                 image_names.append(img_f_name)
                 structure_comment.append(img_f_name + '-' + structure)
@@ -651,7 +817,7 @@ with open(output_file, 'r', encoding='utf-8') as file:
             reader1 = csv.reader(file)
             lines1 = list(reader1)
             
-OBJ_DATA = work_directory + 'object_index.txt'
+OBJ_DATA = work_directory + 'pitch_index.txt'
 
 with open(OBJ_DATA, 'r', encoding='utf-8') as file:
             reader2 = csv.reader(file)
