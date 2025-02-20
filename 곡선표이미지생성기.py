@@ -35,7 +35,7 @@ csv파일에는 텍스쳐명이 sp와 r 이어야함
 
 '''
 # 기본 작업 디렉토리
-default_directory = 'c:/temp/object/'
+default_directory = 'c:/temp/curve/'
 work_directory = None
 # 사용자가 설정한 작업 디렉토리가 없으면 기본값 사용
 if not work_directory:
@@ -51,6 +51,7 @@ def format_distance(number):
     return f"{number / 1000:.3f}"
 
 def read_file():
+    
     file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("txt files", "curve_info.txt"), ("All files", "*.*")])
     print('현재파일:', file_path)
     
@@ -75,14 +76,14 @@ def remove_duplicate_radius(data):
 
     for row in data:
         try:
-            station, radius = map(float, row)
+            station, radius, cant = map(float, row)
             station = int(station)
         except ValueError:
             print(f"잘못된 데이터 형식: {row}")
             continue
 
         if radius != previous_radius:
-            filtered_data.append((station, radius))
+            filtered_data.append((station, radius, cant))
             previous_radius = radius
 
     return filtered_data
@@ -93,13 +94,13 @@ def process_sections(data):
 
     for row in data:
         try:
-            station, radius = map(float, row)
+            station, radius, cant = map(float, row)
             station = int(station)
         except ValueError:
             print(f"잘못된 데이터 형식: {row}")
             continue
 
-        current_section.append((station, radius))
+        current_section.append((station, radius, cant))
 
         if radius == 0.0 and current_section:
             sections.append(current_section)
@@ -117,34 +118,39 @@ def annotate_sections(sections):
         annotated_section = []
         n = len(section)
 
-        for i, (station, radius) in enumerate(section):
+        for i, (station, radius, cant) in enumerate(section):
             annotation = ""
 
             # 첫 번째 줄에 SP 추가
             if i == 0:
-                annotation += ";SP"
+                annotation += "SP"
             
             # 마지막 줄에 PS 추가
             if i == n - 1:
-                annotation += ";PS"
+                annotation += "PS"
 
             # STA 간 차이가 25보다 큰 경우 PC/CP 추가
             if i < n - 1:  # Ensure we're not at the last row
-                prev_station, prev_radius = section[i - 1] if i > 0 else (None, None)
-                next_station, next_radius = section[i + 1]
+                prev_station, prev_radius, prev_cant = section[i - 1] if i > 0 else (None, None , None)
+                next_station, next_radius, next_cant = section[i + 1]
                 
                 if next_station - station > 75:
-                    annotation += ";PC"
+                    annotation += "PC"
                 elif i > 0 and station - prev_station > 75:
-                    annotation += ";CP"
+                    annotation += "CP"
 
-            annotated_section.append(f"{station},{radius}{annotation}")
+            
+            annotated_section.append(f"{station},{radius},{cant},{annotation}")
 
         # SP와 PS만 있는 구간을 BC와 EC로 변경
-        if len(annotated_section) == 2 and ";SP" in annotated_section[0] and ";PS" in annotated_section[1]:
-            annotated_section[0] = annotated_section[0].replace(";SP", ";BC")
-            annotated_section[1] = annotated_section[1].replace(";PS", ";EC")
-
+        if len(annotated_section) == 2 and "SP" in annotated_section[0] and "PS" in annotated_section[1]:
+            annotated_section[0] = annotated_section[0].replace("SP", "BC")
+            annotated_section[1] = annotated_section[1].replace("PS", "EC")
+       
+        # SPPS만 있는 구간을 삭제
+        elif len(annotated_section) == 1 and "SPPS" in annotated_section[0]:
+            continue  # SPPS만 있는 구간은 추가하지 않음
+            
         annotated_sections.append(annotated_section)
 
     return annotated_sections
@@ -228,7 +234,7 @@ def parse_sections(file_content):
     """
     sections = {}
     current_section = None
-
+    tags = []
     for line in file_content:  # file_content는 csv.reader가 반환한 리스트 형태
         # 리스트 형태의 line을 문자열로 변환
         line = ",".join(line)
@@ -237,14 +243,16 @@ def parse_sections(file_content):
             current_section = int(line.split()[1][:-1])
             sections[current_section] = []
         elif current_section is not None and line.strip():
-            sta, rest = line.split(',', 1)
+            sta, radius , cant, tag = line.split(',', 3)
+            
             sta = int(sta)
-            radius_tag = rest.split(';')
-            radius = float(radius_tag[0])
-            tags = radius_tag[1:] if len(radius_tag) > 1 else []
-            sections[current_section].append((sta, radius, tags))
+            radius = float(radius)
+            cant = float(cant)
+            sections[current_section].append((sta, radius, cant, tag))
 
     return sections
+
+
 
 
 def parse_object_index(index_content):
@@ -276,17 +284,17 @@ def parse_object_index(index_content):
 
 
 
+
 def find_object_index(sta, sections, tag_mapping):
     """
     STA 값에 해당하는 구간과 태그를 찾아 오브젝트 인덱스를 반환.
     """
     for section_id, points in sections.items():
-        for i, (start_sta, _, tags) in enumerate(points):
+        for i, (start_sta, _, _, tags) in enumerate(points):
             if sta == start_sta:  # STA가 정확히 일치하는 경우
-                for tag in tags:
-                    key = f"IP{section_id}_{tag}"
-                    if key in tag_mapping:
-                        return tag_mapping[key]
+                key = f"IP{section_id}_{tags}"
+                if key in tag_mapping:
+                    return tag_mapping[key]
     return None
 
 def create_curve_post_txt(data_list,comment):
@@ -341,6 +349,8 @@ def open_excel_file():
     """파일 선택 대화 상자를 열고, 엑셀 파일 경로를 반환하는 함수"""
     root = tk.Tk()
     root.withdraw()  # Tkinter 창을 숨김
+    root.attributes("-topmost", True)
+    
     file_path = filedialog.askopenfilename(
         title="엑셀 파일 선택",
         filetypes=[("Excel Files", "*.xlsx")]
@@ -348,14 +358,11 @@ def open_excel_file():
     
     return file_path
 
-def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 'output.png' ,isSPPS = True):
+def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 'output.png'):
     
     ai_file = work_directory + type1 + '.AI'
     
     doc = fitz.open(ai_file)
-
-    # 자간 조정값 설정 (예: 2pt 간격을 두고 텍스트 삽입)
-    letter_spacing = 2  # 자간 (pt 단위)
 
 
     # 텍스트 정보 (소수점 자릿수 계산)
@@ -400,17 +407,9 @@ def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 
     insert_x = x_pt
     insert_y = y_pt
 
-    if not isSPPS:
-        for page in doc:
-            # 텍스트 삽입
-            page.insert_text((insert_x, insert_y), text1, fontname=style, fontsize=size_pt, color=color)
-
-    if isSPPS:
-        # 각 문자에 대해 자간을 적용하여 삽입
-        current_x = insert_x  # 초기 x좌표 설정
-        for char in text:
-            page.insert_text((current_x, insert_y), char, fontname=style, fontsize=size_pt, color=color)
-            current_x += size_pt * 0.75 + letter_spacing  # 문자 사이에 자간을 추가
+    for page in doc:
+        # 텍스트 삽입
+        page.insert_text((insert_x, insert_y), text1, fontname=style, fontsize=size_pt, color=color)
     
     # 🔹 원본 크기 가져오기
     page = doc[0]  # 첫 번째 페이지 기준
@@ -428,14 +427,79 @@ def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 
     save_file = work_directory + filename + '.png'
     pix.save(save_file)
 
+def create_png_from_ai2(text1 = '600', filename = 'output.png'):
+    
+    ai_file = work_directory  + '곡선표(일반철도).AI'
+    
+    doc = fitz.open(ai_file)
+
+
+    # 텍스트 정보 (소수점 자릿수 계산)
+    
+    if len(text1) == 3:  # 소수점이 있는 경우
+        digit = 3
+        x = 8.69
+        y = 275
+    elif len(text1) == 4:  # 소수점이 있는 경우
+        digit = 4
+        x = 121 + cooradjust
+        y = 92
+    elif len(text1) == 5:  # 소수점이 있는 경우
+        digit = 5
+    elif len(text1) == 6:  # 소수점이 있는 경우
+        digit = 6
+        x = 0
+        y = 0
+    # 텍스트 정보(3자리 기준 -10)
+
+    style = "HY견고딕"
+    size = 353.11  # pt 텍스트크기
+    color = (255/255, 255/255, 255/255)  # 흰색 (0-1 범위로 변환)
+
+    pt =  2.83465
+    # 🔹 mm -> pt 변환 (1mm = 2.83465 pt)
+    x_pt = x * pt
+    y_pt = y * pt
+
+    size_pt = size  # 이미 pt로 제공되므로 그대로 사용
+
+
+
+    # 🔹 텍스트 삽입
+    insert_x = x_pt
+    insert_y = y_pt
+
+    for page in doc:
+        # 텍스트 삽입
+        page.insert_text((insert_x, insert_y), text1, fontname=style, fontsize=size_pt, color=color)
+    
+    # 🔹 원본 크기 가져오기
+    page = doc[0]  # 첫 번째 페이지 기준
+    pix = page.get_pixmap()
+    orig_width, orig_height = pix.width, pix.height
+
+    # 🔹 비율 유지하여 300x200에 맞게 조정
+    target_width, target_height = 300, 200
+    scale = min(target_width / orig_width, target_height / orig_height)  # 가장 작은 비율 선택
+    new_width = int(orig_width * scale)
+    new_height = int(orig_height * scale)
+
+    # 🔹 변환 적용 및 PNG 저장
+    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+    save_file = work_directory + filename + '.png'
+    pix.save(save_file)
+
+
+
 #함수 종료
 #MAIN 시작
 
-# 파일 읽기
+#curve_info 파일 읽기
 data = read_file()
 
-# 구조물 정보 파일 경로 지정
+#구조물 엑셀파일
 openexcelfile = open_excel_file()
+
 # 선택된 파일로 구조물 정보 가져오기
 if openexcelfile:
     structure_list = find_structure_section(openexcelfile)
@@ -444,8 +508,10 @@ else:
     print("엑셀 파일을 선택하지 않았습니다.")
     
 if not data:
-    print("데이터가 비어 있습니다.")
+    print("curve_info가 비어 있습니다.")
 else:
+    print("곡선 정보가 성공적으로 로드되었습니다.")
+    
     # 중복 제거
     unique_data = remove_duplicate_radius(data)
     
@@ -454,26 +520,36 @@ else:
     annotated_sections = annotate_sections(sections)
 
     # 결과 파일 저장
-    output_file = work_directory + '주석처리된파일.txt'
-    unique_file = work_directory + '1532326.txt'
     
-    if not output_file:
+    unique_file = work_directory + 'unique_file.txt'
+    annotated_sections_file = work_directory + 'annotated_sections_file.txt'
+    sections_file = work_directory + 'sections.txt'
+    
+    
+    if not annotated_sections_file:
         print("출력 파일을 선택하지 않았습니다.")
     else:
+        
+        #unique_file
         with open(unique_file, 'w', encoding='utf-8') as file:
-            for station, radius in unique_data:
-                file.write(f"{station},{radius}\n")
-
-        output_file = output_file
-        with open(output_file, 'w', encoding='utf-8') as file:
+            for station, radius, cant in unique_data:
+                file.write(f"{station},{radius},{cant}\n")
+                
+        #annotated_sections_file
+        with open(annotated_sections_file, 'w', encoding='utf-8') as file:
             for i, section in enumerate(annotated_sections, start=1):
                 file.write(f"구간 {i}:\n")
                 for line in section:
                     file.write(f"{line}\n")
                 file.write("\n")
 
-        print(f"주석이 추가된 결과가 {output_file}에 저장되었습니다.")
+        #sections_file
+        with open(sections_file, 'w', encoding='utf-8') as file:
+            for line in sections:
+                file.write(f'{line}\n')
+        
 
+        
     #이미지 저장
     PC_R_LIST = []
     last_PC_radius = None  # 마지막 PC 반지름을 추적
@@ -484,10 +560,6 @@ else:
     structure_comment = []
     
     for i, section in enumerate(annotated_sections, start=1):
-        # 1구간에 SP와 PS만 있는 경우를 확인
-        if len(section) == 2 and 'SP' in section[0] and 'PS' in section[1]:
-            section[0] = section[0].replace(";SP", ";BC")  # SP를 BC로 변경
-            section[1] = section[1].replace(";PS", ";EC")  # PS를 EC로 변경
        
         for line in section:
             #IP별 곡선반경 추출
@@ -502,10 +574,12 @@ else:
         for line in section:        
             #곡선형식별 처리
             if 'BC' in line or 'EC' in line or 'SP' in line or 'PC' in line or 'CP' in line or 'PS' in line:
-                
-                parts = line.split(',')
+
+                #1275,-7517.02,0.0,SP 
+                parts = line.split(',')#쉼표로 구분
                 sta = int(parts[0])
-                parts2 =  parts[1].split(';')
+                
+                cant = f'{float(parts[2]) * 1000:.0f}'
                 
                 # 반경 찾기 (PC_R_LIST에서 현재 구간(i)과 일치하는 반경을 찾음)
                 radius = next((r for sec, r in PC_R_LIST if sec == i), None)
@@ -516,7 +590,7 @@ else:
                 
                 if radius < 0:
                     radius *= -1
-                sec = parts2[1] if len(parts2) > 1 else None
+                
 
                 
                 if 'SP' in line:
@@ -526,6 +600,7 @@ else:
                     openfile_name = 'SP_' + structure + '용'
                     isSPPS = True
                     curvetype = 'SP'
+                    
                     
                 elif 'PC' in line:
                     img_text = f'{format_distance(sta)}'
@@ -569,8 +644,9 @@ else:
                     img_bg_color = (0, 0, 0)
                     img_f_name = 'X'
                     curvetype = 'ERROR'
-            
-                create_png_from_ai(curvetype, img_text,text2 = '150', filename = img_f_name, isSPPS)
+                    
+                
+                create_png_from_ai(curvetype, img_text,cant, filename = img_f_name)
                 copy_and_export_csv(openfile_name, img_f_name,isSPPS,radius,curvetype)
                 image_names.append(img_f_name)
                 structure_comment.append(img_f_name + '-' + structure)
@@ -580,7 +656,7 @@ else:
                     img_bg_color_for_prev = (0,0,255)
                     img_f_name_for_prev = str(int(radius))
 
-                    create_text_image(img_f_name_for_prev, img_bg_color_for_prev, img_f_name_for_prev, text_color, image_size=(500, 300), font_size=240)
+                    create_png_from_ai(curvetype, img_f_name_for_prev,text2 = '150', filename = img_f_name_for_prev)
 
         
         # 객체 인덱스 생성
@@ -591,31 +667,33 @@ else:
             objec_index_counter += 1  # 카운터 증가
 
         
-        
+    #오브젝트 인덱스파일txt작성 
     create_object_index(objec_index_name)
 
 # 데이터 파싱
-with open(output_file, 'r', encoding='utf-8') as file:
+#주석처리된파일.txt'
+with open(annotated_sections_file, 'r', encoding='utf-8') as file:
             reader1 = csv.reader(file)
             lines1 = list(reader1)
             
 OBJ_DATA = work_directory + 'object_index.txt'
-
+#object_index.txt'
 with open(OBJ_DATA, 'r', encoding='utf-8') as file:
             reader2 = csv.reader(file)
             lines2 = list(reader2)
             
-sections = parse_sections(lines1)
-
+sections_line1 = parse_sections(lines1)
+sections_line1_file = work_directory + 'sections_file.txt'
+    
 tag_mapping = parse_object_index(lines2)
 
 # STA 값 검색
 result_list =[]
 
-for section_id, entries in sections.items():  # 모든 구간을 순회
-    for sta_value, radius, tags in entries:  # 각 구간의 엔트리를 순회
+for section_id, entries in sections_line1.items():  # 모든 구간을 순회
+    for sta_value, radius, _, tags in entries:  # 각 구간의 엔트리를 순회
 
-        result = find_object_index(sta_value, sections, tag_mapping)
+        result = find_object_index(sta_value, sections_line1, tag_mapping)
 
         '''
         # 결과 출력
@@ -631,7 +709,8 @@ for section_id, entries in sections.items():  # 모든 구간을 순회
         
 #csv작성
 create_curve_post_txt(result_list, structure_comment)
-
+print(len(structure_comment))
+print(len(result_list))
 # 파일 삭제
-os.remove(unique_file)
-os.remove(output_file)
+#os.remove(unique_file)
+#os.remove(output_file)
