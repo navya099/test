@@ -6,6 +6,13 @@ from tkinter import filedialog
 import math
 import re
 
+'''
+ver 2025.02.21 16:00
+'''
+
+plt.rcParams['font.family'] ='Malgun Gothic'
+plt.rcParams['axes.unicode_minus'] =False
+
 # 두 벡터 간 각도 계산
 def calculate_angle(vec1, vec2):
     # 벡터의 내적 계산
@@ -138,11 +145,11 @@ def find_curve_section(txt_filepath='curveinfo.txt'):
     curve_list = []
 
     # 텍스트 파일(.txt) 읽기
-    df_curve = pd.read_csv(txt_filepath, sep=",", header=None, names=['sta', 'radius'])
+    df_curve = pd.read_csv(txt_filepath, sep=",", header=None, names=['sta', 'radius','cant'])
 
     # 곡선 구간 정보 저장
     for _, row in df_curve.iterrows():
-        curve_list.append((row['sta'], row['radius']))
+        curve_list.append((row['sta'], row['radius'], row['cant']))
     
     return curve_list
 
@@ -169,7 +176,7 @@ def iscurve(cur_sta, curve_list):
     """sta가 곡선 구간에 해당하는지 구분하는 함수"""
     rounded_sta = round_to_nearest_25(cur_sta)  # 25 단위로 반올림
     
-    for sta, R in curve_list:
+    for sta, R, _ in curve_list:
         if rounded_sta == sta:
             if R == 0:
                 return '직선', None  # 반경이 0이면 직선
@@ -278,19 +285,40 @@ def save_to_WIRE(positions, spans, structure_list, curve_list,polyline,filename=
                 point_a = interpolate_coordinates(polyline_with_sta, pos)
                 point_b = interpolate_coordinates(polyline_with_sta, next_pos)
 
+                
                 if point_a and point_b:
-                    angle = angle_between_points_and_vector(polyline, point_a, point_b)
+
+                    #offset,좌표
+                    #벡터
+                    vector_a = calculate_vector_at_pline(polyline, point_a)
+                    vector_b = calculate_vector_at_pline(polyline, point_b)
+                    offset_point_a = calculate_offset_point(vector_a, point_a, -distance)
+                    offset_point_b = calculate_offset_point(vector_b, point_b, distance)
+                    
+                    offset_point_a_z = (offset_point_a[0],offset_point_a[1] ,0) #Z값 0추가
+                    offset_point_b_z = (offset_point_b[0],offset_point_b[1] ,0) #Z값 0추가
                 
-                
+                    a_b_angle = calculate_bearing(offset_point_a[0], offset_point_a[1], offset_point_b[0], offset_point_b[1])
+                    finale_anlge = vector_a - a_b_angle
+
+
             # 홀수/짝수에 따라 출력 (중복 코드 제거)
             sign = -1 if i % 2 == 1 else 1
             lateral_offset = sign * 0.2 #편위
             adjusted_angle = sign * angle
-            
-            f.write(f"{pos},.freeobj 0;{obj_index};{lateral_offset};;{adjusted_angle};,;{comment}\n")
-            f.write(f"{pos},.freeobj 0;{AF_wire};{offset};;{wire_angle};,;급전선\n")
-            f.write(f"{pos},.freeobj 0;{FPW_wire};{offset};;{wire_angle};,;FPW\n")
-            
+            if current_curve == '직선':
+                f.write(f"{pos},.freeobj 0;{obj_index};{lateral_offset};;{adjusted_angle};,;{comment}\n")
+                f.write(f"{pos},.freeobj 0;{AF_wire};{offset};;{wire_angle};,;급전선\n")
+                f.write(f"{pos},.freeobj 0;{FPW_wire};{offset};;{wire_angle};,;FPW\n")
+            else:
+                sign = -1 if i % 2 == 1 else 1
+                lateral_offset = sign * 0.2 #편위
+                adjusted_angle = sign * finale_anlge
+                
+                f.write(f"{pos},.freeobj 0;{obj_index};{lateral_offset};;{adjusted_angle};,;{comment}\n")
+                f.write(f"{pos},.freeobj 0;{AF_wire};{offset};;{wire_angle};,;급전선\n")
+                f.write(f"{pos},.freeobj 0;{FPW_wire};{offset};;{wire_angle};,;FPW\n")
+
 def interpolate_coordinates(polyline, target_sta):
     """
     주어진 폴리선 데이터에서 특정 sta 값에 대한 좌표를 선형 보간하여 반환.
@@ -359,6 +387,52 @@ def read_file():
             return []
     
     return lines
+
+#추가
+#방위각 거리로 점 좌표반환
+def calculate_destination_coordinates(x1, y1, bearing, distance):
+    # Calculate the destination coordinates given a starting point, bearing, and distance in Cartesian coordinates
+    angle = math.radians(bearing)
+    x2 = x1 + distance * math.cos(angle)
+    y2 = y1 + distance * math.sin(angle)
+    return x2, y2
+
+#폴리선의 벡터 구하기
+def calculate_vector_at_pline(polyline, point_a):
+    # 이전 점과 이후 점을 가져와 벡터 계산
+    idx, coord = find_closest_point(polyline, point_a)
+
+    # 인덱스 범위 체크
+    if idx + 1 >= len(polyline):  # 마지막 점이라면 범위 넘지 않도록 처리
+        print("❌ 인덱스가 범위를 초과했습니다.")
+        return None
+
+    # 인덱스 2개 좌표 반환
+    p1 = np.array(polyline[idx])  # 현재 인덱스
+    p2 = np.array(polyline[idx + 1])  # 다음 인덱스
+
+    # 벡터 계산 (p2 - p1)
+    vector = p2 - p1
+
+    # 벡터의 방위각 계산 (x축과 이루는 각도)
+    angle = math.degrees(math.atan2(vector[1], vector[0]))
+    return angle
+
+#offset 좌표 반환
+def calculate_offset_point(vector, point_a, offset_distance):
+    if offset_distance > 0:#우측 오프셋
+        vector -= 90
+    else:
+        vector += 90 #좌측 오프셋
+    offset_a_xy = calculate_destination_coordinates(point_a[0], point_a[1], vector, abs(offset_distance))
+    return offset_a_xy
+
+def calculate_bearing(x1, y1, x2, y2):
+    # Calculate the bearing (direction) between two points in Cartesian coordinates
+    dx = x2 - x1
+    dy = y2 - y1
+    bearing = math.degrees(math.atan2(dy, dx))
+    return bearing
 
 # 실행
 def load_structure_data():
