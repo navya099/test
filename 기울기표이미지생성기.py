@@ -7,12 +7,19 @@ import pandas as pd
 import math
 import re
 import textwrap
-
+import matplotlib.pyplot as plt
+import ezdxf
+from ezdxf.addons.drawing import RenderContext, Frontend
+from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+import numpy as np
+import matplotlib.font_manager as fm
 
 '''
 BVE구배파일을 바탕으로 기울기표(준고속용)을 설치하는 프로그램
 -made by dger -
-
+VER 2025.02.23 00.32
+#add
+civil3d 파일 지원 추가
 
 입력파일:BVE에서 추출한 구배파일(pitch_info.TXT)
 
@@ -34,6 +41,13 @@ csv파일에는 텍스쳐명이 bvc와 g 이어야함
 출력파일: OBJECT인덱스 파일 , FREEOBJ구문파일, CSV오브젝트파일, PNG텍스쳐파일
 
 '''
+# 폰트 파일 경로 설정
+font_path = "C:/Windows/Fonts/gulim.ttc"  # 사용하는 폰트 파일 경로
+prop = fm.FontProperties(fname=font_path)
+
+# Matplotlib에 폰트 설정
+plt.rcParams['font.family'] = prop.get_name()
+
 # 기본 작업 디렉토리
 default_directory = 'c:/temp/pitch/'
 work_directory = None
@@ -46,7 +60,9 @@ if not os.path.exists(work_directory):
     os.makedirs(work_directory)
 
 print(f"작업 디렉토리: {work_directory}")
-    
+
+#오브젝트 경로
+object_directory = '충남선\\궤도\\선로제표\\기울기표\\'
 def format_distance(number):
     number *= 0.001
     
@@ -118,6 +134,8 @@ def process_sections(data):
 
     return sections
 
+
+
 def is_multiple_of_25(number):
     return number % 25 == 0
 
@@ -172,6 +190,126 @@ def annotate_sections(sections):
 
     return annotated_sections
 
+def replace_text_in_dxf(file_path, modified_path, sta, grade, seg, R):
+    """DXF 파일의 특정 텍스트를 새 텍스트로 교체하고, 특정 레이어 가시성을 조절하는 함수"""
+    try:
+        doc = ezdxf.readfile(file_path)
+        msp = doc.modelspace()
+
+        # 🟢 특정 레이어의 TEXT 엔티티 찾아서 교체
+        for entity in msp.query("TEXT"):
+            if entity.dxf.layer == "측점":
+                if len(sta) == 5:#3.456
+                    sta = ' ' + sta
+                    
+                entity.dxf.text = sta  # STA 변경
+                if len(sta) == 7:#123.456
+                    entity.dxf.text.width = 0.9
+                
+            elif entity.dxf.layer == "구배":
+                if len(grade) == 1:#2
+                    grade = grade + ' '
+                entity.dxf.text = grade  # 구배 변경
+            elif entity.dxf.layer == "R":
+                if R != 'None':
+                    entity.dxf.text = R  #종곡선반경 변경
+        # 🟢 레이어 가시성 조절 (볼록형: 표시, 오목형: 숨김)
+        layers = doc.layers
+        
+        if seg == '오목형':
+            layers.get(seg).on()
+            layers.get('볼록형').off()
+            
+        elif seg == '볼록형':
+            layers.get(seg).on()
+            layers.get('오목형').off()
+        
+        # 변경된 DXF 저장
+        doc.saveas(modified_path)
+        #print("✅ DXF 수정 완료")
+        return True
+
+    except Exception as e:
+        print(f"❌ DXF 수정 실패: {e}")
+        return False
+
+class DXF2IMG:
+    """DXF 파일을 이미지로 변환하는 클래스"""
+    default_img_format = '.png'
+    default_img_res = 96
+    
+    def convert_dxf2img(self, file_paths, img_format=default_img_format, img_res=default_img_res):
+        """DXF를 이미지(PNG)로 변환하는 함수"""
+        output_paths = []
+        for file_path in file_paths:
+            if not os.path.exists(file_path):
+                print(f"❌ 파일을 찾을 수 없음: {file_path}")
+                continue
+
+            try:
+                doc = ezdxf.readfile(file_path)
+                msp = doc.modelspace()
+                
+                # DXF 파일 검증
+                auditor = doc.audit()
+                if auditor.has_errors:
+                    print(f"⚠️ DXF 파일에 오류가 있음: {file_path}")
+                    continue
+
+                # Matplotlib 설정
+                fig, ax = plt.subplots(figsize=(10, 10))
+                ax.set_axis_off()  # 축 제거
+
+                # DXF 렌더링
+                ctx = RenderContext(doc)
+                out = MatplotlibBackend(ax)
+                Frontend(ctx, out).draw_layout(msp, finalize=True)
+
+                # 파일 이름 설정 및 저장 경로 지정
+                img_name = re.sub(r"\.dxf$", "", os.path.basename(file_path), flags=re.IGNORECASE)
+                output_path = os.path.join(os.path.dirname(file_path), f"{img_name}{img_format}")
+
+                # 이미지 저장
+                fig.savefig(output_path, dpi=img_res, bbox_inches='tight', pad_inches=0)
+                plt.close(fig)  # 메모리 해제
+
+                #print(f"✅ 변환 완료: {output_path}")
+                output_paths.append(output_path)
+
+            except Exception as e:
+                print(f"❌ 변환 실패: {file_path} - {str(e)}")
+        
+        return output_paths
+
+    def trim_and_resize_image(self, input_path, output_path, target_size=(500, 300)):
+        """bbox 없이 이미지 여백을 직접 제거하고 500x300 크기로 조정"""
+        try:
+            img = Image.open(input_path).convert("RGB")
+            np_img = np.array(img)
+
+            # 흰색 배경 탐색 (흰색 또는 거의 흰색인 부분 제외)
+            mask = np.any(np_img < [250, 250, 250], axis=-1)
+
+            # 유효한 영역 찾기
+            coords = np.argwhere(mask)
+            if coords.size == 0:
+                print("❌ 유효한 이미지 내용을 찾을 수 없음")
+                return
+
+            y_min, x_min = coords.min(axis=0)
+            y_max, x_max = coords.max(axis=0)
+
+            # 이미지 자르기 (bbox 사용하지 않음)
+            cropped_img = img.crop((x_min, y_min, x_max, y_max))
+
+            # 크기 조정 (500x300)
+            resized_img = cropped_img.resize(target_size, Image.LANCZOS)
+            resized_img.save(output_path)
+            #print(f"✅ 여백 제거 및 크기 조정 완료: {output_path}")
+
+        except Exception as e:
+            print(f"❌ 이미지 처리 실패: {e}")
+'''
 class TextImageCreator:
     def __init__(self, work_directory='c:/temp/pitch/', font_path="gulim.ttc", font_size=60):
         self.work_directory = work_directory
@@ -339,7 +477,7 @@ class TextImageCreator:
             back_im = im1.copy()
             back_im.paste(im2, (p1,p2))
             back_im.save(save_path)
-            
+'''            
 #기울기표용
 class GradePost:
     def __init__(self, work_directory='c:/temp/pitch'):
@@ -447,7 +585,8 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
             # Replace 'LoadTexture, SP.png,' with 'LoadTexture, output_filename.png,' if found
             if f'LoadTexture, {curvetype}.png,' in line:
                 line = line.replace(f'LoadTexture, {curvetype}.png,', f'LoadTexture, {output_filename}.png,')
-
+            if f'LoadTexture, {curvetype}_기울기표.png,' in line:
+                line = line.replace(f'LoadTexture, {curvetype}_기울기표.png,', f'LoadTexture, {output_filename}_기울기표.png,')
             # Append the modified line to the new_lines list
             new_lines.append(line)
     
@@ -455,6 +594,7 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
     with open(output_file, 'w', encoding='utf-8') as file:
         # Write the modified lines to the output file
         file.writelines(new_lines)
+
 
 def create_object_index(data):
     output_file = work_directory + 'pitch_index.txt'
@@ -477,6 +617,7 @@ def parse_sections(file_content):
             sections[current_section] = []
         elif current_section is not None and line.strip():
             sta, rest = line.split(',', 1)
+            
             sta = int(sta)
             radius_tag = rest.split(';')
             radius = float(radius_tag[0])
@@ -484,6 +625,7 @@ def parse_sections(file_content):
             sections[current_section].append((sta, radius, tags))
 
     return sections
+
 
 
 def parse_object_index(index_content):
@@ -521,6 +663,8 @@ def find_object_index(sta, sections, tag_mapping):
     """
     for section_id, points in sections.items():
         for i, (start_sta, _, tags) in enumerate(points):
+            print(f'start_sta = {start_sta}')
+            print(f'sta = {sta}')
             if sta == start_sta:  # STA가 정확히 일치하는 경우
                 for tag in tags:
                     key = f"VIP{section_id}_{tag}"
@@ -620,11 +764,252 @@ def calculate_vertical_curve_radius(length, start_grade, end_grade):
 def format_grade(value):
     return f"{value:.1f}".rstrip('0').rstrip('.')  # 소수점 이하 0 제거
 
+#civil3d함수
+def process_sections_civil3d(data):
+    sections = []
+    current_section = []
+    prev_tag = None
+    next_tag = None
+    
+    for i , (station, grade, tag) in enumerate(data):
+        prev_sta, prev_grade, prev_tag = data[i - 1][:3] if i > 0 else (None, None, None)
+        NEXT_sta, NEXT_grade, NEXT_tag = data[i + 1][:3] if i < len(data) - 1 else (None, None, None)
+        
+        
+        if tag == "BP":
+            # BP는 단독 구간으로 추가
+            sections.append([(station, grade, tag)])
+            
+        elif tag in {"BVC", "VIP", "EVC"}:
+            if tag == 'BVC':
+                current_section.append((station, grade, tag))
+            elif tag == 'VIP':
+                if prev_tag == 'BVC':
+                    current_section.append((station, grade, tag))
+                elif prev_tag == 'EVC' or prev_tag == 'VIP':
+                    current_section.append((station, grade, tag))
+                    sections.append(current_section)
+                    current_section = []
+
+
+                    
+            elif tag == 'EVC':
+                current_section.append((station, grade, tag))
+                sections.append(current_section)
+                current_section = []
+        else:
+            current_section.append((station, grade, tag))
+
+    if current_section:  # 마지막 구간 추가
+        sections.append(current_section)
+
+    return sections
+
+def civil3d_profile(sections,  structure_list):
+    #이미지 저장
+    
+    objec_index_name = ''
+    image_names = []
+    isSPPS = False
+
+    text_color = (0,0,0)
+    structure_comment = []
+    VIP_STA_LIST, L_LIST = create_VIP_LIST(sections)
+
+    for i, section in enumerate(sections, start=0):
+        print(f'현재 구간 VIP ; {i}')
+        VCL = float(section[-1][0]) - float(section[0][0])
+        prev_grade = float(section[0][1]) * 1000
+        next_grade = float(section[-1][1]) * 1000
+        
+        R = calculate_vertical_curve_radius(VCL, prev_grade, next_grade)
+        R_text = f'{int(R)}'
+        
+        isSagCrest = get_vertical_curve_type(prev_grade, next_grade)
+        # 🔥 L_LIST 범위를 초과하는 경우 예외 처리
+        if i < len(L_LIST):  
+            current_distance = int(L_LIST[i][1])
+        else:
+            current_distance = 0  # 혹은 0으로 설정할 수도 있음
+        
+        '''
+        print(f'VCL = {VCL}')
+        print(f'R = {R}')
+        print(f'prev_grade = {prev_grade}')
+        print(f'next_grade = {next_grade}')
+        '''
+        
+        for line in section:
+            current_sta, current_grade, current_tag = line
+            current_grade = float(current_grade) * 1000
+            current_sta = float(current_sta)
+            current_sta = int(current_sta)
+            current_structure = isbridge_tunnel(current_sta, structure_list)
+            pitchtype = f'{current_tag}'
+            
+            if i != 0:
+                if 'BVC' in line:
+                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , prev_grade , current_tag, current_structure, isSagCrest, R_text)
+                elif 'VIP' in line:
+
+                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , prev_grade , current_tag, current_structure, isSagCrest, R_text)
+                    process_vertical(i, next_grade, current_distance, current_tag, current_structure)
+                elif 'EVC' in line:
+                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , next_grade , current_tag, current_structure, isSagCrest, R_text)
+
+                copy_and_export_csv(openfile_name, img_f_name,isSPPS,current_grade,pitchtype)
+                image_names.append(img_f_name)
+                structure_comment.append(img_f_name + '-' + current_structure)
+            
+        objec_index_name = create_obj_counter(image_names, structure_comment)
+        
+    create_object_index(objec_index_name)
+    
+    return image_names, structure_comment
+
+def process_verticulcurve(i, current_sta , current_grade , current_tag, current_structure, isSagCrest, R_text):
+
+    grade_post_generator = GradePost()
+
+    converter = DXF2IMG()
+    
+    modifed_path = work_directory + 'BVC-수정됨.dxf'
+    output_image = work_directory + 'output_image.png'
+
+    pitchtype = f'{current_tag}'
+    grade_text = format_grade(current_grade)
+    station_text = f'{format_distance(current_sta)}'
+    if pitchtype == 'VIP':
+        img_bg_color = (255, 212, 0) #기울기표 배경
+    else:
+        img_bg_color = (255, 255, 255)
+    
+    img_f_name = f'VIP{i}_{pitchtype}'
+    openfile_name = f'{pitchtype}_{current_structure}용'
+    
+    file_path = work_directory + f'{pitchtype}.dxf'
+    final_output_image = work_directory + img_f_name + '.png'
+    
+    replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, isSagCrest, R_text)
+    output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+    converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
+    
+    return openfile_name, img_f_name
+
+def process_vertical(i, current_grade, current_distance, pitchtype, structure):
+    grade_post_generator = GradePost()
+
+    img_text2 = format_grade(current_grade)#기울기표 구배문자
+    img_text3 = f'{current_distance}' #기울기표 거리문자                    
+    img_bg_color2 = (255, 255, 255) #기울기표 문자                     
+    img_f_name2 = f'VIP{i}_{pitchtype}_기울기표'#기울기표 파일명
+    openfile_name2 = f'기울기표_{structure}용'
+
+    grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
+
+def create_obj_counter(image_names, structure_comment):
+    # 객체 인덱스 생성
+    objec_index_name = ""
+    objec_index_counter = 3025
+    for img_name, stru in zip(image_names, structure_comment):
+        objec_index_name += f".freeobj({objec_index_counter}) {object_directory}{img_name}.CSV\n"
+        objec_index_counter += 1  # 카운터 증가
+    return objec_index_name
+
+def create_outfile(output_file, data):
+    with open(output_file, 'w', encoding='utf-8') as file:
+        for i, section in enumerate(data, start=1):
+            file.write(f"구간 {i}:\n")
+            for line in section:
+                # 튜플을 문자열로 변환하여 괄호와 쉼표 제거
+                file.write(f"{','.join(map(str, line))}\n")
+            file.write("\n")
+
+def search_STA_value(sections , tag_mapping):
+    result_list = []
+    for section_id, entries in sections.items():  # 모든 구간을 순회
+        for sta_value, radius, tags in entries:  # 각 구간의 엔트리를 순회
+
+            result = find_object_index_civil3d(sta_value, sections, tag_mapping)
+
+        
+            if not result == None:
+                result_data = f'{sta_value},.freeobj 0;{result};\n'
+                result_list.append(result_data)
+    return result_list
+
+def find_object_index_civil3d(sta, sections, tag_mapping):
+    """
+    STA 값에 해당하는 구간과 태그를 찾아 오브젝트 인덱스를 반환.
+    """
+    for section_id, points in sections.items():
+        for i, (start_sta, _, tags) in enumerate(points):
+            if sta == start_sta:  # STA가 정확히 일치하는 경우
+                key = f"VIP{section_id}_{tags}"
+                if key in tag_mapping:
+                    return tag_mapping[key]
+    return None
+
+def parse_sections_civil3d(file_content):
+    """
+    파일 내용에서 각 구간과 태그를 파싱하여 리스트로 반환.
+    """
+    sections = {}
+    current_section = None
+
+    for line in file_content:  # file_content는 csv.reader가 반환한 리스트 형태
+        # 리스트 형태의 line을 문자열로 변환
+        line = ",".join(line)
+        
+        if line.startswith("구간"):
+            current_section = int(line.split()[1][:-1])
+            sections[current_section] = []
+        elif current_section is not None and line.strip():
+            sta, pitch, tag = line.split(',', 2)  # split 최대 3부분으로 분리 (sta, pitch, tag)
+            
+            sta = float(sta)  # 구간 시작 위치를 정수로 변환
+            sta = int(sta)  # 구간 시작 위치를 정수로 변환
+            pitch = float(pitch)  # 기울기(pitch)를 실수로 변환 (float가 적합할 수 있음)
+            tags = [tag.strip()]  # 태그를 리스트에 추가, 공백 제거
+            
+            sections[current_section].append((sta, pitch, tag))
+
+    return sections
+
+def remove_first_entry_dictionary(dic):
+    # Remove the first entry of each list and renumber the sections
+    new_dics = {}
+    for idx, (key, value) in enumerate(dic.items()):
+        if value:  # Only keep sections that have entries
+            if value[0] != (0, 0.0, 'BP'):  # Check if the first entry is not (0, 0.0, 'BP')
+                new_dics[idx] = value  # Remove the first entry and reassign section number
+    return new_dics
+
+def create_VIP_LIST(sections):
+    VIP_STA_LIST = []
+    L_LIST = []
+    
+    for i, section in enumerate(sections, start=0):
+        for line in section:
+            current_sta, current_grade, current_tag = line
+            current_sta = float(current_sta)
+            if current_tag == 'VIP' or current_tag == 'EP' or current_tag == 'BP':
+                VIP_STA_LIST.append((i, current_sta))  # 올바르게 리스트에 추가
+                
+                if VIP_STA_LIST:
+                    #VIP_STA_LIST의 각 요소를들 뺄셈하여 L_LIST에 추가
+                    # VIP_STA_LIST의 각 요소를 뺄셈하여 L_LIST에 추가
+                    L_LIST = [(VIP_STA_LIST[j][0], VIP_STA_LIST[j + 1][1] - VIP_STA_LIST[j][1]) for j in range(len(VIP_STA_LIST) - 1)]
+                        
+    return VIP_STA_LIST, L_LIST
+
 #함수 종료
 #MAIN 시작
 
 # 파일 읽기
 data = read_file()
+is_civil3d = input('pitch_info가 civil3d인지 여부 (0을 입력하면 False, 그 외 값은 True) : ') != '0'
+
 
 # 구조물 정보 파일 경로 지정
 openexcelfile = open_excel_file()
@@ -637,270 +1022,339 @@ else:
     
 if not data:
     print("데이터가 비어 있습니다.")
+
+
 else:
-    # 중복 제거
-    unique_data = remove_duplicate_radius(data)
     
-    # 구간 정의 및 처리
-    sections = process_sections(unique_data)
-    annotated_sections = annotate_sections(sections)
-
-    # 결과 파일 저장
-    output_file = work_directory + '주석처리된파일.txt'
-    unique_file = work_directory + '1532326.txt'
-    
-    if not output_file:
-        print("출력 파일을 선택하지 않았습니다.")
-    else:
-        with open(unique_file, 'w', encoding='utf-8') as file:
-            for station, radius in unique_data:
-                file.write(f"{station},{radius}\n")
-
-        output_file = output_file
-        with open(output_file, 'w', encoding='utf-8') as file:
-            for i, section in enumerate(annotated_sections, start=1):
-                file.write(f"구간 {i}:\n")
-                for line in section:
-                    file.write(f"{line}\n")
-                file.write("\n")
-
-        print(f"주석이 추가된 결과가 {output_file}에 저장되었습니다.")
-
-    #이미지 저장
-    GRADE_LIST = []
-    VIP_STA_LIST = []
-    L_LIST = []
-    VCL_LIST = []
-    
-    last_PC_radius = None  # 마지막 PC 반지름을 추적
-    objec_index_name = ''
-    image_names = []
-    isSPPS = False
-    text_color = (0,0,0)
-    structure_comment = []
-    creator = TextImageCreator(work_directory=work_directory, font_path="gulim.ttc", font_size=60)
-    grade_post_generator = GradePost()
-    for i, section in enumerate(annotated_sections, start=1):
-        for line in section:
-            #VIP별 기울기 추출
-            if 'BVC' in line:
-                match = re.search(r'(\d+),', line)
-                if match:
-                    BVC_STA = int(match.group(1)) # int변환
-
-                    #print(f'BCE:{BVC_STA}')
-                    
-            if 'EVC' in line:
-            
-                match = re.search(r",(-?[\d.]+);", line)
-
-                if match:
-                    extracted_number = float(match.group(1)) * 1000  # float변환 후 1000 배율
-                    GRADE_LIST.append((i, extracted_number))  # 올바르게 리스트에 추가
-
-                match2 = re.search(r'(\d+),', line)
-                if match2:
-                    EVC_STA = int(match2.group(1)) # int변환
-                    #print(f'EVC:{EVC_STA}')
-                    
-            #VCL 계산
-            if BVC_STA or EVC_STA:
-                VCL = EVC_STA - BVC_STA
-                if VCL >= 0:
-                    VCL_LIST.append((i, VCL))
-                    #print(f'VCL = {VCL}')
-                    
-            #VIP별 거리추출
-            if 'VIP' in line:
-                #sample 168362,0;VIP
-                match = re.search(r'(\d+),', line)
-                if match:
-                    extracted_number = int(match.group(1)) # int변환
-                    VIP_STA_LIST.append((i, extracted_number))  # 올바르게 리스트에 추가
-            if VIP_STA_LIST:
-            #VIP_STA_LIST의 각 요소를들 뺄셈하여 L_LIST에 추가
-                # VIP_STA_LIST의 각 요소를 뺄셈하여 L_LIST에 추가
-                L_LIST = [(VIP_STA_LIST[j + 1][0], VIP_STA_LIST[j + 1][1] - VIP_STA_LIST[j][1]) for j in range(len(VIP_STA_LIST) - 1)]
-
-    for i, section in enumerate(annotated_sections, start=1):
-
-        #이전 구간의 기울기 찾기
-        prev_grade = next((grade for sec, grade in GRADE_LIST if sec == i -1), 0)
-        # 현재 구간의 기울기 찾기
-        current_grade = next((grade for sec, grade in GRADE_LIST if sec == i), 0)
-
-        # 다음 구간의 기울기 찾기 (존재하면 가져오고, 없으면 0)
-        next_grade = next((grade for sec, grade in GRADE_LIST if sec == i + 1), 0)
-
-        #종곡선 모양 판별:볼록형인지 오목형인지
-        isSagCrest = get_vertical_curve_type(prev_grade, current_grade)
-                
-        # VIP 점 찾기 (VIP_STA_LIST 현재 구간(i)과 일치하는 반경을 찾음)
-        VIP_STA = next((r for sec, r in VIP_STA_LIST if sec == i), None)
-        if VIP_STA is None:
-            VIP_STA = 0  # 기본값 (에러 방지)
-
-        #일반철도 구배표용 구배거리
-        current_distance = next((r for sec, r in L_LIST if sec == i), None)
-        if current_distance is None:
-            current_distance = 0  # 기본값 (에러 방지)
-
-        #R 계산용 VCL
-        VCL = next((r for sec, r in VCL_LIST if sec == i), None)
-       
-        R = int(calculate_vertical_curve_radius(VCL, prev_grade, current_grade))
+    #civil3d
+    if is_civil3d:
+        sections = process_sections_civil3d(data)
+        image_names, structure_comment = civil3d_profile(sections, structure_list)
         
-        for line in section:        
-            #곡선형식별 처리
-            if 'BVC' in line or 'EVC' in line or 'VIP' in line:
-                
-                parts = line.split(',')
-                sta = int(parts[0])
-                parts2 =  parts[1].split(';')
 
+        # 결과 파일 저장
+        output_file = work_directory + '주석처리된파일.txt'
+        create_outfile(output_file, sections)
 
-                
-                
-                structure = isbridge_tunnel(sta, structure_list)
-
-                sec = parts2[1] if len(parts2) > 1 else None
-
-                
-
-                
-                if 'BVC' in line:
-                    pitchtype = 'BVC'
-                    grade_text = format_grade(prev_grade)
-                    station_text = f'{format_distance(sta)}'
-                    img_bg_color = (255, 255, 255)
-                    img_f_name = f'VIP{i}_{pitchtype}'
-                    openfile_name = f'{pitchtype}_{structure}용'
-
-                    #create_text_image(station_text, grade_text,  pitchtype, isSagCrest , img_bg_color, img_f_name)
-                    creator.create_image(img_bg_color, (345,200),station_text, grade_text, pitchtype, isSagCrest, (0,0,0), img_f_name)
-                    p1, p2 = creator.get_text2_position(pitchtype)
-                    try:
-                        is_negative = grade_text.startswith('-')
-                        integer_part, decimal_part = grade_text.lstrip('-').split('.') if '.' in grade_text else (grade_text.lstrip('-'), None)
-                        if is_negative or decimal_part:
-                            creator.paste_resized_image(img_f_name, 'temp_resized', img_f_name, p1,p2)
-                        
-                    except ValueError as e:
-                        print(f'리사이즈실행실패:{e}')
-                    
-                elif 'EVC' in line:
-                    pitchtype = 'EVC'
-                    grade_text = format_grade(current_grade)
-                    station_text = f'{format_distance(sta)}'
-                    img_bg_color = (255, 255, 255)
-                    img_f_name = f'VIP{i}_{pitchtype}'
-                    openfile_name = f'{pitchtype}_{structure}용'
-                    #create_text_image(station_text, grade_text,  pitchtype, isSagCrest , img_bg_color, img_f_name, text_color, image_size=(345, 200), font_size=60)
-                    creator.create_image(img_bg_color, (345,200), station_text, grade_text, pitchtype, isSagCrest, (0,0,0), img_f_name)
-                    p1, p2 = creator.get_text2_position(pitchtype)
-
-                    try:
-                        is_negative = grade_text.startswith('-')
-                        integer_part, decimal_part = grade_text.lstrip('-').split('.') if '.' in grade_text else (grade_text.lstrip('-'), None)
-                        if is_negative or decimal_part:
-                            creator.paste_resized_image(img_f_name, 'temp_resized', img_f_name, p1,p2)
-                        
-                    except ValueError as e:
-                        print(f'리사이즈실행실패:{e}')
-                    
-                elif 'VIP' in line:
-                    
-                    pitchtype = 'VIP'
-                    #종곡선표
-                    R_text = f'{R}'
-                    station_text = f'{format_distance(sta)}'
-                    img_bg_color = (255, 212, 0) #기울기표 배경
-                    img_f_name = f'VIP{i}_{pitchtype}'#종곡선표 파일명
-                    openfile_name = f'{pitchtype}_{structure}용'
-
-                    #종곡선표 출력
-                    creator.create_image(img_bg_color,(345,200),station_text, R_text, pitchtype, isSagCrest, (0,0,0), img_f_name)
-                    
-                    #기울기표
-                    img_text2 = format_grade(current_grade)#기울기표 구배문자
-                    img_text3 = f'{current_distance}' #기울기표 거리문자                    
-                    img_bg_color2 = (255, 255, 255) #기울기표 문자                     
-                    img_f_name2 = f'VIP{i}_{pitchtype}_기울기표'#기울기표 파일명
-                    openfile_name2 = f'기울기표_{structure}용'
-                    
-                    
-                    #기울기표 출력
-                    #create_text_image3(img_text2, img_text3, img_bg_color2, img_f_name2, text_color, image_size=(500, 400), font_size=40)
-                    #create_text_image(station_text, f'{R}',  pitchtype, isSagCrest , img_bg_color, img_f_name, text_color, image_size=(345, 200), font_size=60)
-                    grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
-                else:
-                    print('에러')
-                    station_text = '2'
-                    img_text = 'XXXX'
-                    img_bg_color = (0, 0, 0)
-                    img_f_name = 'X'
-                    pitchtype = 'ERROR'
-                    openfile_name = 'UNNKOWN'
-                
-                #종곡선표 출력
-                
-                
-                copy_and_export_csv(openfile_name, img_f_name,isSPPS,current_grade,pitchtype)
-                image_names.append(img_f_name)
-                structure_comment.append(img_f_name + '-' + structure)
-                
-        # 객체 인덱스 생성
-        objec_index_name = ""
-        objec_index_counter = 3025
-        for img_name, stru in zip(image_names, structure_comment):
-            objec_index_name += f".freeobj({objec_index_counter}) abcdefg/{img_name}.CSV\n"
-            objec_index_counter += 1  # 카운터 증가
-
-        
-      
-    create_object_index(objec_index_name)
-
-# 데이터 파싱
-with open(output_file, 'r', encoding='utf-8') as file:
+        # 데이터 파싱
+        with open(output_file, 'r', encoding='utf-8') as file:
             reader1 = csv.reader(file)
             lines1 = list(reader1)
-            
-OBJ_DATA = work_directory + 'pitch_index.txt'
+                    
+        OBJ_DATA = work_directory + 'pitch_index.txt'
 
-with open(OBJ_DATA, 'r', encoding='utf-8') as file:
+        with open(OBJ_DATA, 'r', encoding='utf-8') as file:
             reader2 = csv.reader(file)
             lines2 = list(reader2)
-            
-sections = parse_sections(lines1)
 
-tag_mapping = parse_object_index(lines2)
+        sections_2_f = work_directory + 'sections_2_f.txt'
+        
+        sections_2 = parse_sections_civil3d(lines1)
+        sections_2 = remove_first_entry_dictionary(sections_2)
+        
+        with open(sections_2_f, 'w', encoding='utf-8') as file:
+            file.write(str(sections_2))  # Convert dictionary to string
 
-# STA 값 검색
-result_list =[]
+        tag_mapping = parse_object_index(lines2)
+        
+        
+        # STA 값 검색
+        result_list = search_STA_value(sections_2, tag_mapping)
+        if result_list:
+            create_curve_post_txt(result_list, structure_comment)
+        print('civil3d 작업완료')
+        
+    else:
+        unique_data = remove_duplicate_radius(data)
+    
+        # 구간 정의 및 처리
+        sections = process_sections(unique_data)
+        annotated_sections = annotate_sections(sections)
 
-for section_id, entries in sections.items():  # 모든 구간을 순회
-    for sta_value, radius, tags in entries:  # 각 구간의 엔트리를 순회
-
-        result = find_object_index(sta_value, sections, tag_mapping)
-
-        '''
-        # 결과 출력
-        if result:
-            
-            print(f"STA {sta_value}에 대한 오브젝트 인덱스: {result}")
+        # 결과 파일 저장
+        output_file = work_directory + '주석처리된파일.txt'
+        unique_file = work_directory + '1532326.txt'
+        temp_file = work_directory + 'annotated_sections.txt'
+    
+        with open(temp_file, 'w', encoding='utf-8') as file:
+                for i, section in enumerate(annotated_sections, start=1):
+                    for line in section:
+                        file.write(f"{line}\n")
+    
+        if not output_file:
+            print("출력 파일을 선택하지 않았습니다.")
         else:
-            print(f"STA {sta_value}에 대한 오브젝트 인덱스를 찾을 수 없습니다.")
-            continue
+            with open(unique_file, 'w', encoding='utf-8') as file:
+                for station, radius in unique_data:
+                    file.write(f"{station},{radius}\n")
+
+            output_file = output_file
+            with open(output_file, 'w', encoding='utf-8') as file:
+                for i, section in enumerate(annotated_sections, start=1):
+                    file.write(f"구간 {i}:\n")
+                    for line in section:
+                        file.write(f"{line}\n")
+                    file.write("\n")
+
+            print(f"주석이 추가된 결과가 {output_file}에 저장되었습니다.")
+
+            #이미지 저장
+            GRADE_LIST = []
+            VIP_STA_LIST = []
+            L_LIST = []
+            VCL_LIST = []
+            
+            last_PC_radius = None  # 마지막 PC 반지름을 추적
+            objec_index_name = ''
+            image_names = []
+            isSPPS = False
+            BVC_STA = None
+            EVC_STA = None
+            
+            text_color = (0,0,0)
+            structure_comment = []
+            #creator = TextImageCreator(work_directory=work_directory, font_path="gulim.ttc", font_size=60)
+            grade_post_generator = GradePost()
+
+            converter = DXF2IMG()
+            
+            modifed_path = work_directory + 'BVC-수정됨.dxf'
+            output_image = work_directory + 'output_image.png'
+            
+            for i, section in enumerate(annotated_sections, start=1):
+                for line in section:
+                    #VIP별 기울기 추출
+                    print(line)
+                    if 'BVC' in line:
+                        match = re.search(r'(\d+),', line)
+                        if match:
+                            BVC_STA = int(match.group(1)) # int변환
+
+                            print(f'BCE:{BVC_STA}')
+                            
+                    if 'EVC' in line:
+                    
+                        match = re.search(r",(-?[\d.]+);", line)
+
+                        if match:
+                            extracted_number = float(match.group(1)) * 1000  # float변환 후 1000 배율
+                            GRADE_LIST.append((i, extracted_number))  # 올바르게 리스트에 추가
+
+                        match2 = re.search(r'(\d+),', line)
+                        if match2:
+                            EVC_STA = int(match2.group(1)) # int변환
+                            print(f'EVC:{EVC_STA}')
+                            
+                    #VCL 계산
+                    if BVC_STA or EVC_STA:
+                        VCL = EVC_STA - BVC_STA
+                        if VCL >= 0:
+                            VCL_LIST.append((i, VCL))
+                            #print(f'VCL = {VCL}')
+                            
+                    #VIP별 거리추출
+                    if 'VIP' in line:
+                        #sample 168362,0;VIP
+                        match = re.search(r'(\d+),', line)
+                        if match:
+                            extracted_number = int(match.group(1)) # int변환
+                            VIP_STA_LIST.append((i, extracted_number))  # 올바르게 리스트에 추가
+                    if VIP_STA_LIST:
+                    #VIP_STA_LIST의 각 요소를들 뺄셈하여 L_LIST에 추가
+                        # VIP_STA_LIST의 각 요소를 뺄셈하여 L_LIST에 추가
+                        L_LIST = [(VIP_STA_LIST[j][0], VIP_STA_LIST[j + 1][1] - VIP_STA_LIST[j][1]) for j in range(len(VIP_STA_LIST) - 1)]
+                        
+            for i, section in enumerate(annotated_sections, start=1):
+
+                #이전 구간의 기울기 찾기
+                prev_grade = next((grade for sec, grade in GRADE_LIST if sec == i -1), 0)
+                # 현재 구간의 기울기 찾기
+                current_grade = next((grade for sec, grade in GRADE_LIST if sec == i), 0)
+
+                # 다음 구간의 기울기 찾기 (존재하면 가져오고, 없으면 0)
+                next_grade = next((grade for sec, grade in GRADE_LIST if sec == i + 1), 0)
+
+                #종곡선 모양 판별:볼록형인지 오목형인지
+                isSagCrest = get_vertical_curve_type(prev_grade, current_grade)
+                        
+                # VIP 점 찾기 (VIP_STA_LIST 현재 구간(i)과 일치하는 반경을 찾음)
+                VIP_STA = next((r for sec, r in VIP_STA_LIST if sec == i), None)
+                if VIP_STA is None:
+                    VIP_STA = 0  # 기본값 (에러 방지)
+
+                #일반철도 구배표용 구배거리
+                current_distance = next((r for sec, r in L_LIST if sec == i), None)
+                if current_distance is None:
+                    current_distance = 0  # 기본값 (에러 방지)
+
+                #R 계산용 VCL
+                VCL = next((r for sec, r in VCL_LIST if sec == i), None)
+               
+                R = int(calculate_vertical_curve_radius(VCL, prev_grade, current_grade))
+                
+                for line in section:        
+                    #곡선형식별 처리
+                    if 'BVC' in line or 'EVC' in line or 'VIP' in line:
+                        
+                        parts = line.split(',')
+                        sta = int(parts[0])
+                        parts2 =  parts[1].split(';')
+
+
+                        
+                        
+                        structure = isbridge_tunnel(sta, structure_list)
+
+                        sec = parts2[1] if len(parts2) > 1 else None
+
+                        
+
+                        
+                        if 'BVC' in line:
+                            pitchtype = 'BVC'
+                            grade_text = format_grade(prev_grade)
+                            station_text = f'{format_distance(sta)}'
+                            img_bg_color = (255, 255, 255)
+                            img_f_name = f'VIP{i}_{pitchtype}'
+                            openfile_name = f'{pitchtype}_{structure}용'
+                            
+                            file_path = work_directory + 'BVC.dxf'
+                            final_output_image = work_directory + img_f_name + '.png'
+                            
+                            R_T = 'None'
+                            replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, isSagCrest, R_T)
+                            output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+                            converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
+                            
+                        elif 'EVC' in line:
+                            pitchtype = 'EVC'
+                            grade_text = format_grade(current_grade)
+                            station_text = f'{format_distance(sta)}'
+                            img_bg_color = (255, 255, 255)
+                            img_f_name = f'VIP{i}_{pitchtype}'
+                            openfile_name = f'{pitchtype}_{structure}용'
+
+                            file_path = work_directory + 'EVC.dxf'
+                            final_output_image = work_directory + img_f_name + '.png'
+
+                            R_T = 'None'
+                            replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, isSagCrest , R_T)
+                            output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+                            converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
+                            
+                        elif 'VIP' in line:
+                            
+                            pitchtype = 'VIP'
+                            #종곡선표
+                            R_text = f'{R}'
+                            station_text = f'{format_distance(sta)}'
+                            img_bg_color = (255, 212, 0) #기울기표 배경
+                            img_f_name = f'VIP{i}_{pitchtype}'#종곡선표 파일명
+                            openfile_name = f'{pitchtype}_{structure}용'
+
+                            #종곡선표 출력
+                            file_path = work_directory + 'VIP.dxf'
+                            final_output_image = work_directory + img_f_name + '.png'
+                            
+                            replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, isSagCrest, R_text)
+                            output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+                            converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
+                            
+                            copy_and_export_csv(openfile_name, img_f_name,isSPPS,current_grade,pitchtype)
+                            
+                            #기울기표
+                            img_text2 = format_grade(current_grade)#기울기표 구배문자
+                            img_text3 = f'{current_distance}' #기울기표 거리문자                    
+                            img_bg_color2 = (255, 255, 255) #기울기표 문자                     
+                            img_f_name2 = f'VIP{i}_{pitchtype}_기울기표'#기울기표 파일명
+                            openfile_name2 = f'기울기표_{structure}용'
+                            
+                            
+                            #기울기표 출력
+                            #create_text_image3(img_text2, img_text3, img_bg_color2, img_f_name2, text_color, image_size=(500, 400), font_size=40)
+                            #create_text_image(station_text, f'{R}',  pitchtype, isSagCrest , img_bg_color, img_f_name, text_color, image_size=(345, 200), font_size=60)
+                            grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
+                            
+                        else:
+                            print('에러')
+                            station_text = '2'
+                            img_text = 'XXXX'
+                            img_bg_color = (0, 0, 0)
+                            img_f_name = 'X'
+                            pitchtype = 'ERROR'
+                            openfile_name = 'UNNKOWN'
+                        
+                        #종곡선표 출력
+                        copy_and_export_csv(openfile_name, img_f_name,isSPPS,current_grade,pitchtype)
+                        
+                        
+                        image_names.append(img_f_name)
+                        structure_comment.append(img_f_name + '-' + structure)
+                        
+                # 객체 인덱스 생성
+                objec_index_name = ""
+                objec_index_counter = 3025
+                for img_name, stru in zip(image_names, structure_comment):
+                    objec_index_name += f".freeobj({objec_index_counter}) abcdefg/{img_name}.CSV\n"
+                    objec_index_counter += 1  # 카운터 증가
+
+                
+              
+            create_object_index(objec_index_name)
+
+        # 데이터 파싱
+        with open(output_file, 'r', encoding='utf-8') as file:
+                    reader1 = csv.reader(file)
+                    lines1 = list(reader1)
+                    
+        OBJ_DATA = work_directory + 'pitch_index.txt'
+
+        with open(OBJ_DATA, 'r', encoding='utf-8') as file:
+                    reader2 = csv.reader(file)
+                    lines2 = list(reader2)
+                    
+        sections = parse_sections(lines1)
+
+        tag_mapping = parse_object_index(lines2)
+
+        # STA 값 검색
+        result_list =[]
+
+        for section_id, entries in sections.items():  # 모든 구간을 순회
+            for sta_value, radius, tags in entries:  # 각 구간의 엔트리를 순회
+
+                result = find_object_index(sta_value, sections, tag_mapping)
+
+                '''
+                # 결과 출력
+                if result:
+                    
+                    print(f"STA {sta_value}에 대한 오브젝트 인덱스: {result}")
+                else:
+                    print(f"STA {sta_value}에 대한 오브젝트 인덱스를 찾을 수 없습니다.")
+                    continue
+                '''
+                
+                if not result == None:
+                    result_data = f'{sta_value},.freeobj 0;{result};\n'
+                    result_list.append(result_data)
+                
+        #csv작성
+        create_curve_post_txt(result_list, structure_comment)
+
         '''
-        
-        if not result == None:
-            result_data = f'{sta_value},.freeobj 0;{result};\n'
-            result_list.append(result_data)
-        
-#csv작성
-create_curve_post_txt(result_list, structure_comment)
+        temp_file2 = work_directory + 'VIP_STA_LIST.txt'
+        temp_file3 = work_directory + 'l_list.txt' 
+        with open(temp_file2, 'w', encoding='utf-8') as file:
+            for line in VIP_STA_LIST:
+                file.write(f"{line}\n")
+        with open(temp_file3, 'w', encoding='utf-8') as file:
+            for line in L_LIST:
+                file.write(f"{line}\n")
+        '''
 
-# 파일 삭제
-os.remove(unique_file)
-os.remove(output_file)
+        # 파일 삭제
+        os.remove(unique_file)
+        #os.remove(output_file)
 
+print('모든 작업이 끝났습니다.')
