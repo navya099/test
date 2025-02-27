@@ -18,9 +18,9 @@ import shutil
 '''
 BVE곡선파일을 바탕으로 곡선표(준고속용)을 설치하는 프로그램
 -made by dger -
-VER 2025.02.25 11.48
-#modifyed
-코드 구조 리팩토링
+VER 2025.02.27 14.24
+#add
+터널곡선표 추가
 
 입력파일:BVE에서 추출한 곡선파일(CURVE_INFO.TXT)
 
@@ -485,6 +485,56 @@ def create_png_from_ai2(text1 = '600', filename = 'output.png'):
     save_file = work_directory + filename + '.png'
     pix.save(save_file)
 
+# DXF 파일을 생성하는 함수
+def create_tunnel_curve_image(filename, text):
+    doc = ezdxf.new()  # 새로운 DXF 문서 생성
+    msp = doc.modelspace()
+
+    # 사각형의 크기 설정
+    width = 240
+    height = 200
+    start_point = (0, 0)
+    insert_x, insert_y = start_point[0], start_point[1]
+
+    # 사각형의 4개 점 계산
+    left_bottom = (insert_x, insert_y)
+    right_bottom = (insert_x + width, insert_y)
+    right_top = (insert_x + width, insert_y + height)
+    left_top = (insert_x, insert_y + height)
+
+    # 사각형을 그리기 위해 4개의 점을 이어서 폴리라인 추가
+    msp.add_lwpolyline([left_bottom, right_bottom, right_top, left_top, left_bottom], close=True)
+
+    # 해치 추가
+    hatch = msp.add_hatch(color=5)
+    hatch.paths.add_polyline_path([left_bottom, right_bottom, right_top, left_top], is_closed=True)
+
+    # 텍스트 길이에 따른 위치 지정
+    if len(text) == 3:
+        width = 1.056
+    elif len(text) == 4:
+        width = 0.792
+    elif len(text) == 5:
+        width = 0.633
+    else:
+        width = 1
+    text_x, text_y = 49.573, 65.152
+    style_name = 'GHS'
+
+    # 텍스트 스타일 생성
+    doc.styles.add(style_name, font= 'HYGTRE.ttf')
+
+    # 텍스트 추가
+    msp.add_text(text, dxfattribs={'insert': (text_x, text_y), 'height': 75, 'width': width, 'style': style_name})
+
+    # 파일 확장자 확인
+    if not filename.endswith('.dxf'):
+        filename += '.dxf'
+
+    # DXF 파일 저장
+    final_dir = work_directory + filename
+    doc.saveas(filename)
+    
 #클래스
 def replace_text_in_dxf(file_path, modifed_path, new_text):
     """DXF 파일의 특정 텍스트를 새 텍스트로 교체하는 함수"""
@@ -697,19 +747,26 @@ def process_curve_type(line, i, PC_R_LIST, structure_list):
 
     return None, None, False, 0, 'ERROR'
 
-def process_dxf_image(radius, work_directory):
+def process_dxf_image(structure, radius, work_directory):
     """DXF 파일 수정 및 이미지 변환"""
     img_f_name_for_prev = str(int(radius))
     file_path = work_directory  + '곡선표.dxf'
     modifed_path = work_directory + '곡선표-수정됨.dxf'
     final_output_image = os.path.join(work_directory, img_f_name_for_prev + '.png')
 
-    replace_text_in_dxf(file_path, modifed_path, img_f_name_for_prev)
     converter = DXF2IMG()
+    
+    if structure == '터널':
+        create_tunnel_curve_image(modifed_path, img_f_name_for_prev)
+        target_size = (238,200)
+    else:
+        replace_text_in_dxf(file_path, modifed_path, img_f_name_for_prev)
+        target_size = (500,300)
+        
     output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
 
     if output_paths:
-        converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(500, 300))
+        converter.trim_and_resize_image(output_paths[0], final_output_image, target_size)
 
 def process_sections_for_images(annotated_sections, structure_list, work_directory):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
@@ -730,7 +787,8 @@ def process_sections_for_images(annotated_sections, structure_list, work_directo
                     structure_comment.append(f'{img_f_name}-{structure}')
 
                     if isSPPS and radius != 0:
-                        process_dxf_image(radius, work_directory)
+
+                        process_dxf_image(structure, radius, work_directory)
 
     # 객체 인덱스 생성
     object_folder = target_directory.split("Object/")[-1]
