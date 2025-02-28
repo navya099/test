@@ -18,9 +18,9 @@ import shutil
 '''
 BVE구배파일을 바탕으로 기울기표(준고속용)을 설치하는 프로그램
 -made by dger -
-VER 2025.02.23 00.32
+VER 2025.02.28 1600
 #add
-civil3d 파일 지원 추가
+터널용 구배표 추가
 
 입력파일:BVE에서 추출한 구배파일(pitch_info.TXT)
 
@@ -170,6 +170,141 @@ def annotate_sections(sections):
 
     return annotated_sections
 
+# DXF 파일을 생성하는 함수
+class TunnelPitchCreator:
+    """터널 구배 DXF 파일을 생성하는 클래스"""
+
+    def create_tunnel_pitch_image(self, filename, text):
+        """터널 구배 DXF 생성"""
+        doc = ezdxf.new()
+        msp = doc.modelspace()
+
+        # 기본 사각형 추가
+        self.draw_rectangle(msp, 0, 0, 238, 150, color=8)
+
+        # 텍스트 전처리 (공백 처리 등)
+        formatted_result = self.format_text(text)
+
+        # 정수부 및 소수부 분리
+        formatted_text, text_x, text_y, is_negative = formatted_result[:4]
+        
+        # 텍스트 스타일 설정 및 추가
+        style_name = 'GHS'
+        doc.styles.add(style_name, font='H2GTRE.ttf')
+        
+        # 정수부 텍스트 추가
+        self.create_text(msp, formatted_text, text_x, text_y, 59.9864, 1, style_name)
+
+        # 소수부가 존재하면 추가
+        if len(formatted_result) > 4:
+            formatted_text2, text_x2, text_y2, height2 = formatted_result[4:]
+            self.create_text(msp , formatted_text2, text_x2, text_y2, height2, 0.8162, style_name)
+            if is_negative:
+                x = 161.376
+                y = 76.37
+                
+            else:
+                x = 161.376
+                y = 13.5468
+            width = 10
+            height= 10
+
+            self.draw_rectangle_with_hatch(msp, x, y, width, height, color=1)#소수점 그리기
+
+        # 화살표 추가
+        if not 'L' in formatted_text:
+            self.create_tunnel_pitch_arrow(msp, is_negative)
+
+        # DXF 저장
+        final_path = os.path.join(work_directory, filename)
+        doc.saveas(final_path)
+        return final_path
+
+    def draw_rectangle(self, msp, x, y, width, height, color=0):
+        """사각형을 생성하는 함수"""
+        points = [(x, y), (x + width, y), (x + width, y + height), (x, y + height), (x, y)]
+        msp.add_lwpolyline(points, close=True, dxfattribs={'color': color})
+
+    def draw_rectangle_with_hatch(self, msp, x, y, width, height, color=0):
+        """사각형을 생성하는 함수(해치포함)"""
+        points = [(x, y), (x + width, y), (x + width, y + height), (x, y + height), (x, y)]
+        msp.add_lwpolyline(points, close=True, dxfattribs={'color': color})
+        hatch = msp.add_hatch(color=1)
+        hatch.paths.add_polyline_path(points, is_closed=True)
+        
+    def format_text(self, text):
+        """텍스트를 포맷팅하여 위치 값과 함께 반환"""
+        is_negative = text.startswith('-')
+        integer_part, decimal_part = text.lstrip('-').split('.') if '.' in text else (text.lstrip('-'), None)
+
+        # 텍스트 길이에 따라 공백 처리
+        if not is_negative:  # 상구배
+            if len(text) == 1:#3
+                formatted_text = '  L' if integer_part == '0' else '  ' + integer_part
+            elif len(text) == 2:#13
+                formatted_text = ' ' + integer_part
+            elif len(text) == 3:#1.1
+                formatted_text = ' ' + integer_part  # 정수부만 사용
+            elif len(text) == 4:#27.4
+                formatted_text = integer_part  # 정수부만 사용
+
+            text_x, text_y = 60.7065, 13.5468  # 정수부 위치
+
+            if decimal_part:  # 소수부가 있는 경우
+                formatted_text2 = decimal_part  # 소수부만 사용
+                text_x2, text_y2 = 176.0235, 28.5329  # 소수부 위치
+                height2 = 45.043  # 소수부 글자 크기
+                return formatted_text, text_x, text_y, is_negative, formatted_text2, text_x2, text_y2, height2
+
+        else:  # 하구배
+            if len(text) == 2:#-3
+                formatted_text = '  L' if integer_part == '0' else '  ' + integer_part
+            elif len(text) == 3:#-11
+                formatted_text = ' ' + integer_part
+            elif len(text) == 4:#-4.5
+                formatted_text = ' ' + integer_part  # 정수부만 사용
+            elif len(text) == 5:#-11.5
+                formatted_text = integer_part  # 정수부만 사용
+
+            text_x, text_y = 60.7065, 76.37  # 정수부 위치
+
+            if decimal_part:  # 소수부가 있는 경우
+                formatted_text2 = decimal_part  # 소수부만 사용
+                text_x2, text_y2 = 176.0235, 91.3561  # 소수부 위치
+                height2 = 45.043  # 소수부 글자 크기
+                return formatted_text, text_x, text_y, is_negative, formatted_text2, text_x2, text_y2, height2
+
+        return formatted_text, text_x, text_y, is_negative  # 소수부가 없으면 정수부만 반환
+
+    def create_text(sefl, msp, text, text_x, text_y, height, width, style_name):
+        msp.add_text(text, dxfattribs={
+            'insert': (text_x, text_y), 
+            'height': height, 
+            'width': width, 
+            'style': style_name, 
+            'color': 1
+        })
+        
+    def create_tunnel_pitch_arrow(self, msp, is_negative):
+        """터널 구배 화살표 생성"""
+        if not is_negative:  # 상구배
+            points = [
+                (115.825, 116.333), (135.8065, 136.3991), (155.8726, 116.333), (155.8726, 102.1935),
+                (140.8865, 117.2643), (140.8865, 91.3561), (130.8111, 91.3561), (130.8111, 117.2643),
+                (115.825, 102.1935)
+            ]
+        else:  # 하구배
+            points = [
+                (115.9096, 33.6129), (135.8911, 13.5468), (155.8726, 33.6129), (155.8726, 47.7524),
+                (140.8865, 32.7663), (140.8865, 58.5898), (130.8958, 58.5898), (130.8958, 32.7663),
+                (115.9096, 47.7524)
+            ]
+
+        # 화살표 추가
+        msp.add_lwpolyline(points, close=True, dxfattribs={'color': 1})
+        hatch = msp.add_hatch(color=1)
+        hatch.paths.add_polyline_path(points, is_closed=True)
+    
 def replace_text_in_dxf(file_path, modified_path, sta, grade, seg, R):
     """DXF 파일의 특정 텍스트를 새 텍스트로 교체하고, 특정 레이어 가시성을 조절하는 함수"""
     try:
@@ -289,175 +424,7 @@ class DXF2IMG:
 
         except Exception as e:
             print(f"❌ 이미지 처리 실패: {e}")
-'''
-class TextImageCreator:
-    def __init__(self, work_directory='c:/temp/pitch/', font_path="gulim.ttc", font_size=60):
-        self.work_directory = work_directory
-        self.font_path = font_path
-        self.font_size = font_size
-        
-      
-
-    def create_image(self, bg_color,img_size, text1, text2, pitch_type, seg_type, text_color, filename):
-        """이미지를 생성하고 텍스트 및 호를 그리는 함수"""
-        
-        # 이미지 생성
-        img = Image.new('RGB', img_size, bg_color)
-        draw = ImageDraw.Draw(img)
-
-        # 폰트 로드
-        try:
-            font = ImageFont.truetype(self.font_path, self.font_size)
-        except IOError:
-            print(f"⚠️ 폰트 파일 {self.font_path}을(를) 찾을 수 없습니다. 기본 폰트로 진행합니다.")
-            font = ImageFont.load_default()
-
-        # 측점 텍스트 추가
-        self.draw_text1(draw, text1, font, text_color)
-        
-        # 구배 텍스트 추가
-        text2_x, text2_y = self.get_text2_position(pitch_type)
-        self.draw_text_with_format(draw, text2, font, text_color, text2_x, text2_y)
-
-        # 호 그리기
-        self.draw_arc(draw, pitch_type, seg_type, text_color)
-
-        # 저장 경로 설정
-        if not filename.endswith('.png'):
-            filename += '.png'
-        final_dir = os.path.join(self.work_directory, filename)
-
-        # 이미지 저장 (예외 처리 추가)
-        try:
-            img.save(final_dir)
-            print(f"✅ 이미지 저장 완료: {final_dir}")
-        except IOError as e:
-            print(f"❌ 이미지 저장 실패: {e}")
-
-    def draw_text1(self, draw, text1, font, text_color):
-        """이미지에 측점 텍스트 추가하는 함수"""
-        
-        text1_x, text1_y = self.get_text1_position(text1)
-        draw.text((text1_x, text1_y), text1, font=font, fill=text_color)
-
-    def draw_text_with_format(self, draw, text, font, text_color, base_x, base_y):
-        """text2 값을 형식에 맞게 분리하여 그리는 함수"""
-        
-        is_negative = text.startswith('-')
-        integer_part, decimal_part = text.lstrip('-').split('.') if '.' in text else (text.lstrip('-'), None)
-
-        # 텍스트 길이에따라 조정
-        if is_negative or decimal_part is not None:
-            if int(integer_part) > 10:
-                scale_x = 0.5
-            else:
-                scale_x = 0.8
-            self.resize_text(draw, text, font, text_color, (base_x,base_y), scale_x=scale_x, scale_y=1.0)
-        else:
-            draw.text((base_x, base_y), text, font=font, fill=text_color)
-
-    def resize_text(self, draw, text, font, text_color, position, scale_x=1.0, scale_y=1.0):
-        """텍스트를 별도의 이미지에 그린 후 크기를 조정하여 원본 이미지에 배치"""
-        
-        # 텍스트를 그릴 임시 이미지 생성 (투명 배경)
-        temp_img = Image.new("RGBA", (500, 500), (255, 255, 255, 0))
-        temp_draw = ImageDraw.Draw(temp_img)
-        
-        # 텍스트 그리기
-        temp_draw.text((position[0], position[1]), text, font=font, fill=text_color)
-        
-        # 여백 자르기
-        bbox = temp_img.getbbox()
-        extra_padding = (0, 0)
-        
-        if bbox:
-            left, top, right, bottom = bbox
-            right += extra_padding[0]
-            bottom += extra_padding[1]
-            cropped_temp_img = temp_img.crop((left, top, right, bottom))
-        else:
-            cropped_temp_img = temp_img
-
-        # 텍스트 이미지를 리사이즈 (가로/세로 크기 조정)
-        new_width = int(cropped_temp_img.width * scale_x)
-        new_height = int(cropped_temp_img.height * scale_y)
-        resized_text = cropped_temp_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        # 투명 배경을 흰색으로 채우기
-        background = Image.new('RGB', resized_text.size, (255, 255, 255))
-        background.paste(resized_text, (0, 0), resized_text)
-
-        background.save(os.path.join(self.work_directory, 'temp_resized.png'))
-
-    def get_text1_position(self, text1):
-        """측점 위치를 반환하는 함수"""
-        
-        pos_map = {
-            5: (90, 20),
-            6: (75, 20),
-            7: (45, 20)
-        }
-        
-        return pos_map.get(len(text1), (45, 20))
-
-    def get_text2_position(self, pitch_type):
-        """pitch_type에 따라 (x, y) 좌표 반환"""
-        
-        pos_table = {
-            'BVC': (75,115),
-            'EVC': (220,115),
-            'VIP': (90, 120)
-        }
-
-        return pos_table.get(pitch_type,(40, 115))
-
-    def get_arc_params(self, pitch_type, seg_type):
-        """호를 그리기 위한 중심점, 반지름, 각도 반환"""
-        
-        params = {
-            '오목형': {
-                'BVC': {'center': (250, 60), 'R': 106.2435, 'angle': (50, 130)},
-                'EVC': {'center': (140, 60), 'R': 106.2435, 'angle': (50, 130)},
-                'VIP': {'center': (200, -190), 'R': 316, 'angle': (68, 112)}
-            },
-            '볼록형': {
-                'BVC': {'center': (250, 250), 'R': 106.2435, 'angle': (-130, -50)},
-                'EVC': {'center': (140, 250), 'R': 106.2435, 'angle': (-130, -50)},
-                'VIP': {'center': (200, 415), 'R': 316, 'angle': (-112, -68)}
-            }
-        }
-        
-        return params.get(seg_type, {}).get(pitch_type, None)
-
-    def draw_arc(self, draw, pitch_type, seg_type, text_color):
-        """호를 이미지에 추가하는 함수"""
-        
-        arc_params = self.get_arc_params(pitch_type, seg_type)
-        if not arc_params:
-            return  
-
-        center, R, (start_angle, end_angle) = arc_params['center'], arc_params['R'], arc_params['angle']
-
-        bbox = (
-            center[0] - R, center[1] - R,
-            center[0] + R, center[1] + R
-        )
-
-        draw.arc(bbox, start_angle, end_angle, fill=text_color, width=6)
-
-    def paste_resized_image(self, base_image_name, resized_image_name, save_name, p1,p2):
-        base_path = os.path.join(self.work_directory, base_image_name  + ".png" )
-        resized_path = resized_path = os.path.join(self.work_directory, resized_image_name + ".png")
-        save_path = os.path.join(self.work_directory, save_name  + ".png" )
-        
-        if os.path.exists(resized_path):
-            
-            im1 = Image.open(base_path)
-            im2 = Image.open(resized_path)
-            back_im = im1.copy()
-            back_im.paste(im2, (p1,p2))
-            back_im.save(save_path)
-'''            
+          
 #기울기표용
 class GradePost:
     def __init__(self, work_directory='c:/temp/pitch'):
@@ -844,16 +811,16 @@ def civil3d_profile(sections,  structure_list):
 
 def process_verticulcurve(i, current_sta , current_grade , current_tag, current_structure, isSagCrest, R_text):
 
-    grade_post_generator = GradePost()
-
+    
     converter = DXF2IMG()
     
-    modifed_path = work_directory + 'BVC-수정됨.dxf'
+    
     output_image = work_directory + 'output_image.png'
 
     pitchtype = f'{current_tag}'
     grade_text = format_grade(current_grade)
     station_text = f'{format_distance(current_sta)}'
+    
     if pitchtype == 'VIP':
         img_bg_color = (255, 212, 0) #기울기표 배경
     else:
@@ -864,8 +831,10 @@ def process_verticulcurve(i, current_sta , current_grade , current_tag, current_
     
     file_path = work_directory + f'{pitchtype}.dxf'
     final_output_image = work_directory + img_f_name + '.png'
-    
+
+    modifed_path = work_directory + 'BVC-수정됨.dxf'
     replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, isSagCrest, R_text)
+
     output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
     converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
     
@@ -873,14 +842,28 @@ def process_verticulcurve(i, current_sta , current_grade , current_tag, current_
 
 def process_vertical(i, current_grade, current_distance, pitchtype, structure):
     grade_post_generator = GradePost()
+    tunnel_post_generator = TunnelPitchCreator()
+    converter = DXF2IMG()
 
+    output_image = work_directory + 'output_image.png'
+    filename = 'BVC-수정됨.dxf'
+    
+    
     img_text2 = format_grade(current_grade)#기울기표 구배문자
     img_text3 = f'{current_distance}' #기울기표 거리문자                    
     img_bg_color2 = (255, 255, 255) #기울기표 문자                     
     img_f_name2 = f'VIP{i}_{pitchtype}_기울기표'#기울기표 파일명
     openfile_name2 = f'기울기표_{structure}용'
-
-    grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
+    
+    final_output_image = work_directory + img_f_name2 + '.png'    
+    
+    if structure == '터널':
+        tunnel_post_generator.create_tunnel_pitch_image(filename, img_text2)
+        modifed_path = work_directory + 'BVC-수정됨.dxf'
+        output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+        converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
+    else:
+        grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
 
 def create_obj_counter(start_number, image_names, structure_comment):
     # 객체 인덱스 생성
@@ -1213,7 +1196,7 @@ def bve_profile(annotated_sections, GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST, 
                 parts = line.split(',')
                 current_sta = int(parts[0])
                 current_structure = isbridge_tunnel(current_sta, structure_list)
-                print(f'현재 측점; {current_sta}')
+                
             
             
                 if 'BVC' in line:
@@ -1338,6 +1321,7 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
 
 
 
+    
 #함수 종료
 #MAIN 시작
 # 폰트 파일 경로 설정
