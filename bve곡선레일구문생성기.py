@@ -7,13 +7,14 @@ import pandas as pd
 '''
 BVE곡선파일을 바탕으로 곡선레일(5m)를 설치하는 프로그램
 -made by dger -
-ver 0.1
+VER 20250303 2343
+#수정
+직선구간에 프리오브젯ㄱ트 생성 방지
 
 입력파일:BVE에서 추출한 곡선파일(CURVE_INFO.TXT)
 
 CURVE_INFO샘플
-측점,r,캔트
-275,0,0
+275,0
 300,0
 325,0
 350,-632.636
@@ -203,14 +204,19 @@ def cal_mainlogic(curveinfo, C_list):
         
     return freeobj
 
-def create_freeobj(freeobj, structure_list):
+def create_freeobj(freeobj, structure_list,curve_info):
     content = []
     for sta, x, y, z in freeobj:
         current_structure = isbridge_tunnel(sta, structure_list)
-        if current_structure == '터널':
-            freeobj_index = 473#콘크리트도상터널전차선x
+        iscurve = check_sta_is_curve(sta, curve_info)
+
+        if iscurve == '곡선':  
+            if current_structure == '터널':
+                freeobj_index = 473#콘크리트도상터널전차선x
+            else:
+                freeobj_index = 449#자갈도상신선전차선x
         else:
-            freeobj_index = 449#자갈도상신선전차선x
+            freeobj_index = 499#Null.csv
         content.append(f'{sta},.freeobj 0;{freeobj_index};{x};0;{y};0;{z}\n')
         
     return content
@@ -227,7 +233,16 @@ def isbridge_tunnel(sta, structure_list):
     
     return '토공'
 
-
+def check_sta_is_curve(current_sta, curveinfo):
+    for i in range(len(curveinfo)-1):
+        sta, R, c = curveinfo[i]
+        NEXT_sta, NEXT_R, NEXT_c = curveinfo[i +1]
+        if sta <=current_sta < NEXT_sta:
+            if R != 0:
+                return '곡선'
+            else:
+                return '직선'
+        
 # 실행
 def load_structure_data():
     """구조물 데이터를 엑셀 파일에서 불러오는 함수"""
@@ -357,7 +372,7 @@ def main():
     curveinfo = parsing_curveinfo(lines)
     C_list = extract_cant(curveinfo)
     freeobj = cal_mainlogic(curveinfo, C_list)
-    content = create_freeobj(freeobj, structure_list)
+    content = create_freeobj(freeobj, structure_list, curveinfo)
     save_files(content)
     railtype = create_railtype(curveinfo, structure_list)
     save_railtype(railtype)
