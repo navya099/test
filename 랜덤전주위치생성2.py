@@ -11,9 +11,10 @@ from shapely.geometry import Point, LineString
 
 
 '''
-ver 2025.03.11 2214
+ver 2025.03.12 1641
 #modify
 무효전선 각도 조정
+무효전선 실제처럼 변경
 '''
 
 class AirJoint(Enum):
@@ -742,22 +743,51 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
     #에어조인트 구간 처리
     if current_airjoint == '에어조인트 시작점 (1호주)':
 
-        #본선 각도
+        #본선
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, lateral_offset, x)  
         lines.append(f'{pos},.freeobj 0;{obj_index};{lateral_offset};0;{adjusted_angle};,;본선\n')
-
-        #무효선 각도
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, gauge, x1)
+        
+        #무효선
+        '''
+        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, gauge, x1)  
+        lines.append(f'{pos},.freeobj 0;{contact_object_index};{gauge};{contact_height +system_heigh};{adjusted_angle};,;무효전차선\n')
+        lines.append(f'{pos},.freeobj 0;{messenger_object_index};{gauge};{contact_height};{adjusted_angle};,;무효조가선\n')
+        '''
         #현재 전주의 좌표(x,y)
         pos_coordinate = return_pos_coord(polyline_with_sta, pos)
+        #다음 전주의 좌표(x,y)
+        next_pos_coordinate = return_pos_coord(polyline_with_sta, next_pos)
+
+        #pos의 폴리선 벡터
+        _,_,start_polyline_vector = interpolate_coordinates(polyline_with_sta, pos)
+        _,_,end_polyline_vector = interpolate_coordinates(polyline_with_sta, next_pos)
+        
         #장력장치 치수(3m라 가정)
         tension_device_length = 3
 
-        #전선 시점 좌표
-        wire_start_coord = calculate_destination_coordinates(pos_coordinate[0], pos_coordinate[1], adjusted_angle, tension_device_length)
-        lines.append(f'{pos},.freeobj 0;{messenger_object_index};{gauge};{contact_height +system_heigh};{adjusted_angle};,;무효조가선\n')
-        lines.append(f'{pos},.freeobj 0;{contact_object_index};{gauge};{contact_height};{adjusted_angle};,;무효전차선\n')
+        # 이론 각도
+        #test시만 v1 더함 실제 bve에서는 v1제거
+        virtual_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, gauge, x1)
+        
+        #이론 전선 시점 좌표
+        trioty_wire_start_coord = calculate_offset_point(start_polyline_vector, pos_coordinate, gauge)
+        
+        #종점 브래킷 좌표
+        end_cantelever_coord = calculate_offset_point(end_polyline_vector, next_pos_coordinate, x1)
+        
+        #MAST와 END의 각도
+        mast_anlge = calculate_bearing(trioty_wire_start_coord[0], trioty_wire_start_coord[1], next_pos_coordinate[0], next_pos_coordinate[1])
+        
+        wire_start_coord = calculate_destination_coordinates(trioty_wire_start_coord[0], trioty_wire_start_coord[1], mast_anlge, tension_device_length)
 
+        # 점과 직선사이의 거리 및 해당 위치의 측점
+        sta2, _ ,pererall_d= return_coord_pos(polyline_with_sta, wire_start_coord)
+
+        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, pererall_d, x1)
+
+        lines.append(f'{sta2},.freeobj 0;{messenger_object_index};{pererall_d};{contact_height +system_heigh};{adjusted_angle};,;무효조가선\n')
+        lines.append(f'{sta2},.freeobj 0;{contact_object_index};{pererall_d};{contact_height};{adjusted_angle};,;무효전차선\n')
+        
     elif current_airjoint == '에어조인트 (2호주)':
         #본선 각도        
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x, x3)
@@ -780,11 +810,12 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x4, -lateral_offset)  
         lines.append(f"{pos},.freeobj 0;{obj_index};{x4};0;{adjusted_angle};,;본선\n")
 
+        
         #무효선 각도
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x5, next_gauge)
         lines.append(f'{pos},.freeobj 0;{messenger_object_index};{x5};{contact_height +system_heigh};{adjusted_angle};,;무효조가선\n')
         lines.append(f'{pos},.freeobj 0;{contact_object_index};{x5};{contact_height};{adjusted_angle};,;무효전차선\n')
-   
+        
     #일반구간
     else:
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, lateral_offset, -lateral_offset)
@@ -811,29 +842,30 @@ def return_pos_coord(polyline_with_sta, pos):
     point_a, P_A, vector_a = interpolate_coordinates(polyline_with_sta, pos)
     return point_a
 
-def return_coord_pos(polyline_with_sta, coord):
-    """
-    주어진 폴리선 데이터에서 입력좌표를 sta로 반환.
-    
-    :param polyline: [(sta, x, y, z), ...] 형식의 리스트
-    :param coord: 입력 좌표 값 (x, y) 튜플
-    :return: sta (float)
-    """
-    #폴리선에서 coord에서 내린 수선의발 최단거리 찾기
+def return_coord_pos(polyline, coord):
+    distance_list = []
+    point = Point(coord)
     for i in range(len(polyline) - 1):
         sta1, x1, y1, z1 = polyline[i]
         sta2, x2, y2, z2 = polyline[i + 1]
         v1 = calculate_bearing(x1, y1, x2, y2)
-        line = LineString([(x1, y1), (x2, y2)])  # 선분 생성
-        point = Point(coord)  # 입력 좌표를 Point 객체로 변환
+        line = LineString([(x1, y1), (x2, y2)])
         distance = point.distance(line)
-        projected_point = line.interpolate(line.project(point))#찾은 거리의 끝점으로 새 좌표 계산
-        distance_to_start_point = 0#시작 잠과 projet포인트의 거리
-        if distance < min_distance:
-            min_distance = distance
-            return sta1
+        projected_distance = line.project(point)
+        projection_point = line.interpolate(projected_distance)
+
+        # 외적을 이용해 좌우 판별
+        v_x, v_y = x2 - x1, y2 - y1  # 선분 벡터
+        w_x, w_y = coord[0] - x1, coord[1] - y1  # 점에서 선분 시작점까지의 벡터
+        cross = v_x * w_y - v_y * w_x  # 외적 계산
+        sign = -1 if cross > 0 else 1
+        if not projected_distance is None and projected_distance!= 0:
+            d = distance * sign
+            distance_to_start_form_projected_point = calculate_distance(x1, y1, projection_point.x, projection_point.y)
+            new_sta = sta1 + distance_to_start_form_projected_point
     
-    return None  # 범위를 벗어난 sta 값에 대한 처리
+    return new_sta, distance_to_start_form_projected_point, d
+
 def get_pole_gauge(current_structure):
     gauge_values = {'토공': -3.0, '교량': -3.5, '터널': 2.1}
     gauge = gauge_values.get(current_structure, -3.0)
@@ -948,18 +980,6 @@ def calculate_destination_coordinates(x1, y1, bearing, distance):
     x2 = x1 + distance * math.cos(angle)
     y2 = y1 + distance * math.sin(angle)
     return x2, y2
-
-#점과 직선사이의 거리 계산 함수
-def calculate_point_between_line(point, line):
-    """
-    점과 직선(LineString) 사이의 최단 거리 계산
-
-    :param point: (x, y) 튜플
-    :param line: LineString 객체 (shapely.geometry.LineString)
-    :return: 점과 직선 사이의 거리 (float)
-    """
-    point_geom = Point(point)  # 점을 Point 객체로 변환
-    return point_geom.distance(line)  # shapely의 distance() 함수 사용
 
 #offset 좌표 반환
 def calculate_offset_point(vector, point_a, offset_distance):
