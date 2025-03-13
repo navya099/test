@@ -11,10 +11,10 @@ from shapely.geometry import Point, LineString
 
 
 '''
-ver 2025.03.12 1641
+ver 2025.03.13 1428
+무효전선 각도 2차수정
 #modify
-무효전선 각도 조정
-무효전선 실제처럼 변경
+
 '''
 
 class AirJoint(Enum):
@@ -134,13 +134,13 @@ def iscurve(cur_sta, curve_list):
     """sta가 곡선 구간에 해당하는지 구분하는 함수"""
     rounded_sta = get_block_index(cur_sta)  # 25 단위로 반올림
     
-    for sta, R, _ in curve_list:
+    for sta, R, c in curve_list:
         if rounded_sta == sta:
             if R == 0:
-                return '직선', None  # 반경이 0이면 직선
-            return '곡선', R  # 반경이 존재하면 곡선
+                return '직선', 0, 0  # 반경이 0이면 직선
+            return '곡선', R, c  # 반경이 존재하면 곡선
 
-    return '직선', None  # 목록에 없으면 기본적으로 직선 처리
+    return '직선', 0 , 0 # 목록에 없으면 기본적으로 직선 처리
 
 def get_pole_data():
     """전주 데이터를 반환하는 기본 딕셔너리"""
@@ -157,7 +157,7 @@ def get_pole_data():
             'tunnel': (979, 977),#터널은 I,O반대
             'earthwork': (508, 510),
             'straight_bridge': (512, 514),
-            'curve_bridge': (57, 529),
+            'curve_bridge': (527, 529),
         },
         350: {
             'prefix': 'Cako350',
@@ -326,10 +326,10 @@ def get_airjoint_lines(pos, current_airjoint, pole_type, bracket_type, current_s
     bracket_values, f_values = get_bracket_codes(DESIGNSPEED, current_structure)
 
     # 구조물별 건식게이지 값
-    gauge = get_pole_gauge(current_structure)
+    gauge = get_pole_gauge(DESIGNSPEED, current_structure)
 
     #에어조인트 각도 가져오기
-    stagger,_ = get_bracket_coordinates(DESIGNSPEED, 'F형_끝')
+    stagger,y1= get_bracket_coordinates(DESIGNSPEED, 'F형_끝')
 
     S_angle, E_angle = get_airjoint_angle(gauge, stagger, currentspan)
 
@@ -341,7 +341,7 @@ def get_airjoint_lines(pos, current_airjoint, pole_type, bracket_type, current_s
     add_pole(lines, pos, current_airjoint, pole_type, bracket_type)
 
     #급전선 설비 인덱스 가져오기
-    feeder_idx = get_feederline_idx(current_structure)
+    feeder_idx = get_feeder_insulator_idx(current_structure)
 
     #평행틀 설비 인덱스 가져오기
     spreader_name, spreader_idx =  get_spreader_idx(DESIGNSPEED, current_structure, current_airjoint)
@@ -452,14 +452,39 @@ def get_fitting_and_mast_data(DESIGNSPEED, current_structure, bracket_type):
     flat_fitting = fitting_data.get('FLAT', (0, 0))
     steady_arm_fitting = fitting_data.get('곡선당김금구', (0, 0))
     
+    mast_type, mast_name = get_mast_type(DESIGNSPEED, current_structure)
 
-    mast_types = {'터널': (1400, '터널하수강'), '교량': (1376, 'P-12"x7t-8.5m'), '토공': (1370, 'P-10"x7t-9m')}
-    mast_type, mast_name = mast_types.get(current_structure, (1370, 'P-10"x7t-9m'))
-
-    offset = get_pole_gauge(current_structure)
+    offset = get_pole_gauge(DESIGNSPEED , current_structure)
 
     return airjoint_fitting, flat_fitting, steady_arm_fitting, mast_type, mast_name, offset
 
+def get_mast_type(DESIGNSPEED, current_structure):
+    #전주 인덱스 딕셔너리(idx,comment)
+    mast_dic = {
+        150: {
+            'prefix': 'Cako150',
+            '토공': (1370,'P-10"x7t-9m'),
+            '교량': (1376,'P-12"x7t-8.5m'),
+            '터널': (1400,'터널하수강'),
+        },
+        250: {
+            'prefix': 'Cako250',
+            '토공': (1370,'P-10"x7t-9m'),
+            '교량': (1376,'P-12"x7t-8.5m'),
+            '터널': (1400,'터널하수강'),
+        },
+        350: {
+            'prefix': 'Cako350',#350
+            '토공': (619,'H형주-208X202'),
+            '교량': (620,'H형주-250X255'),
+            '터널': (621,'터널하수강'),
+        }
+    }
+    mast_data = mast_dic.get(DESIGNSPEED, mast_dic[250])
+    mast_type , mast_name = mast_data.get(current_structure, ("", "알 수 없는 구조"))
+
+    return mast_type , mast_name
+    
 def get_bracket_codes(DESIGNSPEED, current_structure):
     """브래킷 코드 가져오기"""
     airjoint_data = get_airjoint_bracket_data().get(DESIGNSPEED, {})
@@ -482,14 +507,41 @@ def add_pole(lines, pos, current_airjoint, pole_type, bracket_type):
 def get_bracket_coordinates(DESIGNSPEED, bracket_type):
     """설계속도와 브래킷 유형에 따른 좌표 반환"""
     coordinates = {
-        "F형_시점": (-0.35, 0.2) if DESIGNSPEED == 150 else (-0.3, 0),
-        "AJ형_시점": (-0.15, 0) if DESIGNSPEED == 150 else (-0.1, 0),
-        "AJ형_중간1": (-0.15, 0) if DESIGNSPEED == 150 else (-0.1, 0),
-        "AJ형_중간2": (0.15, 0) if DESIGNSPEED == 150 else (0.1, 0),
-        "AJ형_끝": (0.15, 0) if DESIGNSPEED == 150 else (0.1, 0),
-        "F형_끝": (0.35, 0.2) if DESIGNSPEED == 150 else (0.3, 0),
+        "F형_시점": {
+            150: (-0.35, 0.2),
+            250: (-0.3, 0.32),
+            350: (-0.25, 0.2)
+        },
+        "AJ형_시점": {
+            150: (-0.15, 0),
+            250: (-0.1, 0),
+            350: (-0.05, 0)
+        },
+        "AJ형_중간1": {
+            150: (-0.15, 0),
+            250: (-0.1, 0),
+            350: (-0.05, 0)
+        },
+        "AJ형_중간2": {
+            150: (0.15, 0),
+            250: (0.1, 0),
+            350: (0.05, 0)
+        },
+        "AJ형_끝": {
+            150: (0.15, 0),
+            250: (0.1, 0),
+            350: (0.05, 0)
+        },
+        "F형_끝": {
+            150: (0.35, 0.2),
+            250: (0.3, 0.32),
+            350: (0.25, 0.2)
+        },
     }
-    return coordinates.get(bracket_type, (0, 0))
+
+    # 지정된 브래킷 유형과 속도에 맞는 좌표 반환
+    return coordinates.get(bracket_type, {}).get(DESIGNSPEED, (0, 0))
+
 
 def common_lines(lines,mast_type, offset, mast_name, feeder_idx, spreader_name, spreader_idx):
     
@@ -500,7 +552,7 @@ def common_lines(lines,mast_type, offset, mast_name, feeder_idx, spreader_name, 
                 f".freeobj 0;{spreader_idx};{offset};,;{spreader_name}\n\n"
     ])
 
-def get_feederline_idx(current_structure):
+def get_feeder_insulator_idx(current_structure):
     idx_dic = {'토공':1234, '교량':1234, '터널':1249}
     idx = idx_dic.get(current_structure, 1234)
     return idx
@@ -548,7 +600,7 @@ def add_F_bracket(lines, pos, bracket_code, bracket_type, fitting_data,x1,y1):
     idx1, idx2 = fitting_data
     lines.extend([
         ',;가동브래킷구문\n',
-        f"{pos},.freeobj 0;{bracket_code};0;{y1};,;{bracket_type}\n",
+        f"{pos},.freeobj 0;{bracket_code};0;0;,;{bracket_type}\n",
         f"{pos},.freeobj 0;{idx1};{x1};{y1},;조가선지지금구-F용\n",
         f"{pos},.freeobj 0;{idx2};{x1};{y1},;전차선선지지금구-F용\n",
     ])
@@ -557,7 +609,7 @@ def add_AJ_bracket(lines, pos, bracket_code, bracket_type, fitting_data, steady_
     """AJ형 가동 브래킷 및 금구류 추가"""
     lines.extend([
         ',;가동브래킷구문\n',
-        f"{pos},.freeobj 0;{bracket_code};0;{y1};,;{bracket_type}\n",
+        f"{pos},.freeobj 0;{bracket_code};0;0;,;{bracket_type}\n",
         f"{pos},.freeobj 0;{fitting_data};{x1};{y1},;조가선지지금구-AJ용\n",
         f"{pos},.freeobj 0;{steady_arm_fitting};{x1};{y1},;곡선당김금구\n",
     ])
@@ -582,7 +634,7 @@ def save_to_txt(positions, structure_list, curve_list, DESIGNSPEED, airjoint_lis
         currentspan = next_pos - pos  # 전주 간 거리 계산
         # 현재 위치의 구조물 및 곡선 정보 가져오기
         current_structure = isbridge_tunnel(pos, structure_list)
-        current_curve, _ = iscurve(pos, curve_list)  # 곡률 반경(R)은 사용하지 않으므로 _ 처리
+        current_curve, R, c = iscurve(pos, curve_list)
         current_airjoint = check_isairjoint(pos, airjoint_list)
         post_number = find_post_number(post_number_lst, pos)
         # 해당 구조물에 대한 전주 데이터 가져오기 (없으면 '토공' 기본값 사용)
@@ -613,6 +665,26 @@ def save_to_txt(positions, structure_list, curve_list, DESIGNSPEED, airjoint_lis
     # 파일 저장 함수 호출
     write_to_file(filename, lines)
 
+#미사용
+def get_stagger_at_cant(cant,height,stagger):
+    '''곡선반경에 따른 캔트에 의한 편위를 반환하는 함수'''
+    '''
+        param:cant (캔트 float)
+        param:height(전차선 높이:float)
+        param:stagger(직선구간 전차선 편위 float)
+        return stagger
+        
+    '''
+    default = stagger#기본값
+    gague = 1.5#표준궤간
+    angle = gauge / height#cant각도
+
+    if cant == 0:
+        return default
+    
+    return stagger
+    
+    
 def open_excel_file():
     """파일 선택 대화 상자를 열고, 엑셀 파일 경로를 반환하는 함수"""
     root = tk.Tk()
@@ -638,13 +710,12 @@ def process_to_WIRE(positions, spans, structure_list, curve_list, polyline, airj
         currentspan = next_pos - pos  # 전주 간 거리 계산
         current_structure = isbridge_tunnel(pos, structure_list)
         next_structure = isbridge_tunnel(next_pos, structure_list)
-        current_curve, R = iscurve(pos, curve_list)
+        current_curve, R, c = iscurve(pos, curve_list)
         current_sta = get_block_index(pos)
         current_airjoint = check_isairjoint(pos, airjoint_list)
         currnet_type = 'I' if i % 2 == 1 else 'O'
         post_number = find_post_number(post_number_lst, pos)
-        obj_index, comment, AF_wire, FPW_wire = get_wire_span_data(currentspan)
-
+        obj_index, comment, AF_wire, FPW_wire = get_wire_span_data(DESIGNSPEED,  currentspan, current_structure)
         
         #AF와 FPW오프셋(X,Y)
         AF_X_offset,AF_y_offset , fpw_wire_X_offset, fpw_wire_y_offset , AF_yz_angle, FPW_yz_angle ,AF_xy_angle , FPW_xy_angle,AF_X_offset_Next, fpw_wire_X_offset_Next = CALULATE_AF_FPW_OFFET_ANGLE(current_structure, next_structure, currentspan)
@@ -671,9 +742,9 @@ def process_to_WIRE(positions, spans, structure_list, curve_list, polyline, airj
 def CALULATE_AF_FPW_OFFET_ANGLE(current_structure, next_structure, currentspan):
     
     #현재
-    AF_X_offset,AF_y_offset , fpw_wire_X_offset, fpw_wire_y_offset = get_wire_offsetanlge(current_structure)
+    AF_X_offset,AF_y_offset , fpw_wire_X_offset, fpw_wire_y_offset = get_wire_offsetanlge(DESIGNSPEED ,current_structure)
     #다음
-    AF_X_offset_Next,AF_y_offset_Next , fpw_wire_X_offset_Next, fpw_wire_y_offset_Next = get_wire_offsetanlge(next_structure)
+    AF_X_offset_Next,AF_y_offset_Next , fpw_wire_X_offset_Next, fpw_wire_y_offset_Next = get_wire_offsetanlge(DESIGNSPEED, next_structure)
 
     # YZ 평면 각도 계산
     AF_yz_angle = math.degrees(math.atan((AF_y_offset_Next - AF_y_offset) / currentspan))
@@ -685,19 +756,54 @@ def CALULATE_AF_FPW_OFFET_ANGLE(current_structure, next_structure, currentspan):
 
     return AF_X_offset,AF_y_offset , fpw_wire_X_offset, fpw_wire_y_offset , AF_yz_angle, FPW_yz_angle ,AF_xy_angle , FPW_xy_angle ,AF_X_offset_Next, fpw_wire_X_offset_Next
 
-def get_wire_offsetanlge(current_structure):
-    #AF
-    AF_X_offset_values = {'토공': 0, '교량': -0.5, '터널': -0.28}
-    AF_X_offset = AF_X_offset_values.get(current_structure, 0)
-    AF_y_offset_dic = {'토공': 0, '교량': 0, '터널': -1.75}
-    AF_y_offset = AF_y_offset_dic.get(current_structure, 0)
-    
-    #FPW
-    fpw_wire_X_offset_dic = {'토공': 0, '교량': -0.5, '터널': 0.93}
-    fpw_wire_X_offset = fpw_wire_X_offset_dic.get(current_structure, 0)
-    fpw_wire_y_offset_dic = {'토공': 0, '교량': 0, '터널': 0}
-    fpw_wire_y_offset = fpw_wire_y_offset_dic.get(current_structure, 0)
+def get_wire_offsetanlge(DESIGNSPEED, current_structure):
+    """AF,FPW offset을 반환하는 기본 딕셔너리(x,y)"""
+    AF_offset_values = {
+        150: {
+            'prefix': 'Cako150',
+            '토공': (0,0),
+            '교량': (-0.5,0),
+            '터널': (-0.28,-1.75)
+        },
+        250: {
+            'prefix': 'Cako250',
+            '토공': (0, 0),
+            '교량': (-0.5, 0),
+            '터널': (-0.28, -1.75)
+        },
+        350: {
+            'prefix': 'Cako350',
+            '토공': (-2.732, -1.043),
+            '교량': (-0.785, 0.905),
+            '터널': (3.98, 0.828)
+        }
+    }
 
+    FPW_offset_values = {
+        150: {
+            'prefix': 'Cako150',
+            '토공': (0,0),
+            '교량': (-0.5,0),
+            '터널': (0.93,0)
+        },
+        250: {
+            'prefix': 'Cako250',
+            '토공': (0, 0),
+            '교량': (-0.5, 0),
+            '터널': (0.93, 0)
+        },
+        350: {
+            'prefix': 'Cako350',
+            '토공': (-0.193, 0.592),
+            '교량': (-0.4389, 0.573),
+            '터널': (0.1, 0)
+        }
+    }
+    AF_data = AF_offset_values.get(DESIGNSPEED, AF_offset_values[250])    
+    AF_X_offset, AF_y_offset = AF_data[current_structure]
+    FPW_data = FPW_offset_values.get(DESIGNSPEED, FPW_offset_values[250])    
+    fpw_wire_X_offset, fpw_wire_y_offset = FPW_data[current_structure]
+    
     return [AF_X_offset,AF_y_offset , fpw_wire_X_offset, fpw_wire_y_offset]
 
 def buffered_write(filename, lines):
@@ -706,15 +812,54 @@ def buffered_write(filename, lines):
     with open(filename, "w", encoding="utf-8") as f: 
         f.writelines(lines)
 
-def get_wire_span_data(currentspan):
+def get_wire_span_data(DESIGNSPEED, currentspan, current_structure):
     """ 경간에 따른 wire 데이터 반환 """
+    # SPEED STRUCTURE span 45, 50, 55, 60
     span_data = {
-        45: (484, "경간 45m", 1236, 1241),
-        50: (478, "경간 50m", 1237, 1242),
-        55: (485, "경간 55m", 1238, 1243),
-        60: (479, "경간 60m", 1239, 1244),
+        150: {
+            'prefix': 'Cako150',
+            '토공': (592, 593, 594, 595),  # 가고 960
+            '교량': (592, 593, 594, 595),  # 가고 960
+            '터널': (614, 615, 616, 617)  # 가고 710
+        },
+        250: {
+            'prefix': 'Cako250',
+            '토공': (484, 478, 485, 479),  # 가고 1200
+            '교량': (484, 478, 485, 479),  # 가고 1200
+            '터널': (494, 495, 496, 497)  # 가고 850
+        },
+        350: {
+            'prefix': 'Cako350',
+            '토공': (488, 489, 490, 491),  # 가고 1400
+            '교량': (488, 489, 490, 491),  # 가고 1400
+            '터널': (488, 489, 490, 491)  # 가고 1400
+        }
     }
-    return span_data.get(currentspan, span_data[60])
+
+    # DESIGNSPEED에 맞는 구조 선택 (기본값 250 사용)
+    span_values = span_data.get(DESIGNSPEED, span_data[250])
+    
+    # current_structure에 맞는 값 추출
+    current_structure_list = span_values[current_structure]
+
+    # currentspan 값을 통해 인덱스를 추출
+    span_index_mapping = {
+        45: (0, '경간 45m', 1236, 1241),
+        50: (1, '경간 50m', 1237, 1242),
+        55: (2, '경간 55m', 1238, 1243),
+        60: (3, '경간 60m', 1239, 1244)
+    }
+    
+    # currentspan이 유효한 값인지 확인
+    if currentspan not in span_index_mapping:
+        raise ValueError(f"Invalid span value '{currentspan}'. Valid values are 45, 50, 55, 60.")
+
+    # currentspan에 해당하는 인덱스 및 주석 추출
+    idx, comment, feeder_idx, fpw_idx = span_index_mapping[currentspan]
+    # idx 값을 current_structure_list에서 가져오기
+    idx_value = current_structure_list[idx]
+
+    return idx_value, comment, feeder_idx, fpw_idx
 
 def get_lateral_offset_and_angle(index, currentspan):
     """ 홀수/짝수 전주에 따른 편위 및 각도 계산 """
@@ -735,10 +880,11 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
     x5,y5 = get_bracket_coordinates(DESIGNSPEED, 'F형_끝')
     
     #구조물 OFFSET 가져오기
-    gauge = get_pole_gauge(current_structure)
-    next_gauge = get_pole_gauge(next_structure)
+    gauge = get_pole_gauge(DESIGNSPEED, current_structure)
+    next_gauge = get_pole_gauge(DESIGNSPEED, next_structure)
     #전차선 정보 가져오기
     contact_object_index, messenger_object_index, system_heigh, contact_height = get_contact_wire_and_massanger_wire_info(DESIGNSPEED ,current_structure, currentspan)
+
     
     #에어조인트 구간 처리
     if current_airjoint == '에어조인트 시작점 (1호주)':
@@ -748,45 +894,10 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         lines.append(f'{pos},.freeobj 0;{obj_index};{lateral_offset};0;{adjusted_angle};,;본선\n')
         
         #무효선
-        '''
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, gauge, x1)  
-        lines.append(f'{pos},.freeobj 0;{contact_object_index};{gauge};{contact_height +system_heigh};{adjusted_angle};,;무효전차선\n')
-        lines.append(f'{pos},.freeobj 0;{messenger_object_index};{gauge};{contact_height};{adjusted_angle};,;무효조가선\n')
-        '''
-        #현재 전주의 좌표(x,y)
-        pos_coordinate = return_pos_coord(polyline_with_sta, pos)
-        #다음 전주의 좌표(x,y)
-        next_pos_coordinate = return_pos_coord(polyline_with_sta, next_pos)
-
-        #pos의 폴리선 벡터
-        _,_,start_polyline_vector = interpolate_coordinates(polyline_with_sta, pos)
-        _,_,end_polyline_vector = interpolate_coordinates(polyline_with_sta, next_pos)
-        
-        #장력장치 치수(3m라 가정)
-        tension_device_length = 3
-
-        # 이론 각도
-        #test시만 v1 더함 실제 bve에서는 v1제거
-        virtual_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, gauge, x1)
-        
-        #이론 전선 시점 좌표
-        trioty_wire_start_coord = calculate_offset_point(start_polyline_vector, pos_coordinate, gauge)
-        
-        #종점 브래킷 좌표
-        end_cantelever_coord = calculate_offset_point(end_polyline_vector, next_pos_coordinate, x1)
-        
-        #MAST와 END의 각도
-        mast_anlge = calculate_bearing(trioty_wire_start_coord[0], trioty_wire_start_coord[1], next_pos_coordinate[0], next_pos_coordinate[1])
-        
-        wire_start_coord = calculate_destination_coordinates(trioty_wire_start_coord[0], trioty_wire_start_coord[1], mast_anlge, tension_device_length)
-
-        # 점과 직선사이의 거리 및 해당 위치의 측점
-        sta2, _ ,pererall_d= return_coord_pos(polyline_with_sta, wire_start_coord)
-
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, pererall_d, x1)
-
-        lines.append(f'{sta2},.freeobj 0;{messenger_object_index};{pererall_d};{contact_height +system_heigh};{adjusted_angle};,;무효조가선\n')
-        lines.append(f'{sta2},.freeobj 0;{contact_object_index};{pererall_d};{contact_height};{adjusted_angle};,;무효전차선\n')
+        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, gauge, x1)#평면각도
+        slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(pos, gauge, currentspan, contact_height + y1, system_heigh, adjusted_angle)
+        lines.append(f'{sta2},.freeobj 0;{messenger_object_index};{pererall_d};{h2};{adjusted_angle};{slope_degree1},;무효조가선\n')
+        lines.append(f'{sta2},.freeobj 0;{contact_object_index};{pererall_d};{h1};{adjusted_angle};{slope_degree2},;무효전차선\n')
         
     elif current_airjoint == '에어조인트 (2호주)':
         #본선 각도        
@@ -794,8 +905,9 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         lines.append(f"{pos},.freeobj 0;{obj_index};{x};0;{adjusted_angle};,;본선\n")
         
         #무효선 각도
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x1, x2)        
-        lines.append(f"{pos},.freeobj 0;{obj_index};{x1};0;{adjusted_angle};,;무효선\n")
+        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x1, x2)
+        adjusted_angle2 = calculate_slope(y1, contact_height, currentspan)#상하각도
+        lines.append(f"{pos},.freeobj 0;{obj_index};{x1};{y1};{adjusted_angle};{adjusted_angle2},;무효선\n")
         
     elif current_airjoint == '에어조인트 중간주 (3호주)':
         #본선 각도
@@ -803,7 +915,8 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         lines.append(f"{pos},.freeobj 0;{obj_index};{x3};0;{adjusted_angle};,;본선\n")
         #무효선 각도
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x2, x4)
-        lines.append(f"{pos},.freeobj 0;{obj_index};{x2};0;{adjusted_angle};,;무효선\n")
+        adjusted_angle2 = calculate_slope(contact_height, contact_height + y1, currentspan)#상하각도
+        lines.append(f"{pos},.freeobj 0;{obj_index};{x2};0;{adjusted_angle};{adjusted_angle2},;무효선\n")
         
     elif current_airjoint == '에어조인트 (4호주)':
         #본선 각도
@@ -811,16 +924,59 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         lines.append(f"{pos},.freeobj 0;{obj_index};{x4};0;{adjusted_angle};,;본선\n")
 
         
-        #무효선 각도
+        #무효선
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x5, next_gauge)
-        lines.append(f'{pos},.freeobj 0;{messenger_object_index};{x5};{contact_height +system_heigh};{adjusted_angle};,;무효조가선\n')
-        lines.append(f'{pos},.freeobj 0;{contact_object_index};{x5};{contact_height};{adjusted_angle};,;무효전차선\n')
+        slope_degree1, slope_degree2, _, _, _, _ = initialrize_tenstion_device(pos, gauge, currentspan, contact_height + y1, system_heigh, adjusted_angle)
+        lines.append(f'{pos},.freeobj 0;{messenger_object_index};{x5};{contact_height +system_heigh + y1};{adjusted_angle};{slope_degree1},;무효조가선\n')
+        lines.append(f'{pos},.freeobj 0;{contact_object_index};{x5};{contact_height + y1};{adjusted_angle};{slope_degree2},;무효전차선\n')
         
     #일반구간
     else:
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, lateral_offset, -lateral_offset)
         lines.append(f"{pos},.freeobj 0;{obj_index};{lateral_offset};;{adjusted_angle};,;{comment}\n")
     return lines
+
+def calculate_slope(h1, h2, gauge):
+    """주어진 높이 차이와 수평 거리를 바탕으로 기울기 계산"""
+    slope = (h1 - h2) / gauge
+    return slope
+
+def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, adjusted_angle):
+    #장력장치 치수
+    tension_device_length = 7.28
+    
+    #전선 각도
+    new_length = currentspan - tension_device_length #현재 span에서 장력장치까지의 거리
+    pererall_d ,  vertical_offset = return_new_point(gauge, currentspan, tension_device_length)#선형 시작점에서 전선까지의 거리
+
+    sta2 = pos + vertical_offset #전선 시작 측점
+    h1 = 5.56 #장력장치 조가선 높이
+    h2 = 6.06 #장력장치 전차선 높이
+    slope_radian1 = math.atan((h2 - (contact_height +system_heigh)) / currentspan)#조가선 각도(라디안)
+    slope_radian2 = math.atan((h1 - (contact_height)) / currentspan)#전차선 각도(라디안)
+    slope_degree1 = math.degrees(slope_radian1)#조가선 각도(도)
+    slope_degree2 = math.degrees(slope_radian2)#전차선 각도(도)
+
+    return slope_degree1, slope_degree2, h1, h2, pererall_d, sta2
+
+# 새로운 점 계산 함수
+def return_new_point(x, y, L):
+    A = (x, 0)  # A점 좌표
+    B = (0, 0)  # 원점 B
+    C = (0, y)  # C점 좌표
+    theta = math.degrees(abs(math.atan(y/x)))
+    D = calculate_destination_coordinates(A[0], A[1], theta, L)  # 이동한 D점 좌표
+    E = B[0],B[1] + D[1]
+    d1 = calculate_distance(D[0], D[1], E[0], E[1])
+    d2 = calculate_distance(B[0], B[1], E[0], E[1])
+
+    # 외적을 이용해 좌우 판별
+    v_x, v_y = C[0] - B[0], C[1] - B[1]  # 선분 벡터
+    w_x, w_y = A[0] - B[0], A[1] - B[1]  # 점에서 선분 시작점까지의 벡터
+    cross = v_x * w_y - v_y * w_x  # 외적 계산
+    sign = -1 if cross > 0 else 1
+        
+    return d1 * sign, d2
 
 def calculate_curve_angle(polyline_with_sta, pos, next_pos, stagger1, stagger2):
     point_a, P_A, vector_a = interpolate_coordinates(polyline_with_sta, pos)
@@ -838,37 +994,13 @@ def calculate_curve_angle(polyline_with_sta, pos, next_pos, stagger1, stagger2):
         finale_anlge = vector_a - a_b_angle
     return finale_anlge
 
-def return_pos_coord(polyline_with_sta, pos):
-    point_a, P_A, vector_a = interpolate_coordinates(polyline_with_sta, pos)
-    return point_a
-
-def return_coord_pos(polyline, coord):
-    distance_list = []
-    point = Point(coord)
-    for i in range(len(polyline) - 1):
-        sta1, x1, y1, z1 = polyline[i]
-        sta2, x2, y2, z2 = polyline[i + 1]
-        v1 = calculate_bearing(x1, y1, x2, y2)
-        line = LineString([(x1, y1), (x2, y2)])
-        distance = point.distance(line)
-        projected_distance = line.project(point)
-        projection_point = line.interpolate(projected_distance)
-
-        # 외적을 이용해 좌우 판별
-        v_x, v_y = x2 - x1, y2 - y1  # 선분 벡터
-        w_x, w_y = coord[0] - x1, coord[1] - y1  # 점에서 선분 시작점까지의 벡터
-        cross = v_x * w_y - v_y * w_x  # 외적 계산
-        sign = -1 if cross > 0 else 1
-        if not projected_distance is None and projected_distance!= 0:
-            d = distance * sign
-            distance_to_start_form_projected_point = calculate_distance(x1, y1, projection_point.x, projection_point.y)
-            new_sta = sta1 + distance_to_start_form_projected_point
-    
-    return new_sta, distance_to_start_form_projected_point, d
-
-def get_pole_gauge(current_structure):
-    gauge_values = {'토공': -3.0, '교량': -3.5, '터널': 2.1}
-    gauge = gauge_values.get(current_structure, -3.0)
+def get_pole_gauge(DESIGNSPEED, current_structure):
+    GAUGE_dictionary = {
+        150: {'토공': -3, '교량': -3.5, '터널': 2.1},
+        250: {'토공': -3, '교량': -3.5, '터널': 2.1},
+        350: {'토공': -3.25, '교량': -3.7, '터널': 2.1}
+    }
+    gauge = GAUGE_dictionary.get(DESIGNSPEED, {}).get(current_structure, "알 수 없는 구조")
     return gauge
 
 def get_airjoint_angle(gauge, stagger, span):
