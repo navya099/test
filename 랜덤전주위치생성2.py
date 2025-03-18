@@ -11,9 +11,10 @@ from shapely.geometry import Point, LineString
 import ezdxf  # Import ezdxf for saving to DXF
 
 '''
-ver 2025.03.17 1056
-급전선 애자 인덱스 조정(속도별)
+ver 2025.03.18
 종단면도작성기능 추가(진행중)
+전선 추가
+AJ구간 진행중
 #modify
 
 '''
@@ -70,12 +71,13 @@ def crate_pegging_plan_mast_and_bracket(doc,msp,polyline, positions, structure_l
         pos_coord , vector_pos= return_pos_coord(polyline_with_sta, pos)#전주 측점 좌표와 벡터
         #offset 적용 좌표
         pos_coord_with_offset = calculate_offset_point(vector_pos, pos_coord, gauge)
-        
+        char_height = 3 * H_scale
+
         if current_airjoint:
             """에어조인트 각 구간별 브래킷 추가"""
             if current_airjoint == AirJoint.START.value:
                 #브래킷텍스트
-                msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': 3, 'layer': '브래킷', 'color' : 6})
+                msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
                 msp.add_line(pos_coord, pos_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
             elif current_airjoint == AirJoint.POINT_2.value:
                 first_bracetl_pos = pos - 0.5
@@ -87,7 +89,7 @@ def crate_pegging_plan_mast_and_bracket(doc,msp,polyline, positions, structure_l
                 first_bracetl_coord_with_offset = calculate_offset_point(first_bracetl_vector, first_bracetl_coord, gauge)
                 second_bracetl_coord_with_offset = calculate_offset_point(second_bracetl_vector, second_bracetl_coord, gauge)
                 #브래킷 텍스트
-                msp.add_mtext(f"{post_number}\n{pos}\nF(S), AJ-I\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': 3, 'layer': '브래킷', 'color' : 6})
+                msp.add_mtext(f"{post_number}\n{pos}\nF(S), AJ-I\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
 
                 msp.add_line(first_bracetl_coord, first_bracetl_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
                 msp.add_line(second_bracetl_coord, second_bracetl_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
@@ -104,7 +106,7 @@ def crate_pegging_plan_mast_and_bracket(doc,msp,polyline, positions, structure_l
                 second_bracetl_coord_with_offset = calculate_offset_point(second_bracetl_vector, second_bracetl_coord, gauge)
 
                 #브래킷 텍스트
-                msp.add_mtext(f"{post_number}\n{pos}\nAJ-O, AJ-O\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': 3, 'layer': '브래킷', 'color' : 6})
+                msp.add_mtext(f"{post_number}\n{pos}\nAJ-O, AJ-O\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
 
                 msp.add_line(first_bracetl_coord, first_bracetl_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
                 msp.add_line(second_bracetl_coord, second_bracetl_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
@@ -123,24 +125,24 @@ def crate_pegging_plan_mast_and_bracket(doc,msp,polyline, positions, structure_l
                 msp.add_line(second_bracetl_coord, second_bracetl_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
 
                 #브래킷 텍스트
-                msp.add_mtext(f"{post_number}\n{pos}\nAJ-O, F(L)\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': 3, 'layer': '브래킷', 'color' : 6})
+                msp.add_mtext(f"{post_number}\n{pos}\nAJ-O, F(L)\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
 
             elif current_airjoint == AirJoint.END.value:
                 #브래킷텍스트
-                msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': 3, 'layer': '브래킷', 'color' : 6})
+                msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
                 #브래킷
                 msp.add_line(pos_coord, pos_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
         else:
             #브래킷
             msp.add_line(pos_coord, pos_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
             #브래킷텍스트
-            msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': 3, 'layer': '브래킷', 'color' : 6})
+            msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
 
 
         #전주번호
         #msp.add_text(post_number, dxfattribs={'insert':pos_coord_with_offset, 'height': 3, 'layer': '전주번호', 'color' : 4})
         #전주
-        msp.add_circle(pos_coord_with_offset, radius = 1.5 * scale, dxfattribs={'layer': '전주', 'color' : 4})
+        msp.add_circle(pos_coord_with_offset, radius = 1.5 * H_scale, dxfattribs={'layer': '전주', 'color' : 4})
             
     #선형 플롯
     polyline_points = [(point[1], point[2]) for point in polyline_with_sta]
@@ -252,17 +254,22 @@ def crate_pegging_plan_wire(doc , msp, polyline, positions, structure_list, curv
             msp.add_line(wire_coord, next_wire_coord, dxfattribs={'layer': '전차선', 'color' : 3})
     return doc, msp
 
+def draw_feeder_wire_plan(msp, pos_coord, end_pos, current_structure, next_structure):
+    pass
+
 def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structure_list, curve_list, pitchlist, airjoint_list):
     post_number_lst = generate_postnumbers(positions)
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
     # 전주 데이터 구성
     pole_data = format_pole_data(DESIGNSPEED)
-    
+
+    char_height = 3 * H_scale
     for i in range(len(positions) - 1):
         pos, next_pos = positions[i], positions[i + 1]
         currentspan = next_pos - pos  #현재 경간
         current_structure = isbridge_tunnel(pos, structure_list)#현재 구조물
+        next_structure = isbridge_tunnel(next_pos, structure_list)  # 다음 구조물
         current_curve, R, c = iscurve(pos, curve_list)#현재 곡선
         current_slope, pitch = isslope(pos, pitchlist)#현재 구배
         current_airjoint = check_isairjoint(pos, airjoint_list)#현재 에어조인트
@@ -271,6 +278,19 @@ def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structu
         post_number = find_post_number(post_number_lst, pos)#전주번호
         gauge = get_pole_gauge(DESIGNSPEED, current_structure)#구조물 offset
         _, mast_name = get_mast_type(DESIGNSPEED, current_structure)
+        _,_, current_system_height, current_contact_height = get_contact_wire_and_massanger_wire_info(DESIGNSPEED, current_structure, currentspan)
+        _, _, next_system_height, next_contact_height = get_contact_wire_and_massanger_wire_info(DESIGNSPEED, next_structure, currentspan)
+        _, _, h1, h2, _, _ = initialrize_tenstion_device(pos, gauge, currentspan, current_contact_height, current_system_height)
+        h1 = h1 * V_scale
+        h2 = h2 * V_scale
+
+        #스케일 적용된 높이
+        # 스케일 적용된 높이 변환 (리스트 활용)
+        current_system_height, current_contact_height, next_system_height, next_contact_height = [
+            height * V_scale for height in
+            (current_system_height, current_contact_height, next_system_height, next_contact_height)
+        ]
+
         # 해당 구조물에 대한 전주 데이터 가져오기 (없으면 '토공' 기본값 사용)
         station_data = pole_data.get(current_structure, pole_data.get('토공', {}))
 
@@ -288,40 +308,155 @@ def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structu
         pole_type = I_type if i % 2 == 1 else O_type
         bracket_type = I_bracket if i % 2 == 1 else O_bracket
 
-        #전주 좌표 반환
-        pos_coord = pos, current_pos_z#현재 전주 측점 좌표
-        next_pos_coord = next_pos, next_pos_z#다음 전주 측점 좌표
+        # 전주 좌표 반환
+        pos_coord = pos, current_pos_z * V_scale #현재 전주 측점 좌표
+        next_pos_coord = next_pos, next_pos_z * V_scale#다음 전주 측점 좌표
 
         #offset 적용 좌표
-        
+        #h1 전차선
+        #h2 조가선
     
         if current_airjoint:
             """에어조인트 각 구간별 브래킷 추가"""
             if current_airjoint == AirJoint.START.value:
-                pass
+
+                #무효선
+                _, y = get_airjoint_xy(DESIGNSPEED, 'F형_시점')
+                contact_start_point = pos_coord[0], pos_coord[1] + h1
+                contact_end_point = next_pos_coord[0], next_pos_coord[1] + next_contact_height + y
+                massanger_start_point = pos_coord[0], pos_coord[1] + h2
+                massanger_end_point = next_pos_coord[0], next_pos_coord[1] + next_contact_height + next_system_height
+                draw_msp_line(msp, contact_start_point, contact_end_point, layer_name='전차선', color=3)
+                draw_msp_line(msp, massanger_start_point, massanger_end_point, layer_name='조가선', color=3)
+
+                #본선
+                draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
+                                                current_contact_height, next_system_height, next_contact_height)
+
+                #브래킷텍스트
+                # 브래킷텍스트
+                msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}",
+                              dxfattribs={'insert': pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color': 6})
+
+            elif current_airjoint == AirJoint.POINT_2.value:
+                #무효선
+                _, y = get_airjoint_xy(DESIGNSPEED, 'F형_시점')
+                contact_start_point = pos_coord[0], pos_coord[1] + current_contact_height + y
+                contact_end_point = next_pos_coord[0], next_pos_coord[1] + next_contact_height
+                massanger_start_point = pos_coord[0], pos_coord[1] + current_contact_height + next_system_height
+                massanger_end_point = next_pos_coord[0], massanger_start_point[1]
+                draw_msp_line(msp, contact_start_point, contact_end_point, layer_name='전차선', color=3)
+                draw_msp_line(msp, massanger_start_point, massanger_end_point, layer_name='조가선', color=3)
+                #본선
+                draw_msp_line(msp, contact_start_point, contact_end_point, layer_name='전차선', color=3)
+
+                # 브래킷텍스트
+                msp.add_mtext(f"{post_number}\n{pos}\n'F(S),AJ-I\n{mast_name}",
+                              dxfattribs={'insert': pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color': 6})
+
             else:
                 pass
         else:
-            pass
-            '''
             #브래킷
-            msp.add_line(pos_coord, pos_coord_with_offset, dxfattribs={'layer': '브래킷', 'color' : 6})
+            draw_bracket_at_profile(msp, pos_coord, current_structure)
             #브래킷텍스트
-            msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord_with_offset, 'char_height': 3, 'layer': '브래킷', 'color' : 6})
-            '''
+            msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
+
+            #전차선
+            draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height, current_contact_height, next_system_height, next_contact_height)
+        #급전선
+        draw_feeder_wire(msp, pos_coord, next_pos_coord, current_structure, next_structure)
+        #보호선
+        draw_protect_wire(msp, pos_coord, next_pos_coord, current_structure, next_structure)
         #전주
-        draw_mast_for_profile(msp, mast_name, pos_coord)  
+        draw_mast_for_profile(msp, mast_name, pos_coord, current_structure)
+    #종단선형
+    draw_profile_alignmnet(msp , polyline_with_sta)
+
     return doc, msp
 
-def draw_mast_for_profile(msp, mast_name, mast_coord):
-    mast_length, mast_width = get_mast_length_and_width(mast_name)
+def get_airjoint_xy(DESIGNSPEED, content):
+    return get_bracket_coordinates(DESIGNSPEED, content)
 
-    p1 = mast_coord[0] + mast_width /2 , mast_coord[1]
-    p2 = p1[0],p1[1] + mast_length
+
+def draw_msp_line(msp, start_point, end_point, layer_name='0', color=0):
+    msp.add_line(start_point, end_point, dxfattribs={'layer': layer_name, 'color': color})
+
+    return msp
+
+def draw_contact_and_massanger_wire(msp, start_pos, end_pos, system_heigh, contact_height, next_system_heigh, next_contact_height):
+    contact_wire_start_coord = start_pos[0],start_pos[1] + contact_height
+    contact_wire_end_coord = end_pos[0], end_pos[1] + next_contact_height
+    massanger_wire_start_coord = contact_wire_start_coord[0], contact_wire_start_coord[1] + system_heigh
+    massanger_wire_end_coord = contact_wire_end_coord[0], contact_wire_end_coord[1] + next_system_heigh
+    msp.add_line(contact_wire_start_coord, contact_wire_end_coord, dxfattribs={'layer': '전차선', 'color': 3})
+    msp.add_line(massanger_wire_start_coord, massanger_wire_end_coord, dxfattribs={'layer': '조가선', 'color': 3})
+
+    return msp
+
+def draw_feeder_wire(msp, start_pos, end_pos, current_structure, next_structure):
+    feeder_wire_height_dictionary = {'토공': 7.23, '교량': 7.23, '터널': 5.48}
+    feeder_wire_start_height = feeder_wire_height_dictionary.get(current_structure, '토공')
+    feeder_wire_end_height = feeder_wire_height_dictionary.get(next_structure, '토공')
+    feeder_wire_start_coord = start_pos[0], start_pos[1] + feeder_wire_start_height
+    feeder_wire_end_coord = end_pos[0], end_pos[1] + feeder_wire_end_height
+
+    msp.add_line(feeder_wire_start_coord, feeder_wire_end_coord, dxfattribs={'layer': '급전선', 'color': 2})
+
+    return msp
+
+
+def draw_protect_wire(msp, start_pos, end_pos, current_structure, next_structure):
+    feeder_wire_height_dictionary = {'토공': 4.887, '교량': 4.887, '터널': 5.56}
+    feeder_wire_start_height = feeder_wire_height_dictionary.get(current_structure, '토공')
+    feeder_wire_end_height = feeder_wire_height_dictionary.get(next_structure, '토공')
+    feeder_wire_start_coord = start_pos[0], start_pos[1] + feeder_wire_start_height
+    feeder_wire_end_coord = end_pos[0], end_pos[1] + feeder_wire_end_height
+
+    msp.add_line(feeder_wire_start_coord, feeder_wire_end_coord, dxfattribs={'layer': '보호선', 'color': 11})
+
+    return msp
+def draw_bracket_at_profile(msp, insert_point, current_structure):
+    #가동브래킷 종단면도
+    tube_dimention_dictionary = {'토공': (6.3,0.714,0.386), '교량': (6.3,0.714,0.386), '터널': (5.748,0.363,0.386)}
+    top_tube_dim,main_pipe_dim, stedy_arm_dim  = tube_dimention_dictionary.get(current_structure,'토공')
+    #상부 파이프
+    top_tube = insert_point[0],insert_point[1] + top_tube_dim
+    #하부파이프
+    main_pipe = insert_point[0],top_tube[1]  - main_pipe_dim
+    #곡선당김금구
+    stedy_arm = insert_point[0],main_pipe[1]  - stedy_arm_dim
+
+    msp.add_circle(top_tube, radius = 0.03 * V_scale, dxfattribs={'layer': '브래킷', 'color' : 6})
+    msp.add_circle(main_pipe, radius = 0.03 * V_scale, dxfattribs={'layer': '브래킷', 'color' : 6})
+    msp.add_circle(stedy_arm, radius = 0.03 * V_scale, dxfattribs={'layer': '브래킷', 'color' : 6})
+    
+    return msp
+
+def draw_profile_alignmnet(msp, polyline):
+    #폴리선 플롯
+    polyline_x = [point[0] for point in polyline]
+    polyline_y = [point[3] * V_scale for point in polyline]
+
+    polyline_points = list(zip(polyline_x, polyline_y))  # 올바른 zip 사용
+    msp.add_lwpolyline(polyline_points, close=False, dxfattribs={'layer': '종단선형', 'color': 1})
+
+    return msp
+
+def draw_mast_for_profile(msp, mast_name, mast_coord, current_structure):
+    mast_length, mast_width = get_mast_length_and_width(mast_name)
+    mast_length = mast_length * V_scale
+
+    if current_structure in ['토공', '교량']:
+        p1 = (mast_coord[0] + mast_width / 2, mast_coord[1])
+    else:  # 터널
+        p1 = (mast_coord[0] + mast_width / 2, mast_coord[1] + (4.54 * V_scale))
+
+    p2 = p1[0], p1[1] + mast_length
     p3 = p2[0] - mast_width, p2[1]
-    p4 = p3[0],p1[1]
-    mast_points = p1,p2,p3,p4
-    msp.add_lwpolyline(mast_points, close=False, dxfattribs={'layer': '전주', 'color': 4})
+    p4 = p3[0], p1[1]
+    mast_points = [p1,p2,p3,p4]
+    msp.add_lwpolyline(mast_points, close=True, dxfattribs={'layer': '전주', 'color': 4})
 
     return msp
 
@@ -332,7 +467,7 @@ def get_mast_length_and_width(mast_name: str):
     mast_length_map = {
         'P-10"x7t-9m': 9,
         'P-12"x7t-8.5m': 8.5,
-        '터널하수강': 3,
+        '터널하수강': 1.735,
         'H형주-208X202': 9,
         'H형주-250X255': 10
     }
@@ -354,11 +489,6 @@ def get_mast_length_and_width(mast_name: str):
         raise ValueError(f"전주 정보 '{mast_name}'에서 길이 또는 폭을 찾을 수 없습니다.")
 
     return mast_length, mast_width
-
-# 사용 예시
-mast_length, mast_width = get_mast_length_and_width('P-10"x7t-9m')
-print(mast_length, mast_width)  # 출력: 9 0.2674
-
 
 def return_pos_coord(polyline_with_sta, pos):
     point_a, P_A, vector_a = interpolate_coordinates(polyline_with_sta, pos)
@@ -1432,7 +1562,7 @@ def calculate_slope(h1, h2, gauge):
     slope = (h2 - h1) / gauge  # 기울기 값 (비율)
     return math.degrees(math.atan(slope))  # 아크탄젠트 적용 후 degree 변환
 
-def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, adjusted_angle, y):
+def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, adjusted_angle=0, y=0):
     #장력장치 치수
     tension_device_length = 7.28
     
@@ -1681,6 +1811,28 @@ def get_designspeed():
         except ValueError:
             print("숫자를 입력하세요.")
 
+def get_dxf_scale(scale=None):
+    """
+    도면 축척을 반환하는 함수
+    :param scale: 도면 축척 값 (예: 1000 -> 1, 500 -> 0.5)
+    :return: 변환된 축척 값 (1:1000 -> 1, 1:500 -> 0.5)
+    """
+    if scale is None:
+        try:
+            H_scale = int(input('프로젝트의 평면축척 입력 (예: 1000 -> 1, 500 -> 0.5): '))
+            V_scale = int(input('프로젝트의 종단축척 입력 (예: 1000 -> 1, 500 -> 0.5): '))
+        except ValueError:
+            print("❌ 잘못된 입력! 숫자를 입력하세요.")
+            return None
+
+    if H_scale <= 0 or V_scale <= 0:
+        print("❌ 축척 값은 양수여야 합니다!")
+        return None
+    H_scale = H_scale / 1000
+    V_scale = 1000 / V_scale
+
+    return H_scale, V_scale
+
 def main():
     """전체 작업을 관리하는 메인 함수"""
     #고속철도인지 확인
@@ -1711,7 +1863,6 @@ def main():
     # BVE 좌표 로드
     polyline = load_coordinates()
 
-    
     airjoint_list = define_airjoint_section(pole_positions)
 
     #전주번호 추가
@@ -1724,8 +1875,8 @@ def main():
     print("전주와 전차선 txt가 성공적으로 저장되었습니다.")
     print("도면 작성중.")
     #도면 스케일
-    global scale
-    scale = 1
+    global scale, H_scale, V_scale
+    H_scale , V_scale = get_dxf_scale()
     #도면 작성
     while True:
         try:
