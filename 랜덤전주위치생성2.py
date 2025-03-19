@@ -11,10 +11,8 @@ from shapely.geometry import Point, LineString
 import ezdxf  # Import ezdxf for saving to DXF
 
 '''
-ver 2025.03.18
+ver 2025.03.19
 종단면도작성기능 추가(진행중)
-전선 추가
-AJ구간 진행중
 #modify
 
 '''
@@ -319,55 +317,55 @@ def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structu
         if current_airjoint:
             """에어조인트 각 구간별 브래킷 추가"""
             if current_airjoint == AirJoint.START.value:
-
-                #무효선
-                _, y = get_airjoint_xy(DESIGNSPEED, 'F형_시점')
-                contact_start_point = pos_coord[0], pos_coord[1] + h1
-                contact_end_point = next_pos_coord[0], next_pos_coord[1] + next_contact_height + y
-                massanger_start_point = pos_coord[0], pos_coord[1] + h2
-                massanger_end_point = next_pos_coord[0], next_pos_coord[1] + next_contact_height + next_system_height
-                draw_msp_line(msp, contact_start_point, contact_end_point, layer_name='전차선', color=3)
-                draw_msp_line(msp, massanger_start_point, massanger_end_point, layer_name='조가선', color=3)
-
-                #본선
-                draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
-                                                current_contact_height, next_system_height, next_contact_height)
-
-                #브래킷텍스트
                 # 브래킷텍스트
                 msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}",
                               dxfattribs={'insert': pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color': 6})
+                #브래킷
 
+                draw_bracket_at_profile(msp, pos_coord, current_structure)
             elif current_airjoint == AirJoint.POINT_2.value:
-                #무효선
-                _, y = get_airjoint_xy(DESIGNSPEED, 'F형_시점')
-                contact_start_point = pos_coord[0], pos_coord[1] + current_contact_height + y
-                contact_end_point = next_pos_coord[0], next_pos_coord[1] + next_contact_height
-                massanger_start_point = pos_coord[0], pos_coord[1] + current_contact_height + next_system_height
-                massanger_end_point = next_pos_coord[0], massanger_start_point[1]
-                draw_msp_line(msp, contact_start_point, contact_end_point, layer_name='전차선', color=3)
-                draw_msp_line(msp, massanger_start_point, massanger_end_point, layer_name='조가선', color=3)
-                #본선
-                draw_msp_line(msp, contact_start_point, contact_end_point, layer_name='전차선', color=3)
-
-                # 브래킷텍스트
+                # 브래킷 텍스트 추가
                 msp.add_mtext(f"{post_number}\n{pos}\n'F(S),AJ-I\n{mast_name}",
                               dxfattribs={'insert': pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color': 6})
 
+                # 브래킷1 (좌측으로 0.5 이동)
+                draw_bracket_at_profile(msp, (pos_coord[0] - 0.5, pos_coord[1]), current_structure)
+
+                # 브래킷2 (우측으로 0.5 이동)
+                draw_bracket_at_profile(msp, (pos_coord[0] + 0.5, pos_coord[1]), current_structure)
+
+            elif current_airjoint == AirJoint.MIDDLE.value:
+                # 브래킷텍스트
+                msp.add_mtext(f"{post_number}\n{pos}\n'AJ-O,AJ-O\n{mast_name}",
+                              dxfattribs={'insert': pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color': 6})
+                # 브래킷1 (좌측으로 0.5 이동)
+                draw_bracket_at_profile(msp, (pos_coord[0] - 0.8, pos_coord[1]), current_structure)
+
+                # 브래킷2 (우측으로 0.5 이동)
+                draw_bracket_at_profile(msp, (pos_coord[0] + 0.8, pos_coord[1]), current_structure)
+            elif current_airjoint == AirJoint.POINT_4.value:
+                # 브래킷텍스트
+                msp.add_mtext(f"{post_number}\n{pos}\n'AJ-O,F(L)\n{mast_name}",
+                              dxfattribs={'insert': pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color': 6})
+                # 브래킷1 (좌측으로 0.5 이동)
+                draw_bracket_at_profile(msp, (pos_coord[0] - 0.5, pos_coord[1]), current_structure)
+
+                # 브래킷2 (우측으로 0.5 이동)
+                draw_bracket_at_profile(msp, (pos_coord[0] + 0.5, pos_coord[1]), current_structure)
+            elif current_airjoint == AirJoint.END.value:
+                # 브래킷
+                draw_bracket_at_profile(msp, pos_coord, current_structure)
+                # 브래킷텍스트
+                msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}",
+                              dxfattribs={'insert': pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color': 6})
+            # 전주
             else:
-                pass
+                print('an error accumnent in line e')
         else:
             #브래킷
             draw_bracket_at_profile(msp, pos_coord, current_structure)
             #브래킷텍스트
             msp.add_mtext(f"{post_number}\n{pos}\n{bracket_type}\n{mast_name}", dxfattribs={'insert':pos_coord, 'char_height': char_height, 'layer': '브래킷', 'color' : 6})
-
-            #전차선
-            draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height, current_contact_height, next_system_height, next_contact_height)
-        #급전선
-        draw_feeder_wire(msp, pos_coord, next_pos_coord, current_structure, next_structure)
-        #보호선
-        draw_protect_wire(msp, pos_coord, next_pos_coord, current_structure, next_structure)
         #전주
         draw_mast_for_profile(msp, mast_name, pos_coord, current_structure)
     #종단선형
@@ -375,6 +373,158 @@ def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structu
 
     return doc, msp
 
+
+def create_pegging_profile_wire(doc, msp, polyline, positions, structure_list, curve_list, pitchlist,
+                                            airjoint_list):
+    post_number_lst = generate_postnumbers(positions)
+    polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
+
+    # 전주 데이터 구성
+    pole_data = format_pole_data(DESIGNSPEED)
+
+    char_height = 3 * H_scale
+    for i in range(len(positions) - 1):
+        pos, next_pos = positions[i], positions[i + 1]
+        currentspan = next_pos - pos  # 현재 경간
+        current_structure = isbridge_tunnel(pos, structure_list)  # 현재 구조물
+        next_structure = isbridge_tunnel(next_pos, structure_list)  # 다음 구조물
+        current_curve, R, c = iscurve(pos, curve_list)  # 현재 곡선
+        current_slope, pitch = isslope(pos, pitchlist)  # 현재 구배
+        current_airjoint = check_isairjoint(pos, airjoint_list)  # 현재 에어조인트
+        current_pos_z = get_elevation_pos(pos, polyline_with_sta)  # 현재 전주의 z값
+        next_pos_z = get_elevation_pos(next_pos, polyline_with_sta)  # 다음 전주의 z값
+        post_number = find_post_number(post_number_lst, pos)  # 전주번호
+        gauge = get_pole_gauge(DESIGNSPEED, current_structure)  # 구조물 offset
+        _, mast_name = get_mast_type(DESIGNSPEED, current_structure)
+        _, _, current_system_height, current_contact_height = get_contact_wire_and_massanger_wire_info(DESIGNSPEED,
+                                                                                                       current_structure,
+                                                                                                       currentspan)
+        _, _, next_system_height, next_contact_height = get_contact_wire_and_massanger_wire_info(DESIGNSPEED,
+                                                                                                 next_structure,
+                                                                                                 currentspan)
+        _, _, h1, h2, _, _ = initialrize_tenstion_device(pos, gauge, currentspan, current_contact_height,
+                                                         current_system_height)
+        h1 = h1 * V_scale
+        h2 = h2 * V_scale
+
+        # 스케일 적용된 높이
+        # 스케일 적용된 높이 변환 (리스트 활용)
+        current_system_height, current_contact_height, next_system_height, next_contact_height = [
+            height * V_scale for height in
+            (current_system_height, current_contact_height, next_system_height, next_contact_height)
+        ]
+
+        # 해당 구조물에 대한 전주 데이터 가져오기 (없으면 '토공' 기본값 사용)
+        station_data = pole_data.get(current_structure, pole_data.get('토공', {}))
+
+        # '교량' 같은 구간일 경우, 곡선 여부에 따라 데이터 선택
+        if isinstance(station_data, dict) and '직선' in station_data:
+            station_data = station_data.get('곡선' if current_curve == '곡선' else '직선', {})
+
+        # 필요한 데이터 추출 (기본값 설정)
+        I_type = station_data.get('I_type', '기본_I_type')
+        O_type = station_data.get('O_type', '기본_O_type')
+        I_bracket = station_data.get('I_bracket', '기본_I_bracket')
+        O_bracket = station_data.get('O_bracket', '기본_O_bracket')
+
+        # 홀수/짝수에 맞는 전주 데이터 생성
+        pole_type = I_type if i % 2 == 1 else O_type
+        bracket_type = I_bracket if i % 2 == 1 else O_bracket
+
+        # 전주 좌표 반환
+        pos_coord = pos, current_pos_z * V_scale  # 현재 전주 측점 좌표
+        next_pos_coord = next_pos, next_pos_z * V_scale  # 다음 전주 측점 좌표
+
+        # offset 적용 좌표
+        # h1 전차선
+        # h2 조가선
+
+        if current_airjoint:
+            """에어조인트 각 구간별 브래킷 추가"""
+            if current_airjoint == AirJoint.START.value:
+
+                # 무효선 좌표 계산
+                y_offset = get_airjoint_xy(DESIGNSPEED, 'F형_시점')[1] * V_scale
+
+                contact_start = (pos_coord[0], pos_coord[1] + h1)
+                contact_end = (next_pos_coord[0], next_pos_coord[1] + next_contact_height + y_offset)
+
+                massanger_start = (pos_coord[0], pos_coord[1] + h2)
+                massanger_end = (next_pos_coord[0], next_pos_coord[1] + next_contact_height + next_system_height)
+
+                # 무효선 그리기
+                draw_msp_line(msp, contact_start, contact_end, layer_name='전차선', color=1)
+                draw_msp_line(msp, massanger_start, massanger_end, layer_name='조가선', color=1)
+
+                # 본선 그리기
+                draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
+                                                current_contact_height, next_system_height, next_contact_height)
+
+            elif current_airjoint == AirJoint.POINT_2.value:
+                # 무효선-하강
+                # 무효선 좌표 계산
+                y_offset = get_airjoint_xy(DESIGNSPEED, 'F형_시점')[1] * V_scale
+
+                contact_start = (pos_coord[0], pos_coord[1] + current_contact_height + y_offset)
+                contact_end = (next_pos_coord[0], next_pos_coord[1] + next_contact_height)
+
+                massanger_start = (pos_coord[0], pos_coord[1] + current_contact_height + current_system_height)
+                massanger_end = (next_pos_coord[0], next_pos_coord[1] + next_contact_height + next_system_height)
+
+                # 무효선 그리기
+                draw_msp_line(msp, contact_start, contact_end, layer_name='전차선', color=1)
+                draw_msp_line(msp, massanger_start, massanger_end, layer_name='조가선', color=1)
+                # 본선
+                # 본선 그리기
+                draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
+                                                current_contact_height, next_system_height, next_contact_height)
+            elif current_airjoint == AirJoint.MIDDLE.value:
+                #무효선 그리기
+                draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
+                                                current_contact_height, next_system_height, next_contact_height)
+
+                y_offset = get_airjoint_xy(DESIGNSPEED, 'F형_시점')[1] * V_scale
+
+                #본선 상승
+                contact_start = (pos_coord[0], pos_coord[1] + current_contact_height)
+                contact_end = (next_pos_coord[0], next_pos_coord[1] + next_contact_height + y_offset)
+
+                massanger_start = (pos_coord[0], pos_coord[1] + current_contact_height + current_system_height)
+                massanger_end = (next_pos_coord[0], next_pos_coord[1] + next_contact_height + next_system_height)
+                # 본선 그리기
+                draw_msp_line(msp, contact_start, contact_end, layer_name='전차선', color=1)
+                draw_msp_line(msp, massanger_start, massanger_end, layer_name='조가선', color=1)
+
+            elif current_airjoint == AirJoint.POINT_4.value:
+                y_offset = get_airjoint_xy(DESIGNSPEED, 'F형_시점')[1] * V_scale
+
+                # 본선 상승
+                contact_start = (pos_coord[0], pos_coord[1] + current_contact_height + y_offset)
+                contact_end = (next_pos_coord[0], next_pos_coord[1] + h1)
+
+                massanger_start = (pos_coord[0], pos_coord[1] + current_contact_height + current_system_height)
+                massanger_end = (next_pos_coord[0], next_pos_coord[1] + h2)
+                # 본선 그리기
+                draw_msp_line(msp, contact_start, contact_end, layer_name='전차선', color=1)
+                draw_msp_line(msp, massanger_start, massanger_end, layer_name='조가선', color=1)
+
+                #무효선
+                draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
+                                                current_contact_height, next_system_height, next_contact_height)
+            else:
+                #본선
+                draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
+                                                current_contact_height, next_system_height, next_contact_height)
+        else:
+            # 전차선
+            draw_contact_and_massanger_wire(msp, pos_coord, next_pos_coord, current_system_height,
+                                            current_contact_height, next_system_height, next_contact_height)
+        # 급전선
+        draw_feeder_wire(msp, pos_coord, next_pos_coord, current_structure, next_structure)
+        # 보호선
+        draw_protect_wire(msp, pos_coord, next_pos_coord, current_structure, next_structure)
+
+    return doc, msp
 def get_airjoint_xy(DESIGNSPEED, content):
     return get_bracket_coordinates(DESIGNSPEED, content)
 
@@ -384,53 +534,136 @@ def draw_msp_line(msp, start_point, end_point, layer_name='0', color=0):
 
     return msp
 
-def draw_contact_and_massanger_wire(msp, start_pos, end_pos, system_heigh, contact_height, next_system_heigh, next_contact_height):
-    contact_wire_start_coord = start_pos[0],start_pos[1] + contact_height
-    contact_wire_end_coord = end_pos[0], end_pos[1] + next_contact_height
-    massanger_wire_start_coord = contact_wire_start_coord[0], contact_wire_start_coord[1] + system_heigh
-    massanger_wire_end_coord = contact_wire_end_coord[0], contact_wire_end_coord[1] + next_system_heigh
+def draw_contact_and_massanger_wire(msp, start_pos, end_pos, system_height, contact_height, next_system_height, next_contact_height):
+    """전차선 및 조가선 그리기"""
+    # 전차선(컨택트 와이어) 시작과 끝 좌표 계산
+    contact_wire_start_coord = (start_pos[0], start_pos[1] + contact_height)
+    contact_wire_end_coord = (end_pos[0], end_pos[1] + next_contact_height)
+
+    # 조가선(메신저 와이어) 시작과 끝 좌표 계산
+    massanger_wire_start_coord = (contact_wire_start_coord[0], contact_wire_start_coord[1] + system_height)
+    massanger_wire_end_coord = (contact_wire_end_coord[0], contact_wire_end_coord[1] + next_system_height)
+
+    # Bulge 값 계산 (2H / L)
+    chord_length = end_pos[0] - start_pos[0]  # 현의 길이
+    sagitta = random.uniform(0, 0.5)  # 0 ~ 0.5 사이의 랜덤 Sagitta 값
+    bulge = (2 * sagitta) / chord_length if chord_length != 0 else 0  # Bulge 값 계산
+
+    # 전차선 추가
     msp.add_line(contact_wire_start_coord, contact_wire_end_coord, dxfattribs={'layer': '전차선', 'color': 3})
-    msp.add_line(massanger_wire_start_coord, massanger_wire_end_coord, dxfattribs={'layer': '조가선', 'color': 3})
+
+    # 조가선(메신저 와이어) 추가 (Bulge 적용)
+    msp.add_lwpolyline(
+        [(massanger_wire_start_coord[0], massanger_wire_start_coord[1], bulge),
+         (massanger_wire_end_coord[0], massanger_wire_end_coord[1], 0)],
+        format="xyb",  # x, y, bulge 형태로 추가
+        close=False,
+        dxfattribs={'layer': '조가선', 'color': 3}
+    )
 
     return msp
+
 
 def draw_feeder_wire(msp, start_pos, end_pos, current_structure, next_structure):
-    feeder_wire_height_dictionary = {'토공': 7.23, '교량': 7.23, '터널': 5.48}
-    feeder_wire_start_height = feeder_wire_height_dictionary.get(current_structure, '토공')
-    feeder_wire_end_height = feeder_wire_height_dictionary.get(next_structure, '토공')
-    feeder_wire_start_coord = start_pos[0], start_pos[1] + feeder_wire_start_height
-    feeder_wire_end_coord = end_pos[0], end_pos[1] + feeder_wire_end_height
+    """급전선(Feeder Wire) 그리기"""
+    # 구조물별 급전선 높이 사전 정의
+    feeder_wire_height_dict = {'토공': 7.23, '교량': 7.23, '터널': 5.48}
 
-    msp.add_line(feeder_wire_start_coord, feeder_wire_end_coord, dxfattribs={'layer': '급전선', 'color': 2})
+    # 현재 및 다음 구조물 높이 가져오기 (기본값: 토공)
+    feeder_wire_start_height = feeder_wire_height_dict.get(current_structure, feeder_wire_height_dict['토공']) * V_scale
+    feeder_wire_end_height = feeder_wire_height_dict.get(next_structure, feeder_wire_height_dict['토공']) * V_scale
+
+    # 급전선 좌표 계산
+    start_x, start_y = start_pos
+    end_x, end_y = end_pos
+    feeder_wire_start_coord = (start_x, start_y + feeder_wire_start_height)
+    feeder_wire_end_coord = (end_x, end_y + feeder_wire_end_height)
+
+    # Bulge 값 계산 (2H / L)
+    chord_length = end_x - start_x  # 현의 길이
+    sagitta = random.uniform(0, 0.8)  # 0 ~ 0.8 사이의 랜덤 Sagitta 값
+    bulge = (2 * sagitta / chord_length) if chord_length != 0 else 0
+
+    # DXF 폴리라인 추가
+    msp.add_lwpolyline(
+        [(start_x, feeder_wire_start_coord[1], bulge),
+         (end_x, feeder_wire_end_coord[1], 0)],
+        format="xyb",  # x, y, bulge 형태
+        close=False,
+        dxfattribs={'layer': '급전선', 'color': 2}
+    )
 
     return msp
+
 
 
 def draw_protect_wire(msp, start_pos, end_pos, current_structure, next_structure):
-    feeder_wire_height_dictionary = {'토공': 4.887, '교량': 4.887, '터널': 5.56}
-    feeder_wire_start_height = feeder_wire_height_dictionary.get(current_structure, '토공')
-    feeder_wire_end_height = feeder_wire_height_dictionary.get(next_structure, '토공')
-    feeder_wire_start_coord = start_pos[0], start_pos[1] + feeder_wire_start_height
-    feeder_wire_end_coord = end_pos[0], end_pos[1] + feeder_wire_end_height
+    # 보호선 높이 사전 정의
+    wire_height_dict = {'토공': 4.887, '교량': 4.887, '터널': 5.56}
 
-    msp.add_line(feeder_wire_start_coord, feeder_wire_end_coord, dxfattribs={'layer': '보호선', 'color': 11})
+    # 구조물에 따른 보호선 높이 가져오기 (기본값 '토공')
+    start_height = wire_height_dict.get(current_structure, wire_height_dict['토공']) * V_scale
+    end_height = wire_height_dict.get(next_structure, wire_height_dict['토공']) * V_scale
+
+    # 보호선 좌표 계산
+    start_coord = (start_pos[0], start_pos[1] + start_height)
+    end_coord = (end_pos[0], end_pos[1] + end_height)
+
+    # Bulge 값 계산 (Sagitta 공식 적용)
+    span_length = end_pos[0] - start_pos[0]
+    sagitta = random.uniform(0, 0.8)  # 0~0.8 범위에서 랜덤 Sagitta 값
+    bulge = 0 if span_length == 0 else (2 * sagitta) / span_length
+
+    # 보호선 그리기
+    msp.add_lwpolyline(
+        [(start_coord[0], start_coord[1], bulge),
+         (end_coord[0], end_coord[1], 0)],
+        format="xyb",  # x, y, bulge 형태
+        close=False,
+        dxfattribs={'layer': '보호선', 'color': 11}
+    )
 
     return msp
-def draw_bracket_at_profile(msp, insert_point, current_structure):
-    #가동브래킷 종단면도
-    tube_dimention_dictionary = {'토공': (6.3,0.714,0.386), '교량': (6.3,0.714,0.386), '터널': (5.748,0.363,0.386)}
-    top_tube_dim,main_pipe_dim, stedy_arm_dim  = tube_dimention_dictionary.get(current_structure,'토공')
-    #상부 파이프
-    top_tube = insert_point[0],insert_point[1] + top_tube_dim
-    #하부파이프
-    main_pipe = insert_point[0],top_tube[1]  - main_pipe_dim
-    #곡선당김금구
-    stedy_arm = insert_point[0],main_pipe[1]  - stedy_arm_dim
 
-    msp.add_circle(top_tube, radius = 0.03 * V_scale, dxfattribs={'layer': '브래킷', 'color' : 6})
-    msp.add_circle(main_pipe, radius = 0.03 * V_scale, dxfattribs={'layer': '브래킷', 'color' : 6})
-    msp.add_circle(stedy_arm, radius = 0.03 * V_scale, dxfattribs={'layer': '브래킷', 'color' : 6})
-    
+
+def draw_bracket_at_profile(msp, insert_point, current_structure):
+    """가동 브래킷 종단면도 그리기"""
+    # 파이프 치수 사전 정의
+    tube_dimension_dict = {
+        '토공': (6.3, 0.714, 0.386),
+        '교량': (6.3, 0.714, 0.386),
+        '터널': (5.748, 0.363, 0.386),
+    }
+
+    # 구조물에 따른 치수 가져오기 (기본값: 토공)
+    top_tube_dim, main_pipe_dim, steady_arm_dim = tube_dimension_dict.get(
+        current_structure, tube_dimension_dict['토공']
+    )
+
+    # 스케일 적용된 높이 계산
+    top_tube_height = top_tube_dim * V_scale
+    main_pipe_height = main_pipe_dim * V_scale
+    steady_arm_height = steady_arm_dim * V_scale
+
+    # 좌표 계산
+    x, y = insert_point
+    top_tube = (x, y + top_tube_height)
+    main_pipe = (x, y + top_tube_height - main_pipe_height)
+    steady_arm = (x, y + top_tube_height - main_pipe_height - steady_arm_height)
+
+    # 브래킷 원 추가
+    for position in [top_tube, main_pipe, steady_arm]:
+        msp.add_circle(position, radius=0.03 * V_scale, dxfattribs={'layer': '브래킷', 'color': 6})
+
+    return msp
+
+def draw_structure(msp, structure_list):
+
+    if current_structure == '교량':
+        pass
+    elif current_structure == '터널':
+        pass
+
     return msp
 
 def draw_profile_alignmnet(msp, polyline):
@@ -1887,6 +2120,8 @@ def main():
             #전차선로종단면도
             doc1, msp1 = create_new_dxf()
             doc1 , msp1 = create_pegging_profile_mast_and_bracket(doc1 , msp1, polyline, pole_positions, structure_list, curvelist, pitchlist, airjoint_list)
+            doc1, msp1 = create_pegging_profile_wire(doc1, msp1, polyline, pole_positions, structure_list,
+                                                                 curvelist, pitchlist, airjoint_list)
             break
         except Exception  as e:
             print(f'도면 생성중 에러 발생: {e}')
