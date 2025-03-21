@@ -11,8 +11,9 @@ from shapely.geometry import Point, LineString
 import ezdxf  # Import ezdxf for saving to DXF
 
 '''
-ver 2025.03.19
-종단면도작성기능 추가(진행중)
+ver 2025.03.21
+종단면도작성기능 준공
+모드 추가(기존노선 신규노선 분리)
 #modify
 
 '''
@@ -333,6 +334,9 @@ def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structu
 
                 # 브래킷2 (우측으로 0.5 이동)
                 draw_bracket_at_profile(msp, (pos_coord[0] + 0.5, pos_coord[1]), current_structure)
+                # 평행틀
+                draw_spreader(msp, (pos_coord[0] - 0.5, pos_coord[1]))
+                draw_spreader(msp, (pos_coord[0] + 0.5, pos_coord[1]))
 
             elif current_airjoint == AirJoint.MIDDLE.value:
                 # 브래킷텍스트
@@ -343,6 +347,11 @@ def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structu
 
                 # 브래킷2 (우측으로 0.5 이동)
                 draw_bracket_at_profile(msp, (pos_coord[0] + 0.8, pos_coord[1]), current_structure)
+
+                # 평행틀
+                draw_spreader(msp, (pos_coord[0] - 0.8, pos_coord[1]))
+                draw_spreader(msp, (pos_coord[0] + 0.8, pos_coord[1]))
+
             elif current_airjoint == AirJoint.POINT_4.value:
                 # 브래킷텍스트
                 msp.add_mtext(f"{post_number}\n{pos}\n'AJ-O,F(L)\n{mast_name}",
@@ -352,6 +361,11 @@ def create_pegging_profile_mast_and_bracket(doc,msp,polyline, positions, structu
 
                 # 브래킷2 (우측으로 0.5 이동)
                 draw_bracket_at_profile(msp, (pos_coord[0] + 0.5, pos_coord[1]), current_structure)
+
+                # 평행틀
+                draw_spreader(msp, (pos_coord[0] - 0.5, pos_coord[1]))
+                draw_spreader(msp, (pos_coord[0] + 0.5, pos_coord[1]))
+
             elif current_airjoint == AirJoint.END.value:
                 # 브래킷
                 draw_bracket_at_profile(msp, pos_coord, current_structure)
@@ -529,6 +543,16 @@ def get_airjoint_xy(DESIGNSPEED, content):
     return get_bracket_coordinates(DESIGNSPEED, content)
 
 
+def draw_msp_rectangle(msp, origin, width, height, layer_name='0', color=0):
+    p1 = (origin[0] + width / 2, origin[1] + height / 2)  # 오른쪽 위
+    p2 = (p1[0] - width, p1[1])  # 왼쪽 위
+    p3 = (p2[0], p2[1] - height)  # 왼쪽 아래
+    p4 = (p1[0], p3[1])  # 오른쪽 아래
+
+    # 사각형 그리기
+    msp.add_lwpolyline([p1, p2, p3, p4, p1], dxfattribs={'layer': layer_name, 'color': color})
+
+
 def draw_msp_line(msp, start_point, end_point, layer_name='0', color=0):
     msp.add_line(start_point, end_point, dxfattribs={'layer': layer_name, 'color': color})
 
@@ -657,14 +681,24 @@ def draw_bracket_at_profile(msp, insert_point, current_structure):
 
     return msp
 
-def draw_structure(msp, structure_list):
-
-    if current_structure == '교량':
-        pass
-    elif current_structure == '터널':
-        pass
-
+def process_draw_structure(msp, structure_list, polyline_with_sta):
     return msp
+
+def draw_profile_structure(msp, start, end, structure_list, polyline_with_sta):
+    current_pos_z = get_elevation_pos(start, polyline_with_sta) # 현재 교량 측점의 z값
+    msp.add_line(start_point, end_point, dxfattribs={'layer': layer_name, 'color': color})
+
+def get_numberlist(unit, start, end):
+    num_list = []
+    station_count = end // unit
+    """unit 간격으로 start부터 end까지 숫자 리스트 생성(예시 111, 125, 150,175,186)"""
+    i = 0
+    num_list.append(start)
+    for i in range(station_count):
+        if i * unit >= start:
+            num_list.append(i * unit )
+    num_list.append(end)
+    return num_list
 
 def draw_profile_alignmnet(msp, polyline):
     #폴리선 플롯
@@ -674,6 +708,15 @@ def draw_profile_alignmnet(msp, polyline):
     polyline_points = list(zip(polyline_x, polyline_y))  # 올바른 zip 사용
     msp.add_lwpolyline(polyline_points, close=False, dxfattribs={'layer': '종단선형', 'color': 1})
 
+    return msp
+
+def draw_spreader(msp,origin):
+    p1 = origin[0] + 0.075, origin[1]
+    p2 = p1[0], p1[1] + 1.2
+    p3 = p2[0] - 0.15, p2[1]
+    p4 = p3[0], p1[1]
+    points = [p1, p2, p3, p4]
+    msp.add_lwpolyline(points, close=True, dxfattribs={'layer': '지지물', 'color': 4})
     return msp
 
 def draw_mast_for_profile(msp, mast_name, mast_coord, current_structure):
@@ -728,6 +771,12 @@ def return_pos_coord(polyline_with_sta, pos):
     return point_a, vector_a
 
 def save_to_dxf(doc,  file_name='output.dxf'):
+    '''
+    dxf파일 저장함수
+    :param doc: ezdxf doc객체
+    :param file_name: 파일명 str
+    :return: None 저장기능 수행
+    '''
     doc.saveas(file_name)
     
 def distribute_pole_spacing_flexible(start_km, end_km, spans=(45, 50, 55, 60)):
@@ -764,7 +813,7 @@ def distribute_pole_spacing_flexible(start_km, end_km, spans=(45, 50, 55, 60)):
         if current_pos + min(spans) > end_m:
             break
 
-    return selected_spans, positions
+    return positions
 
 #전주번호 추가함수
 def generate_postnumbers(lst):
@@ -1398,16 +1447,17 @@ def find_post_number(lst, pos):
         if arg[0] == pos:
             return arg[1]
     
-def save_to_txt(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline, filename="C:/TEMP/pole_positions.txt"):
+def save_to_txt(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline, post_type_list, post_number_lst, filename="C:/TEMP/pole_positions.txt", mode=1):
     """전주 위치 데이터를 가공하여 .txt 파일로 저장하는 함수"""
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
     # 전주 데이터 구성
     pole_data = format_pole_data(DESIGNSPEED)
     
     lines = []  # 파일에 저장할 데이터를 담을 리스트
-    #전주번호
-    post_number_lst = generate_postnumbers(positions)
-    
+
+    # 🔹 모드 1인 경우 새로운 post_number 리스트 생성, 모드 2면 기존 리스트 유지
+    generated_post_numbers = generate_postnumbers(positions) if mode == 1 else post_number_lst
+
     for i in range(len(positions) - 1):
         pos, next_pos = positions[i], positions[i + 1]
         currentspan = next_pos - pos  # 전주 간 거리 계산
@@ -1417,24 +1467,33 @@ def save_to_txt(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, a
         current_curve, R, c = iscurve(pos, curve_list)
         current_slope, pitch = isslope(pos, pitchlist)
         current_airjoint = check_isairjoint(pos, airjoint_list)
-        post_number = find_post_number(post_number_lst, pos)
+
         # 해당 구조물에 대한 전주 데이터 가져오기 (없으면 '토공' 기본값 사용)
         station_data = pole_data.get(current_structure, pole_data.get('토공', {}))
+        # 각 항목을 한 번에 처리
+        I_type, O_type, I_bracket, O_bracket = map(
+            lambda key: station_data.get(key, f'기본_{key}'),
+            ['I_type', 'O_type', 'I_bracket', 'O_bracket']
+        )
 
         # '교량' 같은 구간일 경우, 곡선 여부에 따라 데이터 선택
         if isinstance(station_data, dict) and '직선' in station_data:
             station_data = station_data.get('곡선' if current_curve == '곡선' else '직선', {})
 
-        # 필요한 데이터 추출 (기본값 설정)
-        I_type = station_data.get('I_type', '기본_I_type')
-        O_type = station_data.get('O_type', '기본_O_type')
-        I_bracket = station_data.get('I_bracket', '기본_I_bracket')
-        O_bracket = station_data.get('O_bracket', '기본_O_bracket')
+        # 🔹 모드 1일 경우 생성한 리스트, 모드 2일 경우 기존 리스트 사용
+        post_number = find_post_number(generated_post_numbers, pos)
 
-        # 홀수/짝수에 맞는 전주 데이터 생성
-        pole_type = I_type if i % 2 == 1 else O_type
-        bracket_type = I_bracket if i % 2 == 1 else O_bracket
+        if mode == 1:#가상노선 적용
+            # 홀수/짝수에 맞는 전주 데이터 생성
+            is_I_type = (i % 2 == 1)
 
+        else:#실제 노선 적용
+            is_I_type = (get_current_post_type(pos, post_type_list) == 'I')
+
+        # 홀수/짝수 또는 전주 타입에 맞는 전주 데이터 생성
+        pole_type, bracket_type = (I_type, I_bracket) if is_I_type else (O_type, O_bracket)
+
+        #구분하여 처리
         if current_airjoint:
             lines.extend(f'\n,;{post_number}')
             lines.extend(get_airjoint_lines(pos,next_pos, current_airjoint, pole_type, bracket_type, current_structure, next_structure, DESIGNSPEED, currentspan, polyline_with_sta))
@@ -1446,6 +1505,57 @@ def save_to_txt(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, a
     # 파일 저장 함수 호출
     write_to_file(filename, lines)
 
+
+class PolePositionSaver:
+    def __init__(self, mode: int, filename="C:/TEMP/pole_positions.txt"):
+        self.mode = mode
+        self.filename = filename
+
+    def save(self, positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline):
+        lines = []
+        post_number_lst = generate_postnumbers(positions)
+
+        for i in range(len(positions) - 1):
+            pos, next_pos = positions[i], positions[i + 1]
+            currentspan = next_pos - pos
+            current_structure = isbridge_tunnel(pos, structure_list)
+            current_curve, _, _ = iscurve(pos, curve_list)
+            current_airjoint = check_isairjoint(pos, airjoint_list)
+            post_number = find_post_number(post_number_lst, pos)
+
+            # 모드 2일 경우, 23~37줄 로직 제외
+            if self.mode == 1:
+                station_data = self.get_pole_data(pos, structure_list, curve_list, pitchlist, DESIGNSPEED)
+                pole_type, bracket_type = self.get_pole_and_bracket(i, station_data)
+
+            if current_airjoint:
+                lines.extend(f'\n,;{post_number}')
+                lines.extend(
+                    get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, bracket_type, current_structure,
+                                       None, DESIGNSPEED, currentspan, polyline))
+            else:
+                lines.append(f'\n,;{post_number}')
+                lines.append(f'\n,;-----일반개소({current_structure})({current_curve})-----\n')
+                lines.append(f"{pos},.freeobj 0;{pole_type};,;{bracket_type}\n")
+
+        write_to_file(self.filename, lines)
+
+    def get_pole_data(self, pos, structure_list, curve_list, pitchlist, DESIGNSPEED):
+        """전주 데이터를 가져오는 로직"""
+        current_structure = isbridge_tunnel(pos, structure_list)
+        current_curve, R, c = iscurve(pos, curve_list)
+        station_data = format_pole_data(DESIGNSPEED).get(current_structure, {})
+        if isinstance(station_data, dict) and '직선' in station_data:
+            return station_data.get('곡선' if current_curve == '곡선' else '직선', {})
+        return station_data
+
+    def get_pole_and_bracket(self, i, station_data):
+        """홀수/짝수 전주 타입 및 브래킷 설정"""
+        I_type = station_data.get('I_type', '기본_I_type')
+        O_type = station_data.get('O_type', '기본_O_type')
+        I_bracket = station_data.get('I_bracket', '기본_I_bracket')
+        O_bracket = station_data.get('O_bracket', '기본_O_bracket')
+        return (I_type if i % 2 == 1 else O_type), (I_bracket if i % 2 == 1 else O_bracket)
 #미사용
 def get_stagger_at_cant(cant,height,stagger):
     '''곡선반경에 따른 캔트에 의한 편위를 반환하는 함수'''
@@ -1481,9 +1591,10 @@ def get_block_index(current_track_position, block_interval = 25):
     """현재 트랙 위치를 블록 인덱스로 변환"""
     return math.floor(current_track_position / block_interval + 0.001) * block_interval
 
-def process_to_WIRE(positions, spans, structure_list, curve_list, pitchlist, polyline, airjoint_list, filename="wire.txt"):
+def process_to_WIRE(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline, post_type_list, post_number_lst, filename="wire.txt", mode=1):
     """ 전주 위치에 wire를 배치하는 함수 """
-    post_number_lst = generate_postnumbers(positions)
+    #모드 1인경우 새 리스트 생성 아닌경우 기존 리스트 활용
+    generated_post_numbers = generate_postnumbers(positions) if mode == 1 else post_number_lst
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
     lines = []
     for i in range(len(positions) - 1):
@@ -1508,15 +1619,16 @@ def process_to_WIRE(positions, spans, structure_list, curve_list, pitchlist, pol
             
         current_sta = get_block_index(pos)
         current_airjoint = check_isairjoint(pos, airjoint_list)
-        currnet_type = 'I' if i % 2 == 1 else 'O'
-        post_number = find_post_number(post_number_lst, pos)
+        if mode == 1:
+            is_I_type = (i % 2 == 1)
+        else:
+            is_I_type = (get_current_post_type(pos, post_type_list) == 'I')
+        currnet_type = 'I' if is_I_type else 'O'
+        post_number = find_post_number(generated_post_numbers, pos)
         obj_index, comment, AF_wire, FPW_wire = get_wire_span_data(DESIGNSPEED,  currentspan, current_structure)
         
         #AF와 FPW오프셋(X,Y)
         AF_X_offset,AF_y_offset , fpw_wire_X_offset, fpw_wire_y_offset , AF_yz_angle, FPW_yz_angle ,AF_xy_angle , FPW_xy_angle,AF_X_offset_Next, fpw_wire_X_offset_Next = CALULATE_AF_FPW_OFFET_ANGLE(current_structure, next_structure, currentspan)
-
-        #편위(0.2)와 직선구간 각도
-        lateral_offset, adjusted_angle = get_lateral_offset_and_angle(i, currentspan)
 
         lines.extend([f'\n,;{post_number}'])
         if current_airjoint in ['에어조인트 시작점 (1호주)', '에어조인트 (2호주)' , '에어조인트 중간주 (3호주)', '에어조인트 (4호주)', '에어조인트 끝점 (5호주)']:
@@ -2017,15 +2129,17 @@ def load_coordinates():
     coord_filepath = 'c:/temp/bve_coordinates.txt'
     return read_polyline(coord_filepath)
 
-def save_pole_data(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list ,polyline):
+def save_pole_data(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list ,polyline, posttype_list, post_number_lst, mode):
     """전주 데이터를 텍스트 파일로 저장하는 함수"""
-    save_to_txt(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline, filename="전주.txt")
-    print(f"✅ 전주 데이터가 'C:/TEMP/전주.txt' 파일로 저장되었습니다!")
+    filename = "전주.txt"
+    save_to_txt(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline, posttype_list, post_number_lst, filename, mode)
+    print(f"✅ 전주 데이터가 {filename} 파일로 저장되었습니다!")
 
-def save_wire_data(pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list):
+def save_wire_data(pole_positions, structure_list, curvelist, pitchlist, DESIGNSPEED, airjoint_list, polyline, posttype_list, post_number_lst, mode):
     """전차선 데이터를 텍스트 파일로 저장하는 함수"""
-    process_to_WIRE(pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list, filename="전차선.txt")
-    print(f"✅ 전차선 데이터가 'C:/TEMP/전차선.txt' 파일로 저장되었습니다!")
+    filename = '전차선.txt'
+    process_to_WIRE(pole_positions, structure_list, curvelist, pitchlist, DESIGNSPEED, airjoint_list, polyline, posttype_list, post_number_lst, filename, mode)
+    print(f"✅ 전차선 데이터가 {filename} 파일로 저장되었습니다!")
 
 def createtxt(filename, data):
     with open(filename, "w", encoding="utf-8") as f:
@@ -2066,19 +2180,101 @@ def get_dxf_scale(scale=None):
 
     return H_scale, V_scale
 
-def main():
-    """전체 작업을 관리하는 메인 함수"""
-    #고속철도인지 확인
-    global DESIGNSPEED
+def get_program_mode() -> int:
+    """
+    프로그램의 모드를 입력받는 함수
+    :return: 선택한 모드 (1 또는 2)
+    """
+    while True:
+        try:
+            select_mode = int(input('프로그램을 실행할 모드를 입력. 1: 신규노선 전용 2: 기존노선 전용 : '))
+            if select_mode in {1, 2}:
+                return select_mode
+            else:
+                print("올바른 숫자를 입력하세요. (1 또는 2)")
+        except ValueError:
+            print("숫자를 입력하세요.")
 
+def get_current_post_type(pos: int, typeList: list) -> str:
+    for sta, post_type  in typeList:
+        if sta == pos:
+            return post_type
+    return None
+
+def load_pole_positions_from_file(txt_filepath: str) -> list:
+    """txt 파일을 읽고 곧바로 '측점', '전주번호', '타입', '에어조인트' 정보를 반환하는 함수"""
+
+    data_list = []
+    POSITIONS = []
+    post_number_list = []
+    type_list =[]
+    airjoint_list =[]
+
+    # 텍스트 파일(.txt) 읽기
+    df_curve = pd.read_csv(txt_filepath, sep=",", header=0, names=['측점', '전주번호', '타입', '에어조인트'])
+
+    # 곡선 구간 정보 저장
+    for _, row in df_curve.iterrows():
+        #통합데이터
+        data_list.append((row['측점'], row['전주번호'], row['타입'], row['에어조인트']))
+        POSITIONS.append(row['측점'])
+        post_number_list.append((row['측점'], row['전주번호']))
+        type_list.append((row['측점'], row['타입']))
+        # 에어조인트가 '일반개소'가 아닌 경우에만 추가
+        if row['에어조인트'] != '일반개소':
+            airjoint_list.append((row['측점'], row['에어조인트']))
+
+    return data_list, POSITIONS, post_number_list, type_list, airjoint_list
+
+
+def get_filename_tk_inter():
+    root = tk.Tk()
+    root.withdraw()  # Tkinter 창을 숨김
+
+    # 파일 선택 대화상자 열기
+    file_path = filedialog.askopenfilename(defaultextension=".txt",
+                                           filetypes=[("txt files", "*.txt"), ("All files", "*.*")])
+
+    if not file_path:
+        print("파일을 선택하지 않았습니다.")
+        return ""  # 빈 문자열을 반환하여 선택이 없음을 나타냄
+
+    try:
+        print('현재 파일:', file_path)
+    except Exception as e:
+        print(f'예외가 발생했습니다. 내용: {e}')
+        return ""  # 예외가 발생한 경우 빈 문자열을 반환
+
+    return file_path  # 파일 경로 반환
+
+def main():
+    """엔트리 포인트"""
+
+    #설게속도 모드 전역변수
+    global DESIGNSPEED, select_mode
+
+    #설계속도 입력받기
     DESIGNSPEED = get_designspeed()
-    
+
+    #모드 입력받기
+    select_mode = get_program_mode()
+
     # 파일 읽기 및 데이터 처리
-    data = read_file()
-    last_block = find_last_block(data)
-    start_km = 0
-    end_km = last_block // 1000
-    spans, pole_positions = distribute_pole_spacing_flexible(start_km, end_km)
+    data = read_file()#curve_info로드
+    last_block = find_last_block(data)#노선의 마지막 측점
+    start_km = 0#시작 측점
+    end_km = last_block // 1000 #마지막 측점
+
+    #모드에 따라 선택
+    if select_mode == 1:#가상노선인 경우 랜덤 리스트 생성
+        pole_positions = distribute_pole_spacing_flexible(start_km, end_km)#랜덤 전주리스트 생성
+        airjoint_list = define_airjoint_section(pole_positions)#랜덤 에어조인트 리스트 생성
+        post_number_lst = generate_postnumbers(pole_positions)#0-1부터 전주번호 추가
+        posttype_list = []
+    else:#기존노선인 경우 txt에서 리스트 얻기
+        file_name = get_filename_tk_inter() #파일명 얻기
+        #통합데이터, 전주 측점리스트, 전주번호 리스트, 전주타입 리스트, 에어조인트 리스트
+        data_list, pole_positions, post_number_lst, posttype_list, airjoint_list = load_pole_positions_from_file(file_name)
 
     # 구조물 정보 로드
     structure_list = load_structure_data()
@@ -2096,15 +2292,10 @@ def main():
     # BVE 좌표 로드
     polyline = load_coordinates()
 
-    airjoint_list = define_airjoint_section(pole_positions)
-
-    #전주번호 추가
-    post_number_lst = generate_postnumbers(pole_positions)
-    
     # 데이터 저장
-    save_pole_data(pole_positions, structure_list, curvelist, pitchlist, DESIGNSPEED, airjoint_list, polyline)
-    save_wire_data(pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
-    #createtxt('c:/temp/airjoint_list.txt', airjoint_list)
+    save_pole_data(pole_positions, structure_list, curvelist, pitchlist, DESIGNSPEED, airjoint_list, polyline, posttype_list, post_number_lst, select_mode)
+    save_wire_data(pole_positions, structure_list, curvelist, pitchlist, DESIGNSPEED, airjoint_list, polyline, posttype_list, post_number_lst, select_mode)
+
     print("전주와 전차선 txt가 성공적으로 저장되었습니다.")
     print("도면 작성중.")
     #도면 스케일
