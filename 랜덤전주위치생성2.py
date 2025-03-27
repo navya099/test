@@ -13,12 +13,18 @@ import chardet
 import logging
 
 '''
-ver 2025.03.26
-복선 단선 구분 추가(작업중)
-단선 전주 좌 우 구분 추가(WIP)
-클래스화 리팩토링(WIP)
-코드구조 개선(WIP)
-일부 클래스 GUI화(WIP)
+ver 2025.03.27
+- 복선/단선 구분 기능 추가 (작업 중)
+- 단선 전주 좌/우 구분 추가 (WIP)
+- 클래스 구조 리팩토링 (WIP)
+- 코드 구조 개선 (WIP)
+- 일부 클래스 GUI화 진행 중 (WIP)
+
+🔧 수정 내용:
+- BaseFileHandler: read_file_content 메소드의 반환값을 self → None으로 변경
+- TxTFileHandler: read_file_content 메소드에서 file_data를 줄 단위 리스트로 변환하는 과정 수정
+  (중복된 splitlines() 호출 제거, 부모 메서드 호출 후 처리)
+
 '''
 
 # 로깅 설정
@@ -35,7 +41,8 @@ class AirJoint(Enum):
 
 
 class PolePositionManager:
-    def __init__(self, mode, start_km, end_km):
+    def __init__(self, mode, start_km, end_km, txtfile_handler=None):
+        self.txtfile_handler = TxTFileHandler()
         self.mode = mode
         self.start_km = start_km
         self.end_km = end_km
@@ -43,6 +50,7 @@ class PolePositionManager:
         self.airjoint_list = []
         self.post_number_lst = []
         self.posttype_list = []
+        self.total_data_list = []
 
     def generate_positions(self):
         if self.mode == 1:
@@ -51,33 +59,59 @@ class PolePositionManager:
             self.post_number_lst = generate_postnumbers(self.pole_positions)
         else:
             # Load from file
-            self.pole_positions, self.post_number_lst, self.airjoint_list = self.load_pole_positions_from_file()
+            messagebox.showinfo('파일 선택', '사용자 정의 전주파일을 선택해주세요')
 
-    @staticmethod
-    def load_pole_positions_from_file(txt_filepath: str) -> list:
+            self.load_pole_positions_from_file()
+            logger.info('사용자 정의 전주파일이 입력되었습니다.')
+
+    def load_pole_positions_from_file(self) -> None:
         """txt 파일을 읽고 곧바로 '측점', '전주번호', '타입', '에어조인트' 정보를 반환하는 함수"""
 
         data_list = []
-        POSITIONS = []
+        positions = []
         post_number_list = []
         type_list = []
         airjoint_list = []
 
         # 텍스트 파일(.txt) 읽기
+        self.txtfile_handler.select_file("미리 정의된 전주 파일 선택", [("txt files", "*.txt"), ("All files", "*.*")])
+        txt_filepath = self.txtfile_handler.get_filepath()
+
         df_curve = pd.read_csv(txt_filepath, sep=",", header=0, names=['측점', '전주번호', '타입', '에어조인트'])
 
         # 곡선 구간 정보 저장
-        for _, row in df_curve.iterrows():
-            # 통합데이터
-            data_list.append((row['측점'], row['전주번호'], row['타입'], row['에어조인트']))
-            POSITIONS.append(row['측점'])
-            post_number_list.append((row['측점'], row['전주번호']))
-            type_list.append((row['측점'], row['타입']))
-            # 에어조인트가 '일반개소'가 아닌 경우에만 추가
-            if row['에어조인트'] != '일반개소':
-                airjoint_list.append((row['측점'], row['에어조인트']))
+        self.total_data_list = df_curve.to_records(index=False).tolist()
+        self.pole_positions = df_curve['측점'].tolist()
+        self.post_number_lst = list(zip(df_curve['측점'], df_curve['전주번호']))
+        self.posttype_list = list(zip(df_curve['측점'], df_curve['타입']))
+        self.airjoint_list = [(row['측점'], row['에어조인트']) for _, row in df_curve.iterrows() if row['에어조인트'] != '일반개소']
 
-        return [data_list, POSITIONS, post_number_list, type_list, airjoint_list]
+    # GET 메소드 추가
+    def get_all_pole_data(self):
+        """전주 관련 모든 데이터를 반환"""
+        return {
+            "pole_positions": self.pole_positions,
+            "airjoint_list": self.airjoint_list,
+            "post_number_lst": self.post_number_lst,
+            "posttype_list": self.posttype_list,
+            "total_data_list": self.total_data_list,
+        }
+
+    def get_pole_positions(self):
+        return self.pole_positions
+
+    def get_airjoint_list(self):
+        return self.airjoint_list
+
+    def get_post_number_lst(self):
+        return self.post_number_lst
+
+    def get_post_type_list(self):
+        return self.posttype_list
+
+    def get_total_data_list(self):
+        return self.total_data_list
+
 
 class BaseFileHandler:
     """파일 처리를 위한 기본 클래스 (공통 기능 포함)"""
@@ -148,7 +182,6 @@ class BaseFileHandler:
             with open(self.filepath, 'r', encoding=encoding) as file:
                 self.file_data = file.read()  # 파일 내용 읽기
             logger.info(f"파일 {self.filepath} 읽기 완료.")
-            return self.file_data
         except Exception as e:
             logger.error(f"파일 읽기 중 오류 발생: {e}", exc_info=True)
             return None
@@ -209,7 +242,7 @@ class TxTFileHandler(BaseFileHandler):
     def process_file(self):
         """파일을 선택하고 읽고 인코딩을 감지하여 데이터를 반환하는 통합 프로세스"""
         logger.info("파일 선택을 시작합니다.")
-        super().select_file("TXT 파일 선택", [("Text files", "*.txt"), ("All files", "*.*")])
+        super().select_file("TXT 파일 선택", [("Text files", "*.txt"), ("All files", "*.*")])  # 파일 선택후 filepath저장
 
         if not self.filepath:
             logger.warning("파일을 선택하지 않았습니다.")
@@ -218,7 +251,7 @@ class TxTFileHandler(BaseFileHandler):
             encoding = self.detect_encoding(self.filepath)
             logger.info(f"인코딩 감지: {encoding}")
 
-            data = self.read_file_content(encoding)  # 파일 읽기
+            self.read_file_content(encoding)  # 파일 읽기
             super().get_data()
         except Exception as e:
             logger.error(f"파일 처리 중 오류 발생: {e}", exc_info=True)
@@ -253,12 +286,12 @@ class TxTFileHandler(BaseFileHandler):
 
     def read_file_content(self, encoding='utf-8'):
         """파일을 실제로 읽고 데이터를 처리하는 메소드(부모 메소드오버라이딩"""
-        file_content = super().read_file_content(encoding)  # 부모 클래스 메소드 호출
+        super().read_file_content()
 
-        if file_content is not None:
-            self.file_data = file_content.splitlines()  # 줄 단위로 리스트 생성
+        if self.file_data is not None:
+            self.file_data = self.file_data.splitlines()  # 줄 단위로 리스트 생성
+
             logger.info(f"파일 {self.filepath} 읽기 완료.")
-            return self.file_data
         else:
             logger.warning("파일을 읽을 수 없습니다.")
             return []
@@ -295,31 +328,19 @@ class TxTFileHandler(BaseFileHandler):
         return max_columns
 
 
-class PolylineHandler(BaseFileHandler):
+class PolylineHandler(TxTFileHandler):
     def __init__(self):
         super().__init__()
         self.points = None
 
     def load_polyline(self):
-        super().select_file("bvc좌표 파일 선택", [("txt files", "*.txt"), ("All files", "*.*")])
-
-    def read_file_content(self, encoding='utf-8'):
-        """파일을 실제로 읽고 데이터를 처리하는 메소드"""
-        file_content = super().read_file_content(encoding='utf-8')  # 부모 클래스 메소드 호출
-
-        if file_content is not None:
-            self.file_data = file_content.splitlines()  # 줄 단위로 리스트 생성
-            logger.info(f"파일 {self.filepath} 읽기 완료.")
-
-        else:
-            logger.warning("파일을 읽을 수 없습니다.")
-            return []
+        super().select_file("bve좌표 파일 선택", [("txt files", "*.txt"), ("All files", "*.*")])
 
     def convert_txt_to_polyline(self):
         """3D 좌표를 읽어오는 메소드"""
         # 파일을 처리하여 데이터를 가져옵니다.
         self.load_polyline()
-        self.read_file_content()
+        super().read_file_content()
 
         data = self.file_data
         points = []
@@ -336,8 +357,6 @@ class PolylineHandler(BaseFileHandler):
     def get_polyline(self):
         """읽어온 3D 좌표를 반환하는 메소드"""
         return self.points
-
-
 
 
 class ExcelFileHandler(BaseFileHandler):
@@ -408,6 +427,20 @@ class ExcelFileHandler(BaseFileHandler):
         return structure_dic
 
 
+class Structure:
+    def __init__(self, name, start, end, length):
+        self.name = name
+        self.start = start
+        self.end = end
+        self.length = length
+
+    def create_Structure(self):
+        pass
+
+
+class Bridge(Structure):
+    """교량 정보를 저장하는 클래스"""
+    super().__init__('a', 'b', 'c', 'd')
 
 
 class MainProcess:
@@ -511,23 +544,34 @@ class PoleDataGUI(tk.Tk):
             polyline_handler = PolylineHandler()
 
             structure_list = structure_list_handler.process_structure_data()
-
-            curvelist = curvelist_handler.process_info()  # curve_info
+            messagebox.showinfo('txt파일 선택', 'curve_info파일을 선택해주세요')
+            curvelist = curvelist_handler.process_info(include_cant=True)  # curve_info
+            messagebox.showinfo('txt파일 선택', 'pitch_info파일을 선택해주세요')
             pitchlist = pitchlist_handler.process_info()
 
+            messagebox.showinfo('txt파일 선택', 'bve 좌표 파일을 선택해주세요.')
             polyline_handler.convert_txt_to_polyline()
             polyline = polyline_handler.get_data()
 
             curve_info_file_path = curvelist_handler.get_filepath()
-            curve_info_list = curvelist_handler.read_file_content()
+            curve_info_content = curvelist_handler.read_file_content()
+            curve_info_list = curvelist_handler.get_data()
 
+            last_block = find_last_block(curve_info_list)
             # 폴 포지션 관리 클래스
-            pole_position_manager = PolePositionManager(select_mode, 0, find_last_block(curve_info_list) // 1000)
+            pole_position_manager = PolePositionManager(select_mode, 0, last_block // 1000, txtfile_handler)
             pole_position_manager.generate_positions()
+            pole_data = pole_position_manager.get_all_pole_data()
 
+            pole_positions = pole_data["pole_positions"]
+            airjoint_list = pole_data["airjoint_list"]
+            pole_type_list = pole_data["posttype_list"]
+            pole_number_list = pole_data["post_number_lst"]
+
+            logger.info('찾은 마지막 블럭 : {last_block}')
             # 데이터 저장 및 전주 처리
-            params = create_dic(pole_position_manager.pole_positions, structure_list, curvelist, 0,
-                                design_speed, pole_position_manager.airjoint_list, polyline, pitchlist)
+            params = create_dic(pole_positions, structure_list, curvelist, pitchlist,
+                                design_speed, airjoint_list, polyline, pole_type_list, pole_number_list)
             main_process = MainProcess(params)
             main_process.run()
 
@@ -547,6 +591,7 @@ def find_last_block(data):
                 last_block = int(match.group(1))  # 정수 변환하여 저장
 
     return last_block  # 마지막 블록 값 반환
+
 
 def create_new_dxf():
     doc = ezdxf.new()
@@ -1406,46 +1451,6 @@ def generate_postnumbers(lst):
     return postnumbers
 
 
-def isbridge_tunnel(sta, structure_list):
-    """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
-    for start, end in structure_list['bridge']:
-        if start <= sta <= end:
-            return '교량'
-
-    for start, end in structure_list['tunnel']:
-        if start <= sta <= end:
-            return '터널'
-
-    return '토공'
-
-
-def iscurve(cur_sta, curve_list):
-    """sta가 곡선 구간에 해당하는지 구분하는 함수"""
-    rounded_sta = get_block_index(cur_sta)  # 25 단위로 반올림
-
-    for sta, R, c in curve_list:
-        if rounded_sta == sta:
-            if R == 0:
-                return '직선', 0, 0  # 반경이 0이면 직선
-            return '곡선', R, c  # 반경이 존재하면 곡선
-
-    return '직선', 0, 0  # 목록에 없으면 기본적으로 직선 처리
-
-
-def isslope(cur_sta, curve_list):
-    """sta가 곡선 구간에 해당하는지 구분하는 함수"""
-    rounded_sta = get_block_index(cur_sta)  # 25 단위로 반올림
-
-    for sta, g in curve_list:
-        if rounded_sta == sta:
-            if g == 0:
-                return '수평', 0  # 반경이 0이면 직선
-            else:
-                return '기울기', f'{g * 1000:.2f}'
-
-    return '수평', 0  # 목록에 없으면 기본적으로 직선 처리
-
-
 def get_pole_data():
     """전주 데이터를 반환하는 기본 딕셔너리"""
     return {
@@ -1843,17 +1848,15 @@ class DATA:
     def __init__(self, params, mode=1, LINECOUNT=1, LINEOFFSET=0.0, POLE_direction=0):
         """초기화"""
         # 데이터 언팩
-        self._positions, self._structure_list, self._curve_list, R, self._DESIGNSPEED, self._airjoint_list, self._polyline, \
-            self._post_type_list, self._post_number_lst , self._pitch_list = unpack_dic(params)
+        self._positions, self._structure_list, self._curve_list, self._pitch_list, self._DESIGNSPEED, \
+            self._airjoint_list, self._polyline, self._post_type_list, self._post_number_lst, = unpack_dic(params)
 
         self._mode = mode
         self._LINENUM = LINECOUNT
         self._LINEOFFSET = LINEOFFSET
 
-        # 선로 좌우측 확인
-        self._line1_pole_direction, self._line2_pole_direction = (
-            POLE_direction if isinstance(POLE_direction, tuple) else (POLE_direction, None)
-        )
+        # 선로 좌우측 확인 (항상 tuple로 변환)
+        self._line1_pole_direction, self._line2_pole_direction = self._convert_to_tuple(POLE_direction)
 
         self._line1_angle = 0 if self._line1_pole_direction == -1 else 180  # 하선 좌측: 0, 우측: 180
         self._line2_angle = 180  # 상선은 항상 180
@@ -1864,6 +1867,12 @@ class DATA:
 
         # 모드 1인 경우 새로운 전주 번호 생성, 모드 2면 기존 유지
         self._post_numbers = generate_postnumbers(self._positions) if mode == 1 else self._post_number_lst
+
+    def _convert_to_tuple(self, direction):
+        """POLE 방향을 항상 튜플로 변환"""
+        if isinstance(direction, tuple):
+            return direction
+        return direction, None
 
     # 속성 캡슐화 (읽기 전용)
     @property
@@ -1929,6 +1938,198 @@ class DATA:
     @property
     def polyline_with_sta(self):
         return self._polyline_with_sta.copy()  # 'line1_pole_direction'를 반환
+
+
+class Pitch:
+    def __init__(self):
+        self.data = {}
+
+    def load_data(self, file_path):
+        """Load pitch data from the given file."""
+        pitch_data = pd.read_csv(file_path, names=["STA", "PITCH"])
+        self.data = {row["STA"]: row["PITCH"] for _, row in pitch_data.iterrows()}
+
+    def get_pitch(self, sta):
+        """Get the pitch at a specific STA."""
+        return self.data.get(sta, None)
+
+
+class Coordinate:
+    def __init__(self):
+        self.data = []
+
+    def load_data(self, file_path):
+        """Load coordinate data from the given file."""
+        coord_data = pd.read_csv(file_path, names=["X", "Y", "Z"])
+        self.data = coord_data
+
+    def get_total_length(self):
+        """Calculate the total length of the alignment based on coordinates."""
+        if self.data:
+            return self.data["X"].iloc[-1]
+        return 0
+
+    def get_max_grade(self):
+        """Calculate the maximum grade based on elevation changes."""
+        if len(self.data) > 1:
+            elevations = self.data["Z"]
+            grades = elevations.diff().dropna()
+            return grades.max()
+        return 0
+
+
+class Alignment:
+    def __init__(self, name=None):
+        self.name = None
+        self.total_length = None
+        self.start_sta = None
+        self.end_sta = None
+
+    @classmethod
+    def create(cls, name):
+        return cls(name)
+
+    def delete(self):
+        del self
+
+    def set_name(self, name):
+        self.name = name
+
+    def get_name(self):
+        return self.name
+
+    def get_total_length(self):
+        return self.total_length
+
+
+class Curves(Alignment):
+    def __init__(self):
+        super().__init__()
+        self.data = {}
+        self.txtfile_importer = TxTFileHandler()
+
+    def load_data(self):
+        """Load curve data from the given file and create Curve objects."""
+        self.txtfile_importer.select_file('곡선ㅍ차일', [('a', 'txt')])
+        file_path = self.txtfile_importer.get_filepath()
+
+        # Read the curve data from the file
+        curve_data = pd.read_csv(file_path, names=["STA", "RADIUS", "CANT"])
+
+        # Create a Curve object for each row and store it in the dictionary
+        for _, row in curve_data.iterrows():
+            curve = Curve()  # Create a new Curve object
+            curve.create_curve(row["STA"], row["RADIUS"], row["CANT"])  # Set the STA, RADIUS, and CANT
+            self.data[row["STA"]] = curve  # Store the Curve object in the dictionary with STA as key
+
+
+class Curve(Curves):
+    def __init__(self):
+        super().__init__()
+        self.sta = None
+        self.radius = None
+        self.cant = None
+        self.direction = None
+
+    def create_curve(self, sta, radius, cant):
+        self.sta = sta
+        self.radius = radius
+        self.cant = cant
+
+    def get_sta(self):
+        return self.sta
+
+    def get_radius(self):
+        return self.radius
+
+    def get_cant(self):
+        return self.cant
+
+
+class PoleTypeHelper:
+    """전주 타입 결정 관련 기능을 제공하는 헬퍼 클래스"""
+
+    @staticmethod
+    def isbridge_tunnel(sta, structure_list):
+        """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
+        for start, end in structure_list['bridge']:
+            if start <= sta <= end:
+                return '교량'
+
+        for start, end in structure_list['tunnel']:
+            if start <= sta <= end:
+                return '터널'
+
+        return '토공'
+
+    @staticmethod
+    def iscurve(cur_sta, curve_list):
+        """sta가 곡선 구간에 해당하는지 구분하는 함수"""
+        rounded_sta = get_block_index(cur_sta)  # 25 단위로 반올림
+
+        for sta, R, c in curve_list:
+            if rounded_sta == sta:
+                if R == 0:
+                    return '직선', 0, 0  # 반경이 0이면 직선
+                return '곡선', R, c  # 반경이 존재하면 곡선
+
+        return '직선', 0, 0  # 목록에 없으면 기본적으로 직선 처리
+
+    @staticmethod
+    def isslope(cur_sta, curve_list):
+        """sta가 곡선 구간에 해당하는지 구분하는 함수"""
+        rounded_sta = get_block_index(cur_sta)  # 25 단위로 반올림
+
+        for sta, g in curve_list:
+            if rounded_sta == sta:
+                if g == 0:
+                    return '수평', 0  # 반경이 0이면 직선
+                else:
+                    return '기울기', f'{g * 1000:.2f}'
+
+        return '수평', 0  # 목록에 없으면 기본적으로 직선 처리
+
+    @staticmethod
+    def get_structure_type(pos, structure_list):
+        """전주가 다리/터널/토공인지 판별"""
+        return isbridge_tunnel(pos, structure_list)
+
+    @staticmethod
+    def get_curve_type(pos, curve_list):
+        """전주가 곡선인지 직선인지 판별"""
+        curve, _, _ = iscurve(pos, curve_list)
+        return curve
+
+    @staticmethod
+    def get_station_data(pole_info, structure, curve):
+        """구조물 및 곡선 여부에 따라 전주 데이터를 가져옴"""
+        station_data = pole_info.pole_data.get(structure, pole_info.pole_data.get('토공', {}))
+
+        # 곡선/직선 구분하여 데이터 선택
+        if isinstance(station_data, dict) and '직선' in station_data:
+            station_data = station_data.get('곡선' if curve == '곡선' else '직선', {})
+
+        return station_data
+
+    @staticmethod
+    def determine_pole_type(pole_info, pos, i, station_data):
+        """전주 타입(I/O)과 브래킷을 결정"""
+        I_type, O_type = station_data.get('I_type', '기본_I_type'), station_data.get('O_type', '기본_O_type')
+        I_bracket, O_bracket = station_data.get('I_bracket', '기본_I_bracket'), station_data.get('O_bracket',
+                                                                                               '기본_O_bracket')
+
+        is_I_type = (i % 2 == 1) if pole_info.mode == 1 else (
+                get_current_post_type(pos, pole_info.post_type_list) == 'I'
+        )
+
+        return (I_type, I_bracket) if is_I_type else (O_type, O_bracket)
+
+    @staticmethod
+    def adjust_pole_type_for_double_track(pole_info, is_I_type, I_type, I_bracket, O_type, O_bracket):
+        """복선일 경우 상선 전주 타입 반대로 설정"""
+        if pole_info.LINENUM == 2:
+            return (O_type, O_bracket) if is_I_type else (I_type, I_bracket)
+        return None, None  # 단선이면 사용 안 함
 
 
 class PoleDataProcessor:
@@ -1997,9 +2198,12 @@ class PoleDataProcessor:
 
             lines.append(f"\n,;{post_number}")  # 전주 번호 추가
             if current_airjoint:
+                pass
+                '''
                 self.process_airjoint_pole(pole_info, pos, next_pos, current_structure, next_structure, current_curve,
                                            pole_type, bracket_type, pole_type2, bracket_type2, current_airjoint,
                                            lines)
+                '''
             else:
                 self.process_normal_pole(pole_info, pos, current_structure, current_curve,
                                          pole_type, bracket_type, pole_type2, bracket_type2, lines)
@@ -2090,6 +2294,25 @@ class PoleDataProcessor:
         f_values = f_data.get(current_structure, (0, 0))
 
         return bracket_values, f_values
+
+
+class PoleDataIterator:
+    """전주 데이터를 순회하며 필요한 정보를 가져오는 클래스"""
+
+    def __init__(self, pole_info):
+        self.pole_info = pole_info
+        self.positions = pole_info.positions
+        self.post_numbers = {pos: num for pos, num in pole_info.post_numbers}  # 딕셔너리 변환
+        self.airjoint_list = pole_info.airjoint_list
+
+    def iterate_poles(self):
+        """전주 데이터를 순회하며 정보 반환"""
+        for i in range(len(self.positions) - 1):
+            pos, next_pos = self.positions[i], self.positions[i + 1]
+            post_number = self.post_numbers.get(pos, "N/A")
+            current_airjoint = check_isairjoint(pos, self.airjoint_list)
+
+            yield i, pos, next_pos, post_number, current_airjoint  # Generator로 반환
 
 
 class BracketsProcessor:
@@ -2770,9 +2993,6 @@ def get_current_post_type(pos: int, typeList: list) -> str:
         if sta == pos:
             return post_type
     return 'None'
-
-
-
 
 
 def get_filename_tk_inter():
