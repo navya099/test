@@ -1,0 +1,2 @@
+class WireManager:
+    pass

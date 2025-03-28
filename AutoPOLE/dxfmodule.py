@@ -1,0 +1,2 @@
+class DxfManager:
+    pass
