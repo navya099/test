@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from loggermodule import logger
+from core import MainProcess, PolePositionManager, DATA
 
 
 class MainWindow(tk.Tk):
@@ -16,6 +17,8 @@ class MainWindow(tk.Tk):
         # "종료" 버튼
         self.exit_button = tk.Button(self, text="종료", command=self.close_application)
         self.exit_button.pack(pady=20)
+
+        logger.info(f'MainWindow 초기화 완료')
 
     def start_wizard(self):
         """새 작업 마법사 창 시작"""
@@ -34,7 +37,7 @@ class TaskWizard(tk.Toplevel):
         self.geometry("500x500")
         self.file_path_entries = []
         self.step = 0
-
+        self.input_entries = None
         self.mode = tk.StringVar()
         self.inputs = [tk.StringVar() for _ in range(4)]  # 4개의 입력에 대해 StringVar 초기화
         self.next_button = None  # Initialize next_button as None
@@ -92,7 +95,7 @@ class TaskWizard(tk.Toplevel):
 
     def next_step(self):
         """다음 단계로 이동"""
-        if self.step == 2 :
+        if self.step == 2:
             if self.validate_inputs():  # 유효성 검사
                 self.step += 1
                 self.update_step()
@@ -102,7 +105,7 @@ class TaskWizard(tk.Toplevel):
             self.finish_wizard()  # 마지막 단계에서는 마법사 완료 처리
             return
         elif self.step == 0:
-            if not all(path is None for path in self.file_path_entries):
+            if all(entry.get() for entry in self.file_path_entries):
                 self.step += 1
                 self.update_step()
             else:
@@ -115,6 +118,7 @@ class TaskWizard(tk.Toplevel):
         elif self.step == 3:
             self.step += 1
             self.update_step()
+
     def prev_step(self):
         """이전 단계로 이동"""
         if self.step > 0:
@@ -151,7 +155,6 @@ class TaskWizard(tk.Toplevel):
         self.pitch_info_path = self.file_path_entries[1]
         self.coord_info_path = self.file_path_entries[2]
         self.structure_path = self.file_path_entries[3]
-
 
     def browse_file(self, i):
         """파일 선택 대화상자"""
@@ -221,8 +224,8 @@ class TaskWizard(tk.Toplevel):
                     return False  # 유효성 검사 실패
 
             elif i == 3:  # '폴 방향'
-                if value not in ['동', '서', '남', '북']:  # 예시로, 방향을 특정 값으로 제한
-                    messagebox.showerror("입력 오류", "폴 방향은 '동', '서', '남', '북' 중 하나여야 합니다.")
+                if value not in ['-1', '1']:  # 예시로, 방향을 특정 값으로 제한
+                    messagebox.showerror("입력 오류", "폴 방향은 -1, 1 중 하나여야 합니다.")
                     return False  # 유효성 검사 실패
 
         return True  # 모든 검사 통과 시 True 반환
@@ -236,7 +239,8 @@ class TaskWizard(tk.Toplevel):
 
     def process_files_and_inputs(self):
         """파일과 입력값 처리"""
-
+        mainprocess = MainProcess(self)
+        mainprocess.run()  # TaskWizard 인스턴스(self)를 직접 전달
         return "Processing successful!"
 
     def finish_wizard(self):
