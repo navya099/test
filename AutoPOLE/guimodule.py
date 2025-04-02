@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from loggermodule import logger
-from core import MainProcess, PolePositionManager, DATA
+from core import MainProcess
 
 
 class MainWindow(tk.Tk):
@@ -35,9 +35,8 @@ class TaskWizard(tk.Toplevel):
         super().__init__(master)
         self.title("새 전주 생성 마법사")
         self.geometry("500x500")
-        self.file_path_entries = []
+        self.file_paths = [tk.StringVar() for _ in range(4)]
         self.step = 0
-        self.input_entries = None
         self.mode = tk.StringVar()
         self.inputs = [tk.StringVar() for _ in range(4)]  # 4개의 입력에 대해 StringVar 초기화
         self.next_button = None  # Initialize next_button as None
@@ -105,10 +104,11 @@ class TaskWizard(tk.Toplevel):
             self.finish_wizard()  # 마지막 단계에서는 마법사 완료 처리
             return
         elif self.step == 0:
-            if all(entry.get() for entry in self.file_path_entries):
+            if all(path.get() for path in self.file_paths):
                 self.step += 1
                 self.update_step()
             else:
+                logger.error('에러 : 파일이 선택되지 않았습니다.')
                 messagebox.showerror('에러', '파일이 선택되지 않았습니다.')
                 return
         elif self.step == 1:
@@ -145,23 +145,22 @@ class TaskWizard(tk.Toplevel):
             frame.pack(pady=5)
 
             tk.Label(frame, text=f"{file_tilte_list[i]}:").pack(side="left")
-            entry = tk.Entry(frame, width=40)
+            entry = tk.Entry(frame, width=40, textvariable=self.file_paths[i])
             entry.pack(side="left", padx=5)
             button = tk.Button(frame, text="열기", command=lambda i=i: self.browse_file(i))
             button.pack(side="left")
 
-            self.file_path_entries.append(entry)
-        self.curve_info_path = self.file_path_entries[0]
-        self.pitch_info_path = self.file_path_entries[1]
-        self.coord_info_path = self.file_path_entries[2]
-        self.structure_path = self.file_path_entries[3]
+        self.curve_info_path = self.file_paths[0]
+        self.pitch_info_path = self.file_paths[1]
+        self.coord_info_path = self.file_paths[2]
+        self.structure_path = self.file_paths[3]
 
     def browse_file(self, i):
         """파일 선택 대화상자"""
         file_path = filedialog.askopenfilename()
         if file_path:
-            self.file_path_entries[i].delete(0, tk.END)
-            self.file_path_entries[i].insert(0, file_path)
+            logger.info(f"✅ 파일 선택됨: {file_path}")  # 디버깅용 출력
+            self.file_paths[i].set(file_path)
 
     def select_mode(self):
         """Step 2: 모드 선택"""
@@ -180,7 +179,7 @@ class TaskWizard(tk.Toplevel):
             '선로중심간격',
             '폴 방향',
         ]
-        self.input_entries = []
+
         for i in range(len(inputs_text_tilte)):
             frame = tk.Frame(self)
             frame.pack(pady=5)
@@ -188,8 +187,6 @@ class TaskWizard(tk.Toplevel):
             tk.Label(frame, text=f"{inputs_text_tilte[i]}:").pack(side="left")
             entry = tk.Entry(frame, textvariable=self.inputs[i])  # textvariable로 inputs[i] 바인딩
             entry.pack(side="left", padx=5)
-
-            self.input_entries.append(entry)
 
     def validate_inputs(self):
         """입력값 유효성 검사"""
@@ -238,9 +235,28 @@ class TaskWizard(tk.Toplevel):
         tk.Label(self, text=f"Results: {results}", font=("Arial", 12)).pack(pady=20)
 
     def process_files_and_inputs(self):
-        """파일과 입력값 처리"""
-        mainprocess = MainProcess(self)
-        mainprocess.run()  # TaskWizard 인스턴스(self)를 직접 전달
+        """파일과 입력값을 처리하는 함수"""
+
+        # ✅ TaskWizard가 아닌, 필요한 데이터만 추출하여 MainProcess에 전달
+        design_params = {
+            "designspeed": int(self.inputs["designspeed"].get()),
+            "linecount": int(self.inputs["linecount"].get()),
+            "lineoffset": float(self.inputs["lineoffset"].get()),
+            "poledirection": int(self.inputs["poledirection"].get()),
+            "mode": 0 if self.mode == '기존 노선용' else 1
+        }
+
+        file_paths = {
+            "curve_path": self.file_paths["curve_path"].get(),
+            "pitch_path": self.file_paths["pitch_path"].get(),
+            "coord_path": self.file_paths["coord_path"].get(),
+            "structure_path": self.file_paths["structure_path"].get()
+        }
+
+        # ✅ GUI가 아닌 데이터만 MainProcess로 전달
+        mainprocess = MainProcess(design_params, file_paths)
+        mainprocess.run()
+
         return "Processing successful!"
 
     def finish_wizard(self):

@@ -1,5 +1,5 @@
 import re
-import random
+import pandas as pd
 
 
 def find_last_block(data):
@@ -14,44 +14,39 @@ def find_last_block(data):
     return last_block  # 마지막 블록 값 반환
 
 
-def distribute_pole_spacing_flexible(start_km, end_km, spans=()):
-    """
-    45, 50, 55, 60m 범위에서 전주 간격을 균형 있게 배분하여 전체 구간을 채우는 함수
-    마지막 전주는 종점보다 약간 앞에 위치할 수도 있음.
+def find_structure_section(filepath):
+    """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
+    structure_list = {'bridge': [], 'tunnel': []}
 
-    :param start_km: 시작점 (km 단위)
-    :param end_km: 끝점 (km 단위)
-    :param spans: 사용 가능한 전주 간격 리스트 (기본값: 45, 50, 55, 60)
-    :return: 전주 간격 리스트, 전주 위치 리스트
-    """
-    start_m = int(start_km * 1000)  # km → m 변환
-    end_m = int(end_km * 1000)
+    # xlsx 파일 읽기
+    df_bridge = pd.read_excel(filepath, sheet_name='교량', header=None)
+    df_tunnel = pd.read_excel(filepath, sheet_name='터널', header=None)
 
-    positions = [start_m]
-    selected_spans = []
-    current_pos = start_m
+    # 열 개수 확인
+    # print(df_tunnel.shape)  # (행 개수, 열 개수)
+    # print(df_tunnel.head())  # 데이터 확인
 
-    while current_pos < end_m:
-        possible_spans = list(spans)  # 사용 가능한 간격 리스트 (45, 50, 55, 60)
-        random.shuffle(possible_spans)  # 랜덤 배치
+    # 첫 번째 행을 열 제목으로 설정
+    df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
+    df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
 
-        for span in possible_spans:
-            if current_pos + span > end_m:
-                continue  # 종점을 넘어서면 다른 간격을 선택
+    # 교량 구간과 터널 구간 정보
+    for _, row in df_bridge.iterrows():
+        structure_list['bridge'].append((row['br_START_STA'], row['br_END_STA']))
 
-            positions.append(current_pos + span)
-            selected_spans.append(span)
-            current_pos += span
-            break  # 하나 선택하면 다음으로 이동
+    for _, row in df_tunnel.iterrows():
+        structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
 
-        # 더 이상 배치할 간격이 없으면 종료
-        if current_pos + min(spans) > end_m:
-            break
-
-    return positions
+    return structure_list
 
 def create_dic(*args):
     dic = {}
     for i, arg in enumerate(args):
         dic[f'{i}'] = arg  # 'arg1', 'arg2', ..., 'argN' as keys
     return dic
+
+def buffered_write(filename, lines):
+    """파일 쓰기 버퍼 함수"""
+    filename = "C:/TEMP/" + filename
+    with open(filename, "w", encoding="utf-8") as f:
+        f.writelines(lines)

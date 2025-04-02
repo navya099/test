@@ -34,6 +34,9 @@ class BaseFileHandler:
         """파일 경로 반환"""
         return self.filepath
 
+    def set_filepath(self, filepath):
+        self.filepath = filepath
+
     def get_filename(self):
         """파일 이름 반환"""
         return self.filename
@@ -154,8 +157,6 @@ class TxTFileHandler(BaseFileHandler):
 
     def process_info(self, columns=None, delimiter=',', include_cant=False):
         """txt 파일을 읽고 선택적 열(column) 데이터를 반환하는 함수"""
-        super().select_file("TXT 파일 선택", [("Text files", "*.txt"), ("All files", "*.*")])
-
         if columns is None:
             # 기본적인 columns 이름 설정
             if include_cant:
