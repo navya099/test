@@ -239,18 +239,18 @@ class TaskWizard(tk.Toplevel):
 
         # ✅ TaskWizard가 아닌, 필요한 데이터만 추출하여 MainProcess에 전달
         design_params = {
-            "designspeed": int(self.inputs["designspeed"].get()),
-            "linecount": int(self.inputs["linecount"].get()),
-            "lineoffset": float(self.inputs["lineoffset"].get()),
-            "poledirection": int(self.inputs["poledirection"].get()),
-            "mode": 0 if self.mode == '기존 노선용' else 1
+            "designspeed": int(self.inputs[0].get()),
+            "linecount": int(self.inputs[1].get()),
+            "lineoffset": float(self.inputs[2].get()),
+            "poledirection": int(self.inputs[3].get()),
+            "mode": 0 if self.mode.get() == '기존 노선용' else 1
         }
 
         file_paths = {
-            "curve_path": self.file_paths["curve_path"].get(),
-            "pitch_path": self.file_paths["pitch_path"].get(),
-            "coord_path": self.file_paths["coord_path"].get(),
-            "structure_path": self.file_paths["structure_path"].get()
+            "curve_path": self.file_paths[0].get(),
+            "pitch_path": self.file_paths[1].get(),
+            "coord_path": self.file_paths[2].get(),
+            "structure_path": self.file_paths[3].get()
         }
 
         # ✅ GUI가 아닌 데이터만 MainProcess로 전달

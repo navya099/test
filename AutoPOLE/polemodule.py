@@ -1,7 +1,14 @@
 import sys
-sys.path.append("D:\문서\chatgpt성과\python\BVEParser")
-from BVEclass import Vector3  # BVE CLASS Vector3로드
+import random
+from tkinter import messagebox
 from enum import Enum
+import pandas as pd
+
+sys.path.append(r"D:\문서\chatgpt성과\python\BVEParser")
+from BVEclass import Vector3  # BVE CLASS Vector3로드
+from loggermodule import logger
+from filemodule import TxTFileHandler
+from util import *
 
 
 class AirJoint(Enum):
@@ -13,28 +20,122 @@ class AirJoint(Enum):
 
 
 class PolePositionManager:
-    def __init__(self, dataLoader):
-        self.data = dataLoader
-        self.mode = mode
-        self.start_km = start_km
-        self.end_km = end_km
+    def __init__(self, params):
+        self.params = params
+
+        # ✅ 첫 번째 요소는 design_params (딕셔너리)
+        self.design_params = self.params[0]  # unpack 1
+        # ✅ 딕셔너리를 활용하여 안전하게 언패킹
+        self.designspeed = self.design_params.get("designspeed", 250)
+        self.linecount = self.design_params.get("linecount", 1)
+        self.lineoffset = self.design_params.get("lineoffset", 0.0)
+        self.poledirection = self.design_params.get("poledirection", -1)
+        self.mode = self.design_params.get("mode", 0)
+
+        # ✅ 두 번째 요소는 list_params (리스트)
+        self.list_params = self.params[1]
+        if len(self.list_params) >= 4:
+            self.curve_list = self.list_params[0]
+            self.pitch_list = self.list_params[1]
+            self.coord_list = self.list_params[2]
+            self.struct_list = self.list_params[3]
+            self.end_km = self.list_params[4]
+
+        else:
+            logger.error("list_params의 길이가 4보다 작음")
+            self.curve_list = []
+            self.pitch_list = []
+            self.coord_list = []
+            self.struct_list = []
+            self.end_km = 600.00  # 예외발생시 600
+
         self.pole_positions = []
         self.airjoint_list = []
         self.post_number_lst = []
         self.posttype_list = []
         self.total_data_list = []
+        self.poledata = None
+
+    def run(self):
+        self.generate_positions()
+        self.create_pole()
+        self.get_pole_data()
 
     def generate_positions(self):
-        if self.mode == 1:
-            self.pole_positions = distribute_pole_spacing_flexible(self.start_km, self.end_km)
-            self.airjoint_list = define_airjoint_section(self.pole_positions)
-            self.post_number_lst = generate_postnumbers(self.pole_positions)
-        else:
+        if self.mode == 1:  # 새 노선용
+            self.pole_positions = self.distribute_pole_spacing_flexible(0, self.end_km, spans=(45, 50, 55, 60))
+            self.airjoint_list = self.define_airjoint_section(self.pole_positions)
+            self.post_number_lst = self.generate_postnumbers(self.pole_positions)
+        else:  # mode 0  기존 노선용
             # Load from file
             messagebox.showinfo('파일 선택', '사용자 정의 전주파일을 선택해주세요')
 
             self.load_pole_positions_from_file()
             logger.info('사용자 정의 전주파일이 입력되었습니다.')
+
+    def get_pole_data(self):
+        logger.debug(f"📢 get_pole_data() 호출됨 - 반환 값: {self.poledata}")
+        return self.poledata
+
+    def create_pole(self):
+        """전주 위치 데이터를 가공"""
+
+        data = PoleDATAManager()  # 인스턴스 생성
+        for i in range(len(self.pole_positions) - 1):
+            pos = self.pole_positions[i]  # 전주 위치 station
+            next_pos = self.pole_positions[i + 1]  # 다음 전주 위치 station
+
+            data.poles[i].pos = pos  # 속성에 추가
+
+            current_span = next_pos - pos  # 현재 전주 span
+            data.poles[i].span = current_span  # 속성에 추가
+            # 현재 위치의 구조물 및 곡선 정보 가져오기
+            current_structure = isbridge_tunnel(pos, self.struct_list)
+            data.poles[i].current_structure = current_structure  # 현재 전주 위치의 구조물
+            current_curve, r, c = iscurve(pos, self.curve_list)
+            data.poles[i].current_curve = current_curve
+            data.poles[i].radius = r
+            data.poles[i].cant = c
+
+            current_slope, pitch = isslope(pos, self.pitch_list)
+            data.poles[i].current_pitch = pitch
+
+            current_airjoint = check_isairjoint(pos, self.airjoint_list)
+            data.poles[i].current_airjoint = current_airjoint
+
+            post_number = find_post_number(self.post_number_lst, pos)
+            data.poles[i].post_number = post_number
+
+            # final
+            block = PoleDATA()  # 폴 블록 생성
+            data.poles.append(block)
+
+        self.poledata = data
+        if self.poledata is None:
+            logger.error("🚨 self.poledata가 None입니다! 데이터 생성에 실패했습니다.")
+        else:
+            logger.debug(f"✅ self.poledata가 정상적으로 생성되었습니다. 전주 개수: {len(self.poledata.poles)}")
+
+    def create_bracket(self):
+        pass
+
+    @staticmethod
+    def generate_postnumbers(lst):
+        postnumbers = []
+        prev_km = -1
+        count = 0
+
+        for number in lst:
+            km = number // 1000  # 1000으로 나눈 몫이 같은 구간
+            if km == prev_km:
+                count += 1  # 같은 구간에서 숫자 증가
+            else:
+                prev_km = km
+                count = 1  # 새로운 구간이므로 count를 0으로 초기화
+
+            postnumbers.append((number, f'{km}-{count}'))
+
+        return postnumbers
 
     def load_pole_positions_from_file(self) -> None:
         """txt 파일을 읽고 곧바로 '측점', '전주번호', '타입', '에어조인트' 정보를 반환하는 함수"""
@@ -46,8 +147,9 @@ class PolePositionManager:
         airjoint_list = []
 
         # 텍스트 파일(.txt) 읽기
-        self.txtfile_handler.select_file("미리 정의된 전주 파일 선택", [("txt files", "*.txt"), ("All files", "*.*")])
-        txt_filepath = self.txtfile_handler.get_filepath()
+        txtfile_handler = TxTFileHandler()
+        txtfile_handler.select_file("미리 정의된 전주 파일 선택", [("txt files", "*.txt"), ("All files", "*.*")])
+        txt_filepath = txtfile_handler.get_filepath()
 
         df_curve = pd.read_csv(txt_filepath, sep=",", header=0, names=['측점', '전주번호', '타입', '에어조인트'])
 
@@ -84,12 +186,83 @@ class PolePositionManager:
     def get_total_data_list(self):
         return self.total_data_list
 
+    @staticmethod
+    def distribute_pole_spacing_flexible(start_km, end_km, spans=()):
+        """
+        45, 50, 55, 60m 범위에서 전주 간격을 균형 있게 배분하여 전체 구간을 채우는 함수
+        마지막 전주는 종점보다 약간 앞에 위치할 수도 있음.
+
+        :param start_km: 시작점 (km 단위)
+        :param end_km: 끝점 (km 단위)
+        :param spans: 사용 가능한 전주 간격 리스트 (기본값: 45, 50, 55, 60)
+        :return: 전주 간격 리스트, 전주 위치 리스트
+        """
+        start_m = int(start_km * 1000)  # km → m 변환
+        end_m = int(end_km * 1000)
+
+        positions = [start_m]
+        selected_spans = []
+        current_pos = start_m
+
+        while current_pos < end_m:
+            possible_spans = list(spans)  # 사용 가능한 간격 리스트 (45, 50, 55, 60)
+            random.shuffle(possible_spans)  # 랜덤 배치
+
+            for span in possible_spans:
+                if current_pos + span > end_m:
+                    continue  # 종점을 넘어서면 다른 간격을 선택
+
+                positions.append(current_pos + span)
+                selected_spans.append(span)
+                current_pos += span
+                break  # 하나 선택하면 다음으로 이동
+
+            # 더 이상 배치할 간격이 없으면 종료
+            if current_pos + min(spans) > end_m:
+                break
+
+        return positions
+
+    @staticmethod
+    def define_airjoint_section(positions):
+        airjoint_list = []  # 결과 리스트
+        airjoint_span = 1600  # 에어조인트 설치 간격(m)
+
+        def is_near_multiple_of_number(number, tolerance=100):
+            """주어진 수가 1200의 배수에 근사하는지 판별하는 함수"""
+            remainder = number % airjoint_span
+            return number > airjoint_span and (remainder <= tolerance or remainder >= (airjoint_span - tolerance))
+
+        i = 0  # 인덱스 변수
+        while i < len(positions) - 1:  # 마지막 전주는 제외
+            pos = positions[i]  # 현재 전주 위치
+
+            if is_near_multiple_of_number(pos):  # 조건 충족 시
+                next_values = positions[i + 1:min(i + 6, len(positions))]  # 다음 5개 값 가져오기
+                tags = [
+                    AirJoint.START.value,
+                    AirJoint.POINT_2.value,
+                    AirJoint.MIDDLE.value,
+                    AirJoint.POINT_4.value,
+                    AirJoint.END.value
+                ]
+
+                # (전주 위치, 태그) 쌍을 리스트에 추가 (최대 5개까지만)
+                airjoint_list.extend(list(zip(next_values, tags[:len(next_values)])))
+
+                # 다음 5개의 값을 가져왔으므로 인덱스를 건너뛰기
+                i += 5
+            else:
+                i += 1  # 조건이 맞지 않으면 한 칸씩 이동
+
+        return airjoint_list
+
 
 class PoleDATAManager:  # 전체 총괄
     def __init__(self):
         self.poles = []  # 개별 pole 데어터를 저장할 리스트
-        poledata = PoleDATA()  # 인스턴스 생성
-        self.poles.append(poledata)  # 리스트에 인스턴스 추가
+        pole = PoleDATA()
+        self.poles.append(pole)
 
 
 class PoleDATA:  # 기둥 브래킷 금구류 포함 데이터
@@ -139,3 +312,17 @@ class FeederDATA:
         self.index = 0
         self.x = 0.0
         self.y = 0.0
+
+
+class BracketManager:
+    def __init__(self, poledata):
+        self.poledata = poledata  # ✅ PoleDATAManager.poledata 인스턴스를 가져옴
+
+    def run(self):
+        self.create_bracket()
+
+    def create_bracket(self):
+        data = self.poledata
+        for i in range(len(data.poles) - 1):
+            current_structure = data.poles[i].current_structure  # 찾을수 없는 속성
+            print(f'{current_structure}')

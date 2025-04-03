@@ -235,7 +235,6 @@ class PolylineHandler(TxTFileHandler):
     def convert_txt_to_polyline(self):
         """3D 좌표를 읽어오는 메소드"""
         # 파일을 처리하여 데이터를 가져옵니다.
-        self.load_polyline()
         super().read_file_content()
 
         data = self.file_data
@@ -294,7 +293,6 @@ class ExcelFileHandler(BaseFileHandler):
 
     def process_structure_data(self):
         """교량과 터널 구간 정보를 처리하는 메소드"""
-        self.load_excel()
         self.read_excel()
 
         if self.excel_BRIDGE_Data is None or self.excel_TUNNEL_Data is None:
