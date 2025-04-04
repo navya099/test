@@ -4,7 +4,7 @@ from tkinter import messagebox
 from enum import Enum
 import pandas as pd
 
-sys.path.append(r"D:\문서\chatgpt성과\python\BVEParser")
+sys.path.append(r"..\BVEParser")
 from BVEclass import Vector3  # BVE CLASS Vector3로드
 from loggermodule import logger
 from filemodule import TxTFileHandler
@@ -59,7 +59,6 @@ class PolePositionManager:
     def run(self):
         self.generate_positions()
         self.create_pole()
-        self.get_pole_data()
 
     def generate_positions(self):
         if self.mode == 1:  # 새 노선용
@@ -115,9 +114,6 @@ class PolePositionManager:
             logger.error("🚨 self.poledata가 None입니다! 데이터 생성에 실패했습니다.")
         else:
             logger.debug(f"✅ self.poledata가 정상적으로 생성되었습니다. 전주 개수: {len(self.poledata.poles)}")
-
-    def create_bracket(self):
-        pass
 
     @staticmethod
     def generate_postnumbers(lst):
@@ -267,7 +263,7 @@ class PoleDATAManager:  # 전체 총괄
 
 class PoleDATA:  # 기둥 브래킷 금구류 포함 데이터
     def __init__(self):
-        self.Poleattributes = MastDATA()  # 기둥 요소
+        self.mast = MastDATA()  # 기둥 요소
         self.Brackets = []  # 브래킷을 담을 리스트
         bracketdata = BracketElement()  # 인스턴스 생성
         self.Brackets.append(bracketdata)  # 리스트에 인스턴스 추가
@@ -314,15 +310,80 @@ class FeederDATA:
         self.y = 0.0
 
 
-class BracketManager:
-    def __init__(self, poledata):
+class BaseManager:
+    """MastManager와 BracketManager의 공통 기능을 관리하는 부모 클래스"""
+
+    def __init__(self, params, poledata):
         self.poledata = poledata  # ✅ PoleDATAManager.poledata 인스턴스를 가져옴
+        self.params = params  # ✅ DataLoader.params 인스턴스를 가져옴
+
+        # ✅ 첫 번째 요소는 design_params (딕셔너리)
+        self.design_params = self.params[0]  # unpack 1
+        # ✅ 딕셔너리를 활용하여 안전하게 언패킹
+        self.designspeed = self.design_params.get("designspeed", 250)
+        self.linecount = self.design_params.get("linecount", 1)
+        self.lineoffset = self.design_params.get("lineoffset", 0.0)
+        self.poledirection = self.design_params.get("poledirection", -1)
+        self.mode = self.design_params.get("mode", 0)
+
+
+class MastManager(BaseManager):
+    """전주(Mast) 데이터를 설정하는 클래스"""
+    def run(self):
+        self.create_mast()
+
+    def create_mast(self):
+        data = self.poledata
+        for i in range(len(data.poles) - 1):
+            current_structure = data.poles[i].current_structure
+            mast_index, mast_name = get_mast_type(self.designspeed, current_structure)
+            data.poles[i].mast.name = mast_name
+            data.poles[i].mast.index = mast_index
+
+
+class BracketManager(BaseManager):
+    def __init__(self, params, poledata):
+        super().__init__(params, poledata)
+        self.dictionaryofbracket = Dictionaryofbracket()  # 브래킷 데이터 클래스 가져오기
 
     def run(self):
         self.create_bracket()
 
+    def get_brackettype(self, speed, installtype, gauge, name):
+        """브래킷 정보를 반환"""
+        return self.dictionaryofbracket.get_bracket_number(speed, installtype, gauge, name)
+
     def create_bracket(self):
         data = self.poledata
+
+        install_type = None
+        gauge = None
+
+        current_type = None
+
         for i in range(len(data.poles) - 1):
-            current_structure = data.poles[i].current_structure  # 찾을수 없는 속성
-            print(f'{current_structure}')
+            if self.mode == 0:  # 기존 노선용
+                bracket_index = 0
+            else:
+                is_i_type = (i % 2 == 1)  # bool
+                if is_i_type:
+                    current_type = 'I'
+                    bracket_name = 'inner'
+                else:
+                    current_type = 'O'
+                    bracket_name = 'outer'
+                data.poles[i].Brackets[0].type = current_type  # 속성지정
+                current_structure = data.poles[i].current_structure  # 찾을수 없는 속성
+                if current_structure == '토공':
+                    install_type = 'OpG'
+                    gauge = 3.0
+                elif current_structure == '교량':
+                    install_type = 'OpG'
+                    gauge = 3.5
+                elif current_structure == '터널':
+                    install_type = 'Tn'
+                    gauge = 2.1
+                bracket_index = self.get_brackettype(self.designspeed, install_type, gauge, bracket_name)
+            bracket_full_name = f'CaKo{self.designspeed}-{install_type}{gauge}-{current_type}'
+            data.poles[i].Brackets[0].name = bracket_full_name  # 속성지정
+            data.poles[i].Brackets[0].index = bracket_index  # 속성지정

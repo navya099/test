@@ -88,6 +88,17 @@ class BaseFileHandler:
         #  파일 내용 반환
         return self.file_data
 
+    def save_file_dialog(self):
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("텍스트 파일", "*.txt"), ("모든 파일", "*.*")]
+        )
+        if file_path:
+            self.filepath = file_path
+        else:
+            messagebox.showerror('에러!', '파일 경로가 설정되지 않았습니다.')
+            logger.warning("파일 경로가 설정되지 않았습니다.")
+
     def write_to_file(self, data):
         """파일에 데이터 쓰기"""
         if not self.filepath:
@@ -95,7 +106,10 @@ class BaseFileHandler:
             return False
         try:
             with open(self.filepath, 'w', encoding='utf-8') as file:
-                file.write(data)
+                if isinstance(data, list):  # 리스트인지 확인
+                    file.write(''.join(data))  # 리스트를 문자열로 변환 후 저장
+                else:
+                    file.write(data)  # 문자열이면 그대로 저장
             logger.info(f"파일에 데이터가 성공적으로 저장되었습니다.")
             return True
         except Exception as e:
@@ -326,3 +340,27 @@ def buffered_write(filename, lines):
     filename = "C:/TEMP/" + filename
     with open(filename, "w", encoding="utf-8") as f:
         f.writelines(lines)
+
+
+class ObjectSaver:
+    def __init__(self, obj):
+        """객체를 받아 속성을 저장할 준비를 함"""
+        self.obj = obj
+
+    def save_to_txt(self, filename):
+        """객체의 속성을 텍스트 파일로 저장"""
+        with open(filename, 'w', encoding='utf-8') as file:
+            for attr, value in self.obj.__dict__.items():
+                file.write(f'{attr}: {value}\n')
+
+    def save_to_json(self, filename):
+        """객체의 속성을 JSON 파일로 저장"""
+        import json
+        with open(filename, 'w', encoding='utf-8') as file:
+            json.dump(self.obj.__dict__, file, indent=4, ensure_ascii=False)
+
+    def save_to_pickle(self, filename):
+        """객체를 pickle 파일로 저장"""
+        import pickle
+        with open(filename, 'wb') as file:
+            pickle.dump(self.obj, file)

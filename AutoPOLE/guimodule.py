@@ -232,32 +232,39 @@ class TaskWizard(tk.Toplevel):
         tk.Label(self, text="Step 4: Processing Data", font=("Arial", 14)).pack(pady=10)
 
         results = self.process_files_and_inputs()
-        tk.Label(self, text=f"Results: {results}", font=("Arial", 12)).pack(pady=20)
+        if results:
+            text = '작업이 성공했습니다.'
+        else:
+            text = '작업이 실패했습니다.'
+        tk.Label(self, text=f"Results: {text}", font=("Arial", 12)).pack(pady=20)
 
     def process_files_and_inputs(self):
         """파일과 입력값을 처리하는 함수"""
+        try:
+            # ✅ TaskWizard가 아닌, 필요한 데이터만 추출하여 MainProcess에 전달
+            design_params = {
+                "designspeed": int(self.inputs[0].get()),
+                "linecount": int(self.inputs[1].get()),
+                "lineoffset": float(self.inputs[2].get()),
+                "poledirection": int(self.inputs[3].get()),
+                "mode": 0 if self.mode.get() == '기존 노선용' else 1
+            }
 
-        # ✅ TaskWizard가 아닌, 필요한 데이터만 추출하여 MainProcess에 전달
-        design_params = {
-            "designspeed": int(self.inputs[0].get()),
-            "linecount": int(self.inputs[1].get()),
-            "lineoffset": float(self.inputs[2].get()),
-            "poledirection": int(self.inputs[3].get()),
-            "mode": 0 if self.mode.get() == '기존 노선용' else 1
-        }
+            file_paths = {
+                "curve_path": self.file_paths[0].get(),
+                "pitch_path": self.file_paths[1].get(),
+                "coord_path": self.file_paths[2].get(),
+                "structure_path": self.file_paths[3].get()
+            }
 
-        file_paths = {
-            "curve_path": self.file_paths[0].get(),
-            "pitch_path": self.file_paths[1].get(),
-            "coord_path": self.file_paths[2].get(),
-            "structure_path": self.file_paths[3].get()
-        }
+            # ✅ GUI가 아닌 데이터만 MainProcess로 전달
+            mainprocess = MainProcess(design_params, file_paths)
+            mainprocess.run()
 
-        # ✅ GUI가 아닌 데이터만 MainProcess로 전달
-        mainprocess = MainProcess(design_params, file_paths)
-        mainprocess.run()
-
-        return "Processing successful!"
+            return True
+        except Exception as ex:
+            logger.error(f'처리 중 에러가 발생했습니다 : {ex}', exc_info=True)
+            return False
 
     def finish_wizard(self):
         """마법사 완료 후 창 닫기"""

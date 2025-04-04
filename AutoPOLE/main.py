@@ -1,11 +1,10 @@
-'''
+"""
 bve 자동 전주 설계ㅐ 프로그램
 made by dger
 
-ver 2025.03.31
-기존 GUI랑 코드 병합
-'''
-
+ver 2025.04.04
+1차 준공 (일반개소 TXT까지 출력됨
+"""
 from guimodule import MainWindow
 
 

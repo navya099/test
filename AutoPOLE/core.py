@@ -2,38 +2,39 @@ from util import *
 from loggermodule import logger
 from polemodule import *
 from dataloader import *
+from filemodule import *
+from bvemodule import *
 
 
 class MainProcess:
     def __init__(self, design_params, file_paths):
         self.design_params = design_params
         self.file_paths = file_paths
-        self.processes = []  # ✅ 실행할 프로세스들을 리스트로 관리
-
-    def setup_processes(self):
-        """✅ 실행할 모든 프로세스를 리스트에 추가"""
-        loader = DataLoader(self.design_params, self.file_paths)
-        pole_processor = PolePositionManager(loader.params)
-        logger.debug(f"🚀 PolePositionManager.get_pole_data() 반환값: {pole_processor.get_pole_data()}")
-
-        bracket_manager = BracketManager(pole_processor.get_pole_data())
-        #drawing_manager = DrawingManager(pole_processor)  # 도면 작성 클래스
-        #wire_manager = WireManager(pole_processor)  # 전선 관리 클래스
-        #output_manager = OutputManager()  # 파일 출력 클래스
-
-        self.processes.extend([
-            pole_processor,
-            bracket_manager
-        ])
 
     def run(self):
         """✅ 등록된 모든 프로세스를 실행"""
         try:
-            self.setup_processes()  # 실행할 프로세스들을 등록
-            for process in self.processes:
-                process.run()  # 각 프로세스 실행
-                logger.debug(f'정보 : {process.__class__.__name__} 실행 완료')
-
+            loader = DataLoader(self.design_params, self.file_paths)
+            logger.debug(f'정보 : DataLoader 실행 완료')
+            pole_processor = PolePositionManager(loader.params)
+            pole_processor.run()
+            logger.debug(f'정보 : PolePositionManager 실행 완료')
+            bracket_manager = BracketManager(loader.params, pole_processor.poledata)
+            bracket_manager.run()
+            logger.debug(f'정보 : BracketManager 실행 완료')
+            mastmanager = MastManager(loader.params, pole_processor.poledata)
+            mastmanager.run()
+            logger.debug(f'정보 : MastManager 실행 완료')
+            csvmanager = BVECSV(pole_processor.poledata)
+            csvmanager.create_pole_csv()
+            csvmanager.create_csvtotxt()
+            logger.debug(f'정보 : BVECSV 실행 완료')
+            '''
+            obj = ObjectSaver(bracket_manager)
+            logger.debug(f'정보 : 테스트용 객체 저장 실행 완료')
+            obj.save_to_txt('c:/temp/object_data.txt')  # 텍스트 파일 저장
+            obj.save_to_json('c:/temp/object_data.json')  # json 파일 저장
+            '''
+            logger.debug(f'정보 : 모든 프로세스 실행 완료')
         except Exception as ex:
             logger.error(f'에러 : {ex}', exc_info=True)
-
