@@ -5,16 +5,16 @@ import json
 class ConfigManager:
     def __init__(self, file=None):
         self.file = file
-        self.config = self.load_config(file)
+        self.config = self.load_config()
         self.default_values = self.get_default_values()
         self.file_paths = self.get_file_paths()
 
-    @staticmethod
-    def load_config(file):
-        if not os.path.exists(file):
+
+    def load_config(self):
+        if not os.path.exists(self.file):
             print("⚠️ 설정 파일이 없습니다. config.json을 만들어주세요.")
             return None
-        with open(file, 'r', encoding='utf-8') as f:
+        with open(self.file, 'r', encoding='utf-8') as f:
             return json.load(f)
 
     def get_default_values(self):

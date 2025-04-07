@@ -1,3 +1,5 @@
+from scipy.sparse.csgraph import structural_rank
+
 from polemodule import BaseManager
 from util import *
 import os
@@ -6,7 +8,7 @@ import sys
 # 현재 main.py 기준으로 상위 폴더에서 bveparser 경로 추가
 base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 bve_path = os.path.join(base_path, 'bveparser')
-
+config_path = base_path + '/AutoPOLE/config/span_data.json'
 if bve_path not in sys.path:
     sys.path.insert(0, bve_path)
 from OpenBveApi.Math.Vectors.Vector3 import Vector3
@@ -38,8 +40,8 @@ class WirePositionManager(BaseManager):
             span = data.poles[i].span
             currentz = pos_coord[2]
             data.poles[i].coord = Vector3(pos_coord)
-            current_structure = data.poles[i].cureent_structure
-            contact_index = spandata.get_span_indices(self.designspeed, 'contact', span)
+            current_structure = data.poles[i].current_structure
+            contact_index = spandata.get_span_indices(self.designspeed, current_structure, 'contact', span)
             sign = -1 if data.poles[i].Brackets[0].type == 'I' else 1
             next_sign = -1 if next_type == 'I' else 1
 
@@ -104,8 +106,9 @@ class AFwireElement(WireElement):
 
 
 def get_json_spandata():
-    file = '..config/span_data.json'  # 파이선 소스 폴더내의 config폴더에서 찾기
-    spandata = ConfigManager().load_config(file)
+    file = config_path  # 파이선 소스 폴더내의 config폴더에서 찾기
+    configmanager = ConfigManager(file)
+    spandata = configmanager.config
     return spandata
 
 
@@ -119,9 +122,9 @@ class SpanDatabase:
     def get_wire_types(self, speed_code):
         return list(self._data[speed_code]["wires"].keys())
 
-    def get_span_indices(self, speed_code, wire_type, span_length):
+    def get_span_indices(self, speed_code, structure, wire_type, span_length):
         try:
-            return tuple(self._data[speed_code]["wires"][wire_type]["span_index"][str(span_length)])
+            return self._data[str(speed_code)][structure][wire_type]["span_index"][str(span_length)]
         except KeyError:
             return ()
 

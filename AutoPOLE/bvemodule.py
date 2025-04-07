@@ -33,16 +33,16 @@ class BVECSV:
         self.lines.append(',;전차선구문\n')
         data = self.poledata
         wiredata = self.wiredata
-        for i in range(len(data.wires) - 1):
+        for i in range(len(data.poles) - 1):
             pos = data.poles[i].pos
             post_number = data.poles[i].post_number
             current_airjoint = data.poles[i].current_airjoint
             current_structure = data.poles[i].current_structure
             current_curve = data.poles[i].current_curve
-            contact_index = wiredata.wires[i].contact.index
-            stagger = wiredata.wires[i].contact.stagger
-            angle = wiredata.wires[i].contact.xyangle
-            name = wiredata.wires[i].contact.name
+            contact_index = wiredata.wires[i].contactwire.index
+            stagger = wiredata.wires[i].contactwire.stagger
+            angle = wiredata.wires[i].contactwire.xyangle
+            name = wiredata.wires[i].contactwire.name
 
             # 구문 작성
             self.lines.append(f',;{post_number}\n')
