@@ -19,9 +19,12 @@ class AirJoint(Enum):
     END = "에어조인트 끝점 (5호주)"
 
 
-class PolePositionManager:
-    def __init__(self, params):
-        self.params = params
+class BaseManager:
+    """MastManager와 BracketManager의 공통 기능을 관리하는 부모 클래스"""
+
+    def __init__(self, params, poledata=None):
+        self.poledata = poledata  # ✅ PoleDATAManager.poledata 인스턴스를 가져옴
+        self.params = params  # ✅ DataLoader.params 인스턴스를 가져옴
 
         # ✅ 첫 번째 요소는 design_params (딕셔너리)
         self.design_params = self.params[0]  # unpack 1
@@ -49,12 +52,16 @@ class PolePositionManager:
             self.struct_list = []
             self.end_km = 600.00  # 예외발생시 600
 
+
+class PolePositionManager(BaseManager):
+    def __init__(self, params):
+
+        super().__init__(params)
         self.pole_positions = []
         self.airjoint_list = []
         self.post_number_lst = []
         self.posttype_list = []
         self.total_data_list = []
-        self.poledata = None
 
     def run(self):
         self.generate_positions()
@@ -84,25 +91,25 @@ class PolePositionManager:
             pos = self.pole_positions[i]  # 전주 위치 station
             next_pos = self.pole_positions[i + 1]  # 다음 전주 위치 station
 
-            data.poles[i].pos = pos  # 속성에 추가
+            data.poles[i].pos = pos
 
             current_span = next_pos - pos  # 현재 전주 span
-            data.poles[i].span = current_span  # 속성에 추가
+            data.poles[i].span = current_span
             # 현재 위치의 구조물 및 곡선 정보 가져오기
             current_structure = isbridge_tunnel(pos, self.struct_list)
             data.poles[i].current_structure = current_structure  # 현재 전주 위치의 구조물
-            current_curve, r, c = iscurve(pos, self.curve_list)
+            current_curve, r, c = iscurve(pos, self.curve_list)  # 현재 전주 위치의 곡선
             data.poles[i].current_curve = current_curve
             data.poles[i].radius = r
             data.poles[i].cant = c
 
-            current_slope, pitch = isslope(pos, self.pitch_list)
+            current_slope, pitch = isslope(pos, self.pitch_list)  # 현재 전주 위치의 구배
             data.poles[i].current_pitch = pitch
 
-            current_airjoint = check_isairjoint(pos, self.airjoint_list)
+            current_airjoint = check_isairjoint(pos, self.airjoint_list)  # 현재 전주 위치의 AJ
             data.poles[i].current_airjoint = current_airjoint
 
-            post_number = find_post_number(self.post_number_lst, pos)
+            post_number = find_post_number(self.post_number_lst, pos)  # 현재 전주넘버
             data.poles[i].post_number = post_number
 
             # final
@@ -310,25 +317,9 @@ class FeederDATA:
         self.y = 0.0
 
 
-class BaseManager:
-    """MastManager와 BracketManager의 공통 기능을 관리하는 부모 클래스"""
-
-    def __init__(self, params, poledata):
-        self.poledata = poledata  # ✅ PoleDATAManager.poledata 인스턴스를 가져옴
-        self.params = params  # ✅ DataLoader.params 인스턴스를 가져옴
-
-        # ✅ 첫 번째 요소는 design_params (딕셔너리)
-        self.design_params = self.params[0]  # unpack 1
-        # ✅ 딕셔너리를 활용하여 안전하게 언패킹
-        self.designspeed = self.design_params.get("designspeed", 250)
-        self.linecount = self.design_params.get("linecount", 1)
-        self.lineoffset = self.design_params.get("lineoffset", 0.0)
-        self.poledirection = self.design_params.get("poledirection", -1)
-        self.mode = self.design_params.get("mode", 0)
-
-
 class MastManager(BaseManager):
     """전주(Mast) 데이터를 설정하는 클래스"""
+
     def run(self):
         self.create_mast()
 

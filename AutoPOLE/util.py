@@ -353,3 +353,146 @@ def get_mast_type(speed, current_structure):
     mast_index, mast_name = mast_data.get(current_structure, ("", "알 수 없는 구조"))
 
     return mast_index, mast_name
+
+
+def get_elevation_pos(pos, polyline_with_sta):
+    new_z = None
+
+    for i in range(len(polyline_with_sta) - 1):
+        sta1, x1, y1, z1 = polyline_with_sta[i]  # 현재값
+        sta2, x2, y2, z2 = polyline_with_sta[i + 1]  # 다음값
+        L = sta2 - sta1
+        L_new = pos - sta1
+
+        if sta1 <= pos < sta2:
+            new_z = calculate_height_at_new_distance(z1, z2, L, L_new)
+            return new_z
+
+    return new_z
+
+
+def calculate_height_at_new_distance(h1, h2, L, L_new):
+    """주어진 거리 L에서의 높이 변화율을 기반으로 새로운 거리 L_new에서의 높이를 계산"""
+    h3 = h1 + ((h2 - h1) / L) * L_new
+    return h3
+
+
+def return_pos_coord(polyline_with_sta, pos):
+    point_a, P_A, vector_a = interpolate_coordinates(polyline_with_sta, pos)
+    return point_a, vector_a
+
+
+def interpolate_coordinates(polyline, target_sta):
+    """
+    주어진 폴리선 데이터에서 특정 sta 값에 대한 좌표를 선형 보간하여 반환.
+
+    :param polyline: [(sta, x, y, z), ...] 형식의 리스트
+    :param target_sta: 찾고자 하는 sta 값
+    :return: (x, y, z) 좌표 튜플
+    """
+    # 정렬된 리스트를 가정하고, 적절한 두 점을 찾아 선형 보간 수행
+    for i in range(len(polyline) - 1):
+        sta1, x1, y1, z1 = polyline[i]
+        sta2, x2, y2, z2 = polyline[i + 1]
+        v1 = calculate_bearing(x1, y1, x2, y2)
+        # target_sta가 두 점 사이에 있는 경우 보간 수행
+        if sta1 <= target_sta < sta2:
+            t = abs(target_sta - sta1)
+            x, y = calculate_destination_coordinates(x1, y1, v1, t)
+            z = z1 + t * (z2 - z1)
+            return (x, y, z), (x1, y1, z1), v1
+
+    return None  # 범위를 벗어난 sta 값에 대한 처리
+
+
+def calculate_bearing(x1, y1, x2, y2):
+    # Calculate the bearing (direction) between two points in Cartesian coordinates
+    dx = x2 - x1
+    dy = y2 - y1
+    bearing = math.degrees(math.atan2(dy, dx))
+    return bearing
+
+
+def calculate_destination_coordinates(x1, y1, bearing, distance):
+    # Calculate the destination coordinates given a starting point, bearing, and distance in Cartesian coordinates
+    angle = math.radians(bearing)
+    x2 = x1 + distance * math.cos(angle)
+    y2 = y1 + distance * math.sin(angle)
+    return x2, y2
+
+
+def get_wire_span_data(designspeed, currentspan, current_structure):
+    """ 경간에 따른 wire 데이터 반환 """
+    # SPEED STRUCTURE span 45, 50, 55, 60
+    span_data = {
+        150: {
+            'prefix': 'Cako150',
+            '토공': (592, 593, 594, 595),  # 가고 960
+            '교량': (592, 593, 594, 595),  # 가고 960
+            '터널': (614, 615, 616, 617)  # 가고 710
+        },
+        250: {
+            'prefix': 'Cako250',
+            '토공': (484, 478, 485, 479),  # 가고 1200
+            '교량': (484, 478, 485, 479),  # 가고 1200
+            '터널': (494, 495, 496, 497)  # 가고 850
+        },
+        350: {
+            'prefix': 'Cako350',
+            '토공': (488, 489, 490, 491),  # 가고 1400
+            '교량': (488, 489, 490, 491),  # 가고 1400
+            '터널': (488, 489, 490, 491)  # 가고 1400
+        }
+    }
+
+    # DESIGNSPEED에 맞는 구조 선택 (기본값 250 사용)
+    span_values = span_data.get(designspeed, span_data[250])
+
+    # current_structure에 맞는 값 추출
+    current_structure_list = span_values[current_structure]
+
+    # currentspan 값을 통해 급전선 fpw 인덱스를 추출
+    span_index_mapping = {
+        45: (0, '경간 45m', 1236, 1241),
+        50: (1, '경간 50m', 1237, 1242),
+        55: (2, '경간 55m', 1238, 1243),
+        60: (3, '경간 60m', 1239, 1244)
+    }
+
+    # currentspan이 유효한 값인지 확인
+    if currentspan not in span_index_mapping:
+        raise ValueError(f"Invalid span value '{currentspan}'. Valid values are 45, 50, 55, 60.")
+
+    # currentspan에 해당하는 인덱스 및 주석 추출
+    idx, comment, feeder_idx, fpw_idx = span_index_mapping[currentspan]
+    # idx 값을 current_structure_list에서 가져오기
+    idx_value = current_structure_list[idx]
+
+    return idx_value, comment, feeder_idx, fpw_idx
+
+
+def calculate_curve_angle(polyline_with_sta, pos, next_pos, stagger1, stagger2):
+    final_anlge = None
+    point_a, _, vector_a = interpolate_coordinates(polyline_with_sta, pos)
+    point_b, _, vector_b = interpolate_coordinates(polyline_with_sta, next_pos)
+
+    if point_a and point_b:
+        offset_point_a = calculate_offset_point(vector_a, point_a, stagger1)
+        offset_point_b = calculate_offset_point(vector_b, point_b, stagger2)
+
+        offset_point_a_z = (offset_point_a[0], offset_point_a[1], 0)  # Z값 0추가
+        offset_point_b_z = (offset_point_b[0], offset_point_b[1], 0)  # Z값 0추가
+
+        a_b_angle = calculate_bearing(offset_point_a[0], offset_point_a[1], offset_point_b[0], offset_point_b[1])
+        final_anlge = vector_a - a_b_angle
+    return final_anlge
+
+
+# offset 좌표 반환
+def calculate_offset_point(vector, point_a, offset_distance):
+    if offset_distance > 0:  # 우측 오프셋
+        vector -= 90
+    else:
+        vector += 90  # 좌측 오프셋
+    offset_a_xy = calculate_destination_coordinates(point_a[0], point_a[1], vector, abs(offset_distance))
+    return offset_a_xy

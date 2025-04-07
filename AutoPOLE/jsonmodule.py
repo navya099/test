@@ -1,14 +1,16 @@
 import os
 import json
 
+
 class ConfigManager:
-    def __init__(self, file='config.json'):
+    def __init__(self, file=None):
         self.file = file
         self.config = self.load_config(file)
         self.default_values = self.get_default_values()
         self.file_paths = self.get_file_paths()
 
-    def load_config(self, file):
+    @staticmethod
+    def load_config(file):
         if not os.path.exists(file):
             print("⚠️ 설정 파일이 없습니다. config.json을 만들어주세요.")
             return None
@@ -32,17 +34,17 @@ class ConfigManager:
         # current_airjoint 값 검사 (AirJoint 멤버 검사)
         if self.default_values["current_airjoint"] not in ['일반개소', 'START', 'POINT_2', 'MIDDLE', 'POINT_4', 'END']:
             raise ValueError("current_airjoint는 AirJoint 멤버 중 하나여야 합니다.")
-        
+
         # pitch 값 검사
         self.validate_positive_float(self.default_values["pitch"], "pitch")
-        
+
         # file-path 유효성 검사
         for key in ["curve_info", "pitch_info", "coord_filepath"]:
             if key not in self.file_paths:
                 raise ValueError(f"{key} 파일 경로가 설정되지 않았습니다.")
             if not self.file_paths[key].endswith(".txt"):
                 raise ValueError(f"{key} 파일은 .txt 확장자를 가져야 합니다.")
-        
+
         return True
 
     def validate_positive_float(self, value, field_name):
@@ -68,13 +70,13 @@ class ConfigManager:
         for key in required_default_keys:
             if key not in self.default_values:
                 raise ValueError(f"❌ {key} 값이 설정에 없습니다.")
-        
+
         # 파일 경로가 설정되어 있는지 확인
         required_file_keys = ["curve_info", "pitch_info", "coord_filepath"]
         for key in required_file_keys:
             if key not in self.file_paths:
                 raise ValueError(f"❌ {key} 파일 경로가 설정에 없습니다.")
-        
+
         return True
 
     def get_params(self):

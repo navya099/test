@@ -4,6 +4,7 @@ from polemodule import *
 from dataloader import *
 from filemodule import *
 from bvemodule import *
+from wiremodule import WirePositionManager
 
 
 class MainProcess:
@@ -25,8 +26,12 @@ class MainProcess:
             mastmanager = MastManager(loader.params, pole_processor.poledata)
             mastmanager.run()
             logger.debug(f'정보 : MastManager 실행 완료')
-            csvmanager = BVECSV(pole_processor.poledata)
+            wiremanager = WirePositionManager(loader.params, pole_processor.poledata)
+            wiremanager.run()
+            csvmanager = BVECSV(pole_processor.poledata,  wiremanager.wiredata)
             csvmanager.create_pole_csv()
+            csvmanager.create_csvtotxt()
+            csvmanager.create_wire_csv()
             csvmanager.create_csvtotxt()
             logger.debug(f'정보 : BVECSV 실행 완료')
             '''

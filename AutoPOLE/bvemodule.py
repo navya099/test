@@ -2,8 +2,9 @@ from filemodule import *
 
 
 class BVECSV:
-    def __init__(self, poledata):
+    def __init__(self, poledata=None, wiredata=None):
         self.poledata = poledata  # ✅ PoleDATAManager.poledata 인스턴스를 가져옴
+        self.wiredata = wiredata
         self.lines = []
 
     def create_pole_csv(self):
@@ -19,12 +20,34 @@ class BVECSV:
             current_airjoint = data.poles[i].current_airjoint
             current_structure = data.poles[i].current_structure
             current_curve = data.poles[i].current_curve
+            gauge = data.poles[i].gauge
 
             # 구문 작성
             self.lines.append(f',;{post_number}\n')
             self.lines.append(f',;-----{current_airjoint}({current_structure})({current_curve})-----\n')
-            self.lines.append(f'{pos},.freeobj 0;{mastindex};,;{mastname}\n')
+            self.lines.append(f'{pos},.freeobj 0;{mastindex};{gauge},;{mastname}\n')
             self.lines.append(f'{pos},.freeobj 0;{bracketindex};,;{bracketname}\n\n')
+
+    def create_wire_csv(self):
+        self.lines = []  # 코드 실행전 초기화
+        self.lines.append(',;전차선구문\n')
+        data = self.poledata
+        wiredata = self.wiredata
+        for i in range(len(data.wires) - 1):
+            pos = data.poles[i].pos
+            post_number = data.poles[i].post_number
+            current_airjoint = data.poles[i].current_airjoint
+            current_structure = data.poles[i].current_structure
+            current_curve = data.poles[i].current_curve
+            contact_index = wiredata.wires[i].contact.index
+            stagger = wiredata.wires[i].contact.stagger
+            angle = wiredata.wires[i].contact.xyangle
+            name = wiredata.wires[i].contact.name
+
+            # 구문 작성
+            self.lines.append(f',;{post_number}\n')
+            self.lines.append(f',;-----{current_airjoint}({current_structure})({current_curve})-----\n')
+            self.lines.append(f'{pos},.freeobj 0;{contact_index};{stagger};0;{angle},;{name}\n')
 
     def create_csvtotxt(self):
         txthandler = TxTFileHandler()
