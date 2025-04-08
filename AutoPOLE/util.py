@@ -1,7 +1,8 @@
 import re
+import pandas as pd
 import math
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, List, Union
 
 
 def isbridge_tunnel(sta, structure_list):
@@ -360,24 +361,24 @@ def get_elevation_pos(pos, polyline_with_sta):
     for i in range(len(polyline_with_sta) - 1):
         sta1, x1, y1, z1 = polyline_with_sta[i]  # 현재값
         sta2, x2, y2, z2 = polyline_with_sta[i + 1]  # 다음값
-        length = sta2 - sta1
-        length_new = pos - sta1
+        L = sta2 - sta1
+        L_new = pos - sta1
 
         if sta1 <= pos < sta2:
-            new_z = calculate_height_at_new_distance(z1, z2, length, length_new)
+            new_z = calculate_height_at_new_distance(z1, z2, L, L_new)
             return new_z
 
     return new_z
 
 
-def calculate_height_at_new_distance(h1, h2, length, length_new):
+def calculate_height_at_new_distance(h1, h2, L, L_new):
     """주어진 거리 L에서의 높이 변화율을 기반으로 새로운 거리 L_new에서의 높이를 계산"""
-    h3 = h1 + ((h2 - h1) / length) * length_new
+    h3 = h1 + ((h2 - h1) / L) * L_new
     return h3
 
 
 def return_pos_coord(polyline_with_sta, pos):
-    point_a, _, vector_a = interpolate_coordinates(polyline_with_sta, pos)
+    point_a, P_A, vector_a = interpolate_coordinates(polyline_with_sta, pos)
     return point_a, vector_a
 
 
@@ -495,18 +496,3 @@ def calculate_offset_point(vector, point_a, offset_distance):
         vector += 90  # 좌측 오프셋
     offset_a_xy = calculate_destination_coordinates(point_a[0], point_a[1], vector, abs(offset_distance))
     return offset_a_xy
-
-
-def change_permile_to_degree(permile):
-    """퍼밀 값을 도(degree)로 변환"""
-    # 정수 또는 문자열이 들어오면 float으로 변환
-    if not isinstance(permile, (int, float)):
-        permile = float(permile)
-
-    return math.degrees(math.atan(permile / 1000))  # 퍼밀을 비율로 변환 후 계산
-
-
-def calculate_slope(h1, h2, gauge):
-    """주어진 높이 차이와 수평 거리를 바탕으로 기울기(각도) 계산"""
-    slope = (h2 - h1) / gauge  # 기울기 값 (비율)
-    return math.degrees(math.atan(slope))  # 아크탄젠트 적용 후 degree 변환

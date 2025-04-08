@@ -1,9 +1,7 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-from utils.logger import logger
-from core.core import MainProcess
-import threading
-import queue
+from tkinter import filedialog, messagebox
+from loggermodule import logger
+from core import MainProcess
 
 
 class MainWindow(tk.Tk):
@@ -35,13 +33,6 @@ class MainWindow(tk.Tk):
 class TaskWizard(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.progress_bar = None
-        self.progress_var = None
-        self.queue = None
-        self.thread = None
-        self.start_button = None
-        self.progress_label = None
-        self.process_result_label = None
         self.title("새 전주 생성 마법사")
         self.geometry("500x500")
         self.file_paths = [tk.StringVar() for _ in range(4)]
@@ -237,34 +228,20 @@ class TaskWizard(tk.Toplevel):
         return True  # 모든 검사 통과 시 True 반환
 
     def process_data(self):
+        """Step 4: 데이터 처리"""
         tk.Label(self, text="Step 4: Processing Data", font=("Arial", 14)).pack(pady=10)
 
-        self.progress_label = tk.Label(self, text="작업 대기 중...", font=("Arial", 12))
-        self.progress_label.pack(pady=10)
+        results = self.process_files_and_inputs()
+        if results:
+            text = '작업이 성공했습니다.'
+        else:
+            text = '작업이 실패했습니다.'
+        tk.Label(self, text=f"Results: {text}", font=("Arial", 12)).pack(pady=20)
 
-        # Progressbar 추가
-        self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(self, maximum=100, length=400, variable=self.progress_var,
-                                            mode='determinate')
-        self.progress_bar.pack(pady=10)
-
-        self.start_button = tk.Button(self, text="작업 시작", command=self.start_async_processing)
-        self.start_button.pack(pady=10)
-
-    def finish_wizard(self):
-        """마법사 완료 후 창 닫기"""
-        self.destroy()
-
-    def start_async_processing(self):
-        self.progress_label.config(text="작업 시작 중...")
-        self.progress_var.set(0)
-        self.queue = queue.Queue()
-        self.thread = threading.Thread(target=self.run_main_process, args=(self.queue,))
-        self.thread.start()
-        self.after(100, self.check_thread)
-
-    def run_main_process(self, q):
+    def process_files_and_inputs(self):
+        """파일과 입력값을 처리하는 함수"""
         try:
+            # ✅ TaskWizard가 아닌, 필요한 데이터만 추출하여 MainProcess에 전달
             design_params = {
                 "designspeed": int(self.inputs[0].get()),
                 "linecount": int(self.inputs[1].get()),
@@ -280,26 +257,15 @@ class TaskWizard(tk.Toplevel):
                 "structure_path": self.file_paths[3].get()
             }
 
-            process = MainProcess(design_params, file_paths)
-            process.run_with_callback(progress_callback=q.put)
-            q.put("100|완료")  # 최종 완료 상태
-        except Exception as e:
-            logger.error(f"작업 처리 중 오류 발생: {e}", exc_info=True)
-            q.put("오류|작업 실패")
+            # ✅ GUI가 아닌 데이터만 MainProcess로 전달
+            mainprocess = MainProcess(design_params, file_paths)
+            mainprocess.run()
 
-    def check_thread(self):
-        try:
-            message = self.queue.get_nowait()
-            if "|" in message:
-                percent, text = message.split("|", 1)
-                self.progress_var.set(float(percent))
-                self.progress_label.config(text=text)
-            else:
-                self.progress_label.config(text=message)
+            return True
+        except Exception as ex:
+            logger.error(f'처리 중 에러가 발생했습니다 : {ex}', exc_info=True)
+            return False
 
-            if message.endswith("완료") or message.startswith("에러"):
-                self.start_button.config(state='disabled')
-                return
-        except queue.Empty:
-            pass
-        self.after(100, self.check_thread)
+    def finish_wizard(self):
+        """마법사 완료 후 창 닫기"""
+        self.destroy()

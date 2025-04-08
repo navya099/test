@@ -1,4 +1,4 @@
-from .fileloader import *
+from filemodule import *
 
 
 class BVECSV:
@@ -21,14 +21,12 @@ class BVECSV:
             current_structure = data.poles[i].current_structure
             current_curve = data.poles[i].current_curve
             gauge = data.poles[i].gauge
-            direction = data.poles[i].direction
-            pitch = 0 if direction == 'L' else 180
 
             # 구문 작성
             self.lines.append(f',;{post_number}\n')
             self.lines.append(f',;-----{current_airjoint}({current_structure})({current_curve})-----\n')
             self.lines.append(f'{pos},.freeobj 0;{mastindex};{gauge},;{mastname}\n')
-            self.lines.append(f'{pos},.freeobj 0;{bracketindex};0;0;{pitch};,;{bracketname}\n\n')
+            self.lines.append(f'{pos},.freeobj 0;{bracketindex};,;{bracketname}\n\n')
 
     def create_wire_csv(self):
         self.lines = []  # 코드 실행전 초기화
@@ -43,13 +41,13 @@ class BVECSV:
             current_curve = data.poles[i].current_curve
             contact_index = wiredata.wires[i].contactwire.index
             stagger = wiredata.wires[i].contactwire.stagger
-            pitch = wiredata.wires[i].contactwire.xyangle
+            angle = wiredata.wires[i].contactwire.xyangle
             name = wiredata.wires[i].contactwire.name
-            roll = wiredata.wires[i].contactwire.yzangle
+
             # 구문 작성
             self.lines.append(f',;{post_number}\n')
             self.lines.append(f',;-----{current_airjoint}({current_structure})({current_curve})-----\n')
-            self.lines.append(f'{pos},.freeobj 0;{contact_index};{stagger};0;{pitch};{roll};,;{name}\n\n')
+            self.lines.append(f'{pos},.freeobj 0;{contact_index};{stagger};0;{angle},;{name}\n')
 
     def create_csvtotxt(self):
         txthandler = TxTFileHandler()

@@ -1,6 +1,6 @@
-from utils.logger import logger
-from .fileloader import TxTFileHandler, ExcelFileHandler, PolylineHandler
-from utils.util import *
+from loggermodule import logger
+from filemodule import TxTFileHandler, ExcelFileHandler, PolylineHandler
+from util import *
 
 
 class DataLoader:
