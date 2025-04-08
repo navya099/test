@@ -6,9 +6,9 @@ import pandas as pd
 
 sys.path.append(r"..\BVEParser")
 from BVEclass import Vector3  # BVE CLASS Vector3로드
-from loggermodule import logger
-from filemodule import TxTFileHandler
-from util import *
+from utils.logger import logger
+from fileio.fileloader import TxTFileHandler
+from utils.util import *
 
 
 class AirJoint(Enum):
@@ -104,7 +104,7 @@ class PolePositionManager(BaseManager):
             data.poles[i].cant = c
 
             current_slope, pitch = isslope(pos, self.pitch_list)  # 현재 전주 위치의 구배
-            data.poles[i].current_pitch = pitch
+            data.poles[i].pitch = pitch
 
             current_airjoint = check_isairjoint(pos, self.airjoint_list)  # 현재 전주 위치의 AJ
             data.poles[i].current_airjoint = current_airjoint
@@ -280,13 +280,14 @@ class PoleDATA:  # 기둥 브래킷 금구류 포함 데이터
         self.radius = 0.0
         self.cant = 0.0
         self.current_structure = ''
-        self.current_pitch = 0.0
+        self.pitch = 0.0
         self.current_airjoint = ''
         self.gauge = 0.0
         self.span = 0.0
         self.coord = Vector3(0, 0, 0)
         self.ispreader = False
-
+        self.direction = '' # R,L
+        self.vector = 0.0  # 벡터 각도
 
 class BracketElement:
     def __init__(self):
@@ -354,27 +355,90 @@ class BracketManager(BaseManager):
 
         for i in range(len(data.poles) - 1):
             if self.mode == 0:  # 기존 노선용
-                bracket_index = 0
+                current_type, bracket_name, install_type, gauge = self.create_bracket_with_old_alignment(i, data)
             else:
-                is_i_type = (i % 2 == 1)  # bool
-                if is_i_type:
-                    current_type = 'I'
-                    bracket_name = 'inner'
-                else:
-                    current_type = 'O'
-                    bracket_name = 'outer'
-                data.poles[i].Brackets[0].type = current_type  # 속성지정
-                current_structure = data.poles[i].current_structure  # 찾을수 없는 속성
-                if current_structure == '토공':
-                    install_type = 'OpG'
-                    gauge = 3.0
-                elif current_structure == '교량':
-                    install_type = 'OpG'
-                    gauge = 3.5
-                elif current_structure == '터널':
-                    install_type = 'Tn'
-                    gauge = 2.1
-                bracket_index = self.get_brackettype(self.designspeed, install_type, gauge, bracket_name)
-            bracket_full_name = f'CaKo{self.designspeed}-{install_type}{gauge}-{current_type}'
-            data.poles[i].Brackets[0].name = bracket_full_name  # 속성지정
-            data.poles[i].Brackets[0].index = bracket_index  # 속성지정
+                current_type, bracket_name, install_type, gauge = self.create_bracket_with_new_alignment(i, data)
+
+            bracket_index = self.get_brackettype(self.designspeed, install_type, gauge, bracket_name)
+            if install_type == 'Tn':
+                bracket_full_name = f'CaKo{self.designspeed}-{install_type}-{current_type}'
+            else:
+                bracket_full_name = f'CaKo{self.designspeed}-{install_type}{gauge}-{current_type}'
+
+            #  속성지정
+            data.poles[i].Brackets[0].type = current_type
+            data.poles[i].Brackets[0].name = bracket_full_name
+            data.poles[i].Brackets[0].index = bracket_index
+            data.poles[i].direction = 'L' if self.poledirection == -1 else 'R'
+
+            if self.poledirection == -1 and not install_type == 'Tn':
+                gauge *= -1
+
+            data.poles[i].gauge = gauge
+
+    def check_poledirection(self):
+        pass
+
+    def create_bracket_with_new_alignment(self, i, data):
+        is_i_type = self.check_current_is_i_type(i)
+        current_type, bracket_name = self.get_current_type_and_bracket_name(is_i_type)
+        # 전주 방향에 따라 타입 변경
+        current_type, bracket_name = self.swap_type(current_type, bracket_name)
+        current_structure = data.poles[i].current_structure  # 찾을수 없는 속성
+        install_type, gauge = self.get_installtype_and_gauge(current_structure)
+        return current_type, bracket_name, install_type, gauge
+
+    def create_bracket_with_old_alignment(self, i, data):
+        # todo 미완성 new_alignment복제
+        is_i_type = self.check_current_is_i_type(i)
+        current_type, bracket_name = self.get_current_type_and_bracket_name(is_i_type)
+        # 전주 방향에 따라 타입 변경
+        current_type, bracket_name = self.swap_type(current_type, bracket_name)
+
+        current_structure = data.poles[i].current_structure  # 찾을수 없는 속성
+        install_type, gauge = self.get_installtype_and_gauge(current_structure)
+        return current_type, bracket_name, install_type, gauge
+
+    def check_current_is_i_type(self, i):
+        #  모드에 따라 type여부 체크
+        if self.mode == 0:
+            #  todo 아직 미완성
+            is_i_type = (i % 2 == 1)  # bool
+        else:
+            is_i_type = (i % 2 == 1)  # bool
+        return is_i_type
+
+    @staticmethod
+    def get_installtype_and_gauge(current_structure):
+        if current_structure == '토공':
+            install_type = 'OpG'
+            gauge = 3.0
+        elif current_structure == '교량':
+            install_type = 'OpG'
+            gauge = 3.5
+        elif current_structure == '터널':
+            install_type = 'Tn'
+            gauge = 2.1
+        else:
+            install_type = ''
+            gauge = 0.0
+
+        return install_type, gauge
+
+    @staticmethod
+    def get_current_type_and_bracket_name(is_i_type):
+        if is_i_type:
+            current_type = 'I'
+            bracket_name = 'inner'
+        else:
+            current_type = 'O'
+            bracket_name = 'outer'
+
+        return current_type, bracket_name
+
+    def swap_type(self, current_type, bracket_name):
+        """전주 방향(poledirection)이 반대일 경우 브래킷 타입 전환"""
+        if self.poledirection == 1:
+            current_type = 'O' if current_type == 'I' else 'I'
+            bracket_name = 'outer' if bracket_name == 'inner' else 'inner'
+        return current_type, bracket_name
