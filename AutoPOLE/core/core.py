@@ -1,45 +1,70 @@
-from util import *
-from loggermodule import logger
-from polemodule import *
-from dataloader import *
-from filemodule import *
-from bvemodule import *
-from wiremodule import WirePositionManager
+from .pole import *
+from fileio.dataloader import *
+from fileio.bve_exporter import *
+from .wire import WirePositionManager
 
 
 class MainProcess:
     def __init__(self, design_params, file_paths):
+        self.csvmanager = None
+        self.wiremanager = None
+        self.mastmanager = None
+        self.bracket_manager = None
+        self.loader = None
+        self.pole_processor = None
         self.design_params = design_params
         self.file_paths = file_paths
+        self.steps = []
 
-    def run(self):
-        """✅ 등록된 모든 프로세스를 실행"""
+    def run_with_callback(self, progress_callback=None):
+        def update(step_idx, msg):
+            if progress_callback:
+                pct = int((step_idx / total_steps) * 100)
+                progress_callback(f"{pct}|🔄 ({step_idx} / {total_steps}) {pct}% - {msg}")
+
+        # 작업 단계 정의
+        self.steps = [
+            ("📦 데이터 로딩 중...", self.load_data),
+            ("📍 전주 배치 계산 중...", self.calc_pole),
+            ("🪛 브래킷 설치 중...", self.install_bracket),
+            ("📐 마스트 배치 중...", self.place_mast),
+            ("⚡ 와이어 배선 중...", self.route_wire),
+            ("📝 CSV 내보내는 중...", self.export_csv)
+        ]
+        total_steps = len(self.steps)
+
         try:
-            loader = DataLoader(self.design_params, self.file_paths)
-            logger.debug(f'정보 : DataLoader 실행 완료')
-            pole_processor = PolePositionManager(loader.params)
-            pole_processor.run()
-            logger.debug(f'정보 : PolePositionManager 실행 완료')
-            bracket_manager = BracketManager(loader.params, pole_processor.poledata)
-            bracket_manager.run()
-            logger.debug(f'정보 : BracketManager 실행 완료')
-            mastmanager = MastManager(loader.params, pole_processor.poledata)
-            mastmanager.run()
-            logger.debug(f'정보 : MastManager 실행 완료')
-            wiremanager = WirePositionManager(loader.params, pole_processor.poledata)
-            wiremanager.run()
-            csvmanager = BVECSV(pole_processor.poledata,  wiremanager.wiredata)
-            csvmanager.create_pole_csv()
-            csvmanager.create_csvtotxt()
-            csvmanager.create_wire_csv()
-            csvmanager.create_csvtotxt()
-            logger.debug(f'정보 : BVECSV 실행 완료')
-            '''
-            obj = ObjectSaver(bracket_manager)
-            logger.debug(f'정보 : 테스트용 객체 저장 실행 완료')
-            obj.save_to_txt('c:/temp/object_data.txt')  # 텍스트 파일 저장
-            obj.save_to_json('c:/temp/object_data.json')  # json 파일 저장
-            '''
-            logger.debug(f'정보 : 모든 프로세스 실행 완료')
+            for idx, (msg, func) in enumerate(self.steps):
+                update(idx, msg)
+                func()
+            update(total_steps, "✅ 모든 작업 완료")
         except Exception as ex:
-            logger.error(f'에러 : {ex}', exc_info=True)
+            if progress_callback:
+                progress_callback(f"0|에러: {ex}")
+
+    # 단계별 처리 함수
+    def load_data(self):
+        self.loader = DataLoader(self.design_params, self.file_paths)
+
+    def calc_pole(self):
+        self.pole_processor = PolePositionManager(self.loader.params)
+        self.pole_processor.run()
+
+    def install_bracket(self):
+        self.bracket_manager = BracketManager(self.loader.params, self.pole_processor.poledata)
+        self.bracket_manager.run()
+
+    def place_mast(self):
+        self.mastmanager = MastManager(self.loader.params, self.pole_processor.poledata)
+        self.mastmanager.run()
+
+    def route_wire(self):
+        self.wiremanager = WirePositionManager(self.loader.params, self.pole_processor.poledata)
+        self.wiremanager.run()
+
+    def export_csv(self):
+        self.csvmanager = BVECSV(self.pole_processor.poledata, self.wiremanager.wiredata)
+        self.csvmanager.create_pole_csv()
+        self.csvmanager.create_csvtotxt()
+        self.csvmanager.create_wire_csv()
+        self.csvmanager.create_csvtotxt()

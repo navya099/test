@@ -2,10 +2,13 @@
 bve 자동 전주 설계ㅐ 프로그램
 made by dger
 
-ver 2025.04.04
-1차 준공 (일반개소 TXT까지 출력됨
+ver 2025.04.09
+2차 준공
+전주 전차선까지 처리 및 gui프로세스 개선
+스레딩 적용
+프로젝트 구조변경
 """
-from guimodule import MainWindow
+from ui.main_gui import MainWindow
 
 
 def main():

@@ -1,25 +1,26 @@
-from scipy.sparse.csgraph import structural_rank
-
-from polemodule import BaseManager
-from util import *
+from .pole import BaseManager
+from utils.util import *
 import os
 import sys
+from fileio.jsonloader import ConfigManager
+from types import MappingProxyType
 
 # 현재 main.py 기준으로 상위 폴더에서 bveparser 경로 추가
 base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 bve_path = os.path.join(base_path, 'bveparser')
-config_path = base_path + '/AutoPOLE/config/span_data.json'
+
 if bve_path not in sys.path:
     sys.path.insert(0, bve_path)
 from OpenBveApi.Math.Vectors.Vector3 import Vector3
-from jsonmodule import ConfigManager
-from types import MappingProxyType
+
+config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'span_data.json')
 
 
 class WirePositionManager(BaseManager):
     def __init__(self, params, poledata):
         super().__init__(params, poledata)
-        self.spandata = SpanDatabase(get_json_spandata())
+        jsonmanager = ConfigManager(config_path)
+        self.spandata = SpanDatabase(jsonmanager.get_config())
         self.wiredata = None
 
     def run(self):
@@ -38,28 +39,38 @@ class WirePositionManager(BaseManager):
             pos_coord, vector_pos = return_pos_coord(polyline_with_sta, pos)
             next_type = data.poles[i + 1].Brackets[0].type
             span = data.poles[i].span
-            currentz = pos_coord[2]
             data.poles[i].coord = Vector3(pos_coord)
+            data.poles[i].vector = vector_pos
             current_structure = data.poles[i].current_structure
             contact_index = spandata.get_span_indices(self.designspeed, current_structure, 'contact', span)
-            sign = -1 if data.poles[i].Brackets[0].type == 'I' else 1
-            next_sign = -1 if next_type == 'I' else 1
+
+            sign = self.get_sign(self.poledirection, data.poles[i].Brackets[0].type)
+            next_sign = self.get_sign(self.poledirection, next_type)
 
             lateral_offset = sign * 0.2
             next_offset = next_sign * 0.2
             wiredata.wires[i].contactwire.stagger = lateral_offset
 
             planangle = calculate_curve_angle(polyline_with_sta, pos, next_pos, lateral_offset, next_offset)
+            pitch_angle = change_permile_to_degree(data.poles[i].pitch)
+            topdown_angle = calculate_slope(data.poles[i].coord.z, data.poles[i + 1].coord.z, span) - pitch_angle  # 전차
             wiredata.wires[i].contactwire.index = contact_index
             wiredata.wires[i].contactwire.xyangle = planangle
+            wiredata.wires[i].contactwire.yzangle = topdown_angle
             block = WireDATA()
             wiredata.wires.append(block)
         self.wiredata = wiredata
+
     def create_feeder_wire(self):
         pass
 
     def create_af_wire(self):
         pass
+
+    @staticmethod
+    def get_sign(poledirection, bracket_type):
+        is_inner = bracket_type == 'I'
+        return -1 if (poledirection == -1 and is_inner) or (poledirection != -1 and not is_inner) else 1
 
 
 class WireDataManager:

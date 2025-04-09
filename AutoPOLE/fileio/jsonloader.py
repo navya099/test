@@ -9,6 +9,8 @@ class ConfigManager:
         self.default_values = self.get_default_values()
         self.file_paths = self.get_file_paths()
 
+    def get_config(self):
+        return self.config
 
     def load_config(self):
         if not os.path.exists(self.file):
