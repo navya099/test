@@ -1,252 +1,171 @@
+from tkinter import filedialog, ttk
 import os
 import re
-import csv
-from dataclasses import dataclass
-from abc import ABC
-from typing import Optional, List, Union
-from tkinter import filedialog, ttk
 
-class CurrentRoute:
-    def __init__(self):
-        self.Options = Options()
-        self.WithRoute = WithRoute()
-        self.WithTrain = WithTrain()
-        self.WithStructure = WithStructure()
-        self.WithTrack = WithTrack()
-        
-@dataclass
-class WithRoute:
-    comment: str = ''
-    Elevation: float = 0.0
-    timetable: str = ''
-    PositionX: float = 0.0
-    PositionY: float = 0.0
-    Direction: float = 0.0
-    
-@dataclass
-class Options:
-    ObjectVisibility: int = 0
+class CsvRouteParser:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.context = ParseContext()
+        self.preprocessor = Preprocessor()
+        self.result = []
 
-@dataclass
-class WithTrain:
-    command: str = ''
-    arg: int = 0
-    value: int = 0
+    def parse(self):
+        lines = self.preprocessor.preprocess(self.filepath)
+        for lineno, line in enumerate(lines):
+            expressions = tokenize_line(line)
+            for expr in expressions:
+                parsed_expr = self._parse_expression(expr, lineno)
+                if parsed_expr:
+                    self.result.append(parsed_expr)
 
-@dataclass
-class WithStructure:
-    command: str = ''
-    arg1: int = 0
-    arg2: int = 0
-    value: str = ''
-
-
-class Block:
-    def __init__(self):
-        self.index = 0
-        self.curve = CurveCommand()
-        self.rail = RailCommand()
-        self.pitch = PitchCommand()
-        
-class WithTrack:
-    def __init__(self):
-        self.trackposition = 0.0
-        block = Block()
-        self.Blocks = [block]
-    
-
-
-        
-# ----- Command 클래스 정의 -----
-@dataclass(kw_only=True)
-class CommandBase(ABC):
-    index: Optional[str] = 0
-
-@dataclass
-class CurveCommand(CommandBase):
-    radius: float = 0.0
-    cant: float = 0.0
-
-@dataclass
-class RailCommand(CommandBase):
-    railnumber: int = 0
-    x: float = 0.0
-    y: float = 0.0
-    onjindex: int = 0
-
-@dataclass
-class PitchCommand(CommandBase):
-    pitch: float = 0.0
-
-COMMAND_CLASSES = {
-    'curve': (CurveCommand, [float, float]),
-    'rail': (RailCommand, [int, float, float, int]),
-    'pitch': (PitchCommand, [float]),
-}
-
-# ----- 유틸리티 클래스: 라인 파서 -----
-class CommandExtractor:
-    def __init__(self):
-        self.CurrentRoute = CurrentRoute()
-    
-    @staticmethod
-    def parse_and_cast_args(args: List[str], types: List[type]) -> Union[List, None]:
-        try:
-            return [t(a) for t, a in zip(types, args)]
-        except Exception:
+    def _parse_expression(self, expr, lineno):
+        if not expr.parts:
+            #print(f"[Line {lineno}] Empty expression: {expr.raw}")
             return None
 
-    def parse_line(self, line: str):
-        currentroute = self.CurrentRoute
-        line = line.strip()
-        print(f'currentline: {line}')
-        if not line or line.startswith(';'):
-            return
+        name, *args = expr.parts
+        full_name = self.context.resolve_name(name)
 
-        level = 0
-        section= None
-        command = None
-        prefix = None
-        #문자열을 순회하면서 조회
-        for i, t in enumerate(line):
-            #시작문자가 숫자인경우
-            print(f'current char : {t}')
+        # track position 추출 (예: '62167.956,.CURVE -35969.277')
+        trackpos_match = re.match(r"^\s*(\d+(?:\.\d+)?),", expr.raw)
+        trackpos = float(trackpos_match.group(1)) if trackpos_match else None
+
+        expression = Expression(full_name, args, lineno, raw=expr.raw, trackpos=trackpos)
+
+        if full_name in COMMANDS:
             try:
-                float(t)
-                level += 1
-            #시작문자가 문자인경우
-            except:
-                if t.lower().startswith('o'):
-                    command = line.split('.')[0]
-                    if command.lower() == 'options':
-                        atribute = line.split('.')[1].split(' ')[0]
-                        value = line.split('.')[1].split(' ')[1]
-                        currentroute.Options.ObjectVisibility = value
-                        break    
+                result = COMMANDS[full_name](args)
+                expression.value = result
+            except Exception as e:
+                print(f"[Line {lineno}] Error parsing {full_name} with args {args}: {e}")
+                expression.value = None
+
+        return expression
+
+
+class ParseContext:
+    def __init__(self):
+        self.current_prefix = None  # e.g., 'Route', 'Track'
+
+    def set_prefix(self, prefix):
+        self.current_prefix = prefix
+
+    def resolve_name(self, name):
+        if name.startswith(".") and self.current_prefix:
+            return f"{self.current_prefix}{name}"
+        return name
+
+def tokenize_line(line: str):
+    line = line.strip()
+    if not line or line.startswith(";"):
+        return []
+
+    tokens = line.split(",")
+    return [ExpressionToken(token.strip()) for token in tokens]
+
+class ExpressionToken:
+    def __init__(self, raw):
+        self.raw = raw
+        self.parts = self._split_parts(raw)
+
+    def _split_parts(self, raw):
+        raw = raw.strip()
+        # 괄호형: Track.Curve(0.5;100)
+        if "(" in raw and raw.endswith(")"):
+            cmd, args = raw[:-1].split("(", 1)
+            return [cmd] + [arg.strip() for arg in args.split(";") if arg.strip()]
+        # 일반형: .CURVE -3550;0;
+        elif ";" in raw:
+            parts = raw.split(None, 1)  # 명령어와 인수 구분
+            if len(parts) == 2:
+                cmd, args = parts
+                return [cmd] + [arg.strip() for arg in args.split(";") if arg.strip()]
+            else:
+                return [raw]
+        else:
+            return raw.split()
+
+
+
+class Preprocessor:
+    def __init__(self):
+        self.includes = set()
+
+    def preprocess(self, filepath):
+        return self._read_with_includes(filepath)
+
+    def _read_with_includes(self, filepath, base_offset=0.0):
+        lines = []
+        try:
+            with open(filepath, encoding='utf-8-sig') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("$Include"):
+                        include_path = os.path.join(os.path.dirname(filepath), extract_include_path(line))
+                        included_lines = self._read_with_includes(include_path)
+                        lines.extend(included_lines)
                     else:
-                        print(f'invalid Options at line {i}')
-                elif t.lower().startswith('w'):
-                    if line[:4].lower() == 'With'.lower():
-                        section = line.split(' ')[1]
-                        break
-                    else:
-                        print(f'invalid With at line {i}')
-                elif t.lower().startswith('.'):
-                    prefix = line.split(' ')[0][1:]
-                    string = line.split(' ')[1]
-                    if prefix.lower() == 'comment':
-                        break
-                    elif prefix.lower() == 'elevation':
-                        break
-                    elif prefix.lower() == 'timetable':
-                        break
-                    elif prefix.lower() == 'positionx':
-                        break
-                    elif prefix.lower() == 'positiony':
-                        break
-                    elif prefix.lower() == 'direction':
-                        break
-                    else:
-                      print(f'invalid comment at line {i}')
-                      
-        if section == 'Route':
-            if prefix == 'comment':
-                currentroute.WithRoute.comment = string
-            elif prefix == 'Elevation':
-                currentroute.WithRoute.Elevation = float(string)
-            elif prefix == 'timetable':
-                currentroute.WithRoute.timetable = string
-            elif prefix == 'PositionX':
-                currentroute.WithRoute.PositionX = float(string)
-            elif prefix == 'PositionY':
-                currentroute.WithRoute.PositionX = float(string)
-            elif prefix == 'Direction':
-                currentroute.WithRoute.PositionX = float(string)
-        elif section == 'Train':
-            pass
-        elif section == 'Structure':
-            pass
-        elif section == 'Track':
-            # 전처리
-            if command == '$Include':
-                preprocessor = RoutePreprocessor(route_path)
-                expanded_lines = preprocessor.expand_includes()
-            elif command == 'trackposition':
-                currentroute.WithTrack.PositionX
-            i += 1
-        if i ==10:
-            raise Exception
-            
-# ----- 클래스: 라우트 전처리기 -----
-class RoutePreprocessor:
-    def __init__(self, main_file_path: str):
-        self.main_file_path = main_file_path
-        self.base_dir = os.path.dirname(main_file_path)
+                        lines.append(line)
+        except Exception as ex:
+            print(f'{ex}')
+            return []
+        return lines
 
-    def expand_includes(self) -> List[str]:
-        output_lines = []
-        current_line_number = 1
+def extract_include_path(line):
+    # $Include(filename.txt) 형식 또는 $Include filename.txt 형식 모두 처리
+    line = line.strip()
+    
+    # 괄호형 처리: $Include(filename.txt)
+    match = re.match(r'\$Include\s*\(([^)]+)\)', line)
+    if match:
+        return match.group(1).strip().strip('"')
 
-        with open(self.main_file_path, encoding="utf-8") as f:
-            lines = f.readlines()
+    # 공백형 처리: $Include filename.txt
+    parts = line.split(maxsplit=1)
+    if len(parts) == 2:
+        return parts[1].strip().strip('"')
 
-        for line in lines:
-            stripped = line.strip()
-            include_match = re.match(r"\$Include\((.+?)\)", stripped)
+    raise ValueError(f"Invalid $Include syntax: {line}")
 
-            output_lines.append(f"{current_line_number} {line.rstrip()}")
-            current_line_number += 1
+from dataclasses import dataclass
 
-            if include_match:
-                include_filename = include_match.group(1)
-                include_path = os.path.join(self.base_dir, include_filename)
+@dataclass
+class Expression:
+    name: str              # 명령어 전체 이름 e.g., Route.Gauge
+    args: list[str]        # 인수들 e.g., ['1435']
+    lineno: int            # 원본 줄 번호
+    raw: str = ""          # 원본 텍스트 (선택적)
+    trackpos: float = None # 트랙 상 위치 (선택적)
+    value: any = None      # 명령어 처리 결과
 
-                if os.path.exists(include_path):
-                    with open(include_path, encoding="utf-8") as inc:
-                        include_lines = inc.readlines()
 
-                    for inc_line in include_lines:
-                        output_lines.append(f"{current_line_number} {inc_line.rstrip()}")
-                        current_line_number += 1
-                else:
-                    output_lines.append(f"{current_line_number} ; ERROR: file not found {include_filename}")
-                    current_line_number += 1
+def parse_curve(args):
+    try:
+        radius = float(args[0])
+        cant = float(args[1]) if len(args) > 1 else 0.0
+        return {"radius": radius, "cant": cant}
+    except Exception as e:
+        raise ValueError(f"Invalid .CURVE args: {args}")
 
-        return output_lines
+COMMANDS = {
+    'Route.Gauge': lambda args: float(args[0]),
+    'Route.Timetable': lambda args: str(args[0]),
+    '.CURVE': parse_curve,  # 접두사 없는 경우
+    'Track.Curve': parse_curve  # 접두사 있는 경우
+}
 
 #파일 읽기 함수
 def read_file():
     global lines
      # Hide the main window
     file_path = filedialog.askopenfilename()  # Open file dialog
-    with open(file_path, 'r', encoding='utf-8') as file:
-        lines = file.readlines()
     return file_path
 
-# ----- 사용 예시 -----
 if __name__ == "__main__":
-    parser = CommandExtractor()
-    # main route 파일
-    route_path = read_file()
-    output_curve_csv = r'c:\temp\curve.csv'
-
-    # 라우트 전처리
-    preprocessor = RoutePreprocessor(route_path)
-    expanded_lines = preprocessor.expand_includes()
-
-    # 커브 정보 추출
-    curve_data = []
-    for raw_line in expanded_lines:
-        _, line = raw_line.split(" ", 1)
-        result = parser.parse_line(line)
-    '''
-        if result and result['type'] == 'command' and result['command'] == 'curve':
-            curve = result['data']
-            curve_data.append([result['index'], curve.radius, curve.cant])
-        
-    # CSV 저장
-    with open(output_curve_csv, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Index', 'Radius', 'Cant'])
-        writer.writerows(curve_data)
-    '''
+    file_path = read_file()
+    if file_path:
+        parser = CsvRouteParser(file_path)
+        parser.parse()
+        for expr in parser.result:
+            if expr.name.endswith(".PITCH"):
+                print(f"{expr.lineno:5}: {expr.name:<15} {expr.args} => {expr.value} @ {expr.trackpos}")
