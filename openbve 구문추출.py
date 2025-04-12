@@ -1,16 +1,16 @@
 from tkinter import filedialog, ttk
 import os
 import re
-import chardet
 from dataclasses import dataclass
 import math
+from charset_normalizer import from_path
 
 def detect_encoding(path):
-    # 파일을 열어 일부를 읽어서 인코딩을 감지합니다
-    with open(path, 'rb') as file:
-        raw_data = file.read(10000)  # 처음 10000 바이트를 읽어봄
-        result = chardet.detect(raw_data)  # 인코딩 탐지
-        return result['encoding']
+    result = from_path(path)
+    encoding = result.best().encoding  # `best()`를 사용하여 encoding을 가져옵니다.
+    print(f"[Encoding Detected] {path}: {encoding}")
+    return encoding
+
 
 class CurrentRoute:
     def __init__(self):
@@ -82,11 +82,11 @@ class CsvRouteParser:
         for i ,line in enumerate(lines):
             expressions = tokenize_line(line.content)
             for expr in expressions:
-                parsed_expr = self._parse_expression(expr, line.global_lineno)
+                parsed_expr = self._parse_expression(expr, line.global_lineno ,line.local_lineno ,line.filepath, line.offset)
                 if parsed_expr:
                     self.result.append(parsed_expr)
 
-    def _parse_expression(self, expr, lineno):
+    def _parse_expression(self, expr, lineno, local_lineno, file, lineoffset=0):
         if not expr.parts:
             #print(f"[Line {lineno}] Empty expression: {expr.raw}")
             return None
@@ -123,7 +123,7 @@ class CsvRouteParser:
 
         elif self.context.current_prefix == 'Track':
             if isinstance(full_name, float):  # 트랙포지션인경우
-                self.lasttrackposition = full_name
+                self.lasttrackposition = full_name + lineoffset
                 return False
             else:
                 if not full_name.lower() == 'track':
@@ -133,7 +133,7 @@ class CsvRouteParser:
                             result = COMMANDS[full_name](args)
                             expression.value = result
                         except Exception as e:
-                            print(f"[Line {lineno}] Error parsing {full_name} with args {args}: {e}")
+                            print(f"[Line {lineno}] Error parsing {full_name}: {e} at line {local_lineno}, file {file}")
                             expression.value = None
 
                     else:
@@ -153,7 +153,7 @@ class ApplyRouteData:
         expr = sorted(self.expr, key=lambda e: e.trackpos)
         currentroute = self.currentroute
 
-        lastpos = expr[-1].trackpos
+        lastpos = expr[-1].trackpos + 600
         lastindex = get_block_index(lastpos)
 
         # 필요한 만큼 Block 생성
@@ -253,7 +253,7 @@ def capitalize_command(cmd: str) -> str:
 def tokenize_line(line: str):
     line = line.strip()
     match = re.match(r'^(\d+)', line)
-    if not line or line.startswith(";"):  # 주석
+    if not line or line.startswith(";") or line.startswith(",;"):  # 주석
         return []
     if line.lower().startswith("with"):  # current_prefix
         tokens = line.split(",")
@@ -291,14 +291,16 @@ class ExpressionToken:
 class Preprocessor:
     def __init__(self):
         self.global_lineno = 0
+        self.local_lineno = 0
         self.includes = set()
         self.lines = []
+        self.filepath = ''
 
     def preprocess(self, filepath):
         self.lines = self._read_with_includes(filepath)
         return self
 
-    def _read_with_includes(self, filepath):
+    def _read_with_includes(self, filepath, base_offset=0):
         collected_lines = []
         try:
             encoding = detect_encoding(filepath)
@@ -310,12 +312,11 @@ class Preprocessor:
                     if line.lower().startswith("$include"):
                         include_path, offset = extract_include_path(line)
                         full_include_path = os.path.join(os.path.dirname(filepath), include_path)
-                        included_lines = self._read_with_includes(full_include_path)
+                        included_lines = self._read_with_includes(full_include_path ,base_offset=offset)
                         collected_lines.extend(included_lines)
                     else:
-                        offset = 0
                         collected_lines.append(
-                            ParsedLine(self.global_lineno, local_lineno, filepath, line, offset)
+                            ParsedLine(self.global_lineno, local_lineno, filepath, line, offset=base_offset)
                         )
         except Exception as ex:
             print(f'[Preprocessor Error] {ex}')
@@ -398,11 +399,11 @@ def parse_freeobj(args):
     try:
         railindex = int(args[0])
         freeobj_index = int(args[1]) if len(args) > 1 else 0
-        xoffset = float(args[1]) if len(args) > 1 else 0.0
-        yoffset = float(args[2]) if len(args) > 2 else 0.0
-        yaw = float(args[3]) if len(args) > 2 else 0.0
-        pitch = float(args[4]) if len(args) > 3 else 0.0
-        roll = float(args[5]) if len(args) > 4 else 0.0
+        xoffset = float(args[1]) if len(args) > 2 else 0.0
+        yoffset = float(args[2]) if len(args) > 3 else 0.0
+        yaw = float(args[3]) if len(args) > 4 else 0.0
+        pitch = float(args[4]) if len(args) > 5 else 0.0
+        roll = float(args[5]) if len(args) > 6 else 0.0
         return {'railindex': railindex, 'freeobj_index':freeobj_index, 'xoffset': xoffset,
                 'yoffset': yoffset, 'yaw': yaw, 'pitch': pitch, 'roll': roll }
 
