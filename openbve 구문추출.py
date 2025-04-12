@@ -1,20 +1,88 @@
 from tkinter import filedialog, ttk
 import os
 import re
+import chardet
+from dataclasses import dataclass
+import math
+
+def detect_encoding(path):
+    # 파일을 열어 일부를 읽어서 인코딩을 감지합니다
+    with open(path, 'rb') as file:
+        raw_data = file.read(10000)  # 처음 10000 바이트를 읽어봄
+        result = chardet.detect(raw_data)  # 인코딩 탐지
+        return result['encoding']
+
+class CurrentRoute:
+    def __init__(self):
+        self.Options = Options()
+        self.Route = Route()
+        self.Track = Track()
+
+class Options:
+    def __init__(self):
+        self.ObjectVisibility = 1
+        self.Blocklength = 25
+
+class Route:
+    def __init__(self):
+        self.comment = ''
+        self.Elevation = 0.0
+        self.PositionX = 0.0
+        self.PositionY = 0.0
+        self.Direction = 0.0
+        self.timetable = ''
+
+class Track:
+    def __init__(self):
+        self.Blocks = []
+
+class Curve:
+    def __init__(self):
+        self.radius = 0.0
+        self.cant = 0.0
+
+class Pitch:
+    def __init__(self):
+        self.pitch = 0.0
+
+class Rail:
+    def __init__(self):
+        self.index = 0
+        self.x = 0.0
+        self.y = 0.0
+        self.objidx = 0
+
+class Block:
+    def __init__(self):
+        self.index = 0
+        self.TrackPosition = 0.0
+        self.Curve = Curve()
+        self.Pitch = Pitch()
+        self.Rail = Rail()
+
+@dataclass
+class ParsedLine:
+    global_lineno: int
+    local_lineno: int
+    filepath: str
+    content: str
+    offset: float
 
 class CsvRouteParser:
     def __init__(self, filepath):
+        self.CurrentRoute = CurrentRoute()
         self.filepath = filepath
         self.context = ParseContext()
         self.preprocessor = Preprocessor()
         self.result = []
+        self.lasttrackposition = None
 
     def parse(self):
-        lines = self.preprocessor.preprocess(self.filepath)
-        for lineno, line in enumerate(lines):
-            expressions = tokenize_line(line)
+        lines = self.preprocessor.preprocess(self.filepath).lines
+        for i ,line in enumerate(lines):
+            expressions = tokenize_line(line.content)
             for expr in expressions:
-                parsed_expr = self._parse_expression(expr, lineno)
+                parsed_expr = self._parse_expression(expr, line.global_lineno)
                 if parsed_expr:
                     self.result.append(parsed_expr)
 
@@ -24,23 +92,109 @@ class CsvRouteParser:
             return None
 
         name, *args = expr.parts
-        full_name = self.context.resolve_name(name)
+        full_name, option = self.context.resolve_name(name, *args)
+
 
         # track position 추출 (예: '62167.956,.CURVE -35969.277')
-        trackpos_match = re.match(r"^\s*(\d+(?:\.\d+)?),", expr.raw)
-        trackpos = float(trackpos_match.group(1)) if trackpos_match else None
+        if self.context.current_prefix == 'Options':
+            if option.lower() == 'objectvisibility':
 
-        expression = Expression(full_name, args, lineno, raw=expr.raw, trackpos=trackpos)
+                self.CurrentRoute.Options.ObjectVisibility = option
+            elif option.lower() == 'blocklength':
+                self.CurrentRoute.Options.Blocklength = option
+            return False
+        elif self.context.current_prefix == 'Route':
+            if name.lower() == '.comment':
+                self.CurrentRoute.Route.comment = " ".join(args)
+            elif name.lower() == '.elevation':
+                self.CurrentRoute.Route.Elevation = args[0]
+            elif name.lower() == '.positionx':
+                self.CurrentRoute.Route.PositionX = args[0]
+            elif name.lower() == '.positiony':
+                self.CurrentRoute.Route.PositionY = args[0]
+            elif name.lower() == '.direction':
+                self.CurrentRoute.Route.Direction = args[0]
+            return False
 
-        if full_name in COMMANDS:
-            try:
-                result = COMMANDS[full_name](args)
-                expression.value = result
-            except Exception as e:
-                print(f"[Line {lineno}] Error parsing {full_name} with args {args}: {e}")
-                expression.value = None
+        elif self.context.current_prefix == 'Train':
+            return False
+        elif self.context.current_prefix == 'Structure':
+            return False
 
+        elif self.context.current_prefix == 'Track':
+            if isinstance(full_name, float):  # 트랙포지션인경우
+                self.lasttrackposition = full_name
+                return False
+            else:
+                if not full_name.lower() == 'track':
+                    expression = Expression(full_name, args, lineno, raw=expr.raw, trackpos=self.lasttrackposition)
+                    if full_name in COMMANDS:
+                        try:
+                            result = COMMANDS[full_name](args)
+                            expression.value = result
+                        except Exception as e:
+                            print(f"[Line {lineno}] Error parsing {full_name} with args {args}: {e}")
+                            expression.value = None
+
+                    else:
+                        return False
+                else:
+                    return False
+        else:
+            return False
         return expression
+
+class ApplyRouteData:
+    def __init__(self, currentroute, expr):
+        self.currentroute = currentroute
+        self.expr = expr
+
+    def applyroutedata(self):
+        expr = sorted(self.expr, key=lambda e: e.trackpos)
+        currentroute = self.currentroute
+
+        lastpos = expr[-1].trackpos
+        lastindex = get_block_index(lastpos)
+
+        # 필요한 만큼 Block 생성
+        while len(currentroute.Track.Blocks) <= lastindex:
+            currentroute.Track.Blocks.append(Block())
+
+        # Step 1: Curve 값 미리 저장
+        curve_data = {}  # block_index: (radius, cant)
+        for item in expr:
+            if item.name == 'Track.Curve':
+                index = get_block_index(item.trackpos)
+                curve_data[index] = (item.value['radius'], item.value['cant'])
+
+        pitch_data = {}  # block_index: (radius, cant)
+        for item in expr:
+            if item.name == 'Track.Pitch':
+                index = get_block_index(item.trackpos)
+                pitch_data[index] = (item.value['pitch'])
+        # Step 2: Block에 값 적용
+        lastradius = 0.0
+        lastcant = 0.0
+        lastpitch = 0.0
+        for i in range(len(currentroute.Track.Blocks)):
+            current_trackposition = i * 25
+            currentroute.Track.Blocks[i].TrackPosition = current_trackposition
+
+            if i in curve_data:
+                lastradius, lastcant = curve_data[i]
+            if i in pitch_data:
+                lastpitch = pitch_data[i]
+
+            currentroute.Track.Blocks[i].Curve.radius = lastradius
+            currentroute.Track.Blocks[i].Curve.cant = lastcant
+            currentroute.Track.Blocks[i].Pitch.pitch = lastpitch
+
+
+def get_block_index(current_track_position, block_interval=25):
+    """현재 트랙 위치를 블록 인덱스로 변환"""
+
+    return math.floor(current_track_position / block_interval + 0.001)
+
 
 
 class ParseContext:
@@ -50,17 +204,64 @@ class ParseContext:
     def set_prefix(self, prefix):
         self.current_prefix = prefix
 
-    def resolve_name(self, name):
-        if name.startswith(".") and self.current_prefix:
-            return f"{self.current_prefix}{name}"
-        return name
+    def _is_float(self, value):
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
+
+    def resolve_name(self, name, *args):
+        option = ''
+        name = name.lower()  # 전부 소문자로
+        if name in ['route', 'train', 'structure', 'track']:
+            self.current_prefix = name.capitalize() # 첫글자만 대문자로
+            option = ''
+        elif name == 'with':
+            for arg in args:
+                arg = arg.lower()
+                if arg in ['route', 'train', 'structure', 'track']:
+                    option = ''
+                    name = arg.capitalize()
+                    self.current_prefix = name
+        elif name.startswith('options'):
+            parts = name.split('.')
+
+            name, option = parts
+            name = name.capitalize()
+            option = option.capitalize()
+            self.current_prefix = name.capitalize()
+
+        elif name == '':
+            name = ''
+            option = ''
+        elif self._is_float(name):
+            trackposition = float(name)
+            name = trackposition
+            option = ''
+        else:
+            name = capitalize_command(name)
+            name = f'{self.current_prefix}{name}'
+            option = ''
+        return name, option
+
+def capitalize_command(cmd: str) -> str:
+    if cmd.startswith('.') and len(cmd) > 1:
+        return cmd[0] + cmd[1:].capitalize()
+    return cmd
 
 def tokenize_line(line: str):
     line = line.strip()
-    if not line or line.startswith(";"):
+    match = re.match(r'^(\d+)', line)
+    if not line or line.startswith(";"):  # 주석
         return []
+    if line.lower().startswith("with"):  # current_prefix
+        tokens = line.split(",")
 
-    tokens = line.split(",")
+    elif line.lower().startswith("options"):
+        tokens = line.split(",")
+    else:
+        tokens = line.split(",")
     return [ExpressionToken(token.strip()) for token in tokens]
 
 class ExpressionToken:
@@ -89,43 +290,70 @@ class ExpressionToken:
 
 class Preprocessor:
     def __init__(self):
+        self.global_lineno = 0
         self.includes = set()
+        self.lines = []
 
     def preprocess(self, filepath):
-        return self._read_with_includes(filepath)
+        self.lines = self._read_with_includes(filepath)
+        return self
 
-    def _read_with_includes(self, filepath, base_offset=0.0):
-        lines = []
+    def _read_with_includes(self, filepath):
+        collected_lines = []
         try:
-            with open(filepath, encoding='utf-8-sig') as f:
-                for line in f:
+            encoding = detect_encoding(filepath)
+            with open(filepath, encoding=encoding) as f:
+                for local_lineno, line in enumerate(f, start=1):
                     line = line.strip()
-                    if line.startswith("$Include"):
-                        include_path = os.path.join(os.path.dirname(filepath), extract_include_path(line))
-                        included_lines = self._read_with_includes(include_path)
-                        lines.extend(included_lines)
+                    self.global_lineno += 1
+
+                    if line.lower().startswith("$include"):
+                        include_path, offset = extract_include_path(line)
+                        full_include_path = os.path.join(os.path.dirname(filepath), include_path)
+                        included_lines = self._read_with_includes(full_include_path)
+                        collected_lines.extend(included_lines)
                     else:
-                        lines.append(line)
+                        offset = 0
+                        collected_lines.append(
+                            ParsedLine(self.global_lineno, local_lineno, filepath, line, offset)
+                        )
         except Exception as ex:
-            print(f'{ex}')
-            return []
-        return lines
+            print(f'[Preprocessor Error] {ex}')
+        return collected_lines
+
 
 def extract_include_path(line):
-    # $Include(filename.txt) 형식 또는 $Include filename.txt 형식 모두 처리
+    """
+    $Include(filename.txt), $Include filename.txt,
+    $Include(filename.txt:offset), $Include filename.txt:offset
+    모든 형식을 지원함.
+    반환값: (파일 경로, offset: float 또는 0.0)
+    """
     line = line.strip()
-    
-    # 괄호형 처리: $Include(filename.txt)
-    match = re.match(r'\$Include\s*\(([^)]+)\)', line)
+    offset = 0.0
+
+    # 괄호형 처리: $Include(filename.txt:offset)
+    match = re.match(r'\$Include\s*\(([^)]+)\)', line, re.IGNORECASE)
     if match:
-        return match.group(1).strip().strip('"')
+        content = match.group(1).strip().strip('"')
+    else:
+        # 공백형 처리: $Include filename.txt[:offset]
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid $Include syntax: {line}")
+        content = parts[1].strip().strip('"')
 
-    # 공백형 처리: $Include filename.txt
-    parts = line.split(maxsplit=1)
-    if len(parts) == 2:
-        return parts[1].strip().strip('"')
+    # 파일명과 offset 분리
+    if ':' in content:
+        filename, offset_str = content.split(':', 1)
+        try:
+            offset = float(offset_str)
+        except ValueError:
+            raise ValueError(f"Invalid offset value: {offset_str}")
+        return filename.strip(), offset
+    else:
+        return content.strip(), 0.0
 
-    raise ValueError(f"Invalid $Include syntax: {line}")
 
 from dataclasses import dataclass
 
@@ -147,11 +375,47 @@ def parse_curve(args):
     except Exception as e:
         raise ValueError(f"Invalid .CURVE args: {args}")
 
+def parse_pitch(args):
+    try:
+        pitch = float(args[0])
+        return {"pitch": pitch}
+    except Exception as e:
+        raise ValueError(f"Invalid .pitch args: {args}")
+
+def parse_rail(args):
+    try:
+        railindex = int(args[0])
+        xoffset = float(args[1]) if len(args) > 1 else 0.0
+        yoffset = float(args[2]) if len(args) > 2 else 0.0
+        object_index = int(args[3]) if len(args) > 3 else 0
+        return {"railindex": railindex, "xoffset": xoffset, "yoffset": yoffset, "object_index": object_index}
+
+    except Exception as e:
+        raise ValueError(f"Invalid .rail args: {args}")
+
+
+def parse_freeobj(args):
+    try:
+        railindex = int(args[0])
+        freeobj_index = int(args[1]) if len(args) > 1 else 0
+        xoffset = float(args[1]) if len(args) > 1 else 0.0
+        yoffset = float(args[2]) if len(args) > 2 else 0.0
+        yaw = float(args[3]) if len(args) > 2 else 0.0
+        pitch = float(args[4]) if len(args) > 3 else 0.0
+        roll = float(args[5]) if len(args) > 4 else 0.0
+        return {'railindex': railindex, 'freeobj_index':freeobj_index, 'xoffset': xoffset,
+                'yoffset': yoffset, 'yaw': yaw, 'pitch': pitch, 'roll': roll }
+
+
+    except Exception as e:
+        raise ValueError(f"Invalid freeobj args: {args}")
 COMMANDS = {
     'Route.Gauge': lambda args: float(args[0]),
     'Route.Timetable': lambda args: str(args[0]),
-    '.CURVE': parse_curve,  # 접두사 없는 경우
-    'Track.Curve': parse_curve  # 접두사 있는 경우
+    'Track.Curve': parse_curve,  # 접두사 있는 경우
+    'Track.Pitch': parse_pitch, # 접두사 없는 경우
+    'Track.Freeobj': parse_freeobj,
+    'Track.Rail': parse_rail
 }
 
 #파일 읽기 함수
@@ -166,6 +430,14 @@ if __name__ == "__main__":
     if file_path:
         parser = CsvRouteParser(file_path)
         parser.parse()
-        for expr in parser.result:
-            if expr.name.endswith(".PITCH"):
-                print(f"{expr.lineno:5}: {expr.name:<15} {expr.args} => {expr.value} @ {expr.trackpos}")
+        applyroutedata = ApplyRouteData(parser.CurrentRoute, parser.result)
+        applyroutedata.applyroutedata()
+        with open('c:/temp/curve_info.txt', 'w' ,encoding='utf-8') as f:
+            for i in range(len(applyroutedata.currentroute.Track.Blocks)-1):
+                f.write(f'{applyroutedata.currentroute.Track.Blocks[i].TrackPosition},')
+                f.write(f'{applyroutedata.currentroute.Track.Blocks[i].Curve.radius},')
+                f.write(f'{applyroutedata.currentroute.Track.Blocks[i].Curve.cant}\n')
+        with open('c:/temp/pitch_info.txt', 'w' ,encoding='utf-8') as f:
+            for i in range(len(applyroutedata.currentroute.Track.Blocks)-1):
+                f.write(f'{applyroutedata.currentroute.Track.Blocks[i].TrackPosition},')
+                f.write(f'{applyroutedata.currentroute.Track.Blocks[i].Pitch.pitch}\n')
