@@ -52,34 +52,28 @@ class MeshBuilder:
 
 
 def export_to_obj(meshes: List[MeshBuilder], filepath: str, mtl_filepath: str):
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8") as f, open(mtl_filepath, "w", encoding="utf-8") as mtl_file:
         f.write("# Exported from BVE Object Viewer\n")
-        f.write(f"mtllib {mtl_filepath}\n")  # Reference to MTL file
+        f.write(f"mtllib {mtl_filepath}\n")
 
         vertex_offset = 1
-        material_offset = 0  # Track material index for faces
+        material_offset = 0
 
-        # Export each mesh
         for i, mesh in enumerate(meshes):
             f.write(f"\no Mesh_{i}\n")
 
-            # Export materials for each mesh
-            if mesh.color:  # If a color is defined, create a material in MTL file
+            if mesh.color:
                 mtl_name = f"material_{i + material_offset}"
                 f.write(f"usemtl {mtl_name}\n")
-                # Export material properties to MTL, passing texture info
-                export_to_mtl(mtl_filepath, mtl_name, mesh.color, mesh.daytime_texture, mesh.nighttime_texture)
+                export_to_mtl(mtl_file, mtl_name, mesh.color, mesh.daytime_texture, mesh.nighttime_texture)
 
-            # Export vertices
             for v in mesh.vertices:
                 f.write(f"v {v.x} {v.y} {v.z}\n")
 
-            # Export texture coordinates
             if mesh.texture_coordinates:
                 for tc in mesh.texture_coordinates:
                     f.write(f"vt {tc.x} {tc.y}\n")
 
-            # Export faces
             for face in mesh.faces:
                 indices = [str(idx + vertex_offset) for idx in face.vertex_indices]
                 f.write("f " + " ".join(indices) + "\n")
@@ -87,20 +81,21 @@ def export_to_obj(meshes: List[MeshBuilder], filepath: str, mtl_filepath: str):
             vertex_offset += len(mesh.vertices)
 
 
-def export_to_mtl(mtl_filepath: str, mtl_name: str, color: tuple, daytime_texture: Optional[str] = None, nighttime_texture: Optional[str] = None):
-    with open(mtl_filepath, "a", encoding="utf-8") as mtl_file:
-        # Define material properties in the MTL file
-        r, g, b, a = color
-        mtl_file.write(f"\n\n# Material: {mtl_name}\n")
-        mtl_file.write(f"newmtl {mtl_name}\n")
-        mtl_file.write(f"Kd {r / 255} {g / 255} {b / 255}\n")  # Diffuse color (RGB normalized)
-        mtl_file.write(f"Ka {r / 255} {g / 255} {b / 255}\n")  # Ambient color (RGB normalized)
 
-        # 텍스처 파일을 정확하게 반영
-        if daytime_texture:
-            mtl_file.write(f"map_Kd {daytime_texture}\n")  # Daytime texture map
-        if nighttime_texture:
-            mtl_file.write(f"map_Kd {nighttime_texture}\n")  # Nighttime texture map
+def export_to_mtl(mtl_file, mtl_name: str, color: tuple,
+                  daytime_texture: Optional[str] = None,
+                  nighttime_texture: Optional[str] = None):
+    r, g, b, a = color
+    mtl_file.write(f"\n\n# Material: {mtl_name}\n")
+    mtl_file.write(f"newmtl {mtl_name}\n")
+    mtl_file.write(f"Kd {r / 255} {g / 255} {b / 255}\n")
+    mtl_file.write(f"Ka {r / 255} {g / 255} {b / 255}\n")
+
+    if daytime_texture:
+        mtl_file.write(f"map_Kd {daytime_texture}\n")
+    if nighttime_texture:
+        mtl_file.write(f"#bve_nightmap {nighttime_texture}\n")  # OpenBVE 전용 주석 방식
+
 
 
 def parse_object_file(file_path: str) -> List[MeshBuilder]:
