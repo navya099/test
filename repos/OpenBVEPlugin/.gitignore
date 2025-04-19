@@ -1,0 +1,53 @@
+# 빌드 아웃풋
+bin/
+obj/
+
+# 사용자 설정 관련 파일
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider / JetBrains IDE 설정
+.idea/
+*.sln.iml
+
+# VS Code 관련
+.vscode/
+
+# AutoCAD DLL 또는 다른 출력물
+*.dll
+*.pdb
+*.exe
+
+# 로그 및 임시파일
+*.log
+*.tmp
+
+# NuGet 관련
+*.nupkg
+packages/
+*.snupkg
+project.lock.json
+project.assets.json
+
+# 기타
+*.cache
+_ReSharper*/  # ReSharper 사용 시
+*.tlog
+*.idb
+*.ipch
+
+# 테스트 결과
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+#vs 솔루션 유저파일
+*.slnLaunch.user
+
+*.bin
+*.json
+*.v2
+*.v*
