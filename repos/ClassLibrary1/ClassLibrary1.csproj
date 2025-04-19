@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="accoremgd">
+      <HintPath>F:\Program Files\Autodesk\AutoCAD 2026\accoremgd.dll</HintPath>
+    </Reference>
+    <Reference Include="Acdbmgd">
+      <HintPath>F:\Program Files\Autodesk\AutoCAD 2026\acdbmgd.dll</HintPath>
+    </Reference>
+    <Reference Include="acdbmgdbrep">
+      <HintPath>F:\Program Files\Autodesk\AutoCAD 2026\acdbmgdbrep.dll</HintPath>
+    </Reference>
+    <Reference Include="Acmgd">
+      <HintPath>F:\Program Files\Autodesk\AutoCAD 2026\acmgd.dll</HintPath>
+    </Reference>
+    <Reference Include="AecBaseMgd">
+      <HintPath>F:\Program Files\Autodesk\AutoCAD 2026\ACA\AecBaseMgd.dll</HintPath>
+    </Reference>
+    <Reference Include="AeccDbMgd">
+      <HintPath>F:\Program Files\Autodesk\AutoCAD 2026\C3D\AeccDbMgd.dll</HintPath>
+    </Reference>
+    <Reference Include="NetReload">
+      <HintPath>NetReload.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
