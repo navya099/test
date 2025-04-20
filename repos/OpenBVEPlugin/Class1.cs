@@ -3,9 +3,14 @@ using System.Xml.Linq;
 using OpenBveApi.Runtime;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
+using System.IO.Pipes;
+using System.Text;
+using System.IO;
+using System.Threading;
 
 namespace Plugin
 {
+    
 
     public static class ConsoleManager
     {
@@ -30,6 +35,10 @@ namespace Plugin
     public partial class Plugin : IRuntime
     {
 
+        private NamedPipeServerStream pipeServer;
+
+
+
         /// <summary>Holds the array of panel variables.</summary>
         /// <remarks>Be sure to initialize in the Load call.</remarks>
         private int[] Panel = null;
@@ -40,9 +49,13 @@ namespace Plugin
         /// <summary>Is called when the plugin is loaded.</summary>
         /// <param name="properties">The properties supplied to the plugin on loading.</param>
         /// <returns>Whether the plugin was loaded successfully.</returns>
+        /// 
+        private string latestDataToSend = "";
+        private Thread writerThread;
+
         public bool Load(LoadProperties properties)
         {
-            ConsoleManager.Show();  // 콘솔 창 열기
+            ConsoleManager.Show();
 
             Panel = new int[256];
             Sound = new SoundHelper(properties.PlaySound, 256);
@@ -50,6 +63,27 @@ namespace Plugin
             properties.AISupport = AISupport.None;
 
             Console.WriteLine("🚀 Plugin loaded!");
+
+            // 파이프 쓰레드에서 연결 대기
+            writerThread = new Thread(() =>
+            {
+                try
+                {
+                    pipeServer = new NamedPipeServerStream("VehicleDataPipe", PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                    Console.WriteLine("파이프 대기 중...");
+                    pipeServer.WaitForConnection();
+                    Console.WriteLine("파이프 연결됨.");
+
+                    WriterLoop(); // 연결 후 루프 시작
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("파이프 초기화 오류: " + ex.Message);
+                }
+            });
+
+            writerThread.IsBackground = true;
+            writerThread.Start();
 
             return true;
         }
@@ -74,20 +108,52 @@ namespace Plugin
             // TODO: Your old Initialize code goes here.
         }
 
+
+
+        // 초기화 함수 (Elapse 이전에 1회만 실행)
+        
+        public void InitializePipe()
+        {
+            pipeServer = new NamedPipeServerStream("VehicleDataPipe", PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            Console.WriteLine("파이프 대기 중...");
+            pipeServer.WaitForConnection();
+            Console.WriteLine("파이프 연결됨.");
+        }
+
         /// <summary>Is called every frame.</summary>
         /// <param name="data">The data passed to the plugin.</param>
         public void Elapse(ElapseData data)
         {
-            double location = data.Vehicle.Location; // 위치 (미터)
-            double speed = data.Vehicle.Speed.KilometersPerHour; // 속도 (km/h)
+            double location = data.Vehicle.Location;
+            double speed = data.Vehicle.Speed.KilometersPerHour;
             List<double> World = data.Vehicle.Worlds;
 
-            Console.WriteLine($"위치: {location:F2} m / 속도: {speed:F1} km/h / 좌표: X={World[0]:F4}, Y={World[1]:F4}, Z={World[2]:F2}");
-
-            Sound.Update();
+            string dataToSend = $"위치: {location:F2} m / 속도: {speed:F1} km/h / 좌표: X={World[0]:F4}, Y={World[1]:F4}, Z={World[2]:F2}";
+            latestDataToSend = dataToSend;
         }
 
+        private void WriterLoop()
+        {
+            while (true)
+            {
+                try
+                {
+                    if (pipeServer != null && pipeServer.IsConnected && latestDataToSend != "")
+                    {
+                        string msg = latestDataToSend + "\n";
+                        byte[] bytes = Encoding.UTF8.GetBytes(msg);
+                        pipeServer.Write(bytes, 0, bytes.Length);
+                        pipeServer.Flush();
+                    }
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine("파이프 쓰기 오류: " + ex.Message);
+                }
 
+                Thread.Sleep(100); // 너무 자주 보내지 않도록 (10fps 전송 주기)
+            }
+        }
 
         /// <summary>Is called when the driver changes the reverser.</summary>
         /// <param name="reverser">The new reverser position.</param>
