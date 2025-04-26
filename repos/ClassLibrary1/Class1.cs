@@ -8,6 +8,9 @@ using Autodesk.Civil.DatabaseServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using System.Collections.Generic;
 using System.IO;
+using Autodesk.Aec.Geometry;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.ComponentModel.Design;
 
 namespace ClassLibrary1
 {
@@ -59,10 +62,16 @@ namespace ClassLibrary1
 
                 // 베이스선형의 profile 가져오기
                 ObjectIdCollection profileIds = baseAlignment.GetProfileIds();
+                Autodesk.Civil.DatabaseServices.Profile baseprofile;
                 if (profileIds.Count > 0)
                 {
-                    Profile profile = (Profile)tr.GetObject(profileIds[0], OpenMode.ForRead);
+                    baseprofile = (Autodesk.Civil.DatabaseServices.Profile)tr.GetObject(profileIds[0], OpenMode.ForRead);
                 }
+                else
+                {
+                    baseprofile = null;
+                }
+
                 double interval = 25.0;
                 double startStation = baseAlignment.StartingStation;
                 double endStation = baseAlignment.EndingStation;
@@ -80,18 +89,51 @@ namespace ClassLibrary1
                     Alignment targetAlignment = tr.GetObject(targetId, OpenMode.ForRead) as Alignment;
                     if (targetAlignment == null) continue;
 
+                    // 타겟선형의 profile 가져오기
+                    ObjectIdCollection targetprofileIds = targetAlignment.GetProfileIds();
+                    Autodesk.Civil.DatabaseServices.Profile targetprofile;
+                    if (targetprofileIds.Count > 0)
+                    {
+                        targetprofile = (Autodesk.Civil.DatabaseServices.Profile)tr.GetObject(targetprofileIds[0], OpenMode.ForRead);
+                    }
+                    else
+                    {
+                        targetprofile = null;
+                    }
+
+
+
                     List<string> resultLines = new List<string>();
 
                     for (double sta = startStation; sta <= endStation; sta += interval)
                     {
                         double offsetX = 0.0, targetSta = 0.0, baseZ = 0.0, baseE = 0.0;
-
+                        double current_elev = 0.0;
+                        double target_elev = 0.0;
                         try
                         {
-                            baseAlignment.DistanceToAlignment(sta, targetAlignment, ref offsetX, ref targetSta);
+                            if (baseprofile != null)
+                                {
+                                current_elev = baseprofile.ElevationAt(sta);
+
+                            }
+                            else { 
+                                current_elev = 0.0;
+                            }
+                            if (targetprofile != null)
+                            {
+                                target_elev = targetprofile.ElevationAt(sta);
+                            }
+                            else
+                            {
+                                target_elev = 0.0;
+                            }
+                                baseAlignment.DistanceToAlignment(sta, targetAlignment, ref offsetX, ref targetSta);
                             try { baseAlignment.PointLocation(sta, 0.0, ref baseE, ref baseZ); } catch { }
 
-                            string line = $"{sta:F2},{offsetX:F2},{baseZ:F2},{targetSta:F2},{targetAlignment.Name}";
+                            double offsetY = current_elev - target_elev;
+
+                            string line = $"{sta:F2},{offsetX:F2},{offsetY:F2},{targetSta:F2},{targetAlignment.Name}";
                             resultLines.Add(line);
                         }
                         catch
