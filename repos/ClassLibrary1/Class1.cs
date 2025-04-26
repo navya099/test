@@ -1,16 +1,11 @@
 ﻿using Autodesk.AutoCAD.Runtime;
 using Autodesk.AutoCAD.DatabaseServices;
-using Autodesk.AutoCAD.ApplicationServices.Core;
 using CoreApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.Civil.DatabaseServices;
-using Autodesk.AutoCAD.ApplicationServices;
-using System.Collections.Generic;
-using System.IO;
-using Autodesk.Aec.Geometry;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 using System.ComponentModel.Design;
+
 
 namespace ClassLibrary1
 {
@@ -60,16 +55,18 @@ namespace ClassLibrary1
                 Alignment baseAlignment = (Alignment)tr.GetObject(baseAlignmentId, OpenMode.ForRead);
                 if (baseAlignment == null) return;
 
-                // 베이스선형의 profile 가져오기
+                // 베이스선형의 design profile 가져오기
                 ObjectIdCollection profileIds = baseAlignment.GetProfileIds();
-                Autodesk.Civil.DatabaseServices.Profile baseprofile;
-                if (profileIds.Count > 0)
+                Autodesk.Civil.DatabaseServices.Profile baseprofile = null;
+
+                foreach (ObjectId profileId in profileIds)
                 {
-                    baseprofile = (Autodesk.Civil.DatabaseServices.Profile)tr.GetObject(profileIds[0], OpenMode.ForRead);
-                }
-                else
-                {
-                    baseprofile = null;
+                    var profile = (Autodesk.Civil.DatabaseServices.Profile)tr.GetObject(profileId, OpenMode.ForRead);
+                    if (profile.ProfileType == Autodesk.Civil.DatabaseServices.ProfileType.FG)
+                    {
+                        baseprofile = profile;
+                        break;
+                    }
                 }
 
                 double interval = 25.0;
@@ -77,10 +74,11 @@ namespace ClassLibrary1
                 double endStation = baseAlignment.EndingStation;
 
                 // BVE 변수
-                int railindex = 0;
+                int railindex = 2;
 
-                List<string> allResults = new List<string>();
-                allResults.Add("BaseStation,OffsetX,Z,TargetStation,TargetName");
+                List<string> allResults = [];
+                List<string> BVETXT = [];
+                allResults.Add("BaseStation,BaseElevation,TargetStation,TargetElevation,OffsetX,OffsetZ");
 
                 foreach (ObjectId targetId in doc.GetAlignmentIds())
                 {
@@ -91,23 +89,36 @@ namespace ClassLibrary1
 
                     // 타겟선형의 profile 가져오기
                     ObjectIdCollection targetprofileIds = targetAlignment.GetProfileIds();
-                    Autodesk.Civil.DatabaseServices.Profile targetprofile;
-                    if (targetprofileIds.Count > 0)
+                    Autodesk.Civil.DatabaseServices.Profile targetprofile = null;
+                    foreach (ObjectId profileId in targetprofileIds)
                     {
-                        targetprofile = (Autodesk.Civil.DatabaseServices.Profile)tr.GetObject(targetprofileIds[0], OpenMode.ForRead);
-                    }
-                    else
-                    {
-                        targetprofile = null;
+                        var profile = (Autodesk.Civil.DatabaseServices.Profile)tr.GetObject(profileId, OpenMode.ForRead);
+                        if (profile.ProfileType == Autodesk.Civil.DatabaseServices.ProfileType.FG)
+                        {
+                            targetprofile = profile;
+                            break;
+                        }
                     }
 
 
 
                     List<string> resultLines = new List<string>();
+                    List<string> bvesyntaxs = new List<string>();
+
+                    string line = targetAlignment.Name;
+                    string bveline;
+
+                    resultLines.Add(line);
+
+                    bvesyntaxs.Add($",;{line}\n");
+                    int LastLineNumber = 1; // 마지막줄 넘버 기록용 변수
+                    bool isLastLine = false; // 마지막줄 추적변수
 
                     for (double sta = startStation; sta <= endStation; sta += interval)
                     {
-                        double offsetX = 0.0, targetSta = 0.0, baseZ = 0.0, baseE = 0.0;
+                        double offsetX = 0.0;
+                        double offsetY = 0.0;
+                        double targetSta = 0.0;
                         double current_elev = 0.0;
                         double target_elev = 0.0;
                         try
@@ -120,46 +131,81 @@ namespace ClassLibrary1
                             else { 
                                 current_elev = 0.0;
                             }
+                            
+                            baseAlignment.DistanceToAlignment(sta, targetAlignment, ref offsetX, ref targetSta);
+                           
+
                             if (targetprofile != null)
                             {
-                                target_elev = targetprofile.ElevationAt(sta);
+                                target_elev = targetprofile.ElevationAt(targetSta);
                             }
                             else
                             {
                                 target_elev = 0.0;
                             }
-                                baseAlignment.DistanceToAlignment(sta, targetAlignment, ref offsetX, ref targetSta);
-                            try { baseAlignment.PointLocation(sta, 0.0, ref baseE, ref baseZ); } catch { }
 
-                            double offsetY = current_elev - target_elev;
+                            if (targetprofile != null)
+                            {
+                                offsetY = current_elev - target_elev;
+                            }
+                            else 
+                            {
+                                offsetY = 0.0;
+                            }
 
-                            string line = $"{sta:F2},{offsetX:F2},{offsetY:F2},{targetSta:F2},{targetAlignment.Name}";
+                            line = $"{sta:F0},{current_elev:F3},{targetSta:F3},{target_elev:F3},{-offsetX:F3},{-offsetY:F3}";
                             resultLines.Add(line);
+
+                            if (isLastLine)
+                            {
+                                bveline = $"{sta:F0},.RailEnd {railindex};{-offsetX:F3};{-offsetY:F3};";
+                            }
+                            else
+                            { 
+                                bveline = $"{sta:F0},.Rail {railindex};{-offsetX:F3};{-offsetY:F3};";
+                            }
+                            bvesyntaxs.Add(bveline);
                         }
                         catch
                         {
                             // 무시하고 다음으로
                             continue;
                         }
+                        // 마지막 반복인지 확인
+                        double nextSta = sta + interval;
+                        if (nextSta > endStation)
+                        {
+                            isLastLine = true;
+                        }
+
+                        LastLineNumber++;
                     }
 
                     if (saveAsOneFile)
                     {
                         allResults.AddRange(resultLines);
+                        BVETXT.AddRange(bvesyntaxs);
                     }
                     else
                     {
-                        string filePath = Path.Combine(folderPath, $"{targetAlignment.Name}.csv");
-                        File.WriteAllLines(filePath, new[] { "BaseStation,OffsetX,Z,TargetStation" }.Concat(resultLines));
-                        ed.WriteMessage($"\n{filePath} 저장 완료.");
+                        string csvPath = Path.Combine(folderPath, $"{targetAlignment.Name}.csv");
+                        File.WriteAllLines(csvPath, new[] { "BaseStation,BaseElevation,TargetStation,TargetElevation,OffsetX,OffsetZ" }.Concat(resultLines));
+                        ed.WriteMessage($"\n{csvPath} 저장 완료.");
+
+                        //bve문법 저장
+                        string txtPath = Path.Combine(folderPath, $"{targetAlignment.Name}.txt");
+                        File.WriteAllLines(txtPath, bvesyntaxs);
                     }
+                    railindex++;
                 }
 
                 if (saveAsOneFile)
                 {
-                    string combinedPath = Path.Combine(folderPath, "AllAlignmentOffsets.csv");
-                    File.WriteAllLines(combinedPath, allResults);
-                    ed.WriteMessage($"\n모든 데이터가 {combinedPath} 에 저장되었습니다.");
+                    string combinedcsvPath = Path.Combine(folderPath, "AllAlignmentOffsets.csv");
+                    File.WriteAllLines(combinedcsvPath, allResults);
+                    ed.WriteMessage($"\n모든 데이터가 {combinedcsvPath} 에 저장되었습니다.");
+                    string combinedtxtPath = Path.Combine(folderPath, "AllAlignmentOffsets.txt");
+                    File.WriteAllLines(combinedtxtPath, BVETXT);
                 }
 
                 tr.Commit();
