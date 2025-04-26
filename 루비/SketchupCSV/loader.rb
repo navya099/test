@@ -11,7 +11,7 @@ module SketchupCSV
         if file_path && File.extname(file_path) == ".csv"
             begin
                 csv_object = SketchupCSV::CSV::CsvObject.new
-                csv_object.load_csv(file_path)
+               mwshlist = csv_object.load_csv(file_path)
             rescue => e
                 UI.messagebox("Error loading CSV: #{e.message}")
             end

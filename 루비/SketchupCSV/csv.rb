@@ -1,4 +1,6 @@
 require_relative 'logmodule'
+require 'logger.rb'
+require 'nkf'
 
 module SketchupCSV 
   module CSV
@@ -196,7 +198,7 @@ module SketchupCSV
       end
       
 
-      def load_csv(option, file_path)
+      def load_csv(file_path)
         meshes_list = []
 
         logger = Logger.new(STDOUT)
@@ -205,9 +207,10 @@ module SketchupCSV
         # Open CSV file
         begin
           binary = File.binread(file_path)
-          detected = CharDet.detect(binary)
-          encoding = detected['encoding'] || 'UTF-8'
-          csv_text = binary.force_encoding(encoding).encode('UTF-8').lines.map(&:chomp)
+          encoding = NKF.guess(binary).to_s  # => "UTF-8", "Shift_JIS" 같은 문자열 반환
+
+          csv_text = binary.force_encoding(encoding).encode('UTF-8')
+          csv_lines = csv_text.lines.map(&:chomp).compact
         rescue => e
           logger.fatal(e)
           return meshes_list
@@ -216,7 +219,7 @@ module SketchupCSV
         # Parse CSV file
         comment_started = false
 
-        csv_text.each_with_index do |line, i|
+        csv_lines.each_with_index do |line, i|
           # Strip OpenBVE original standard comments (;)
           j = line.index(";")
           if j
@@ -270,13 +273,15 @@ module SketchupCSV
         mesh = nil
             
 
-        csv_text.each_with_index do |line, i|
+        csv_lines.each_with_index do |line, i|
+          next if line.nil? || line.strip.empty?  # 여기 먼저!
           # Collect arguments
           arguments = line.split(",").map(&:strip)
         
           command = arguments.shift  # Pop the first element and remove from array
         
-          next if command.empty?
+          next if command.to_s.empty?
+
         
           # Parse terms
           case command.downcase
