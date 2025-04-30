@@ -90,7 +90,7 @@ class SubwayColorMap:
         if hexcolor:
             return Color.from_hex(hexcolor)
         else:
-            return Color(r=128, g=128, b=128)  # 기본 회색
+            return Color.get_random_color() # 기본 회색
 
 def read_polyline(file_path):
     points = []
@@ -141,6 +141,34 @@ from PyQt5 import QtWidgets, QtCore, QtGui  # QtGui 추가
 import pyqtgraph as pg
 
 # 클래스 정의 생략 (Vector3, AlignmentPoint, Station, Subway 등 기존 그대로 유지)
+class PipeReader(QtCore.QThread):
+    data_received = QtCore.pyqtSignal(str)
+
+    def __init__(self, pipe_name, parent=None):
+        super().__init__(parent)
+        self.pipe_name = pipe_name
+        self._running = True
+
+    def run(self):
+        try:
+            pipe = win32file.CreateFile(
+                self.pipe_name,
+                win32file.GENERIC_READ,
+                0, None,
+                win32file.OPEN_EXISTING,
+                0, None
+            )
+            while self._running:
+                result, data = win32file.ReadFile(pipe, 4096)
+                decoded = data.decode("utf-8").strip()
+                self.data_received.emit(decoded)
+        except Exception as e:
+            print("파이프 오류:", e)
+
+    def stop(self):
+        self._running = False
+        self.quit()
+        self.wait()
 
 class VehiclePlotter(QtWidgets.QMainWindow):
     def __init__(self, subways):
@@ -208,23 +236,44 @@ class VehiclePlotter(QtWidgets.QMainWindow):
         zoom_out_btn.clicked.connect(self.zoom_out)
         reset_btn.clicked.connect(self.reset_view)
 
-        # 파이프 연결
-        self.pipe = win32file.CreateFile(
-            r'\\.\pipe\VehicleDataPipe',
-            win32file.GENERIC_READ,
-            0, None,
-            win32file.OPEN_EXISTING,
-            0, None
-        )
+        self.pipe_reader = PipeReader(r'\\.\pipe\VehicleDataPipe')
+        self.pipe_reader.data_received.connect(self.handle_pipe_data)
+        self.pipe_reader.start()
 
-        # 타이머로 실시간 업데이트
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.update_vehicle)
-        self.timer.start(20)  # 약 50 FPS
-
-        # 속도와 FPS 측정용 변수 초기화
         self.last_time = time.time()
-        self.last_pos = None
+
+    def closeEvent(self, event):
+        # 창 종료 시 스레드 정리
+        self.pipe_reader.stop()
+        super().closeEvent(event)
+
+    def handle_pipe_data(self, received_data):
+        try:
+            parts = received_data.split(',')
+            if len(parts) != 5:
+                return
+            location = float(parts[0])
+            speed = float(parts[1])
+            x = float(parts[2])
+            y = float(parts[3])
+            z = float(parts[4])
+
+            now = time.time()
+            dt = now - self.last_time
+            self.last_time = now
+            fps = 1.0 / dt if dt > 0 else 0
+
+            self.vehicle_plot.setData([x], [y])
+            self.coord_label.setText(f"X={x:.4f}, Y={y:.4f}, Z={z:.2f}")
+            self.speed_label.setText(f"속도: {speed:.1f} km/h")
+            self.fps_label.setText(f"FPS: {fps:.2f}")
+
+            if self.follow_checkbox.isChecked():
+                vb = self.plot_widget.getViewBox()
+                vb.setRange(xRange=(x - 250, x + 250), yRange=(y - 250, y + 250), padding=0)
+
+        except Exception as e:
+            print("데이터 처리 오류:", e)
 
     def draw_static_lines(self):
         for subway in self.subways:
@@ -241,46 +290,6 @@ class VehiclePlotter(QtWidgets.QMainWindow):
                     text = pg.TextItem(s.name, color=color)
                     text.setPos(s.coord.x, s.coord.y)
                     self.plot_widget.addItem(text)
-
-    def update_vehicle(self):
-        try:
-            result, data = win32file.ReadFile(self.pipe, 4096)
-            received_data = data.decode("utf-8").strip()
-            # 콤마로 분리하여 각 값 파싱
-            parts = received_data.split(',')
-            if len(parts) != 5:
-                return  # 유효하지 않은 데이터
-
-            location = float(parts[0])
-            speed = float(parts[1])
-            x = float(parts[2])
-            y = float(parts[3])
-            z = float(parts[4])
-
-            # 프레임 계산
-
-            now = time.time()
-            dt = now - self.last_time
-            self.last_time = now
-
-            # FPS 계산
-            fps = 1.0 / dt if dt > 0 else 0
-
-            # 차량 위치 갱신
-            self.vehicle_plot.setData([x], [y])
-
-            # 상태표시줄 갱신
-            self.coord_label.setText(f"X={x:.4f}, Y={y:.4f}, Z={z:.2f}")
-            self.speed_label.setText(f"속도: {speed:.1f} km/h")
-            self.fps_label.setText(f"FPS: {fps:.2f}")
-
-            if self.follow_checkbox.isChecked():
-                # 차량 중심으로 시야 이동
-                vb = self.plot_widget.getViewBox()
-                vb.setRange(xRange=(x - 250, x + 250), yRange=(y - 250, y + 250), padding=0)
-
-        except Exception as e:
-            print("오류 발생:", e)
 
     # 줌 및 뷰 컨트롤 함수들
     def zoom_in(self):
