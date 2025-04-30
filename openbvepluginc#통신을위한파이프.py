@@ -1,13 +1,10 @@
 import random
+import sys
 from dataclasses import dataclass
 import win32pipe, win32file
-import matplotlib.pyplot as plt
 import re
 import os
-
-plt.rcParams['font.family'] = 'Malgun Gothic'
-plt.rcParams['axes.unicode_minus'] = False
-
+import time
 
 class Vector3:
     def __init__(self, x=0.0, y=0.0, z=0.0):
@@ -140,106 +137,190 @@ def read_station(file_path):
 
 
 
-# 폴더 설정
-path = r'c:\temp\지하철'
-station_path = path + r'\역'
+from PyQt5 import QtWidgets, QtCore, QtGui  # QtGui 추가
+import pyqtgraph as pg
 
-# 폴더 내 모든 txt 파일 수집
-collect_file = [os.path.join(path, file) for file in os.listdir(path) if file.endswith('.txt')]
-# 파일 이름만 추출 + 확장자 제거
-collect_file_names = [os.path.splitext(os.path.basename(file))[0] for file in collect_file]
+# 클래스 정의 생략 (Vector3, AlignmentPoint, Station, Subway 등 기존 그대로 유지)
 
-#자선 선택
-rail0 = '한국쾌속철도'
+class VehiclePlotter(QtWidgets.QMainWindow):
+    def __init__(self, subways):
+        super().__init__()
+        self.setWindowTitle("실시간 차량 위치")
+        self.setGeometry(100, 100, 1200, 800)
 
-#클래스 인스턴스 생성
-subways = []
-for filename, file in zip(collect_file_names, collect_file):
-    coords = read_polyline(file)
-    alignment = Alignment(coords)
-    color = SubwayColorMap.get_color(filename) if not filename == rail0 else Color(255, 0, 0)
-    # 해당 노선의 역 파일 경로
-    station_file = os.path.join(station_path, filename + ".txt")
-    # 역 파일이 존재하면 읽기
-    if os.path.exists(station_file):
-        stations_data = read_station(station_file)
-        stations = [Station(name=name, sta=sta, coord=Vector3(x=x, y=y, z=0)) for name, sta, x, y in stations_data]
-    else:
-        stations = []
+        # 중앙 위젯 생성
+        central_widget = QtWidgets.QWidget()
+        self.setCentralWidget(central_widget)
 
-    subway = Subway(name=filename, color=color, alignment=alignment, stations=stations)
-    subways.append(subway)
+        # 수직 레이아웃
+        layout = QtWidgets.QVBoxLayout(central_widget)
 
-# 파이프 연결
-print("파이프 연결 시도 중...")
-pipe = win32file.CreateFile(
-    r'\\.\pipe\VehicleDataPipe',
-    win32file.GENERIC_READ,
-    0, None,
-    win32file.OPEN_EXISTING,
-    0, None
-)
+        # 버튼 추가
+        button_layout = QtWidgets.QHBoxLayout()
+        zoom_in_btn = QtWidgets.QPushButton("Zoom In")
+        zoom_out_btn = QtWidgets.QPushButton("Zoom Out")
+        reset_btn = QtWidgets.QPushButton("Reset View")
+        button_layout.addWidget(zoom_in_btn)
+        button_layout.addWidget(zoom_out_btn)
+        button_layout.addWidget(reset_btn)
+        layout.addLayout(button_layout)
 
-print("파이프 연결 성공, 데이터 수신 시작...")
+        # 그래프 위젯 추가
+        self.plot_widget = pg.PlotWidget()
+        layout.addWidget(self.plot_widget)
+        self.plot_widget.setAspectLocked(True)
 
-# 플롯 초기화
-plt.ion()
-fig, ax = plt.subplots()
+        # 버튼 추가 (기존 코드에서 아래 부분에 추가)
+        self.follow_checkbox = QtWidgets.QCheckBox("차량 따라가기")
+        self.follow_checkbox.setChecked(True)  # 기본으로 따라감
+        button_layout.addWidget(self.follow_checkbox)
 
-# 폴리선은 한번만 그린다
-# 플롯에 모든 노선 추가
-for subway in subways:
-    x_poly, y_poly = zip(*[(p.coord.x, p.coord.y) for p in subway.alignment.points])
-    color = (subway.color.r/255, subway.color.g/255, subway.color.b/255)
-    ax.plot(x_poly, y_poly, color=color, label=subway.name)
+        # 상태 표시줄 (좌표, 속도, FPS)
+        self.status_layout = QtWidgets.QHBoxLayout()
+        self.coord_label = QtWidgets.QLabel("X: -, Y: -")
+        self.speed_label = QtWidgets.QLabel("속도: - km/h")
+        self.fps_label = QtWidgets.QLabel("FPS: -")
 
-    if subway.stations:
-        x_sta, y_sta = zip(*[(p.coord.x, p.coord.y) for p in subway.stations])
-        ax.scatter(x_sta, y_sta, marker='o', s=25, c='r')
-        for station in subway.stations:
-            ax.text(station.coord.x, station.coord.y, station.name, fontsize=24, color=color)
-# 차량 점 (scatter) 생성 - 최초엔 임의 값
-vehicle_point, = ax.plot([], [], 'ro', markersize=8, label="Vehicle Path")
+        self.status_label = QtWidgets.QLabel("상태 정보")
+        # 폰트 설정 코드 정리
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.status_label.setFont(font)
+        for label in [self.coord_label, self.speed_label, self.fps_label]:
+            label.setFont(font)
+            self.status_layout.addWidget(label)
 
-ax.set_xlabel('X 좌표')
-ax.set_ylabel('Y 좌표')
-ax.set_title('Vehicle Path (X, Y)')
-ax.legend()
-ax.set_aspect('equal')
-plt.show()
+        layout.addLayout(self.status_layout)
 
-# 차량 중심으로 보여줄 범위 설정 (ex: 100m x 100m)
-view_range = 500  # 차량 중심에서 좌우로 50m, 총 100m
+        # 노선 데이터 그리기
+        self.subways = subways
+        self.draw_static_lines()
 
-try:
-    while True:
-        result, data = win32file.ReadFile(pipe, 4096)
-        received_data = data.decode("utf-8").strip()
+        # 차량 점 초기화
+        self.vehicle_plot = self.plot_widget.plot([], [], pen=None, symbol='o', symbolBrush='r', symbolSize=10)
 
-        print(f"수신된 데이터: {received_data}")
+        # 기본 보기 범위 저장
+        self.default_x_range = self.plot_widget.viewRange()[0]
+        self.default_y_range = self.plot_widget.viewRange()[1]
 
-        # 위치와 좌표를 추출하는 정규표현식
-        match = re.search(r'X=([\-+]?\d*\.\d+|\d+),\s*Y=([\-+]?\d*\.\d+|\d+)', received_data)
-        if match:
-            x = float(match.group(1))
-            y = float(match.group(2))
+        # 줌 버튼 연결
+        zoom_in_btn.clicked.connect(self.zoom_in)
+        zoom_out_btn.clicked.connect(self.zoom_out)
+        reset_btn.clicked.connect(self.reset_view)
 
-            # 기존 점을 갱신
-            vehicle_point.set_data(x, y)
+        # 파이프 연결
+        self.pipe = win32file.CreateFile(
+            r'\\.\pipe\VehicleDataPipe',
+            win32file.GENERIC_READ,
+            0, None,
+            win32file.OPEN_EXISTING,
+            0, None
+        )
 
-            # 화면 업데이트
-            # 차량 좌표를 중심으로 화면 범위 재설정
-            ax.set_xlim(x - view_range, x + view_range)
-            ax.set_ylim(y - view_range, y + view_range)
-            
-            fig.canvas.draw()
-            fig.canvas.flush_events()
-            plt.pause(0.01)
+        # 타이머로 실시간 업데이트
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_vehicle)
+        self.timer.start(20)  # 약 50 FPS
 
-except KeyboardInterrupt:
-    print("\n⛔ 수동 종료 (Ctrl+C)")
-except Exception as e:
-    print("❌ 에러 발생:", e)
-finally:
-    plt.ioff()
-    plt.show()
+        # 속도와 FPS 측정용 변수 초기화
+        self.last_time = time.time()
+        self.last_pos = None
+
+    def draw_static_lines(self):
+        for subway in self.subways:
+            x_poly = [p.coord.x for p in subway.alignment.points]
+            y_poly = [p.coord.y for p in subway.alignment.points]
+            color = (subway.color.r, subway.color.g, subway.color.b)
+            self.plot_widget.plot(x_poly, y_poly, pen=pg.mkPen(color=color, width=2))
+
+            if subway.stations:
+                x_sta = [s.coord.x for s in subway.stations]
+                y_sta = [s.coord.y for s in subway.stations]
+                self.plot_widget.plot(x_sta, y_sta, pen=None, symbol='o', symbolBrush='r', symbolSize=6)
+                for s in subway.stations:
+                    text = pg.TextItem(s.name, color=color)
+                    text.setPos(s.coord.x, s.coord.y)
+                    self.plot_widget.addItem(text)
+
+    def update_vehicle(self):
+        try:
+            result, data = win32file.ReadFile(self.pipe, 4096)
+            received_data = data.decode("utf-8").strip()
+            # 콤마로 분리하여 각 값 파싱
+            parts = received_data.split(',')
+            if len(parts) != 5:
+                return  # 유효하지 않은 데이터
+
+            location = float(parts[0])
+            speed = float(parts[1])
+            x = float(parts[2])
+            y = float(parts[3])
+            z = float(parts[4])
+
+            # 프레임 계산
+
+            now = time.time()
+            dt = now - self.last_time
+            self.last_time = now
+
+            # FPS 계산
+            fps = 1.0 / dt if dt > 0 else 0
+
+            # 차량 위치 갱신
+            self.vehicle_plot.setData([x], [y])
+
+            # 상태표시줄 갱신
+            self.coord_label.setText(f"X={x:.4f}, Y={y:.4f}, Z={z:.2f}")
+            self.speed_label.setText(f"속도: {speed:.1f} km/h")
+            self.fps_label.setText(f"FPS: {fps:.2f}")
+
+            if self.follow_checkbox.isChecked():
+                # 차량 중심으로 시야 이동
+                vb = self.plot_widget.getViewBox()
+                vb.setRange(xRange=(x - 250, x + 250), yRange=(y - 250, y + 250), padding=0)
+
+        except Exception as e:
+            print("오류 발생:", e)
+
+    # 줌 및 뷰 컨트롤 함수들
+    def zoom_in(self):
+        vb = self.plot_widget.getViewBox()
+        vb.scaleBy((0.8, 0.8))  # 축소 => 줌 인
+
+    def zoom_out(self):
+        vb = self.plot_widget.getViewBox()
+        vb.scaleBy((1.25, 1.25))  # 확대 => 줌 아웃
+
+    def reset_view(self):
+        vb = self.plot_widget.getViewBox()
+        vb.autoRange()
+
+if __name__ == "__main__":
+    # ===== 노선 데이터 불러오기 (read_polyline 등은 그대로 사용) =====
+    path = r'c:\temp\지하철'
+    station_path = path + r'\역'
+    rail0 = '한국쾌속철도'
+
+    collect_file = [os.path.join(path, file) for file in os.listdir(path) if file.endswith('.txt')]
+    collect_file_names = [os.path.splitext(os.path.basename(file))[0] for file in collect_file]
+
+    subways = []
+    for filename, file in zip(collect_file_names, collect_file):
+        coords = read_polyline(file)
+        alignment = Alignment(coords)
+        color = SubwayColorMap.get_color(filename) if not filename == rail0 else Color(255, 0, 0)
+
+        station_file = os.path.join(station_path, filename + ".txt")
+        if os.path.exists(station_file):
+            stations_data = read_station(station_file)
+            stations = [Station(name=name, sta=sta, coord=Vector3(x=x, y=y, z=0)) for name, sta, x, y in stations_data]
+        else:
+            stations = []
+
+        subway = Subway(name=filename, color=color, alignment=alignment, stations=stations)
+        subways.append(subway)
+
+    app = QtWidgets.QApplication(sys.argv)
+    viewer = VehiclePlotter(subways)
+    viewer.show()
+    sys.exit(app.exec_())
