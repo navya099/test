@@ -10,7 +10,7 @@ using System.Threading;
 
 namespace Plugin
 {
-    
+
 
     public static class ConsoleManager
     {
@@ -62,7 +62,7 @@ namespace Plugin
             properties.Panel = Panel;
             properties.AISupport = AISupport.None;
 
-            Console.WriteLine("🚀 Plugin loaded!");
+            Console.WriteLine(" Plugin loaded!");
 
             // 파이프 쓰레드에서 연결 대기
             writerThread = new Thread(() =>
@@ -111,7 +111,7 @@ namespace Plugin
 
 
         // 초기화 함수 (Elapse 이전에 1회만 실행)
-        
+
         public void InitializePipe()
         {
             pipeServer = new NamedPipeServerStream("VehicleDataPipe", PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
@@ -128,7 +128,7 @@ namespace Plugin
             double speed = data.Vehicle.Speed.KilometersPerHour;
             List<double> World = data.Vehicle.Worlds;
 
-            string dataToSend = $"위치: {location:F2} m / 속도: {speed:F1} km/h / 좌표: X={World[0]:F4}, Y={World[1]:F4}, Z={World[2]:F2}";
+            string dataToSend = $"{location:F2},{speed:F1},{World[0]:F4},{World[1]:F4},{World[2]:F2}";
             latestDataToSend = dataToSend;
         }
 
