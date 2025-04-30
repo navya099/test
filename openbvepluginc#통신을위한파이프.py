@@ -1,9 +1,12 @@
 import random
-import sys
 from dataclasses import dataclass
 import win32pipe, win32file
+import matplotlib.pyplot as plt
 import re
 import os
+
+plt.rcParams['font.family'] = 'Malgun Gothic'
+plt.rcParams['axes.unicode_minus'] = False
 
 
 class Vector3:
@@ -137,94 +140,106 @@ def read_station(file_path):
 
 
 
-from PyQt5 import QtWidgets, QtCore
-import pyqtgraph as pg
+# 폴더 설정
+path = r'c:\temp\지하철'
+station_path = path + r'\역'
 
-# 클래스 정의 생략 (Vector3, AlignmentPoint, Station, Subway 등 기존 그대로 유지)
+# 폴더 내 모든 txt 파일 수집
+collect_file = [os.path.join(path, file) for file in os.listdir(path) if file.endswith('.txt')]
+# 파일 이름만 추출 + 확장자 제거
+collect_file_names = [os.path.splitext(os.path.basename(file))[0] for file in collect_file]
 
-class VehiclePlotter(QtWidgets.QMainWindow):
-    def __init__(self, subways):
-        super().__init__()
-        self.setWindowTitle("실시간 차량 위치")
-        self.setGeometry(100, 100, 1200, 800)
+#자선 선택
+rail0 = '한국쾌속철도'
 
-        self.plot_widget = pg.PlotWidget()
-        self.setCentralWidget(self.plot_widget)
-        self.plot_widget.setAspectLocked(True)
+#클래스 인스턴스 생성
+subways = []
+for filename, file in zip(collect_file_names, collect_file):
+    coords = read_polyline(file)
+    alignment = Alignment(coords)
+    color = SubwayColorMap.get_color(filename) if not filename == rail0 else Color(255, 0, 0)
+    # 해당 노선의 역 파일 경로
+    station_file = os.path.join(station_path, filename + ".txt")
+    # 역 파일이 존재하면 읽기
+    if os.path.exists(station_file):
+        stations_data = read_station(station_file)
+        stations = [Station(name=name, sta=sta, coord=Vector3(x=x, y=y, z=0)) for name, sta, x, y in stations_data]
+    else:
+        stations = []
 
-        self.vehicle_plot = self.plot_widget.plot([], [], pen=None, symbol='o', symbolBrush='r', symbolSize=10)
+    subway = Subway(name=filename, color=color, alignment=alignment, stations=stations)
+    subways.append(subway)
 
-        # 모든 노선 한 번만 그림
-        for subway in subways:
-            x_poly = [p.coord.x for p in subway.alignment.points]
-            y_poly = [p.coord.y for p in subway.alignment.points]
-            color = (subway.color.r, subway.color.g, subway.color.b)
-            self.plot_widget.plot(x_poly, y_poly, pen=pg.mkPen(color=color, width=2))
+# 파이프 연결
+print("파이프 연결 시도 중...")
+pipe = win32file.CreateFile(
+    r'\\.\pipe\VehicleDataPipe',
+    win32file.GENERIC_READ,
+    0, None,
+    win32file.OPEN_EXISTING,
+    0, None
+)
 
-            if subway.stations:
-                x_sta = [s.coord.x for s in subway.stations]
-                y_sta = [s.coord.y for s in subway.stations]
-                self.plot_widget.plot(x_sta, y_sta, pen=None, symbol='o', symbolBrush='r', symbolSize=6)
-                for s in subway.stations:
-                    text = pg.TextItem(s.name, color=(subway.color.r, subway.color.g, subway.color.b))
-                    text.setPos(s.coord.x, s.coord.y)
-                    self.plot_widget.addItem(text)
+print("파이프 연결 성공, 데이터 수신 시작...")
 
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.update_vehicle)
-        self.timer.start(10)  # 100 FPS도 가능
+# 플롯 초기화
+plt.ion()
+fig, ax = plt.subplots()
 
-        self.pipe = win32file.CreateFile(
-            r'\\.\pipe\VehicleDataPipe',
-            win32file.GENERIC_READ,
-            0, None,
-            win32file.OPEN_EXISTING,
-            0, None
-        )
+# 폴리선은 한번만 그린다
+# 플롯에 모든 노선 추가
+for subway in subways:
+    x_poly, y_poly = zip(*[(p.coord.x, p.coord.y) for p in subway.alignment.points])
+    color = (subway.color.r/255, subway.color.g/255, subway.color.b/255)
+    ax.plot(x_poly, y_poly, color=color, label=subway.name)
 
-    def update_vehicle(self):
-        try:
-            result, data = win32file.ReadFile(self.pipe, 4096)
-            received_data = data.decode("utf-8").strip()
+    if subway.stations:
+        x_sta, y_sta = zip(*[(p.coord.x, p.coord.y) for p in subway.stations])
+        ax.scatter(x_sta, y_sta, marker='o', s=25, c='r')
+        for station in subway.stations:
+            ax.text(station.coord.x, station.coord.y, station.name, fontsize=24, color=color)
+# 차량 점 (scatter) 생성 - 최초엔 임의 값
+vehicle_point, = ax.plot([], [], 'ro', markersize=8, label="Vehicle Path")
 
-            match = re.search(r'X=([\-+]?\d*\.\d+|\d+),\s*Y=([\-+]?\d*\.\d+|\d+)', received_data)
-            if match:
-                x = float(match.group(1))
-                y = float(match.group(2))
-                self.vehicle_plot.setData([x], [y])
-                self.plot_widget.setXRange(x - 250, x + 250)
-                self.plot_widget.setYRange(y - 250, y + 250)
+ax.set_xlabel('X 좌표')
+ax.set_ylabel('Y 좌표')
+ax.set_title('Vehicle Path (X, Y)')
+ax.legend()
+ax.set_aspect('equal')
+plt.show()
 
-        except Exception as e:
-            print("오류 발생:", e)
+# 차량 중심으로 보여줄 범위 설정 (ex: 100m x 100m)
+view_range = 500  # 차량 중심에서 좌우로 50m, 총 100m
 
+try:
+    while True:
+        result, data = win32file.ReadFile(pipe, 4096)
+        received_data = data.decode("utf-8").strip()
 
-if __name__ == "__main__":
-    # 지하철 데이터 로드 (read_polyline, read_station 등 기존 함수 사용)
-    path = r'c:\temp\지하철'
-    station_path = path + r'\역'
-    rail0 = '한국쾌속철도'
+        print(f"수신된 데이터: {received_data}")
 
-    collect_file = [os.path.join(path, file) for file in os.listdir(path) if file.endswith('.txt')]
-    collect_file_names = [os.path.splitext(os.path.basename(file))[0] for file in collect_file]
+        # 위치와 좌표를 추출하는 정규표현식
+        match = re.search(r'X=([\-+]?\d*\.\d+|\d+),\s*Y=([\-+]?\d*\.\d+|\d+)', received_data)
+        if match:
+            x = float(match.group(1))
+            y = float(match.group(2))
 
-    subways = []
-    for filename, file in zip(collect_file_names, collect_file):
-        coords = read_polyline(file)
-        alignment = Alignment(coords)
-        color = SubwayColorMap.get_color(filename) if not filename == rail0 else Color(255, 0, 0)
+            # 기존 점을 갱신
+            vehicle_point.set_data(x, y)
 
-        station_file = os.path.join(station_path, filename + ".txt")
-        if os.path.exists(station_file):
-            stations_data = read_station(station_file)
-            stations = [Station(name=name, sta=sta, coord=Vector3(x=x, y=y, z=0)) for name, sta, x, y in stations_data]
-        else:
-            stations = []
+            # 화면 업데이트
+            # 차량 좌표를 중심으로 화면 범위 재설정
+            ax.set_xlim(x - view_range, x + view_range)
+            ax.set_ylim(y - view_range, y + view_range)
+            
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+            plt.pause(0.01)
 
-        subway = Subway(name=filename, color=color, alignment=alignment, stations=stations)
-        subways.append(subway)
-
-    app = QtWidgets.QApplication(sys.argv)
-    viewer = VehiclePlotter(subways)
-    viewer.show()
-    sys.exit(app.exec_())
+except KeyboardInterrupt:
+    print("\n⛔ 수동 종료 (Ctrl+C)")
+except Exception as e:
+    print("❌ 에러 발생:", e)
+finally:
+    plt.ioff()
+    plt.show()
