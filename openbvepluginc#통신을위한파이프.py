@@ -208,13 +208,12 @@ class VehiclePlotter(QtWidgets.QMainWindow):
         self.coord_label = QtWidgets.QLabel("X: -, Y: -")
         self.speed_label = QtWidgets.QLabel("속도: - km/h")
         self.fps_label = QtWidgets.QLabel("FPS: -")
+        self.pos_label = QtWidgets.QLabel('위치')
 
-        self.status_label = QtWidgets.QLabel("상태 정보")
         # 폰트 설정 코드 정리
         font = QtGui.QFont()
         font.setPointSize(10)
-        self.status_label.setFont(font)
-        for label in [self.coord_label, self.speed_label, self.fps_label]:
+        for label in [self.coord_label, self.speed_label, self.fps_label, self.pos_label]:
             label.setFont(font)
             self.status_layout.addWidget(label)
 
@@ -267,6 +266,7 @@ class VehiclePlotter(QtWidgets.QMainWindow):
             self.coord_label.setText(f"X={x:.4f}, Y={y:.4f}, Z={z:.2f}")
             self.speed_label.setText(f"속도: {speed:.1f} km/h")
             self.fps_label.setText(f"FPS: {fps:.2f}")
+            self.pos_label.setText(f'위치: {location:.2f}')
 
             if self.follow_checkbox.isChecked():
                 vb = self.plot_widget.getViewBox()
