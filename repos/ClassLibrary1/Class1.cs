@@ -104,17 +104,14 @@ namespace ClassLibrary1
 
                     List<string> resultLines = new List<string>();
                     List<string> bvesyntaxs = new List<string>();
+                    List<(double Sta, double OffsetX, double OffsetY)> validOffsets = [];
 
                     string line = targetAlignment.Name;
-                    string bveline;
-
                     resultLines.Add(line);
-
                     bvesyntaxs.Add($",;{line}\n");
-                    int LastLineNumber = 1; // 마지막줄 넘버 기록용 변수
-                    bool isLastLine = false; // 마지막줄 추적변수
 
-                    for (double sta = startStation; sta <= endStation; sta += interval)
+                    double adjustedStart = Math.Ceiling(startStation / interval) * interval;
+                    for (double sta = adjustedStart; sta <= endStation; sta += interval)
                     {
                         double offsetX = 0.0;
                         double offsetY = 0.0;
@@ -133,54 +130,45 @@ namespace ClassLibrary1
                             }
                             
                             baseAlignment.DistanceToAlignment(sta, targetAlignment, ref offsetX, ref targetSta);
-                           
+
 
                             if (targetprofile != null)
                             {
                                 target_elev = targetprofile.ElevationAt(targetSta);
+                                offsetY = current_elev - target_elev;
                             }
                             else
                             {
                                 target_elev = 0.0;
-                            }
-
-                            if (targetprofile != null)
-                            {
-                                offsetY = current_elev - target_elev;
-                            }
-                            else 
-                            {
                                 offsetY = 0.0;
                             }
 
-                            line = $"{sta:F0},{current_elev:F3},{targetSta:F3},{target_elev:F3},{-offsetX:F3},{-offsetY:F3}";
-                            resultLines.Add(line);
+                            string csvLine = $"{sta:F0},{current_elev:F3},{targetSta:F3},{target_elev:F3},{-offsetX:F3},{-offsetY:F3}";
+                            resultLines.Add(csvLine);
 
-                            if (isLastLine)
-                            {
-                                bveline = $"{sta:F0},.RailEnd {railindex};{-offsetX:F3};{-offsetY:F3};";
-                            }
-                            else
-                            { 
-                                bveline = $"{sta:F0},.Rail {railindex};{-offsetX:F3};{-offsetY:F3};";
-                            }
-                            bvesyntaxs.Add(bveline);
+                            // offset 부호 반전한 채로 저장
+                            validOffsets.Add((sta, -offsetX, -offsetY));
+
                         }
                         catch
                         {
                             // 무시하고 다음으로
                             continue;
                         }
-                        // 마지막 반복인지 확인
-                        double nextSta = sta + interval;
-                        if (nextSta > endStation)
-                        {
-                            isLastLine = true;
-                        }
 
-                        LastLineNumber++;
                     }
-
+                    // bvesyntaxs 구성: 마지막 줄만 RailEnd
+                    if (validOffsets.Count > 0)
+                    {
+                        for (int i = 0; i < validOffsets.Count; i++)
+                        {
+                            var (sta, x, z) = validOffsets[i];
+                            if (i == validOffsets.Count - 1)
+                                bvesyntaxs.Add($"{sta:F0},.RailEnd {railindex};{x:F3};{z:F3};");
+                            else
+                                bvesyntaxs.Add($"{sta:F0},.Rail {railindex};{x:F3};{z:F3};");
+                        }
+                    }
                     if (saveAsOneFile)
                     {
                         allResults.AddRange(resultLines);
