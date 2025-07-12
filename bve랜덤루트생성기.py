@@ -119,13 +119,14 @@ class AlignmentGenerator:
             syntax = BVECommandGenerator.create_pitch(start, pitch)
             lines.append(syntax)
         return lines
-    
+
     @staticmethod
-    def is_overlapping(start, end, ranges):
+    def is_overlapping(start, end, ranges, buffer=125):  # 버퍼는 m 단위
         for s, e in ranges:
-            if not (end <= s or start >= e):  # 범위가 겹친다면
+            if not (end + buffer <= s or start - buffer >= e):
                 return True
         return False
+
 
 class TerrainGerator:
     @staticmethod
@@ -171,29 +172,60 @@ class StructureGenerator:
         self.structures = []  # 터널/교량 결과 저장 리스트
 
     def define_structure(self, elevlist):
-        bridge_start, tunnel_start = None, None
 
-        for i, eleve in enumerate(elevlist):
+        # Read STATION and ELEVATION lists
+        STATION = list(range(0, MAX_TRACK_POSITION + 1, 25))
+        ELEVATION = elevlist
+
+        # Initialize group lists and counters
+        OUT = []
+        b_groups = []
+        t_groups = []
+        bcount = 1
+        tcount = 1
+        current_group = []
+        consecutive_elevations = 0
+
+        # Loop through ELEVATION list and group consecutive values
+        for i in range(len(ELEVATION)):
             pos = i * 25
+            # Check if value is greater than or equal to 12
+            if ELEVATION[i] >= 12:
+                current_group.append(STATION[i])
+                consecutive_elevations += 1
+                # Check if next value is less than 12 or if at end of list
+                if i == len(ELEVATION) - 1 or ELEVATION[i + 1] < 12:
+                    if consecutive_elevations >= 6:
+                        b_groups.append((f"b{bcount}", current_group[0], current_group[-1]))
+                        bcount += 1
+                    current_group = []
+                    consecutive_elevations = 0
+            # Check if value is less than or equal to -12
+            elif ELEVATION[i] <= -12:
+                current_group.append(STATION[i])
+                consecutive_elevations += 1
+                # Check if next value is greater than -12 or if at end of list
+                if i == len(ELEVATION) - 1 or ELEVATION[i + 1] > -12:
+                    if consecutive_elevations >= 6 and min(ELEVATION[i - len(current_group) + 1:i + 1]) <= -40:
+                        t_groups.append((f"t{tcount}", current_group[0], current_group[-1]))
+                        tcount += 1
+                    current_group = []
+                    consecutive_elevations = 0
 
-            # 🚇 터널 탐지
-            if eleve < -10:
-                if tunnel_start is None:
-                    tunnel_start = pos
-            else:
-                if tunnel_start is not None and pos - tunnel_start >= 200:
-                    self.structures.append(Tunnel(f'Tunnel_{len(self.structures)}','터널', tunnel_start, pos))
-                tunnel_start = None
+        # Output lists of first and last STATION values for each group
+        OUT = [
+            [group[1] for group in b_groups],#교량 시점
+            [group[2] for group in b_groups],#교량 종점
+            [group[1] for group in t_groups],#터널 시점
+            [group[2] for group in t_groups] #터널 종점
+        ]
 
-            # 🌉 교량 탐지
-            if eleve > 15:
-                if bridge_start is None:
-                    bridge_start = pos
-            else:
-                if bridge_start is not None and pos - bridge_start >= 100:
-                    self.structures.append(Bridge(f'Bridge_{len(self.structures)}','교량', bridge_start, pos))
-                bridge_start = None
+        # 구조물 객체 리스트에 터널/교량 추가
+        for i in range(len(OUT[2])):
+            self.structures.append(Tunnel(f'Tunnel_{i + 1}', '터널', OUT[2][i], OUT[3][i]))
 
+        for i in range(len(OUT[0])):
+            self.structures.append(Bridge(f'Bridge_{i + 1}', '교량', OUT[0][i], OUT[1][i]))
 
     def create_structuesystax(self):
         output = []
