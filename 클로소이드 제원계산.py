@@ -1,158 +1,103 @@
-
+import tkinter as tk
+from tkinter import messagebox
 import math
-import numpy as np
 from scipy.optimize import fsolve
 
-#상수
-digit = 32#반올림 자릿수
-
-# Define the function for the equation L
-def equation(L, R, S):
-    return L - np.sqrt((24 * R * S) / (1 - (L**2 / (112 * R**2)) + (L**4 / (2112 * R**4))))
-
-def get_input_parameter():
-    while True:
-        try:
-            # 입력 파라미터
-            R = float(input('R (곡선반경) : '))
-            B = float(input('B (직선구간 B) : '))
-            AA = float(input('AA (곡선구간 A) : '))
-            D = float(input('D (선로중심간격) : '))
-            L = float(input('L (완화곡선길이) : '))
-            
-            parameter = [R, B, AA, D, L]
-            return parameter
-        except ValueError:
-            print("잘못된 입력입니다. 숫자를 입력해주세요.")
-
-def mainloop():
-    while True:
-        mode = select_mode()
-        if mode == 0:
-            parameter = get_input_parameter()
-        else:
-            parameter = cal_parameter()
-        result = cal_clothoid(parameter)
-        print_clothoid(result)
-        print('계산이 끝났습니다. 계속하시려면 1, 종료는 0을 입력해주세요.')
-        
-        while True:
-            try:
-                isexit = int(input())  # 0 또는 1을 입력받음
-                if isexit in [0, 1]:
-                    break  # 0 또는 1이 입력되면 루프 종료
-                else:
-                    print("잘못된 입력입니다. 0 또는 1을 입력해주세요.")
-            except ValueError:
-                print("잘못된 입력입니다. 0 또는 1을 입력해주세요.")
-        
-        if isexit == 0:  # 종료 조건
-            break
-
-        
-def cal_parameter():
-    while True:
-        try:
-            R = float(input('R (곡선반경) : '))
-            B = float(input('B (내측궤도 B) : '))
-            D = float(input('D (선로중심간격) : '))
-            
-            V = (R * 160 / 11.8) ** 0.5
-            if V >= 120:
-                V = 120
-            C = 11.8 * V ** 2 / R
-            
-            if C >= 160:
-                C = 160
-            
-            L = 600 * C / 1000
-            theta = math.atan(C / 1500)
-
-            W = 24000 / R
-            Qc = 4300 * math.sin(theta) - 1050 * (1 - math.cos(theta))
-            S = 2400 / R
-            alpha = round(W + Qc + S, -1)
-            AA = B + alpha * 0.001
-
-            print('parameter 계산 결과')
-            print(f'AA = {AA}')
-            print(f'L = {L}')
-            
-            parameter = [R, B, AA, D, L]
-            return parameter
-        except ValueError:
-            print("잘못된 입력입니다. 숫자를 입력해주세요.")
-
+# 결과 데이터 클래스
 class TrackData:
     def __init__(self, name, R, L):
         self.name = name
         self.R = R
         self.L = L
-        
-def cal_clothoid(parameter):
 
-    #R1계산
-    R,B,AA,D,L = parameter
-    
-    RR = R + D/2 #R'
+# 완화곡선 수치식
+def equation(L, R, S):
+    return L - math.sqrt((24 * R * S) / (1 - (L**2 / (112 * R**2)) + (L**4 / (2112 * R**4))))
 
-    #외측궤도중심선
-    Lo = L
-    So = round((Lo ** 2 / (24 * RR)),digit)
-    Ro= round((R +(D/2))-So, digit)
+def cal_clothoid(params, auto=False):
+    R, B, AA, D, L = params
+    RR = R + D / 2
+    So = round((L ** 2) / (24 * RR), 3)
+    Ro = round(RR - So, 3)
 
-    #내측궤도중심선
-    Ri= round((Ro -(B + AA)), digit)
-    Si = round((B + AA) - D + So,digit)
-    # Li 계산 (순서 변경)
-    # Initial guess for L
-    L_initial_guess = L
+    Ri = round((Ro - (B + AA)), 3)
+    Si = round((B + AA) - D + So, 3)
+    Li = math.sqrt(24 * Ri * Si)
 
-    # Solve for L
-    Li = fsolve(equation, L_initial_guess, args=(Ri, Si))
-    Li_value = Li[0]  # Extract the scalar value
-    Li_value = round(Li_value, digit)  # Rounding to precision
+    Rc = round((Ro - AA), 3)
+    Sc = round(R - Rc, 3)
+    Lc = math.sqrt(24 * Rc * Sc)
 
-    #구축중심선
-    Rc= round((Ro - AA ), digit)
-    Sc = round((B + AA) - D + So,digit)
-    Lc = fsolve(equation, L_initial_guess, args=(Rc, Sc))
-    Lc_value = Lc[0]  # Extract the scalar value
-    Lc_value = round(Lc_value, digit)  # Rounding to precision
-
-    # Create and return a list of TrackData objects
-    result = [
-        TrackData('외측궤도', Ro, L),
-        TrackData('구축중심', Rc, Lc_value),
-        TrackData('내측궤도', Ri, Li_value)
+    return [
+        TrackData("외측궤도", Ro, L),
+        TrackData("구축중심", Rc, Lc),
+        TrackData("내측궤도", Ri, Li)
     ]
-    
-    return result
 
-def print_clothoid(result):
-    out, center, inner = result
-    
-    # 외측궤도, 구축중심, 내측궤도의 R과 L 값을 출력
-    print(f'외측궤도 R= {out.R:.3f}, 구축중심 R= {center.R:.3f}, 내측궤도 R= {inner.R:.3f}') 
-    print(f'외측궤도 L = {out.L:.3f}, 구축중심 L = {center.L:.3f}, 내측궤도 L = {inner.L:.3f}')
+# 자동 계산 모드
+def auto_calculate_params(R, B, D):
+    V = min((R * 160 / 11.8) ** 0.5, 120)
+    C = min(11.8 * V ** 2 / R, 160)
+    L = 600 * C / 1000
+    theta = math.atan(C / 1500)
+    W = 24000 / R
+    Qc = 4300 * math.sin(theta) - 1050 * (1 - math.cos(theta))
+    S = 2400 / R
+    alpha = round(W + Qc + S, -1)
+    AA = B + alpha * 0.001
+    return R, B, AA, D, L
 
-def select_mode():
-    while True:
-        try:
-            print('완화곡선 제원을 알고 있는 경우 0, 모르는 경우 1')
-            mode = int(input('계산 방법 선택: '))
-            if mode in [0, 1]:
-                return mode
-            else:
-                print("잘못된 입력입니다. 0 또는 1을 입력해주세요.")
-        except ValueError:
-            print("잘못된 입력입니다. 0 또는 1을 입력해주세요.")
+# 계산 실행
+def on_calculate():
+    try:
+        R = float(entry_R.get())
+        B = float(entry_B.get())
+        D = float(entry_D.get())
 
-def main():
-    print('지하철 클로소이드 계산 프로그램')
+        if mode_var.get() == 0:
+            AA = float(entry_AA.get())
+            L = float(entry_L.get())
+        else:
+            R, B, AA, D, L = auto_calculate_params(R, B, D)
 
-    mainloop()
-    print('프로그램을 종료합니다.')
-    
-if __name__ == '__main__':
-    main()
+        results = cal_clothoid((R, B, AA, D, L))
+        result_text.delete("1.0", tk.END)
+
+        for track in results:
+            result_text.insert(tk.END, f"{track.name} - R = {track.R:.3f}, L = {track.L:.3f}\n")
+
+    except Exception as e:
+        messagebox.showerror("오류", f"입력값을 확인하세요.\n{str(e)}")
+
+# GUI 구성
+root = tk.Tk()
+root.title("클로소이드 계산기")
+root.geometry("400x500")
+
+mode_var = tk.IntVar(value=0)
+tk.Label(root, text="계산 모드 선택").pack()
+tk.Radiobutton(root, text="직접 입력", variable=mode_var, value=0).pack()
+tk.Radiobutton(root, text="자동 계산", variable=mode_var, value=1).pack()
+
+# 입력창들
+def create_input(label, varname):
+    tk.Label(root, text=label).pack()
+    ent = tk.Entry(root)
+    ent.pack()
+    return ent
+
+entry_R = create_input("곡선반경 R", "R")
+entry_B = create_input("직선구간 B", "B")
+entry_AA = create_input("곡선구간 A (직접입력시)", "AA")
+entry_D = create_input("선로중심간격 D", "D")
+entry_L = create_input("완화곡선길이 L (직접입력시)", "L")
+
+# 계산 버튼
+tk.Button(root, text="계산 실행", command=on_calculate).pack(pady=10)
+
+# 결과창
+tk.Label(root, text="결과").pack()
+result_text = tk.Text(root, height=10, width=40)
+result_text.pack()
+
+root.mainloop()
