@@ -325,7 +325,7 @@ def calculate_north_bearing(x1, y1, x2, y2):
     if bearing < 0:
         bearing = bearing + 360
     else:
-        bearing
+        pass
     return bearing
 
 def calculate_distance(x1, y1, x2, y2):
@@ -571,15 +571,22 @@ def format_cost(cost):
     else:
         return f'{billion:.0f}억원'
 
+
 def get_coordinates(location_name):
-    # Nominatim 인스턴스 생성
-    geolocator = Nominatim(user_agent = 'South Korea', timeout=10)
-    
-    # 주소 검색
+    try:
+        # 소수점 좌표 직접 파싱
+        if ',' in location_name:
+            lat, lon = map(float, location_name.split(','))
+            return lat, lon
+    except:
+        pass
+
+    # 아니면 주소로 처리
+    geolocator = Nominatim(user_agent='South Korea', timeout=10)
     location = geolocator.geocode(location_name)
-    
+
     if location:
-        return (location.latitude, location.longitude)
+        return location.latitude, location.longitude
     else:
         return None
     
@@ -635,29 +642,20 @@ def get_valid_coordinates(prompt):
 
 #경유지 로직
 def process_passpoint_list(passpoint_input):
-    # Split input by commas
-    parts = [part.strip() for part in passpoint_input.split(',')]
-    
+    # 세미콜론(;)으로 항목을 구분
+    raw_items = [item.strip() for item in passpoint_input.split(';') if item.strip()]
     passpoint_list = []
-    i = 0
-    
-    while i < len(parts):
-        if is_number(parts[i]):
-            # Handle numeric input (latitude and longitude)
-            if i + 1 < len(parts) and is_number(parts[i + 1]):
-                lat = float(parts[i])
-                lon = float(parts[i + 1])
-                passpoint_list.append((lat, lon))
-                i += 2
-            else:
-                raise ValueError("Latitude and Longitude values are not paired correctly.")
+
+    for item in raw_items:
+        if is_coordinate_string(item):
+            lat, lon = map(float, item.split(','))
+            passpoint_list.append((lat, lon))  # 좌표는 튜플로 저장
         else:
-            # Handle string input (place names)
-            passpoint_list.append(parts[i])
-            i += 1
-    
-    print("경유지 리스트를 처리:", passpoint_list)
+            passpoint_list.append(item)  # 지명은 문자열로 저장
+
+    print("경유지 리스트 처리 결과:", passpoint_list)
     return passpoint_list
+
     
 def is_approximately_equal(a, b, tolerance=1e-5):
     return abs(a - b) < tolerance
@@ -784,29 +782,41 @@ def is_number(s):
     except ValueError:
         return False
 
-    
+
+# 좌표인지 확인하는 함수 (콤마 구분된 두 숫자)
+def is_coordinate_string(value):
+    try:
+        parts = value.split(',')
+        if len(parts) == 2:
+            float(parts[0].strip())
+            float(parts[1].strip())
+            return True
+        return False
+    except:
+        return False
+
+
 def process_coordinates(start_station, end_station):
     """Process start and end coordinates and return Points."""
-    # Initialize variables
     start_coordinates, start_name = None, None
     end_coordinates, end_name = None, None
 
-    # Check if start_station and end_station are numbers
-    if is_number(start_station):
-        start_coordinates = start_station # Adjust this if needed
-        start_name = f'BP'
-    else: 
+    if is_coordinate_string(start_station):
+        lat, lon = map(float, start_station.split(','))
+        start_coordinates = (lat, lon)
+        start_name = 'BP'
+    else:
         start_coordinates, start_name = get_valid_coordinates(start_station)
-    
-    if is_number(end_station):
-        end_coordinates = end_station # Adjust this if needed
-        end_name = f'EP'
-        
+
+    if is_coordinate_string(end_station):
+        lat, lon = map(float, end_station.split(','))
+        end_coordinates = (lat, lon)
+        end_name = 'EP'
     else:
         end_coordinates, end_name = get_valid_coordinates(end_station)
 
     if start_coordinates is None or end_coordinates is None:
-        raise ValueError("Failed to determine valid coordinates for start or end points.")
+        raise ValueError("Failed to determine valid coordinates.")
 
     print(f"시작 좌표: {start_name} : {start_coordinates}")
     print(f"종료 좌표: {end_name} : {end_coordinates}")
@@ -814,8 +824,9 @@ def process_coordinates(start_station, end_station):
     # Convert coordinates to Points
     start_point = Point(calc_pl2xy((start_coordinates[1], start_coordinates[0])))
     end_point = Point(calc_pl2xy((end_coordinates[1], end_coordinates[0])))
-    
+
     return start_point, end_point
+
 
 def initialize_parameters():
     global max_points, min_distance, max_distance, min_radius, max_radius, min_arc_to_arc_distance, min_arc_length
@@ -1238,6 +1249,7 @@ def save_output_files(base_filename, linestring, *params):
 def get_top_n_lines(scores_and_lines, n):
     return sorted(scores_and_lines, key=lambda x: x[0], reverse=True)[:n]
 
+
 def get_passpoint(passpoint_list):
     global passpoint_coordinates, passpoint_name_list
     passpoint_coordinates, passpoint_name_list = calxy_passpoints(passpoint_list)
@@ -1245,14 +1257,23 @@ def get_passpoint(passpoint_list):
 def calxy_passpoints(passpoint_list):
     passpoint_coordinates = []
     passpoint_name_list = []
-    
+
     for prompt in passpoint_list:
-        passpoint_coordinate, passpoint_name = get_valid_coordinates(prompt)
-        pass_point = Point(calc_pl2xy((passpoint_coordinate[1], passpoint_coordinate[0])))
-        passpoint_coordinates.append(pass_point)
-        passpoint_name_list.append(passpoint_name)
+        if isinstance(prompt, tuple) and len(prompt) == 2:
+            # 좌표 튜플일 경우
+            lat, lon = prompt
+            pass_point = Point(calc_pl2xy((lon, lat)))
+            passpoint_coordinates.append(pass_point)
+            passpoint_name_list.append(f"{lat},{lon}")
+        else:
+            # 지명일 경우
+            passpoint_coordinate, passpoint_name = get_valid_coordinates(prompt)
+            pass_point = Point(calc_pl2xy((passpoint_coordinate[1], passpoint_coordinate[0])))
+            passpoint_coordinates.append(pass_point)
+            passpoint_name_list.append(passpoint_name)
 
     return passpoint_coordinates, passpoint_name_list
+
 
 def plot_line(ax, linestring, BC_XY, EC_XY, O_XY, radius_list, direction):
     """
