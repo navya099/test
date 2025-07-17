@@ -1,12 +1,13 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 import random
 import math
 
-# 랜덤 노선의 길이 범위 설정
 MIN_TRACK_POSITION = 600  # 600m
+MAX_TRACK_POSITION_DEFAULT = 10000  # 기본 10km
+# 랜덤 노선의 길이 범위 설정
 MAX_TRACK_POSITION = 10000  # 10km
-
-#선형 관련 전역변수
-MIN_RADIUS = 600 #최소곡선반경
+MIN_RADIUS = 600  # 최소곡선반경
 
 class BVECommandGenerator:
 
@@ -262,58 +263,131 @@ def create_base_txt():
 def estimate_alignment_count(length_m, avg_spacing=1000):
     return max(1, length_m // avg_spacing)
 
-# 기본 구문 생성
-base_txt = create_base_txt()
+# --- GUI 코드 시작 ---
 
-# 평면 및 종단선형 갯수 설정
-count_horizon_alignment = estimate_alignment_count(MAX_TRACK_POSITION) #평면선형은 기본값 1000
-count_vertical_alignment = estimate_alignment_count(MAX_TRACK_POSITION, 1500) #구배만 1500간격
+class RandomRouteGUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("랜덤 루트 생성기")
+        self.geometry("900x700")
 
-# 평면선형 생성
-base_txt += '\n,;평면선형\n'
-base_txt += '\n'.join(AlignmentGenerator.create_horizontal_alignment(count_horizon_alignment))
-base_txt += '\n'
+        # 기본 변수들
+        self.max_track_position = tk.IntVar(value=MAX_TRACK_POSITION_DEFAULT)
+        self.horizon_spacing = tk.IntVar(value=1000)
+        self.vertical_spacing = tk.IntVar(value=1500)
 
-# 종단선형 생성
-base_txt += '\n,;종단선형\n'
-base_txt += '\n'.join(AlignmentGenerator.create_vertical_alignment(count_vertical_alignment))
-base_txt += '\n'
+        # UI 구성
+        self.create_widgets()
 
-#지형 생성
-elevation, nori , elevation_list = TerrainGerator.create_terrain()
-base_txt += '\n,;표고\n'
-base_txt += '\n'.join(elevation)
-base_txt += '\n'
+        # 저장용 텍스트 변수
+        self.generated_text = ""
 
-base_txt += '\n,;사면\n'
-base_txt += ''.join(f"{a},{b}\n" for a, b in nori)
-base_txt += '\n'
+    def create_widgets(self):
+        frame_top = ttk.Frame(self)
+        frame_top.pack(fill=tk.X, padx=10, pady=10)
 
-#구조물
-structuregenerator = StructureGenerator()
-structuregenerator.define_structure(elevation_list)
-out = structuregenerator.create_structuesystax()
+        ttk.Label(frame_top, text="노선 길이(m):").grid(row=0, column=0, sticky=tk.W)
+        ttk.Entry(frame_top, textvariable=self.max_track_position, width=10).grid(row=0, column=1)
 
-base_txt += '\n,;구조물\n'
-base_txt += '\n'.join(out)
-base_txt += '\n'
+        ttk.Label(frame_top, text="평면선형 간격(m):").grid(row=0, column=2, sticky=tk.W, padx=(20,0))
+        ttk.Entry(frame_top, textvariable=self.horizon_spacing, width=10).grid(row=0, column=3)
 
-#종점
-base_txt += '\n노선 종점\n'
-base_txt += f'{MAX_TRACK_POSITION},.sta END STATION;\n'
-base_txt += f'{MAX_TRACK_POSITION + 100},.stop 0;'
+        ttk.Label(frame_top, text="종단선형 간격(m):").grid(row=0, column=4, sticky=tk.W, padx=(20,0))
+        ttk.Entry(frame_top, textvariable=self.vertical_spacing, width=10).grid(row=0, column=5)
 
-# 최종 출력
-print('최종출력본')
-print(base_txt)
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(fill=tk.X, padx=10)
 
-# 저장
-filepath = r'D:\BVE\루트\Railway\Route\연습용루트\테스트.csv'
-try:
-    with open(filepath, 'w', encoding='utf-8') as f:
-        for line in base_txt.splitlines():
-            f.write(line + '\n')
-    print(f"저장 완료: {filepath}")
+        btn_generate = ttk.Button(btn_frame, text="루트 생성", command=self.generate_route)
+        btn_generate.pack(side=tk.LEFT, padx=5)
 
-except IOError as ex:
-    print(f"파일 저장 중 오류 발생: {ex}")
+        btn_save = ttk.Button(btn_frame, text="파일로 저장", command=self.save_file)
+        btn_save.pack(side=tk.LEFT, padx=5)
+
+        # 텍스트 출력 영역
+        self.text_output = tk.Text(self, wrap=tk.NONE, font=("Consolas", 10))
+        self.text_output.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+
+        # 수평 스크롤바
+        xscroll = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=self.text_output.xview)
+        xscroll.pack(fill=tk.X)
+        self.text_output.config(xscrollcommand=xscroll.set)
+
+        # 수직 스크롤바
+        yscroll = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.text_output.yview)
+        yscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.text_output.config(yscrollcommand=yscroll.set)
+
+    def generate_route(self):
+        try:
+            max_pos = self.max_track_position.get()
+            horizon_sp = self.horizon_spacing.get()
+            vertical_sp = self.vertical_spacing.get()
+
+            # 아래에 기존 랜덤 루트 생성 코드를 사용해서 텍스트 생성
+            base_txt = create_base_txt()
+
+            count_horizon_alignment = estimate_alignment_count(max_pos, horizon_sp)
+            count_vertical_alignment = estimate_alignment_count(max_pos, vertical_sp)
+
+            # 평면선형 생성 (함수는 기존 클래스에 맞게 수정 또는 복사 필요)
+            lines_horizontal = AlignmentGenerator.create_horizontal_alignment(count_horizon_alignment)
+            lines_vertical = AlignmentGenerator.create_vertical_alignment(count_vertical_alignment)
+            elev_lines, nori_lines, elevation_list = TerrainGerator.create_terrain()
+
+            base_txt += '\n,;평면선형\n'
+            base_txt += '\n'.join(lines_horizontal) + '\n'
+
+            base_txt += '\n,;종단선형\n'
+            base_txt += '\n'.join(lines_vertical) + '\n'
+
+            structuregenerator = StructureGenerator()
+            structuregenerator.define_structure(elevation_list)
+            out = structuregenerator.create_structuesystax()
+
+            base_txt += '\n,;구조물\n'
+            base_txt += '\n'.join(out) + '\n'
+
+            base_txt += '\n,;표고\n'
+            base_txt += '\n'.join(elev_lines) + '\n'
+
+            base_txt += '\n,;사면\n'
+            base_txt += ''.join(f"{a},{b}\n" for a, b in nori_lines) + '\n'
+
+            base_txt += '\n노선 종점\n'
+            base_txt += f'{max_pos},.sta END STATION;\n'
+            base_txt += f'{max_pos + 100},.stop 0;'
+
+            self.generated_text = base_txt
+
+            self.text_output.delete('1.0', tk.END)
+            self.text_output.insert(tk.END, base_txt)
+
+            messagebox.showinfo("완료", "랜덤 루트 생성이 완료되었습니다.")
+
+        except Exception as e:
+            messagebox.showerror("오류", f"생성 중 오류가 발생했습니다:\n{e}")
+
+    def save_file(self):
+        if not self.generated_text:
+            messagebox.showwarning("경고", "먼저 '루트 생성' 버튼을 눌러 루트를 생성하세요.")
+            return
+        fpath = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("텍스트 파일", "*.txt"), ("모든 파일", "*.*")],
+            title="파일로 저장"
+        )
+        if fpath:
+            try:
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    f.write(self.generated_text)
+                messagebox.showinfo("저장 완료", f"파일이 저장되었습니다:\n{fpath}")
+            except Exception as e:
+                messagebox.showerror("오류", f"파일 저장 중 오류가 발생했습니다:\n{e}")
+
+
+
+if __name__ == "__main__":
+    # 주의: 전체 기존 클래스(BVECommandGenerator 등)를 위에 붙여넣어야 정상 작동합니다.
+    app = RandomRouteGUI()
+    app.mainloop()
