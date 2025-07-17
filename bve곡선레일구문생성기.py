@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, ttk, messagebox
 import math
 import csv
 import pandas as pd
@@ -93,11 +93,15 @@ def extract_cant(curveinfo):
 def cal_direction(R):
     return -1 if R < 0 else 1
 
+# 좌표 Y축 거리 차이 계산
 def cal_ordinate1(R, TL):
-    return math.sqrt((R**2) - (7.5)**2) - math.sqrt((R**2) - (TL**2))
+    A = TL / 5
+    B = A * 3
+    return math.sqrt((R**2) - (B)**2) - math.sqrt((R**2) - (TL**2))
 
 def cal_ordinate2(R, TL):
-    return math.sqrt((R**2) - (2.5)**2) - math.sqrt((R**2) - (TL**2))
+    C = TL / 5
+    return math.sqrt((R**2) - (C)**2) - math.sqrt((R**2) - (TL**2))
 
 def cal_M1(ordinate1):
     return math.degrees(ordinate1 / increment)
@@ -360,22 +364,68 @@ def save_railtype(content):
     except Exception as e:
         print(f'파일 저장에 실패하였습니다: {e}')
 
-def main():
-    lines = read_file()
-    if not lines:
-        return
-    # 구조물 정보 로드
-    structure_list = load_structure_data()
-    if structure_list:
-        print("구조물 정보가 성공적으로 로드되었습니다.")
-    
-    curveinfo = parsing_curveinfo(lines)
-    C_list = extract_cant(curveinfo)
-    freeobj = cal_mainlogic(curveinfo, C_list)
-    content = create_freeobj(freeobj, structure_list, curveinfo)
-    save_files(content)
-    railtype = create_railtype(curveinfo, structure_list)
-    save_railtype(railtype)
-# Running the main function
+
+
+class FreeobjApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("FreeObj 자동 생성기")
+        self.geometry("600x400")
+        self.create_widgets()
+
+    def create_widgets(self):
+        label = ttk.Label(self, text="BVE FreeObj 자동 생성 프로그램", font=("Arial", 14, "bold"))
+        label.pack(pady=20)
+
+        self.log_box = tk.Text(self, height=15, wrap=tk.WORD, font=("Consolas", 10))
+        self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        run_button = ttk.Button(self, text="FreeObj 생성 실행", command=self.run_main)
+        run_button.pack(pady=10)
+
+    def log(self, message):
+        self.log_box.insert(tk.END, message + "\n")
+        self.log_box.see(tk.END)
+
+    def run_main(self):
+        try:
+            self.log("파일을 읽는 중...")
+            lines = read_file()
+            if not lines:
+                self.log("파일 없음 또는 불러오기 실패.")
+                return
+
+            self.log("구조물 정보 로드 중...")
+            structure_list = load_structure_data()
+            if structure_list:
+                self.log("구조물 정보가 성공적으로 로드되었습니다.")
+
+            self.log("곡선 정보 파싱 중...")
+            curveinfo = parsing_curveinfo(lines)
+
+            self.log("캔트 정보 추출 중...")
+            C_list = extract_cant(curveinfo)
+
+            self.log("FreeObj 계산 중...")
+            freeobj = cal_mainlogic(curveinfo, C_list)
+
+            self.log("FreeObj 생성 중...")
+            content = create_freeobj(freeobj, structure_list, curveinfo)
+            save_files(content)
+            self.log("FreeObj 저장 완료!")
+
+            self.log("Railtype 생성 중...")
+            railtype = create_railtype(curveinfo, structure_list)
+            save_railtype(railtype)
+            self.log("Railtype 저장 완료!")
+
+            messagebox.showinfo("완료", "FreeObj 및 RailType 생성이 완료되었습니다.")
+        except Exception as e:
+            self.log(f"[오류] {str(e)}")
+            messagebox.showerror("오류", f"실행 중 오류 발생:\n{e}")
+
+
 if __name__ == "__main__":
-    main()
+    app = FreeobjApp()
+    app.mainloop()
+
