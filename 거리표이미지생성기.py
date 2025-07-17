@@ -332,39 +332,93 @@ def create_txt(output_file, data):
         for line in data:
             file.write(line)
     
-#함수 종료
-#MAIN 시작
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import os
 
-# 파일 읽기
-data = read_file()
+class KmObjectApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("KM Object 생성기")
+        self.geometry("600x400")
 
-#마지막 블록 찾기
-last_block = find_last_block(data)
-print(f'마지막 측점 = {last_block}')
-# 구조물 정보 파일 경로 지정
-openexcelfile = open_excel_file()
+        self.work_directory = 'c:/temp/km/'  # 필요 시 변경 가능
+        if not os.path.exists(self.work_directory):
+            os.makedirs(self.work_directory)
 
-# 선택된 파일로 구조물 정보 가져오기
-if openexcelfile:
-    structure_list = find_structure_section(openexcelfile)
-    print("구조물 정보가 성공적으로 로드되었습니다.")
-else:
-    print("엑셀 파일을 선택하지 않았습니다.")
-    
-if not data:
-    print("데이터가 비어 있습니다.")
- 
-else:
-    # 결과 파일 저장
-    
-    index_datas, post_datas = create_km_object(last_block, structure_list)
-    
-    index_file = work_directory + 'km_index.txt'
-    post_file = work_directory + 'km_post.txt'
-    
-    #csv작성
-    create_txt(index_file, index_datas)
-    create_txt(post_file, post_datas)
-    print('txt 작성이 완료됐습니다.')
-    print('모든 작업이 완료됐습니다.')
+        self.structure_excel_path = None
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        ttk.Label(self, text="KM Object 생성 프로그램", font=("Arial", 16, "bold")).pack(pady=10)
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=5)
+
+        ttk.Button(btn_frame, text="구조물 엑셀 파일 선택", command=self.select_excel_file).grid(row=0, column=0, padx=5)
+
+        ttk.Button(self, text="작업 시작", command=self.run_main).pack(pady=10)
+
+        self.log_box = tk.Text(self, height=15, font=("Consolas", 10))
+        self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    def log(self, msg):
+        self.log_box.insert(tk.END, msg + "\n")
+        self.log_box.see(tk.END)
+
+    def select_excel_file(self):
+        filetypes = [("Excel files", "*.xls *.xlsx"), ("All files", "*.*")]
+        path = filedialog.askopenfilename(title="구조물 정보 엑셀 파일 선택", filetypes=filetypes)
+        if path:
+            self.structure_excel_path = path
+            self.log(f"선택된 엑셀 파일: {path}")
+
+    def run_main(self):
+        try:
+            self.log("파일 읽는 중...")
+            data = read_file()
+            if not data:
+                self.log("데이터가 비어 있습니다.")
+                return
+
+            last_block = find_last_block(data)
+            self.log(f"마지막 측점 = {last_block}")
+
+            if not self.structure_excel_path:
+                self.log("엑셀 파일이 선택되지 않았습니다.")
+                messagebox.showwarning("경고", "구조물 정보 엑셀 파일을 선택해주세요.")
+                return
+
+            self.log("구조물 정보 불러오는 중...")
+            structure_list = find_structure_section(self.structure_excel_path)
+            if structure_list:
+                self.log("구조물 정보가 성공적으로 로드되었습니다.")
+            else:
+                self.log("구조물 정보가 없습니다.")
+
+            self.log("KM Object 생성 중...")
+            index_datas, post_datas = create_km_object(last_block, structure_list)
+
+            index_file = os.path.join(self.work_directory, 'km_index.txt')
+            post_file = os.path.join(self.work_directory, 'km_post.txt')
+
+            self.log(f"파일 작성: {index_file}")
+            create_txt(index_file, index_datas)
+
+            self.log(f"파일 작성: {post_file}")
+            create_txt(post_file, post_datas)
+
+            self.log("txt 작성이 완료됐습니다.")
+            self.log("모든 작업이 완료됐습니다.")
+            messagebox.showinfo("완료", "KM Object 생성이 완료되었습니다.")
+
+        except Exception as e:
+            self.log(f"[오류] {str(e)}")
+            messagebox.showerror("오류", f"작업 중 오류가 발생했습니다:\n{e}")
+
+if __name__ == "__main__":
+    app = KmObjectApp()
+    app.mainloop()
+
     
