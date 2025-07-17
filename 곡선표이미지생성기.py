@@ -1,5 +1,5 @@
 import csv
-from tkinter import filedialog
+from tkinter import filedialog, ttk, messagebox
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageFont
 import os
@@ -14,13 +14,17 @@ from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 import numpy as np
 import shutil
+import os
 
 '''
 BVE곡선파일을 바탕으로 곡선표(준고속용)을 설치하는 프로그램
 -made by dger -
-VER 2025.02.27 14.24
+VER 2025.02.28 00:27))
 #add
 터널곡선표 추가
+#MODIFYER
+폰트오류 수정
+타날용 텍스쳐명 변경
 
 입력파일:BVE에서 추출한 곡선파일(CURVE_INFO.TXT)
 
@@ -209,7 +213,7 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
             if f'LoadTexture, {curvetype}.png,' in line:
                 line = line.replace(f'LoadTexture, {curvetype}.png,', f'LoadTexture, {output_filename}.png,')
             if isSPPS:
-                line = line.replace('LoadTexture, R.png,', f'LoadTexture, {R}.png,')
+                line = line.replace('LoadTexture, R.png,', f'LoadTexture, {output_filename}_{R}.png,')
             
             # Append the modified line to the new_lines list
             new_lines.append(line)
@@ -522,7 +526,7 @@ def create_tunnel_curve_image(filename, text):
     style_name = 'GHS'
 
     # 텍스트 스타일 생성
-    doc.styles.add(style_name, font= 'HYGTRE.ttf')
+    doc.styles.add(style_name, font= 'H2GTRE.ttf')
 
     # 텍스트 추가
     msp.add_text(text, dxfattribs={'insert': (text_x, text_y), 'height': 75, 'width': width, 'style': style_name})
@@ -747,13 +751,13 @@ def process_curve_type(line, i, PC_R_LIST, structure_list):
 
     return None, None, False, 0, 'ERROR'
 
-def process_dxf_image(structure, radius, work_directory):
+def process_dxf_image(img_f_name, structure, radius, work_directory):
     """DXF 파일 수정 및 이미지 변환"""
     img_f_name_for_prev = str(int(radius))
     file_path = work_directory  + '곡선표.dxf'
     modifed_path = work_directory + '곡선표-수정됨.dxf'
     final_output_image = os.path.join(work_directory, img_f_name_for_prev + '.png')
-
+    img_f_name_for_tunnel = f'{img_f_name}_{img_f_name_for_prev}'
     converter = DXF2IMG()
     
     if structure == '터널':
@@ -762,6 +766,8 @@ def process_dxf_image(structure, radius, work_directory):
     else:
         replace_text_in_dxf(file_path, modifed_path, img_f_name_for_prev)
         target_size = (500,300)
+        
+    final_output_image = os.path.join(work_directory, img_f_name_for_tunnel + '.png')
         
     output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
 
@@ -788,7 +794,7 @@ def process_sections_for_images(annotated_sections, structure_list, work_directo
 
                     if isSPPS and radius != 0:
 
-                        process_dxf_image(structure, radius, work_directory)
+                        process_dxf_image(img_f_name, structure, radius, work_directory)
 
     # 객체 인덱스 생성
     object_folder = target_directory.split("Object/")[-1]
@@ -927,47 +933,94 @@ def select_target_directory():
     else:
         print("❌ 대상 폴더가 선택되지 않았습니다.")
 
-       
-#함수 종료
-#MAIN 시작
-# ================== MAIN START ==================
-
+    return target_directory
 # 기본 작업 디렉토리(#전역변수)
 default_directory = 'c:/temp/curve/'
-work_directory = None
-target_directory = None
 
-# 사용자가 설정한 작업 디렉토리가 없으면 기본값 사용
-if not work_directory:
-    work_directory = default_directory
 
-# 디렉토리가 존재하지 않으면 생성
-if not os.path.exists(work_directory):
-    os.makedirs(work_directory)
+class CurveProcessingApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("곡선 데이터 처리기")
+        self.geometry("650x450")
 
-print(f"작업 디렉토리: {work_directory}")
+        self.default_directory = 'c:/temp/curve/'
+        self.work_directory = None
+        self.target_directory = None
 
-select_target_directory()
+        self.create_widgets()
 
-# 곡선 정보 파일 읽기
-data = read_file()
+    def create_widgets(self):
+        label = ttk.Label(self, text="곡선 데이터 자동 처리 시스템", font=("Arial", 16, "bold"))
+        label.pack(pady=10)
 
-# 구조물 데이터 로드
-structure_list = load_structure_data()
+        self.log_box = tk.Text(self, height=20, wrap=tk.WORD, font=("Consolas", 10))
+        self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-# 곡선 데이터 처리
-file_paths, structure_comment = process_curve_data(work_directory, data, structure_list)
+        run_button = ttk.Button(self, text="곡선 데이터 처리 실행", command=self.run_main)
+        run_button.pack(pady=10)
 
-# 데이터 파싱 및 매칭
-result_list = parse_and_match_data(work_directory, file_paths)
+    def log(self, message):
+        self.log_box.insert(tk.END, message + "\n")
+        self.log_box.see(tk.END)
 
-# 최종 CSV 생성
-if result_list:
-    create_curve_post_txt(result_list, structure_comment)
+    def run_main(self):
+        try:
+            # 디렉토리 설정
+            self.log("작업 디렉토리 확인 중...")
+            self.work_directory = self.default_directory
+            if not os.path.exists(self.work_directory):
+                os.makedirs(self.work_directory)
+                self.log(f"디렉토리 생성: {self.work_directory}")
+            else:
+                self.log(f"디렉토리 존재: {self.work_directory}")
 
-# 파일 정리
-cleanup_files(file_paths)
+            # 대상 디렉토리 선택
+            self.log("대상 디렉토리 선택 중...")
+            self.target_directory = select_target_directory()
+            self.log(f"대상 디렉토리: {self.target_directory}")
 
-#파일 복사
-copy_all_files(work_directory,target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
-print('모든 작업이 끝났습니다.')
+            # 곡선 정보 파일 읽기
+            self.log("곡선 정보 파일 읽는 중...")
+            data = read_file()
+            if not data:
+                self.log("파일 없음 또는 불러오기 실패.")
+                return
+
+            # 구조물 데이터 로드
+            self.log("구조물 데이터 로드 중...")
+            structure_list = load_structure_data()
+
+            # 곡선 데이터 처리
+            self.log("곡선 데이터 처리 중...")
+            file_paths, structure_comment = process_curve_data(self.work_directory, data, structure_list)
+
+            # 파싱 및 매칭
+            self.log("곡선 데이터 파싱 및 매칭 중...")
+            result_list = parse_and_match_data(self.work_directory, file_paths)
+
+            # 최종 텍스트 생성
+            if result_list:
+                self.log("최종 결과 생성 중...")
+                create_curve_post_txt(result_list, structure_comment)
+                self.log("결과 파일 생성 완료!")
+
+            # 파일 정리
+            self.log("임시 파일 정리 중...")
+            cleanup_files(file_paths)
+
+            # 파일 복사
+            self.log("결과 파일 복사 중...")
+            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
+
+            self.log("✅ 모든 작업이 성공적으로 완료되었습니다.")
+            messagebox.showinfo("완료", "곡선 데이터 처리 완료!")
+
+        except Exception as e:
+            self.log(f"[오류] {str(e)}")
+            messagebox.showerror("오류", f"실행 중 오류 발생:\n{e}")
+
+if __name__ == "__main__":
+    app = CurveProcessingApp()
+    app.mainloop()
+
