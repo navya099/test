@@ -1322,97 +1322,145 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
 
 
     
-#함수 종료
-#MAIN 시작
-# 폰트 파일 경로 설정
-font_path = "C:/Windows/Fonts/gulim.ttc"  # 사용하는 폰트 파일 경로
-prop = fm.FontProperties(fname=font_path)
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog, filedialog
+import os
+import matplotlib.font_manager as fm
+import matplotlib.pyplot as plt
+import csv
 
-# Matplotlib에 폰트 설정
-plt.rcParams['font.family'] = prop.get_name()
+class PitchProcessingApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Pitch 데이터 처리기")
+        self.geometry("700x500")
 
-# 기본 작업 디렉토리
-default_directory = 'c:/temp/pitch/'
-work_directory = None
-target_directory = None
+        self.default_directory = 'c:/temp/pitch/'
+        self.work_directory = None
+        self.target_directory = None
 
-# 사용자가 설정한 작업 디렉토리가 없으면 기본값 사용
-if not work_directory:
-    work_directory = default_directory
+        # 폰트 설정
+        font_path = "C:/Windows/Fonts/gulim.ttc"
+        prop = fm.FontProperties(fname=font_path)
+        plt.rcParams['font.family'] = prop.get_name()
 
-# 디렉토리가 존재하지 않으면 생성
-if not os.path.exists(work_directory):
-    os.makedirs(work_directory)
+        self.create_widgets()
 
-print(f"작업 디렉토리: {work_directory}")
+    def create_widgets(self):
+        ttk.Label(self, text="Pitch 데이터 처리 시스템", font=("Arial", 16, "bold")).pack(pady=10)
 
-#오브젝트 경로
-select_target_directory()
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=5)
 
-# 파일 읽기
-data = read_file()
-is_civil3d = input('pitch_info가 civil3d인지 여부 (0을 입력하면 False, 그 외 값은 True) : ') != '0'
+        ttk.Button(btn_frame, text="작업 디렉토리 선택", command=self.select_work_directory).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frame, text="대상 디렉토리 선택", command=self.select_target_directory).grid(row=0, column=1, padx=5)
 
-# 구조물 데이터 로드
-structure_list = load_structure_data()
+        ttk.Button(self, text="데이터 처리 시작", command=self.run_process).pack(pady=10)
 
-#civil3d
-if is_civil3d:
-    sections = process_sections_civil3d(data)
-    image_names, structure_comment = civil3d_profile(sections, structure_list)
-    
+        self.log_box = tk.Text(self, height=20, font=("Consolas", 10))
+        self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-    # 결과 파일 저장
-    output_file = work_directory + '주석처리된파일.txt'
-    create_outfile(output_file, sections)
+    def log(self, msg):
+        self.log_box.insert(tk.END, msg + "\n")
+        self.log_box.see(tk.END)
 
-    # 데이터 파싱
-    with open(output_file, 'r', encoding='utf-8') as file:
-        reader1 = csv.reader(file)
-        lines1 = list(reader1)
-                
-    OBJ_DATA = work_directory + 'pitch_index.txt'
+    def select_work_directory(self):
+        path = filedialog.askdirectory(initialdir=self.default_directory, title="작업 디렉토리 선택")
+        if path:
+            self.work_directory = path
+            self.log(f"작업 디렉토리 선택됨: {path}")
 
-    with open(OBJ_DATA, 'r', encoding='utf-8') as file:
-        reader2 = csv.reader(file)
-        lines2 = list(reader2)
+    def select_target_directory(self):
+        path = filedialog.askdirectory(title="대상 디렉토리 선택")
+        if path:
+            self.target_directory = path
+            self.log(f"대상 디렉토리 선택됨: {path}")
 
-    sections_2_f = work_directory + 'sections_2_f.txt'
-    
-    sections_2 = parse_sections_civil3d(lines1)
-    sections_2 = remove_first_entry_dictionary(sections_2)
-    
-    with open(sections_2_f, 'w', encoding='utf-8') as file:
-        file.write(str(sections_2))  # Convert dictionary to string
+    def run_process(self):
+        try:
+            # 작업 디렉토리 없으면 기본값 사용 및 생성
+            if not self.work_directory:
+                self.work_directory = self.default_directory
+                self.log(f"작업 디렉토리 미선택, 기본값 사용: {self.work_directory}")
 
-    tag_mapping = parse_object_index(lines2)
-    
-    
-    # STA 값 검색
-    result_list = search_STA_value(sections_2, tag_mapping)
-    if result_list:
-        create_curve_post_txt(result_list, structure_comment)
-    print('civil3d 작업완료')
-    
-else:
-    #파일 파싱
-    file_paths, annotated_sections = process_and_save_sections(work_directory, data)
-    
-    #vip추출
-    GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST =  process_sections_VIP(annotated_sections)
+            if not os.path.exists(self.work_directory):
+                os.makedirs(self.work_directory)
+                self.log(f"작업 디렉토리 생성: {self.work_directory}")
+            else:
+                self.log(f"작업 디렉토리 존재: {self.work_directory}")
 
-    #메인 처리함수
-    image_names, structure_comment = bve_profile(annotated_sections, GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST, structure_list)
+            # 대상 디렉토리 없으면 에러
+            if not self.target_directory:
+                messagebox.showwarning("경고", "대상 디렉토리를 선택해주세요.")
+                return
 
-    # STA 값 검색
-    result_list = parse_and_match_data(work_directory, file_paths)
-    
-    #csv작성
-    create_curve_post_txt(result_list, structure_comment)
+            # 파일 읽기
+            self.log("파일 읽는 중...")
+            data = read_file()
+            if not data:
+                self.log("파일이 없거나 읽기 실패.")
+                return
 
-    # 파일 삭제
-    cleanup_files(file_paths)
-    print('BVE 작업완료')
-#파일 복사
-copy_all_files(work_directory,target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
-print('모든 작업이 끝났습니다.')
+            # Civil3D 여부 물어보기
+            is_civil3d = messagebox.askyesno("질문", "pitch_info가 Civil3D인가요? (예: Civil3D, 아니오: BVE)")
+
+            # 구조물 데이터 로드
+            self.log("구조물 데이터 로드 중...")
+            structure_list = load_structure_data()
+
+            if is_civil3d:
+                self.log("Civil3D 처리 시작...")
+                sections = process_sections_civil3d(data)
+                image_names, structure_comment = civil3d_profile(sections, structure_list)
+
+                output_file = os.path.join(self.work_directory, '주석처리된파일.txt')
+                create_outfile(output_file, sections)
+
+                with open(output_file, 'r', encoding='utf-8') as f:
+                    reader1 = csv.reader(f)
+                    lines1 = list(reader1)
+
+                obj_data = os.path.join(self.work_directory, 'pitch_index.txt')
+                with open(obj_data, 'r', encoding='utf-8') as f:
+                    reader2 = csv.reader(f)
+                    lines2 = list(reader2)
+
+                sections_2_f = os.path.join(self.work_directory, 'sections_2_f.txt')
+                sections_2 = parse_sections_civil3d(lines1)
+                sections_2 = remove_first_entry_dictionary(sections_2)
+
+                with open(sections_2_f, 'w', encoding='utf-8') as f:
+                    f.write(str(sections_2))
+
+                tag_mapping = parse_object_index(lines2)
+
+                result_list = search_STA_value(sections_2, tag_mapping)
+                if result_list:
+                    create_curve_post_txt(result_list, structure_comment)
+                self.log("Civil3D 작업 완료")
+
+            else:
+                self.log("BVE 처리 시작...")
+                file_paths, annotated_sections = process_and_save_sections(self.work_directory, data)
+                GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST = process_sections_VIP(annotated_sections)
+
+                image_names, structure_comment = bve_profile(annotated_sections, GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST, structure_list)
+                result_list = parse_and_match_data(self.work_directory, file_paths)
+
+                create_curve_post_txt(result_list, structure_comment)
+                cleanup_files(file_paths)
+                self.log("BVE 작업 완료")
+
+            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
+            self.log("모든 작업이 완료되었습니다.")
+
+            messagebox.showinfo("완료", "Pitch 데이터 처리가 성공적으로 완료되었습니다.")
+
+        except Exception as e:
+            self.log(f"[오류] {str(e)}")
+            messagebox.showerror("오류", f"처리 중 오류가 발생했습니다:\n{e}")
+
+
+if __name__ == "__main__":
+    app = PitchProcessingApp()
+    app.mainloop()
