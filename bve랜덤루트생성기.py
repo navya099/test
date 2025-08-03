@@ -1,6 +1,11 @@
 import random
 import math
 import numpy as np
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
+import os
+
+from pycparser.c_ast import While
 
 # 랜덤 노선의 길이 범위 설정
 MIN_TRACK_POSITION = 600  # 600m
@@ -60,12 +65,17 @@ class RandomGenerator:
 
     @staticmethod
     def create_random_radius():
-        while True:
-            radius = random.randrange(0, 1000) // 100 * 100
-            if radius > MIN_RADIUS:
-                if random.choice([True, False]):
-                    radius = -radius  # 좌곡선
-                return radius
+        """
+        일정 범위 내에서 무작위 반지름 생성 (100 단위).
+        음수는 좌곡선, 양수는 우곡선.
+        """
+        MIN = max(MIN_RADIUS, 300)  # 최소 300m 이상
+        MAX = 3000  # 현실적인 최대 반지름
+
+        radius = random.randrange(MIN, MAX + 100, 100)
+        if random.choice([True, False]):
+            radius = -radius  # 좌곡선
+        return radius
 
     @staticmethod
     def create_random_cant():
@@ -94,42 +104,39 @@ class AlignmentGenerator:
 
     def create_horizontal_alignment(self, count):
         curves = []  # (sta, command) 형식으로 저장
-        used_ranges = []
         self.horizontal_radii.clear()
         self.curve_segments = []
+        sta = 0.0
+        MIN_LENGTH = 100
+        MAX_LENGTH = min(600, MAX_TRACK_POSITION / count * 0.7)
+        length = random.randint(MIN_LENGTH, int(MAX_LENGTH))
 
-        for i in range(count):
-            attempt = 0
+        i = 0
+        attemp = 100
+        while i < attemp:
             while True:
-                start, end = RandomGenerator.create_random_track_position()
-                # 🔧 25의 배수로 조정
-                start = (start // 25) * 25
-                end = ((end + 24) // 25) * 25
-
-                radius = RandomGenerator.create_random_radius()
-                length = end - start
-                ia = length / radius
-
-                if ia < math.pi / 2 and not self.is_overlapping(start, end, used_ranges):
-                    used_ranges.append((start, end))
+                start, _ = RandomGenerator.create_random_track_position()
+                if sta < start:
                     break
+            # 🔧 25의 배수로 조정
+            start = (start // 25) * 25
 
-                attempt += 1
-                if attempt > 100:
-                    print(f"[경고] {i + 1}번째 곡선 생성 실패: 조건에 맞는 위치 부족 (스킵됨)")
-                    radius = 1000
-                    cant = 0
-                    curves.append((start, BVECommandGenerator.create_curve(start, radius, cant)))
-                    curves.append((end, BVECommandGenerator.create_curve(end, 0, 0)))
-                    self.horizontal_radii.append(abs(radius))
-                    break
+            radius = RandomGenerator.create_random_radius()
+            length = random.randint(MIN_LENGTH, int(MAX_LENGTH))
+            ia = length / radius
+            end = start + length
+            end = (end // 25) * 25
 
-            if attempt <= 100:
+            if length < MAX_LENGTH:
                 cant = RandomGenerator.create_random_cant()
                 curves.append((start, BVECommandGenerator.create_curve(start, radius, cant)))
                 curves.append((end, BVECommandGenerator.create_curve(end, 0, 0)))
                 self.horizontal_radii.append(abs(radius))
                 self.curve_segments.append((start, end, radius, cant))  # 곡선 구간 저장
+                sta = end + 100
+                i += 1
+            if sta > MAX_TRACK_POSITION:
+                break
         # STA 기준 정렬
         curves.sort(key=lambda x: x[0])
 
@@ -143,19 +150,32 @@ class AlignmentGenerator:
         self.pitch_segments.clear()
         self.vertical_pitches.clear()
 
-        for _ in range(count):
-            start, _ = RandomGenerator.create_random_track_position()
-            start = (start // 25) * 25
+        sta = 0.0
+        MIN_LENGTH = 600
+        MAX_LENGTH = 1500
+        i = 0
 
-            pitch = RandomGenerator.create_random_pitch()
+        attemp = 100
+        while i < attemp:
+            # 일정 구간씩 sta를 증가시켜가며 pitch 삽입
+            start = (sta // 25) * 25
+            length = random.randint(MIN_LENGTH, MAX_LENGTH)
+            end = start + length
+            if end > MAX_TRACK_POSITION:
+                break  # 종단선형의 끝을 넘으면 종료
+
+            pitch = RandomGenerator.create_random_pitch() if i !=0 else 0.0
             command = BVECommandGenerator.create_pitch(start, pitch)
+
             lines_with_sta.append((start, command))
             self.vertical_pitches.append(abs(pitch))
             self.pitch_segments.append((start, pitch * 0.001))
 
-        self.pitch_segments.sort(key=lambda x: x[0])
-        lines_with_sta.sort(key=lambda x: x[0])  # ✅ 출력도 정렬
+            sta = end  # 다음 시작점
+            i += 1
 
+        self.pitch_segments.sort(key=lambda x: x[0])
+        lines_with_sta.sort(key=lambda x: x[0])
         return [cmd for _, cmd in lines_with_sta]
 
     def is_overlapping(self, start, end, ranges, buffer=125):
@@ -273,6 +293,8 @@ class Tunnel(Structure):
 class StructureGenerator:
     def __init__(self) -> None:
         self.structures = []  # 터널/교량 결과 저장 리스트
+        self.bridge_count = 0
+        self.tunnel_count = 0
 
     def define_structure(self, elevlist):
 
@@ -378,11 +400,11 @@ class StructureGenerator:
         print(f"구조물 정보가 Excel 파일로 저장되었습니다: {output_path}")
 
     def print_structure_counts(self):
-        bridge_count = sum(1 for s in self.structures if s.structure_type == '교량')
-        tunnel_count = sum(1 for s in self.structures if s.structure_type == '터널')
+        self.bridge_count = sum(1 for s in self.structures if s.structure_type == '교량')
+        self.tunnel_count = sum(1 for s in self.structures if s.structure_type == '터널')
 
-        print(f'교량갯수 : {bridge_count}')
-        print(f'터널갯수 : {tunnel_count}')
+        print(f'교량갯수 : {self.bridge_count}')
+        print(f'터널갯수 : {self.tunnel_count}')
 
 import math
 
@@ -505,88 +527,122 @@ def create_base_txt():
     base_txt += 'With Structure\n'
     base_txt += '$Include(오브젝트.txt)\n'
     base_txt += '$Include(프리오브젝트.txt)\n'
+    base_txt += '$Include(km_index.txt)\n'
+    base_txt += '$Include(curve_index.txt)\n'
+    base_txt += '$Include(pitch_index.txt)\n'
     base_txt += 'With Track\n'
     base_txt += '$Include(전주.txt)\n'
     base_txt += '$Include(전차선.txt)\n'
+    base_txt += '$Include(km_post.txt)\n'
+    base_txt += '$Include(curve_post.txt)\n'
+    base_txt += '$Include(pitch_post.txt)\n'
+    base_txt += '$Include(신호.txt)\n'
+    base_txt += '$Include(통신.txt)\n'
     base_txt += '0,.back 0;,.ground 0;,.dike 0;0;2;,.railtype 0;9;\n'
     base_txt += '0,.sta START STATION;\n'
     base_txt += '100,.stop 0;\n'
     return base_txt
 
-def estimate_alignment_count(length_m, avg_spacing=1000):
-    return max(1, length_m // avg_spacing)
+def estimate_alignment_count(length_m, avg_spacing=1000, max_count=20, difficulty_factor=1.0):
+    count = int((length_m / avg_spacing) * difficulty_factor)
+    return min(max_count, max(1, count))
 
-#메인코드
-# 기본 구문 생성
-base_txt = create_base_txt()
+class AlignmentApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("선형 및 구조물 자동 생성기")
+        self.root.geometry("700x600")
 
-# 평면 및 종단선형 갯수 설정
-count_horizon_alignment = estimate_alignment_count(MAX_TRACK_POSITION) #평면선형은 기본값 1000
-count_vertical_alignment = estimate_alignment_count(MAX_TRACK_POSITION, 1500) #구배만 1500간격
+        self.create_widgets()
 
-#선형 생성 클래스 생성
-alignment_generator = AlignmentGenerator()
+    def create_widgets(self):
+        tk.Label(self.root, text="저장 경로 선택").pack()
+        self.path_entry = tk.Entry(self.root, width=80)
+        self.path_entry.pack()
+        tk.Button(self.root, text="폴더 선택", command=self.choose_folder).pack()
 
-#지형 생성
-elevation, nori , elevation_list = TerrainGerator.create_terrain()
+        tk.Button(self.root, text="선형 생성 시작", command=self.generate_alignment).pack(pady=10)
 
-#구조물
-structuregenerator = StructureGenerator()
-structuregenerator.define_structure(elevation_list)
-out = structuregenerator.create_structuesystax()
+        self.log = scrolledtext.ScrolledText(self.root, width=80, height=25)
+        self.log.pack()
 
-#구문 생성
-base_txt += '\n,;평면선형\n'
-base_txt += '\n'.join(alignment_generator.create_horizontal_alignment(count_horizon_alignment))
-base_txt += '\n'
+    def log_write(self, text):
+        self.log.insert(tk.END, text + "\n")
+        self.log.see(tk.END)
+        self.root.update()
 
-base_txt += '\n,;종단선형\n'
-base_txt += '\n'.join(alignment_generator.create_vertical_alignment(count_vertical_alignment))
-base_txt += '\n'
+    def choose_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.path_entry.delete(0, tk.END)
+            self.path_entry.insert(0, folder)
 
-base_txt += '\n,;구조물\n'
-base_txt += '\n'.join(out)
-base_txt += '\n'
+    def generate_alignment(self):
+        try:
+            folder = self.path_entry.get()
+            if not folder:
+                messagebox.showerror("오류", "저장 경로를 지정해주세요.")
+                return
 
-base_txt += '\n,;표고\n'
-base_txt += '\n'.join(elevation)
-base_txt += '\n'
+            self.log_write("생성 중...")
 
-base_txt += '\n,;사면\n'
-base_txt += ''.join(f"{a},{b}\n" for a, b in nori)
-base_txt += '\n'
+            while True:
+                base_txt = create_base_txt()
 
-#구문작성
+                count_horizon = estimate_alignment_count(MAX_TRACK_POSITION)
+                count_vertical = estimate_alignment_count(MAX_TRACK_POSITION, 1500)
 
-#종점
-base_txt += '\n,;노선 종점\n'
-base_txt += f'{MAX_TRACK_POSITION},.sta END STATION;\n'
-base_txt += f'{MAX_TRACK_POSITION + 100},.stop 0;'
+                align_gen = AlignmentGenerator()
+                elevation, nori, elevation_list = TerrainGerator.create_terrain()
 
-#결과출력
-#선형
-print(f'계산 완료: 노선 정보 출력')
-alignment_generator.print_alignment_stats()
-structuregenerator.print_structure_counts()
-# 저장
-structuregenerator.save_to_excel('c:/temp/구조물.xlsx')
-filepath = r'D:\BVE\루트\Railway\Route\연습용루트\테스트.csv'
-curvepath="c:/temp/CURVE_INFO.TXT"
-pitchpath="c:/temp/pitch_INFO.TXT"
-coordpath = "c:/temp/bve_coordinates.TXT"
-alignment_generator.export_curve_info(MAX_TRACK_POSITION, interval=25, filepath=curvepath)
-alignment_generator.export_pitch_info(MAX_TRACK_POSITION, interval=25, filepath=pitchpath)
+                struct_gen = StructureGenerator()
+                struct_gen.define_structure(elevation_list)
+                out = struct_gen.create_structuesystax()
 
-#좌표저장
-tc = TrackCalculator(curvepath, pitchpath, interval=25)
-tc.save_to_file(coordpath)
-print("트랙 좌표 계산 완료. bve_coordinates.txt 파일 생성됨.")
+                base_txt += "\n,;평면선형\n" + '\n'.join(align_gen.create_horizontal_alignment(count_horizon)) + "\n"
+                base_txt += "\n,;종단선형\n" + '\n'.join(align_gen.create_vertical_alignment(count_vertical)) + "\n"
+                base_txt += "\n,;구조물\n" + '\n'.join(out) + "\n"
+                base_txt += "\n,;표고\n" + '\n'.join(elevation) + "\n"
+                base_txt += "\n,;사면\n" + ''.join(f"{a},{b}\n" for a, b in nori) + "\n"
 
-try:
-    with open(filepath, 'w', encoding='utf-8') as f:
-        for line in base_txt.splitlines():
-            f.write(line + '\n')
-    print(f"저장 완료: {filepath}")
+                struct_gen.print_structure_counts()
+                if struct_gen.bridge_count != 0 and struct_gen.tunnel_count != 0:
+                    break
 
-except IOError as ex:
-    print(f"파일 저장 중 오류 발생: {ex}")
+            base_txt += "\n,;노선 종점\n"
+            base_txt += f"{MAX_TRACK_POSITION},.sta END STATION;\n"
+            base_txt += f"{MAX_TRACK_POSITION + 100},.stop 0;\n"
+
+            align_gen.print_alignment_stats()
+
+            # 저장
+            txtfolder = 'c:/temp/'
+            csv_path = os.path.join(folder, "테스트.csv")
+            curve_path = os.path.join(txtfolder, "CURVE_INFO.TXT")
+            pitch_path = os.path.join(txtfolder, "pitch_INFO.TXT")
+            coord_path = os.path.join(txtfolder, "bve_coordinates.TXT")
+            excel_path = os.path.join(txtfolder, "구조물.xlsx")
+
+            align_gen.export_curve_info(MAX_TRACK_POSITION, 25, curve_path)
+            align_gen.export_pitch_info(MAX_TRACK_POSITION, 25, pitch_path)
+
+            tc = TrackCalculator(curve_path, pitch_path, interval=25)
+            tc.save_to_file(coord_path)
+
+            struct_gen.save_to_excel(excel_path)
+
+            with open(csv_path, 'w', encoding='utf-8') as f:
+                f.write(base_txt)
+
+            self.log_write("✔ 선형 생성 완료")
+            self.log_write(f"✔ 저장 완료: {csv_path}")
+            self.log_write(f"✔ 구조물 정보: {excel_path}")
+            self.log_write(f"✔ 좌표 파일: {coord_path}")
+        except Exception as e:
+            messagebox.showerror("에러 발생", str(e))
+            self.log_write(f"❌ 에러: {e}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AlignmentApp(root)
+    root.mainloop()
