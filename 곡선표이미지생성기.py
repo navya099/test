@@ -154,50 +154,8 @@ def annotate_sections(sections):
         annotated_sections.append(annotated_section)
 
     return annotated_sections
-
-
-def create_text_image(text, bg_color, filename, text_color, image_size=(500, 300), font_size=40):
-    # 이미지 생성
-    img = Image.new('RGB', image_size, color=bg_color)
-    draw = ImageDraw.Draw(img)
     
-    # 폰트 설정
-    font = ImageFont.truetype("gulim.ttc", font_size)
-
-    # 텍스트 박스 크기 (25px 여백 적용)
-    box_x1, box_y1 = 25, 25
-    box_x2, box_y2 = image_size[0] - 25, image_size[1] - 25
-    box_width = box_x2 - box_x1
-    box_height = box_y2 - box_y1
-
-    # 줄바꿈 적용
-    wrapped_text = textwrap.fill(text, width=15)  # 글자 수 제한
-    text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
-    text_width = text_bbox[2] - text_bbox[0]
-    text_height = text_bbox[3] - text_bbox[1]
-
-    # 폰트 크기가 박스를 넘으면 자동 조정
-    while text_width > box_width or text_height > box_height:
-        font_size -= 2
-        font = ImageFont.truetype("gulim.ttc", font_size)
-        text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
-
-    # 중앙 정렬
-    text_x = box_x1 + (box_width - text_width) // 2
-    text_y = box_y1 + (box_height - text_height) // 2
-
-    # 이미지에 텍스트 추가
-    draw.text((text_x, text_y), wrapped_text, font=font, fill=text_color)
-
-    # 이미지 저장
-    if not filename.endswith('.png'):
-        filename += '.png'
-    final_dir = work_directory + filename
-    img.save(final_dir)
-    
-def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP'):
+def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP', work_directory=''):
     # Define the input and output file paths
     open_file = work_directory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
@@ -223,7 +181,7 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
         # Write the modified lines to the output file
         file.writelines(new_lines)
 
-def create_object_index(data):
+def create_object_index(data, work_directory):
     output_file = work_directory + 'object_index.txt'
     with open(output_file, 'w', encoding='utf-8') as file:
         file.write(data)
@@ -297,7 +255,7 @@ def find_object_index(sta, sections, tag_mapping):
                     return tag_mapping[key]
     return None
 
-def create_curve_post_txt(data_list,comment):
+def create_curve_post_txt(data_list,comment, work_directory):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
@@ -358,7 +316,7 @@ def open_excel_file():
     
     return file_path
 
-def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 'output.png'):
+def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', work_directory='', filename = 'output.png'):
     
     ai_file = work_directory + type1 + '.AI'
     
@@ -427,70 +385,8 @@ def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 
     save_file = work_directory + filename + '.png'
     pix.save(save_file)
 
-def create_png_from_ai2(text1 = '600', filename = 'output.png'):
-    
-    ai_file = work_directory  + '곡선표(일반철도).AI'
-    
-    doc = fitz.open(ai_file)
-
-
-    # 텍스트 정보 (소수점 자릿수 계산)
-    
-    if len(text1) == 3:  # 소수점이 있는 경우
-        digit = 3
-        x = 8.69
-        y = 275
-    elif len(text1) == 4:  # 소수점이 있는 경우
-        digit = 4
-        x = 121 + cooradjust
-        y = 92
-    elif len(text1) == 5:  # 소수점이 있는 경우
-        digit = 5
-    elif len(text1) == 6:  # 소수점이 있는 경우
-        digit = 6
-        x = 0
-        y = 0
-    # 텍스트 정보(3자리 기준 -10)
-
-    style = "HY견고딕"
-    size = 353.11  # pt 텍스트크기
-    color = (255/255, 255/255, 255/255)  # 흰색 (0-1 범위로 변환)
-
-    pt =  2.83465
-    # 🔹 mm -> pt 변환 (1mm = 2.83465 pt)
-    x_pt = x * pt
-    y_pt = y * pt
-
-    size_pt = size  # 이미 pt로 제공되므로 그대로 사용
-
-
-
-    # 🔹 텍스트 삽입
-    insert_x = x_pt
-    insert_y = y_pt
-
-    for page in doc:
-        # 텍스트 삽입
-        page.insert_text((insert_x, insert_y), text1, fontname=style, fontsize=size_pt, color=color)
-    
-    # 🔹 원본 크기 가져오기
-    page = doc[0]  # 첫 번째 페이지 기준
-    pix = page.get_pixmap()
-    orig_width, orig_height = pix.width, pix.height
-
-    # 🔹 비율 유지하여 300x200에 맞게 조정
-    target_width, target_height = 300, 200
-    scale = min(target_width / orig_width, target_height / orig_height)  # 가장 작은 비율 선택
-    new_width = int(orig_width * scale)
-    new_height = int(orig_height * scale)
-
-    # 🔹 변환 적용 및 PNG 저장
-    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
-    save_file = work_directory + filename + '.png'
-    pix.save(save_file)
-
 # DXF 파일을 생성하는 함수
-def create_tunnel_curve_image(filename, text):
+def create_tunnel_curve_image(filename, text, work_directory):
     doc = ezdxf.new()  # 새로운 DXF 문서 생성
     msp = doc.modelspace()
 
@@ -715,7 +611,7 @@ def extract_PC_radius(annotated_sections):
                 PC_R_LIST.append((i, int(abs(R))))  # 반경 절댓값 사용
     return PC_R_LIST
 
-def process_curve_type(line, i, PC_R_LIST, structure_list):
+def process_curve_type(line, i, PC_R_LIST, structure_list, work_directory):
     """곡선 형식별 이미지 및 CSV 생성"""
     parts = line.split(',')
     sta = int(parts[0])
@@ -744,8 +640,8 @@ def process_curve_type(line, i, PC_R_LIST, structure_list):
             openfile_name = f'{key}_{structure}용'
             isSPPS = key in ['SP', 'PS']
 
-            create_png_from_ai(key, img_text, cant, filename=img_f_name)
-            copy_and_export_csv(openfile_name, img_f_name, isSPPS, radius, key)
+            create_png_from_ai(key, img_text, cant, work_directory, filename=img_f_name)
+            copy_and_export_csv(openfile_name, img_f_name, isSPPS, radius, key, work_directory)
 
             return img_f_name, structure, isSPPS, radius, key
 
@@ -761,7 +657,7 @@ def process_dxf_image(img_f_name, structure, radius, work_directory):
     converter = DXF2IMG()
     
     if structure == '터널':
-        create_tunnel_curve_image(modifed_path, img_f_name_for_prev)
+        create_tunnel_curve_image(modifed_path, img_f_name_for_prev, work_directory)
         target_size = (238,200)
     else:
         replace_text_in_dxf(file_path, modifed_path, img_f_name_for_prev)
@@ -786,7 +682,7 @@ def process_sections_for_images(annotated_sections, structure_list, work_directo
     for i, section in enumerate(annotated_sections, start=1):
         for line in section:
             if any(key in line for key in ['BC', 'EC', 'SP', 'PC', 'CP', 'PS']):
-                img_f_name, structure, isSPPS, radius, curvetype = process_curve_type(line, i, PC_R_LIST, structure_list)
+                img_f_name, structure, isSPPS, radius, curvetype = process_curve_type(line, i, PC_R_LIST, structure_list, work_directory)
 
                 if img_f_name:
                     image_names.append(img_f_name)
@@ -803,7 +699,7 @@ def process_sections_for_images(annotated_sections, structure_list, work_directo
         objec_index_counter += 1
 
     # 오브젝트 인덱스 파일 생성
-    create_object_index(objec_index_name)
+    create_object_index(objec_index_name, work_directory)
 
     return structure_comment
 
@@ -1002,7 +898,7 @@ class CurveProcessingApp(tk.Tk):
             # 최종 텍스트 생성
             if result_list:
                 self.log("최종 결과 생성 중...")
-                create_curve_post_txt(result_list, structure_comment)
+                create_curve_post_txt(result_list, structure_comment, self.work_directory)
                 self.log("결과 파일 생성 완료!")
 
             # 파일 정리
