@@ -1,4 +1,6 @@
 import csv
+from dataclasses import dataclass
+from enum import Enum
 from tkinter import filedialog, ttk, messagebox
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageFont
@@ -19,16 +21,15 @@ import os
 '''
 BVE곡선파일을 바탕으로 곡선표(준고속용)을 설치하는 프로그램
 -made by dger -
-VER 2025.02.28 00:27))
-#add
-터널곡선표 추가
-#MODIFYER
-폰트오류 수정
-타날용 텍스쳐명 변경
+VER 2025.08.26
+#modifyed
+곡선 데이터 클래스화로 코드개선
 
 입력파일:BVE에서 추출한 곡선파일(CURVE_INFO.TXT)
 
-CURVE_INFO샘플
+CURVE_INFO샘플(0부터 끝까지)
+0,0
+25,0
 275,0
 300,0
 325,0
@@ -46,7 +47,33 @@ csv파일에는 텍스쳐명이 sp와 r 이어야함
 
 '''
 
-    
+class CurveDirection(Enum):
+    LEFT = '좌향'
+    RIGHT = '우향'
+
+@dataclass
+class IPdata:
+    IPNO: int = 0
+    curvetype: str = '' #곡선 종류(원곡선, 완화곡선, 복심곡선)
+    curve_direction: CurveDirection = CurveDirection.RIGHT  # 기본값 우향
+    radius: float = 0.0
+    cant: float = 0.0
+    BC_STA: float = 0.0
+    EC_STA: float = 0.0
+    SP_STA: float = 0.0
+    PC_STA: float = 0.0
+    CP_STA: float = 0.0
+    PS_STA: float = 0.0
+
+@dataclass
+class ObjectDATA:
+    IPNO: int = 0
+    curvetype: str = ''
+    structure: str = ''
+    station: float = 0.0
+    object_index: int = 0
+    filename: str = ''
+
 def format_distance(number):
     return f"{number / 1000:.3f}"
 
@@ -108,56 +135,95 @@ def process_sections(data):
 
     return sections
 
+#핵심로직(클래스화로 구조변경)
 def annotate_sections(sections):
-    annotated_sections = []
-
+    ipdatas: list[IPdata] = []
+    i = 1
     for section in sections:
         if not section:
             continue
 
-        annotated_section = []
-        n = len(section)
+        # 조건에 맞게 구간 종료 판단 (예: radius == 0)
+        # 곡선 방향 판단
+        direction = CurveDirection.LEFT if section[0][1] < 0 else CurveDirection.RIGHT
 
-        for i, (station, radius, cant) in enumerate(section):
-            annotation = ""
+        # 완화곡선/원곡선 타입 판단
+        if len(section) == 1:
+            curvetype = '직선'
+        elif len(section) == 2:
+            curvetype = '원곡선'
+        else:
+            curvetype = '완화곡선'
 
-            # 첫 번째 줄에 SP 추가
-            if i == 0:
-                annotation += "SP"
-            
-            # 마지막 줄에 PS 추가
-            if i == n - 1:
-                annotation += "PS"
+        # 좌향일 때 완화곡선은 가장 큰 값, 원곡선은 가장 작은 값
+        # 우향일 때 완화곡선은 가장 작은 값, 원곡선은 가장 큰 값
+        # 0 제외한 필터링된 리스트 생성
+        filtered_section = [row for row in section if row[1] != 0]
+        if not filtered_section:
+            # 모두 반경 0이면 무시
+            continue
 
-            # STA 간 차이가 25보다 큰 경우 PC/CP 추가
-            if i < n - 1:  # Ensure we're not at the last row
-                prev_station, prev_radius, prev_cant = section[i - 1] if i > 0 else (None, None , None)
-                next_station, next_radius, next_cant = section[i + 1]
-                
-                if next_station - station > 75:
-                    annotation += "PC"
-                elif i > 0 and station - prev_station > 75:
-                    annotation += "CP"
+        # 가장 작은/큰 곡률반경 값
+        min_value = min(filtered_section, key=lambda x: x[1])[1]
+        max_value = max(filtered_section, key=lambda x: x[1])[1]
 
-            
-            annotated_section.append(f"{station},{radius},{cant},{annotation}")
+        # 원래 section에서 해당 값의 첫 인덱스 찾기
+        min_index = next(i for i, row in enumerate(section) if row[1] == min_value)
+        max_index = next(i for i, row in enumerate(section) if row[1] == max_value)
+        if curvetype == '완화곡선':
+            if direction == CurveDirection.LEFT:
+                selected_radius = max_value
+                selected_cant = section[max_index][2]
+                pc_sta = section[max_index][0]
+                cp_sta = section[max_index + 1][0]
+            else:
+                selected_radius = min_value
+                selected_cant = section[min_index][2]
+                pc_sta = section[min_index][0]
+                cp_sta = section[min_index + 1][0]
 
-        # SP와 PS만 있는 구간을 BC와 EC로 변경
-        if len(annotated_section) == 2 and "SP" in annotated_section[0] and "PS" in annotated_section[1]:
-            annotated_section[0] = annotated_section[0].replace("SP", "BC")
-            annotated_section[1] = annotated_section[1].replace("PS", "EC")
-       
-        # SPPS만 있는 구간을 삭제
-        elif len(annotated_section) == 1 and "SPPS" in annotated_section[0]:
-            continue  # SPPS만 있는 구간은 추가하지 않음
-            
-        annotated_sections.append(annotated_section)
+        else:  # 원곡선
+            if direction == '좌향':
+                selected_radius = min_value
+                selected_cant = section[min_index][2]
+            else:
+                selected_radius = max_value
+                selected_cant = section[max_index][2]
 
-    return annotated_sections
+        if curvetype == '원곡선':
+            # IPdata 생성 (예시, 필요에 따라 STA값 할당 조정)
+            ipdata = IPdata(
+                IPNO=i,
+                curvetype=curvetype,
+                curve_direction=direction,
+                radius=abs(selected_radius),
+                cant=abs(selected_cant),
+                BC_STA=section[0][0],
+                EC_STA=section[-1][0]
+            )
+            ipdatas.append(ipdata)
+            i += 1
+        if curvetype == '완화곡선':
+            # IPdata 생성 (예시, 필요에 따라 STA값 할당 조정)
+            ipdata = IPdata(
+                IPNO=i,
+                curvetype=curvetype,
+                curve_direction=direction,
+                radius=abs(selected_radius),
+                cant=abs(selected_cant),
+                SP_STA=section[0][0],
+                PC_STA=pc_sta,
+                CP_STA=cp_sta,
+                PS_STA=section[-1][0]
+            )
+            ipdatas.append(ipdata)
+            i += 1
+
+    return ipdatas
     
-def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP', work_directory=''):
+def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP', source_directory='', work_directory=''):
     # Define the input and output file paths
-    open_file = work_directory + open_filename + '.csv'
+    open_file = source_directory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
     
     # List to store modified lines
@@ -181,90 +247,15 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
         # Write the modified lines to the output file
         file.writelines(new_lines)
 
-def create_object_index(data, work_directory):
-    output_file = work_directory + 'object_index.txt'
-    with open(output_file, 'w', encoding='utf-8') as file:
-        file.write(data)
-
-def parse_sections(file_content):
-    """
-    파일 내용에서 각 구간과 태그를 파싱하여 리스트로 반환.
-    """
-    sections = {}
-    current_section = None
-    tags = []
-    for line in file_content:  # file_content는 csv.reader가 반환한 리스트 형태
-        # 리스트 형태의 line을 문자열로 변환
-        line = ",".join(line)
-        
-        if line.startswith("구간"):
-            current_section = int(line.split()[1][:-1])
-            sections[current_section] = []
-        elif current_section is not None and line.strip():
-            sta, radius , cant, tag = line.split(',', 3)
-            
-            sta = int(sta)
-            radius = float(radius)
-            cant = float(cant)
-            sections[current_section].append((sta, radius, cant, tag))
-
-    return sections
-
-
-
-
-def parse_object_index(index_content):
-    """
-    object_index.txt 내용을 파싱하여 태그별 인덱스 매핑을 반환.
-    """
-    tag_mapping = {}
-
-    for row in index_content:  # row는 리스트 형태
-        if len(row) != 1:  # 한 줄이 하나의 문자열로 되어 있어야 함
-            print(f"잘못된 줄 형식 건너뜀: {row}")
-            continue
-
-        line = row[0]  # 리스트 내부의 문자열을 꺼냄
-        parts = line.split()  # 공백으로 분리
-        if len(parts) < 2:  # 최소한 2개의 요소가 있어야 함
-            print(f"잘못된 줄 형식 건너뜀: {line}")
-            continue
-
-        try:
-            obj_name = parts[1].split('/')[-1].split('.')[0]  # e.g., 구간1_SP
-            obj_index = int(parts[0].split('(')[-1].rstrip(')'))
-            tag_mapping[obj_name] = obj_index
-        except (IndexError, ValueError) as e:
-            print(f"오류 발생: {e} - 줄 내용: {line}")
-            continue
-
-    return tag_mapping
-
-
-
-
-def find_object_index(sta, sections, tag_mapping):
-    """
-    STA 값에 해당하는 구간과 태그를 찾아 오브젝트 인덱스를 반환.
-    """
-    for section_id, points in sections.items():
-        for i, (start_sta, _, _, tags) in enumerate(points):
-            if sta == start_sta:  # STA가 정확히 일치하는 경우
-                key = f"IP{section_id}_{tags}"
-                if key in tag_mapping:
-                    return tag_mapping[key]
-    return None
-
-def create_curve_post_txt(data_list,comment, work_directory):
+def create_curve_post_txt(data_list: list[ObjectDATA], work_directory):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
     output_file = work_directory + "curve_post.txt"  # 저장할 파일 이름
-    #리스트에서 '\n'을 제거
-    data_list = [data.strip() for data in data_list]
+
     with open(output_file, "w", encoding="utf-8") as file:
-         for data, comm in zip(data_list, comment):  # 두 리스트를 동시에 순회
-            file.write(f"{data},;{comm}\n")  # 원하는 형식으로 저장
+         for data in data_list:  # 두 리스트를 동시에 순회
+            file.write(f"{data.station},.freeobj 0;{data.object_index};,;IP{data.IPNO}_{data.curvetype}-{data.structure}\n")  # 원하는 형식으로 저장
             
 def find_structure_section(filepath):
     """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
@@ -316,9 +307,10 @@ def open_excel_file():
     
     return file_path
 
-def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', work_directory='', filename = 'output.png'):
+#######이미지 생성 로직
+def create_png_from_ai(type1 = 'SP', text1 = '14.626',text2 = '150', filename = 'output.png', source_directory='', work_directory=''):
     
-    ai_file = work_directory + type1 + '.AI'
+    ai_file = source_directory + type1 + '.AI'
     
     doc = fitz.open(ai_file)
 
@@ -548,38 +540,9 @@ class DXF2IMG:
 
         except Exception as e:
             print(f"❌ 이미지 처리 실패: {e}")    
+#######이미지 생성 로직 끝
 
-def write_unique_file(filename, unique_data):
-    """unique_file을 저장하는 함수"""
-    with open(filename, 'w', encoding='utf-8') as file:
-        for station, radius, cant in unique_data:
-            file.write(f"{station},{radius},{cant}\n")
-
-def write_annotated_sections(filename, annotated_sections):
-    """annotated_sections_file을 저장하는 함수"""
-    with open(filename, 'w', encoding='utf-8') as file:
-        for i, section in enumerate(annotated_sections, start=1):
-            file.write(f"구간 {i}:\n")
-            for line in section:
-                file.write(f"{line}\n")
-            file.write("\n")
-
-def write_sections(filename, sections):
-    """sections_file을 저장하는 함수"""
-    with open(filename, 'w', encoding='utf-8') as file:
-        for line in sections:
-            file.write(f'{line}\n')
-
-def get_output_file_paths(work_directory):
-    """출력 파일 경로 설정"""
-    return {
-        'unique_file': os.path.join(work_directory, 'unique_file.txt'),
-        'annotated_sections_file': os.path.join(work_directory, 'annotated_sections_file.txt'),
-        'sections_file': os.path.join(work_directory, 'sections.txt'),
-    }
-
-
-def process_and_save_sections(work_directory, data):
+def process_and_save_sections(data):
     """곡선 정보를 처리하고 파일로 저장"""
     print("곡선 정보가 성공적으로 로드되었습니다.")
 
@@ -588,69 +551,14 @@ def process_and_save_sections(work_directory, data):
 
     # 구간 정의 및 처리
     sections = process_sections(unique_data)
-    annotated_sections = annotate_sections(sections)
+    ipdatas = annotate_sections(sections)
 
-    # 파일 경로 설정
-    file_paths = get_output_file_paths(work_directory)
+    return ipdatas
 
-    # 파일 저장
-    write_unique_file(file_paths['unique_file'], unique_data)
-    write_annotated_sections(file_paths['annotated_sections_file'], annotated_sections)
-    write_sections(file_paths['sections_file'], sections)
-
-    return file_paths, annotated_sections
-
-def extract_PC_radius(annotated_sections):
-    """PC 곡선 반경 리스트 추출"""
-    PC_R_LIST = []
-    for i, section in enumerate(annotated_sections, start=1):
-        for line in section:
-            if 'PC' in line:
-                parts = line.split(',')
-                R = float(parts[1])
-                PC_R_LIST.append((i, int(abs(R))))  # 반경 절댓값 사용
-    return PC_R_LIST
-
-def process_curve_type(line, i, PC_R_LIST, structure_list, work_directory):
-    """곡선 형식별 이미지 및 CSV 생성"""
-    parts = line.split(',')
-    sta = int(parts[0])
-    cant = f'{float(parts[2]) * 1000:.0f}'
-    
-    # 반경 찾기
-    radius = next((r for sec, r in PC_R_LIST if sec == i), 0)
-    
-    # 구조물 정보 확인
-    structure = isbridge_tunnel(sta, structure_list)
-
-    # 곡선 종류 매핑
-    curve_types = {
-        'SP': {'bg_color': (34, 139, 34), 'prefix': 'SP'},
-        'PC': {'bg_color': (255, 0, 0), 'prefix': 'PC'},
-        'CP': {'bg_color': (255, 0, 0), 'prefix': 'CP'},
-        'PS': {'bg_color': (34, 139, 34), 'prefix': 'PS'},
-        'BC': {'bg_color': (255, 0, 0), 'prefix': 'BC'},
-        'EC': {'bg_color': (255, 0, 0), 'prefix': 'EC'}
-    }
-
-    for key, values in curve_types.items():
-        if key in line:
-            img_text = format_distance(sta)
-            img_f_name = f'IP{i}_{key}'
-            openfile_name = f'{key}_{structure}용'
-            isSPPS = key in ['SP', 'PS']
-
-            create_png_from_ai(key, img_text, cant, work_directory, filename=img_f_name)
-            copy_and_export_csv(openfile_name, img_f_name, isSPPS, radius, key, work_directory)
-
-            return img_f_name, structure, isSPPS, radius, key
-
-    return None, None, False, 0, 'ERROR'
-
-def process_dxf_image(img_f_name, structure, radius, work_directory):
+def process_dxf_image(img_f_name, structure, radius, source_directory, work_directory):
     """DXF 파일 수정 및 이미지 변환"""
     img_f_name_for_prev = str(int(radius))
-    file_path = work_directory  + '곡선표.dxf'
+    file_path = source_directory  + '곡선표.dxf'
     modifed_path = work_directory + '곡선표-수정됨.dxf'
     final_output_image = os.path.join(work_directory, img_f_name_for_prev + '.png')
     img_f_name_for_tunnel = f'{img_f_name}_{img_f_name_for_prev}'
@@ -670,52 +578,73 @@ def process_dxf_image(img_f_name, structure, radius, work_directory):
     if output_paths:
         converter.trim_and_resize_image(output_paths[0], final_output_image, target_size)
 
-def process_sections_for_images(annotated_sections, structure_list, work_directory):
+#핵심 로직2 (클래스화 구조변경)
+def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
-    PC_R_LIST = extract_PC_radius(annotated_sections)
 
-    image_names = []
-    structure_comment = []
-    objec_index_name = ''
-    objec_index_counter = 2025
-
-    for i, section in enumerate(annotated_sections, start=1):
-        for line in section:
-            if any(key in line for key in ['BC', 'EC', 'SP', 'PC', 'CP', 'PS']):
-                img_f_name, structure, isSPPS, radius, curvetype = process_curve_type(line, i, PC_R_LIST, structure_list, work_directory)
-
-                if img_f_name:
-                    image_names.append(img_f_name)
-                    structure_comment.append(f'{img_f_name}-{structure}')
-
-                    if isSPPS and radius != 0:
-
-                        process_dxf_image(img_f_name, structure, radius, work_directory)
-
-    # 객체 인덱스 생성
+    object_path = ''
+    object_index = 2025
+    line = []
+    objects = []
+    isSPPS = None
     object_folder = target_directory.split("Object/")[-1]
-    for img_name, stru in zip(image_names, structure_comment):
-        objec_index_name += f".freeobj({objec_index_counter}) {object_folder}/{img_name}.CSV\n"
-        objec_index_counter += 1
 
-    # 오브젝트 인덱스 파일 생성
-    create_object_index(objec_index_name, work_directory)
+    for i, ip in enumerate(ipdatas):
+        lines = get_curve_lines(ip)
+        if not lines:
+            continue
 
-    return structure_comment
+        for key, value in lines:
+            # 구조물 정보 확인
+            isSPPS = True if key in ['SP','PS'] else False
+            structure = isbridge_tunnel(value, structure_list) # 구조물(토공,교량,터널)
+            img_text = format_distance(value) # 측점문자 포맷
+            img_f_name = f'IP{i + 1}_{key}' # i는 0부터임으로 1+
+            openfile_name = f'{key}_{structure}용' #소스폴더에서 열 파일명.csv원본
+            object_path = f".freeobj({object_index}) {object_folder}{img_f_name}.CSV\n" #index파일
+            create_png_from_ai(key, img_text, str(ip.cant), img_f_name, source_directory, work_directory) #이미지 생성 함수
 
-def find_STA(sections_line1, tag_mapping):
-    # STA 값 검색
-    result_list =[]
+            if isSPPS:
+                process_dxf_image(img_f_name, structure, ip.radius, source_directory, work_directory)
+            copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory) # csv 원본복사 후 추출함수
+            #print(object_path)
+            #print(f'{img_f_name}-{openfile_name}-{key}:{img_text}-{objec_index}')
+            #클래스에ㅐ 속성 추가
+            objects.append(ObjectDATA(
+                IPNO=ipdatas[i].IPNO,
+                curvetype=key,
+                structure=structure,
+                station=value,
+                object_index=object_index,
+                filename=img_f_name
+                )
+            )
+            object_index += 1
+    return objects
 
-    for section_id, entries in sections_line1.items():  # 모든 구간을 순회
-        for sta_value, radius, _, tags in entries:  # 각 구간의 엔트리를 순회
+#1. 곡선 구간(Line) 생성 분리
+def get_curve_lines(ip: IPdata) -> list[list]:
+    if ip.curvetype == '원곡선':
+        return [['BC', ip.BC_STA], ['EC', ip.EC_STA]]
+    elif ip.curvetype == '완화곡선':
+        return [['SP', ip.SP_STA], ['PC', ip.PC_STA], ['CP', ip.CP_STA], ['PS', ip.PS_STA]]
+    return []
 
-            result = find_object_index(sta_value, sections_line1, tag_mapping)
+#2. ObjectDATA 생성 분리
+def create_objectdata(ip: IPdata, ip_index: int, key: str, value: float, structure: str, object_index: int, folder_name: str) -> ObjectDATA:
+    filename = f'IP{ip_index + 1}_{key}'
+    return ObjectDATA(
+        IPNO=ip.IPNO,
+        curvetype=key,
+        structure=structure,
+        station=value,
+        object_index=object_index,
+        filename=filename
+    )
+#3. object_path 생성 (인덱스 파일 한 줄) 분리
+def create_object_path(object_index: int, folder_name: str, filename: str) -> str:
+    return f".freeobj({object_index}) {folder_name}{filename}.CSV\n"
 
-            if not result == None:
-                result_data = f'{sta_value},.freeobj 0;{result};\n'
-                result_list.append(result_data)
-    return result_list
 
 def read_filedata(data):
     with open(data, 'r', encoding='utf-8') as file:
@@ -734,48 +663,19 @@ def load_structure_data():
         structure_list = []  # 기본 빈 리스트 반환
     return structure_list
 
-def process_curve_data(work_directory, data, structure_list):
+def process_curve_data(source_directory, work_directory, target_directory, data, structure_list):
     """곡선 데이터 처리 (파일 저장 및 이미지 & CSV 생성)"""
     if not data:
         print("curve_info가 비어 있습니다.")
         return None, None
 
     # 중복 제거 및 섹션 처리
-    file_paths, annotated_sections = process_and_save_sections(work_directory, data)
+    ipdatas = process_and_save_sections(data)
 
     # 이미지 및 CSV 생성
-    structure_comment = process_sections_for_images(annotated_sections, structure_list, work_directory)
+    objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory)
 
-    return file_paths, structure_comment
-
-def parse_and_match_data(work_directory, file_paths):
-    """파일 데이터 파싱 및 태그 매핑"""
-    if not file_paths:
-        return None
-
-    # 주석처리된 파일 읽기
-    annotated_sections_file = file_paths['annotated_sections_file']
-    annotated_sections_file_readdata = read_filedata(annotated_sections_file)
-
-    # 오브젝트 인덱스 파일 읽기
-    OBJ_DATA = os.path.join(work_directory, 'object_index.txt')
-    object_index_file_read_data = read_filedata(OBJ_DATA)
-
-    # 데이터 파싱
-    annotated_sections_file_parse = parse_sections(annotated_sections_file_readdata)
-    tag_mapping = parse_object_index(object_index_file_read_data)
-
-    # 매칭
-    result_list = find_STA(annotated_sections_file_parse, tag_mapping)
-
-    return result_list
-
-def cleanup_files(file_paths):
-    """불필요한 파일 삭제"""
-    if file_paths:
-        for key, file_path in file_paths.items():
-            os.remove(file_path)
-            print(f"{key} 파일 삭제 완료: {file_path}")
+    return objectdatas
 
 def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None):
     """
@@ -814,15 +714,13 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
 
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
-
-
 def select_target_directory():
     """폴더 선택 다이얼로그를 띄워 target_directory를 설정"""
     global target_directory
     root = tk.Tk()
     root.withdraw()  # GUI 창 숨기기
 
-    target_directory = filedialog.askdirectory(initialdir=default_directory, title="대상 폴더 선택")
+    target_directory = filedialog.askdirectory(title="대상 폴더 선택")
 
     if target_directory:
         print(f"📁 선택된 대상 폴더: {target_directory}")
@@ -830,19 +728,19 @@ def select_target_directory():
         print("❌ 대상 폴더가 선택되지 않았습니다.")
 
     return target_directory
-# 기본 작업 디렉토리(#전역변수)
-default_directory = 'c:/temp/curve/'
 
 
+#메인 gui클래스
 class CurveProcessingApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.log_box = None
         self.title("곡선 데이터 처리기")
         self.geometry("650x450")
 
-        self.default_directory = 'c:/temp/curve/'
-        self.work_directory = None
-        self.target_directory = None
+        self.source_directory = 'c:/temp/curve/소스/' #원본 소스 위치
+        self.work_directory = '' #작업물이 저장될 위치
+        self.target_directory = ''
 
         self.create_widgets()
 
@@ -864,7 +762,7 @@ class CurveProcessingApp(tk.Tk):
         try:
             # 디렉토리 설정
             self.log("작업 디렉토리 확인 중...")
-            self.work_directory = self.default_directory
+            self.work_directory = 'c:/temp/curve/result/'
             if not os.path.exists(self.work_directory):
                 os.makedirs(self.work_directory)
                 self.log(f"디렉토리 생성: {self.work_directory}")
@@ -889,21 +787,13 @@ class CurveProcessingApp(tk.Tk):
 
             # 곡선 데이터 처리
             self.log("곡선 데이터 처리 중...")
-            file_paths, structure_comment = process_curve_data(self.work_directory, data, structure_list)
-
-            # 파싱 및 매칭
-            self.log("곡선 데이터 파싱 및 매칭 중...")
-            result_list = parse_and_match_data(self.work_directory, file_paths)
+            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list)
 
             # 최종 텍스트 생성
-            if result_list:
+            if objectdatas:
                 self.log("최종 결과 생성 중...")
-                create_curve_post_txt(result_list, structure_comment, self.work_directory)
+                create_curve_post_txt(objectdatas, self.work_directory)
                 self.log("결과 파일 생성 완료!")
-
-            # 파일 정리
-            self.log("임시 파일 정리 중...")
-            cleanup_files(file_paths)
 
             # 파일 복사
             self.log("결과 파일 복사 중...")
