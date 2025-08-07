@@ -78,25 +78,34 @@ class ObjectDATA:
 def format_distance(number):
     return f"{number / 1000:.3f}"
 
-def read_file():
-    
-    file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("txt files", "curve_info.txt"), ("All files", "*.*")])
-    print('현재파일:', file_path)
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            lines = list(reader)
-    except UnicodeDecodeError:
-        print('현재파일은 utf-8인코딩이 아닙니다. euc-kr로 시도합니다.')
+def try_read_file(file_path, encodings=('utf-8', 'euc-kr')):
+    for encoding in encodings:
         try:
-            with open(file_path, 'r', encoding='euc-kr') as file:
-                reader = csv.reader(file)
-                lines = list(reader)
+            with open(file_path, 'r', encoding=encoding) as file:
+                return list(csv.reader(file))
         except UnicodeDecodeError:
-            print('현재파일은 euc-kr인코딩이 아닙니다. 파일을 읽을 수 없습니다.')
-            return []
-    return lines
+            print(f"[경고] {encoding} 인코딩 실패. 다음 인코딩으로 시도합니다.")
+    print("[오류] 지원되는 인코딩으로 파일을 읽을 수 없습니다.")
+    return []
+
+def read_file():
+    file_path = filedialog.askopenfilename(
+        title="곡선 정보 파일 선택",
+        initialfile="curve_info.txt",  # 사용자가 기본적으로 이 파일을 고르게 유도
+        defaultextension=".txt",
+        filetypes=[
+            ("curve_info.txt (기본 권장)", "curve_info.txt"),
+            ("모든 텍스트 파일", "*.txt"),
+            ("모든 파일", "*.*")
+        ]
+    )
+
+    if not file_path:
+        print("[안내] 파일 선택이 취소되었습니다.")
+        return []
+
+    print("[선택된 파일]:", file_path)
+    return try_read_file(file_path)
 
 def remove_duplicate_radius(data):
     filtered_data = []
@@ -554,12 +563,69 @@ class DXF2IMG:
             print(f"❌ 이미지 처리 실패: {e}")    
 #######이미지 생성 로직 끝
 
-def process_and_save_sections(data):
+
+def convert_curve_lines(lines):
+    """
+    .CURVE 제거 → ; 를 ,로 변환 → 마지막 , 제거
+    lines가 List[List[str]] 혹은 List[str]인 경우 모두 처리 가능
+    """
+    converted = []
+
+    for line in lines:
+        # line이 리스트이면 문자열로 결합
+        if isinstance(line, list):
+            line = ','.join(line)
+
+        line = line.strip()
+
+        # 1단계: ".CURVE" 등 대소문자 구분 없이 제거 (정규식 사용)
+        line = re.sub(r'\.curve', '', line, flags=re.IGNORECASE)
+
+        # 2단계: ; → , 변환
+        line = line.replace(';', ',')
+
+        # 3단계: 마지막 글자가 ,이면 제거
+        if line.endswith(','):
+            line = line[:-1]
+
+        #4단계: line의 각 요소 추출
+        parts = line.split(',')
+        if len(parts) == 1 or len(parts) == 0:
+            print(f"[경고] 잘못된 행 형식: {line} → 건너뜀")
+            continue  # 또는 raise ValueError(f"Invalid line format: {line}")
+        try:
+            if len(parts) == 2:
+                sta, radius = map(float, parts)
+                cant = 0.0
+            elif len(parts) >= 3:
+                sta, radius, cant = map(float, parts[:3])  # 3개 이상이면 앞 3개만 사용
+            else:
+                raise ValueError
+
+            converted.append((sta, radius, cant))
+
+        except ValueError:
+            print(f"[오류] 숫자 변환 실패: {line} → 건너뜀")
+            continue
+
+    return converted
+
+
+
+def is_civil3d_format(lines):
+    return any('curve' in cell.lower() for line in lines for cell in line)
+
+
+def process_and_save_sections(lines):
     """곡선 정보를 처리하고 파일로 저장"""
     print("곡선 정보가 성공적으로 로드되었습니다.")
 
     # 중복 제거
-    unique_data = remove_duplicate_radius(data)
+    # Civil3D 형식 여부 판단
+    civil3d = is_civil3d_format(lines)
+
+    # Civil3D면 중복 반지름 제거
+    unique_data = convert_curve_lines(lines) if civil3d else remove_duplicate_radius(lines)
 
     # 구간 정의 및 처리
     sections = process_sections(unique_data)
