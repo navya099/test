@@ -73,6 +73,7 @@ class ObjectDATA:
     station: float = 0.0
     object_index: int = 0
     filename: str = ''
+    object_path: str = ''
 
 def format_distance(number):
     return f"{number / 1000:.3f}"
@@ -256,7 +257,18 @@ def create_curve_post_txt(data_list: list[ObjectDATA], work_directory):
     with open(output_file, "w", encoding="utf-8") as file:
          for data in data_list:  # 두 리스트를 동시에 순회
             file.write(f"{data.station},.freeobj 0;{data.object_index};,;IP{data.IPNO}_{data.curvetype}-{data.structure}\n")  # 원하는 형식으로 저장
-            
+
+def create_curve_index_txt(data_list: list[ObjectDATA], work_directory):
+    """
+    결과 데이터를 받아 파일로 저장하는 함수.
+    """
+    output_file = work_directory + "curve_index.txt"  # 저장할 파일 이름
+
+    with open(output_file, "w", encoding="utf-8") as file:
+         for data in data_list:  # 두 리스트를 동시에 순회
+            file.write(f".freeobj 0;{data.object_index} {data.object_path}/{data.filename}.csv\n")  # 원하는 형식으로 저장
+
+
 def find_structure_section(filepath):
     """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
     structure_list = {'bridge': [], 'tunnel': []}
@@ -601,7 +613,6 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
             img_text = format_distance(value) # 측점문자 포맷
             img_f_name = f'IP{i + 1}_{key}' # i는 0부터임으로 1+
             openfile_name = f'{key}_{structure}용' #소스폴더에서 열 파일명.csv원본
-            object_path = f".freeobj({object_index}) {object_folder}{img_f_name}.CSV\n" #index파일
             create_png_from_ai(key, img_text, str(ip.cant), img_f_name, source_directory, work_directory) #이미지 생성 함수
 
             if isSPPS:
@@ -616,7 +627,8 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
                 structure=structure,
                 station=value,
                 object_index=object_index,
-                filename=img_f_name
+                filename=img_f_name,
+                object_path=object_folder
                 )
             )
             object_index += 1
@@ -793,6 +805,7 @@ class CurveProcessingApp(tk.Tk):
             if objectdatas:
                 self.log("최종 결과 생성 중...")
                 create_curve_post_txt(objectdatas, self.work_directory)
+                create_curve_index_txt(objectdatas, self.work_directory)
                 self.log("결과 파일 생성 완료!")
 
             # 파일 복사
