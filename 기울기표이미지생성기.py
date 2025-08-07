@@ -1,30 +1,30 @@
-import csv
-from tkinter import filedialog
-import tkinter as tk
+from dataclasses import dataclass
 from PIL import Image, ImageDraw, ImageFont
-import os
 import pandas as pd
-import math
 import re
-import textwrap
-import matplotlib.pyplot as plt
 import ezdxf
 from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 import numpy as np
-import matplotlib.font_manager as fm
 import shutil
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog, filedialog
+import os
+import matplotlib.font_manager as fm
+import matplotlib.pyplot as plt
+import csv
 
 '''
 BVE구배파일을 바탕으로 기울기표(준고속용)을 설치하는 프로그램
 -made by dger -
-VER 2025.02.28 1600
+VER 2025.08.07
 #add
-터널용 구배표 추가
+종단 데이터구조 클래스화
 
 입력파일:BVE에서 추출한 구배파일(pitch_info.TXT)
 
 pitch_info 샘플
+0,0
 25,0
 550,0
 575,-0.00117
@@ -43,40 +43,77 @@ csv파일에는 텍스쳐명이 bvc와 g 이어야함
 
 '''
 
+#클래스 정의
+@dataclass
+class VIPdata:
+    """
+    VIPdata는 종단 선형의 VIP (Vertical Intersection Point) 정보를 표현하는 데이터 클래스입니다.
+
+    Attributes:
+        VIPNO (int): VIP 번호.
+        isvcurve (bool): 종곡선 여부 (True이면 종곡선이 존재함).
+        seg (str): 종곡선의 형태 ('볼록형' 또는 '오목형').
+        vradius (float): 종곡선 반경 R (미터 단위).
+        vlength (float): 종곡선 길이 (미터 단위).
+        next_slope (float): VIP 지점 이후의 종단 경사 (퍼밀 단위).
+        prev_slope (float): VIP 지점 이전의 종단 경사 (퍼밀 단위).
+        BVC_STA (float): 종곡선 시작점 (BVC).
+        VIP_STA (float): VIP.
+        EVC_STA (float): 종곡선 종료점 (EVC).
+    """
+    VIPNO: int = 0
+    isvcurve: bool = False
+    seg: str = ''
+    vradius: float = 0.0
+    vlength: float = 0.0
+    next_slope: float = 0.0
+    prev_slope: float = 0.0
+    BVC_STA: float = 0.0
+    VIP_STA: float = 0.0
+    EVC_STA: float = 0.0
+
+
 def format_distance(number):
     number *= 0.001
     
     return "{:.3f}".format(number)
 
-def read_file():
-    root = tk.Tk()
-    root.withdraw()  # Tkinter 창을 숨김
-    file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("txt files", "pitch_info.txt"), ("All files", "*.*")])
-    print('현재파일:', file_path)
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            lines = list(reader)
-    except UnicodeDecodeError:
-        print('현재파일은 utf-8인코딩이 아닙니다. euc-kr로 시도합니다.')
+def try_read_file(file_path, encodings=('utf-8', 'euc-kr')):
+    for encoding in encodings:
         try:
-            with open(file_path, 'r', encoding='euc-kr') as file:
-                reader = csv.reader(file)
-                lines = list(reader)
+            with open(file_path, 'r', encoding=encoding) as file:
+                return list(csv.reader(file))
         except UnicodeDecodeError:
-            print('현재파일은 euc-kr인코딩이 아닙니다. 파일을 읽을 수 없습니다.')
-            return []
-    return lines
+            print(f"[경고] {encoding} 인코딩 실패. 다음 인코딩으로 시도합니다.")
+    print("[오류] 지원되는 인코딩으로 파일을 읽을 수 없습니다.")
+    return []
 
-def remove_duplicate_radius(data):
+def read_file():
+    file_path = filedialog.askopenfilename(
+        title="곡선 정보 파일 선택",
+        initialfile="curve_info.txt",  # 사용자가 기본적으로 이 파일을 고르게 유도
+        defaultextension=".txt",
+        filetypes=[
+            ("curve_info.txt (기본 권장)", "curve_info.txt"),
+            ("모든 텍스트 파일", "*.txt"),
+            ("모든 파일", "*.*")
+        ]
+    )
+
+    if not file_path:
+        print("[안내] 파일 선택이 취소되었습니다.")
+        return []
+
+    print("[선택된 파일]:", file_path)
+    return try_read_file(file_path)
+
+def remove_duplicate_pitch(data):
     filtered_data = []
     previous_pitch = None
 
     for row in data:
         try:
             station, pitch = map(float, row)
-            station = int(station)
         except ValueError:
             print(f"잘못된 데이터 형식: {row}")
             continue
@@ -87,88 +124,93 @@ def remove_duplicate_radius(data):
 
     return filtered_data
 
-def process_sections(data):
-    sections = []  # 전체 섹션 리스트
-    current_section = []  # 현재 섹션 리스트
-    prev_station = None  # 이전 station 값을 저장할 변수
+def process_sections(data, threshold=75.0, min_points=2):
+    sections = []
+    current_section = []
+    prev_station = None
 
     for row in data:
         try:
             station, pitch = map(float, row)
-            station = int(station)
-        except ValueError:
-            print(f"잘못된 데이터 형식: {row}")
+        except (ValueError, TypeError):
             continue
 
-        # 첫 번째 데이터이거나 station 차이가 75 이상이면 새로운 섹션 시작
-        if prev_station is not None and (station - prev_station) >= 75:
-            sections.append(current_section)  # 이전 섹션 저장
-            current_section = []  # 새로운 섹션 초기화
+        if prev_station is not None:
+            gap = station - prev_station
+            if gap >= threshold:
+                if len(current_section) >= min_points:
+                    sections.append(current_section)
+                current_section = []
 
         current_section.append((station, pitch))
-        prev_station = station  # 현재 station을 prev_station으로 업데이트
+        prev_station = station
 
-    # 마지막 섹션 추가 (비어 있지 않을 경우)
-    if current_section:
+    if current_section and len(current_section) >= min_points:
         sections.append(current_section)
 
     return sections
 
+#핵심로직(클래스화로 구조변경)
+def annotate_sections(sections: list[list[tuple[float, float]]]) -> list[VIPdata]:
+    """
+    주어진 종단 기울기 구간 데이터를 기반으로 VIP(Vertical Inflection Point) 정보를 생성합니다.
 
+    각 구간은 시작점(BVC)과 끝점(EVC)을 기준으로 종곡선 제원을 계산하고,
+    종곡선의 반경, 길이, 형태(오목/볼록)를 판별하여 VIPdata 객체로 반환합니다.
 
-def is_multiple_of_25(number):
-    return number % 25 == 0
+    Parameters:
+        sections: list[list[tuple[float, float]]]
+            - 각 구간은 (station, slope) 튜플의 리스트로 구성되며,
+              station은 거리값(m), slope는 기울기(m/m)입니다.
+            - 예: [[(1000.0, -0.025), (1100.0, 0.005)], [(1200.0, 0.005), (1300.0, -0.010)]]
 
-def annotate_sections(sections):
-    annotated_sections = []
-    
+    Returns:
+        list[VIPdata]: VIPdata 객체들의 리스트
+            - 각 VIPdata는 하나의 종곡선 구간에 대한 정보를 담고 있습니다.
+
+    Notes:
+        - 내부적으로 calculate_vertical_curve_radius() 및 get_vertical_curve_type()을 호출하여
+          반지름과 곡선 유형을 결정합니다.
+        - slope는 m/m 단위를 사용해야 하며, ‰ 단위일 경우 외부에서 변환이 필요합니다.
+    """
+    vipdatas: list[VIPdata] = []
+    iscurve = False
+    i = 1
     for section in sections:
         if not section:
             continue
+        #BVC, EVC 추출
+        bvc_staion, prev_pitch = section[0]
+        evc_staion, next_pitch = section[-1]
+        vip_staion = (evc_staion - bvc_staion) / 2
+        #종곡선 제원 계산
+        vertical_length = evc_staion - bvc_staion #종곡선 길이
+        #종곡선 반경
+        vertical_radius = calculate_vertical_curve_radius(vertical_length, prev_pitch, next_pitch)
+        #오목형 볼록형 판단
+        seg = get_vertical_curve_type(prev_pitch, next_pitch)
 
-        annotated_section = []
-        n = len(section)
+        #종곡선 여부 판단
+        if len(section) < 3:
+            iscurve = False
+        else:
+            iscurve = True
+        vipdatas.append(VIPdata(
+            VIPNO=i,
+            isvcurve=iscurve,
+            seg=seg,
+            vradius=vertical_radius,
+            vlength=vertical_length,
+            next_slope=next_pitch,
+            prev_slope=prev_pitch,
+            BVC_STA=bvc_staion,
+            VIP_STA=vip_staion,
+            EVC_STA=evc_staion
+            )
+        )
+        i += 1
 
-        # BVC, EVC 위치 계산
-        BVC_station = section[0][0]
-        EVC_station = section[-1][0]
-        VCL = EVC_station - BVC_station
-        
-        # VIP 위치 계산 (BVC + 절반 거리)
-        VIP_station = int(BVC_station + VCL / 2) if VCL != 0 else None
-        if VIP_station is not None:
-            is_multifle_25 = is_multiple_of_25(VIP_station)
-        
-        for i, (station, pitch) in enumerate(section):
-            annotation = ""
-
-            # 첫 번째 줄에 BVC 추가
-            if i == 0:
-                annotation += ";BVC"
-            
-            # 마지막 줄에 EVC 추가
-            if i == n - 1:
-                annotation += ";EVC"
-
-            # VIP 위치가 존재하고 현재 station과 일치하면 VIP 추가
-            if VIP_station is not None and station == VIP_station:
-                annotation += ";VIP"
-
-            annotated_section.append(f'{station},{pitch}{annotation}')
-
-        # 현재 리스트에서 VIP_station이 존재하는지 정확히 확인
-        existing_stations = {int(line.split(',')[0]) for line in annotated_section}
-
-        # VIP가 존재하지 않으면 추가
-        if VIP_station is not None and VIP_station not in existing_stations:
-            annotated_section.append(f'{VIP_station},0;VIP')
-
-        # 리스트 정렬
-        annotated_section.sort(key=lambda x: float(x.split(',')[0]))
-                               
-        annotated_sections.append(annotated_section)
-
-    return annotated_sections
+    return vipdatas
 
 # DXF 파일을 생성하는 함수
 class TunnelPitchCreator:
@@ -543,80 +585,8 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
         file.writelines(new_lines)
 
 
-def create_object_index(data):
-    output_file = work_directory + 'pitch_index.txt'
-    with open(output_file, 'w', encoding='utf-8') as file:
-        file.write(data)
-
-def parse_sections(file_content):
-    """
-    파일 내용에서 각 구간과 태그를 파싱하여 리스트로 반환.
-    """
-    sections = {}
-    current_section = None
-
-    for line in file_content:  # file_content는 csv.reader가 반환한 리스트 형태
-        # 리스트 형태의 line을 문자열로 변환
-        line = ",".join(line)
-        
-        if line.startswith("구간"):
-            current_section = int(line.split()[1][:-1])
-            sections[current_section] = []
-        elif current_section is not None and line.strip():
-            sta, rest = line.split(',', 1)
-            
-            sta = int(sta)
-            radius_tag = rest.split(';')
-            radius = float(radius_tag[0])
-            tags = radius_tag[1:] if len(radius_tag) > 1 else []
-            sections[current_section].append((sta, radius, tags))
-
-    return sections
 
 
-
-def parse_object_index(index_content):
-    """
-    object_index.txt 내용을 파싱하여 태그별 인덱스 매핑을 반환.
-    """
-    tag_mapping = {}
-
-    for row in index_content:  # row는 리스트 형태
-        if len(row) != 1:  # 한 줄이 하나의 문자열로 되어 있어야 함
-            print(f"잘못된 줄 형식 건너뜀: {row}")
-            continue
-
-        line = row[0]  # 리스트 내부의 문자열을 꺼냄
-        parts = line.split()  # 공백으로 분리
-        if len(parts) < 2:  # 최소한 2개의 요소가 있어야 함
-            print(f"잘못된 줄 형식 건너뜀: {line}")
-            continue
-
-        try:
-            obj_name = parts[1].split('/')[-1].split('.')[0]  # e.g., 구간1_SP
-            obj_index = int(parts[0].split('(')[-1].rstrip(')'))
-            tag_mapping[obj_name] = obj_index
-        except (IndexError, ValueError) as e:
-            print(f"오류 발생: {e} - 줄 내용: {line}")
-            continue
-
-    return tag_mapping
-
-
-
-def find_object_index(sta, sections, tag_mapping):
-    """
-    STA 값에 해당하는 구간과 태그를 찾아 오브젝트 인덱스를 반환.
-    """
-    for section_id, points in sections.items():
-        for i, (start_sta, _, tags) in enumerate(points):
-            
-            if sta == start_sta:  # STA가 정확히 일치하는 경우
-                for tag in tags:
-                    key = f"VIP{section_id}_{tag}"
-                    if key in tag_mapping:
-                        return tag_mapping[key]
-    return None
 
 def create_curve_post_txt(data_list,comment):
     """
@@ -676,32 +646,33 @@ def open_excel_file():
     
     return file_path
 
-def get_vertical_curve_type(start_grade, end_grade):
+def get_vertical_curve_type(start_grade: float, end_grade: float) -> str:
     if start_grade > end_grade:
         return "볼록형"  # 볼록형 (정상 곡선)
     else:
         return "오목형"  # 오목형 (골짜기 곡선)
 
 
-def round_to_nearest_25(value):
-    """주어진 값을 12.5 기준으로 25의 배수로 반올림"""
-    return round(value / 25) * 25
-
-def calculate_vertical_curve_radius(length, start_grade, end_grade):
+def calculate_vertical_curve_radius(length: float, start_grade: float, end_grade: float) -> float:
     """
-    종곡선 반지름을 계산하는 함수
-    :param length: 종곡선 길이 (L)
-    :param start_grade: 시작 구배 (‰ 단위, 예: -25.0 → -25‰)
-    :param end_grade: 끝 구배 (‰ 단위)
-    :return: 반지름 (R)
-    """
-    delta_g = end_grade - start_grade  # 구배 변화량
+    종곡선 반지름(R)을 계산하는 함수
 
-    if delta_g == 0:  
-        return 0  # 구배 변화가 없으면 반지름은 무한대 (직선 구간)
-    
-    radius = length / delta_g
-    return abs(radius) * 1000  # 반지름은 항상 양수
+    Parameters:
+        length (float): 종곡선 길이 (L), 단위: m
+        start_grade (float): 시작 경사, 단위: m/m (예: -0.025 for -25‰)
+        end_grade (float): 끝 경사, 단위: m/m
+
+    Returns:
+        float: 종곡선 반지름 R (단위: m)
+    """
+    delta_g = end_grade - start_grade  # 경사 변화량 (m/m)
+
+    if delta_g == 0:
+        return 0.0  # 구배 변화가 없으면 반지름은 무한대 (직선)
+
+    radius = length / abs(delta_g)  # 반지름 계산 (단위: m)
+    return radius
+
 
 def format_grade(value):
     return f"{value:.1f}".rstrip('0').rstrip('.')  # 소수점 이하 0 제거
@@ -968,202 +939,36 @@ def select_target_directory():
     root = tk.Tk()
     root.withdraw()  # GUI 창 숨기기
 
-    target_directory = filedialog.askdirectory(initialdir=default_directory, title="대상 폴더 선택")
+    target_directory = filedialog.askdirectory(title="대상 폴더 선택")
 
     if target_directory:
         print(f"📁 선택된 대상 폴더: {target_directory}")
     else:
         print("❌ 대상 폴더가 선택되지 않았습니다.")
 
-def process_pitch_data(work_directory, data):
-    """곡선 데이터 처리 (파일 저장 및 이미지 & CSV 생성)"""
-    if not data:
-        print("pitch_info가 비어 있습니다.")
-        return None, None
+    return target_directory
 
-    
-    return file_paths, annotated_sections
-
-def process_and_save_sections(work_directory, data):
-    """곡선 정보를 처리하고 파일로 저장"""
-    print("곡선 정보가 성공적으로 로드되었습니다.")
+def process_and_save_sections(data: list[list[tuple[float, float]]]) -> list[VIPdata]:
+    """종곡선 정보를 처리하고 파일로 저장"""
 
     # 중복 제거
-    unique_data = remove_duplicate_radius(data)
+    unique_data = remove_duplicate_pitch(data)
 
     # 구간 정의 및 처리
     sections = process_sections(unique_data)
-    annotated_sections = annotate_sections(sections)
+    vipdatas = annotate_sections(sections)
 
-    # 파일 경로 설정
-    file_paths = get_output_file_paths(work_directory)
+    return vipdatas
 
-    # 파일 저장
-    write_unique_file(file_paths['unique_file'], unique_data)
-    write_annotated_sections(file_paths['output_file'], annotated_sections)
-    write_sections(file_paths['temp_file'], sections)
-
-    return file_paths, annotated_sections
-
-def extract_bvc_sta(line):
-    """BVC 상태를 추출하는 함수"""
-    match = re.search(r'(\d+),', line)
-    if match:
-        return int(match.group(1))
-    return None
-
-def extract_grade(line):
-    """기울기를 추출하는 함수"""
-    match = re.search(r",(-?[\d.]+);", line)
-    if match:
-        return float(match.group(1)) * 1000  # 배율 적용
-    return None
-
-def extract_vip_sta(line):
-    """VIP 상태를 추출하는 함수"""
-    match = re.search(r'(\d+),', line)
-    if match:
-        return int(match.group(1))
-    return None
-
-def calculate_vcl(bvc_sta, evc_sta):
-    """VCL 계산하는 함수"""
-    if bvc_sta is not None and evc_sta is not None:
-        return evc_sta - bvc_sta
-    return None
-
-def calculate_l_list(vip_sta_list):
-    """VIP STA 간 거리 차이를 L_LIST로 계산하는 함수"""
-    return [(vip_sta_list[j][0], vip_sta_list[j + 1][1] - vip_sta_list[j][1]) for j in range(len(vip_sta_list) - 1)]
-
-def process_sections_VIP(annotated_sections):
-    """각 섹션을 처리하고 결과를 반환하는 함수"""
-    GRADE_LIST = []
-    VIP_STA_LIST = []
-    L_LIST = []
-    VCL_LIST = []
-    
-    BVC_STA = None
-    EVC_STA = None
-    
-    # 각 섹션을 순회
-    for i, section in enumerate(annotated_sections, start=1):
-        for line in section:
-            # BVC 처리
-            if 'BVC' in line:
-                BVC_STA = extract_bvc_sta(line)
-                
-                
-            
-            # EVC 처리
-            if 'EVC' in line:
-                grade = extract_grade(line)
-                if grade is not None:
-                    GRADE_LIST.append((i, grade))
-                EVC_STA = extract_bvc_sta(line)
-                
-                    
-            
-            # VCL 계산
-            VCL = calculate_vcl(BVC_STA, EVC_STA)
-            if VCL is not None and VCL >= 0:
-                VCL_LIST.append((i, VCL))
-                
-            # VIP 처리
-            if 'VIP' in line:
-                vip_sta = extract_vip_sta(line)
-                if vip_sta is not None:
-                    VIP_STA_LIST.append((i, vip_sta))
-
-    # VIP STA 간 거리 차이 계산
-    if VIP_STA_LIST:
-        L_LIST = calculate_l_list(VIP_STA_LIST)
-
-    return GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST
-
-
-def process_section_lines(section, i, GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST, work_directory, structure_list, image_names, structure_comment):
-    """구간별로 각 라인 처리"""
-    # 이전 구간의 기울기 찾기
-    prev_grade = next((grade for sec, grade in GRADE_LIST if sec == i - 1), 0)
-    current_grade = next((grade for sec, grade in GRADE_LIST if sec == i), 0)
-    next_grade = next((grade for sec, grade in GRADE_LIST if sec == i + 1), 0)
-
-    modifed_path = work_directory + 'BVC-수정됨.dxf'
-    output_image = work_directory + 'output_image.png'
-    
-    # 종곡선 모양 판별
-    isSagCrest = get_vertical_curve_type(prev_grade, current_grade)
-    
-    # VIP 점 찾기
-    VIP_STA = next((r for sec, r in VIP_STA_LIST if sec == i), 0)
-    
-    # 기울기 거리 찾기
-    current_distance = next((r for sec, r in L_LIST if sec == i), 0)
-    
-    # VCL 찾기
-    VCL = next((r for sec, r in VCL_LIST if sec == i), 0)
-    
-    # R 계산
-    R = int(calculate_vertical_curve_radius(VCL, prev_grade, current_grade))
-
-    for line in section:
-        if 'BVC' in line or 'EVC' in line or 'VIP' in line:
-            parts = line.split(',')
-            sta = int(parts[0])
-            parts2 = parts[1].split(';')
-            
-            structure = isbridge_tunnel(sta, structure_list)
-            sec = parts2[1] if len(parts2) > 1 else None
-            
-            if 'BVC' in line:
-                create_image_for_section(line, i, 'BVC', work_directory, modifed_path, structure, prev_grade, current_grade, R, isSagCrest, image_names, structure_comment)
-            elif 'EVC' in line:
-                create_image_for_section(line, i, 'EVC', work_directory, modifed_path, structure, prev_grade, current_grade, R, isSagCrest, image_names, structure_comment)
-            elif 'VIP' in line:
-                create_image_for_section(line, i, 'VIP', work_directory, modifed_path, structure, prev_grade, current_grade, R, isSagCrest, image_names, structure_comment)
-            else:
-                print('에러')
-
-            copy_and_export_csv(openfile_name, img_f_name, isSPPS, current_grade, pitchtype)
-            
-    return image_names, structure_comment
-
-def read_filedata(data):
-    with open(data, 'r', encoding='utf-8') as file:
-        reader = csv.reader(file)
-        lines = list(reader)
-    return lines
-
-def parse_and_match_data(work_directory, file_paths):
-    """파일 데이터 파싱 및 태그 매핑"""
-    if not file_paths:
-        return None
-
-    # 주석처리된 파일 읽기
-    annotated_sections_file = file_paths['output_file']
-    annotated_sections_file_readdata = read_filedata(annotated_sections_file)
-
-    # 오브젝트 인덱스 파일 읽기
-    OBJ_DATA = os.path.join(work_directory, 'pitch_index.txt')
-    object_index_file_read_data = read_filedata(OBJ_DATA)
-
-    # 데이터 파싱
-    annotated_sections_file_parse = parse_sections(annotated_sections_file_readdata)
-    tag_mapping = parse_object_index(object_index_file_read_data)
-
-    # 매칭
-    result_list = find_STA(annotated_sections_file_parse, tag_mapping)
-
-    return result_list
-
-def bve_profile(annotated_sections, GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST, structure_list):
+def process_bve_profile(vipdats: list[VIPdata], structure_list):
     
     #이미지 저장
-    
-    objec_index_name = ''
-    image_names = []
-    isSPPS = False
+    object_path = ''
+    object_index = 3025
+    line = []
+    objects = []
+    isSPPS = None
+    object_folder = target_directory.split("Object/")[-1]
 
     text_color = (0,0,0)
     structure_comment = []
@@ -1320,24 +1125,15 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
 
-
-    
-import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog, filedialog
-import os
-import matplotlib.font_manager as fm
-import matplotlib.pyplot as plt
-import csv
-
 class PitchProcessingApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Pitch 데이터 처리기")
         self.geometry("700x500")
 
-        self.default_directory = 'c:/temp/pitch/'
-        self.work_directory = None
-        self.target_directory = None
+        self.source_directory = 'c:/temp/pitch/소스/' #원본 소스 위치
+        self.work_directory = ''
+        self.target_directory = ''
 
         # 폰트 설정
         font_path = "C:/Windows/Fonts/gulim.ttc"
@@ -1352,7 +1148,7 @@ class PitchProcessingApp(tk.Tk):
         btn_frame = ttk.Frame(self)
         btn_frame.pack(pady=5)
 
-        ttk.Button(btn_frame, text="작업 디렉토리 선택", command=self.select_work_directory).grid(row=0, column=0, padx=5)
+
         ttk.Button(btn_frame, text="대상 디렉토리 선택", command=self.select_target_directory).grid(row=0, column=1, padx=5)
 
         ttk.Button(self, text="데이터 처리 시작", command=self.run_process).pack(pady=10)
@@ -1378,21 +1174,19 @@ class PitchProcessingApp(tk.Tk):
 
     def run_process(self):
         try:
-            # 작업 디렉토리 없으면 기본값 사용 및 생성
-            if not self.work_directory:
-                self.work_directory = self.default_directory
-                self.log(f"작업 디렉토리 미선택, 기본값 사용: {self.work_directory}")
-
+            # 디렉토리 설정
+            self.log("작업 디렉토리 확인 중...")
+            self.work_directory = 'c:/temp/pitch/result/'
             if not os.path.exists(self.work_directory):
                 os.makedirs(self.work_directory)
-                self.log(f"작업 디렉토리 생성: {self.work_directory}")
+                self.log(f"디렉토리 생성: {self.work_directory}")
             else:
-                self.log(f"작업 디렉토리 존재: {self.work_directory}")
+                self.log(f"디렉토리 존재: {self.work_directory}")
 
-            # 대상 디렉토리 없으면 에러
-            if not self.target_directory:
-                messagebox.showwarning("경고", "대상 디렉토리를 선택해주세요.")
-                return
+            # 대상 디렉토리 선택
+            self.log("대상 디렉토리 선택 중...")
+            self.target_directory = select_target_directory()
+            self.log(f"대상 디렉토리: {self.target_directory}")
 
             # 파일 읽기
             self.log("파일 읽는 중...")
@@ -1402,8 +1196,8 @@ class PitchProcessingApp(tk.Tk):
                 return
 
             # Civil3D 여부 물어보기
-            is_civil3d = messagebox.askyesno("질문", "pitch_info가 Civil3D인가요? (예: Civil3D, 아니오: BVE)")
-
+            #is_civil3d = messagebox.askyesno("질문", "pitch_info가 Civil3D인가요? (예: Civil3D, 아니오: BVE)")
+            is_civil3d = False
             # 구조물 데이터 로드
             self.log("구조물 데이터 로드 중...")
             structure_list = load_structure_data()
@@ -1441,10 +1235,9 @@ class PitchProcessingApp(tk.Tk):
 
             else:
                 self.log("BVE 처리 시작...")
-                file_paths, annotated_sections = process_and_save_sections(self.work_directory, data)
-                GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST = process_sections_VIP(annotated_sections)
+                vipdatas = process_and_save_sections(data)
 
-                image_names, structure_comment = bve_profile(annotated_sections, GRADE_LIST, VIP_STA_LIST, L_LIST, VCL_LIST, structure_list)
+                image_names, structure_comment = process_bve_profile(vipdatas, structure_list)
                 result_list = parse_and_match_data(self.work_directory, file_paths)
 
                 create_curve_post_txt(result_list, structure_comment)
