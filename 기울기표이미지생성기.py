@@ -100,11 +100,11 @@ def try_read_file(file_path, encodings=('utf-8', 'euc-kr')):
 
 def read_file():
     file_path = filedialog.askopenfilename(
-        title="곡선 정보 파일 선택",
-        initialfile="curve_info.txt",  # 사용자가 기본적으로 이 파일을 고르게 유도
+        title="기울기 정보 파일 선택",
+        initialfile="pitch_info.txt",  # 사용자가 기본적으로 이 파일을 고르게 유도
         defaultextension=".txt",
         filetypes=[
-            ("curve_info.txt (기본 권장)", "curve_info.txt"),
+            ("pitch_info.txt (기본 권장)", "pitch_info.txt"),
             ("모든 텍스트 파일", "*.txt"),
             ("모든 파일", "*.*")
         ]
@@ -161,7 +161,7 @@ def process_sections(data, threshold=75.0, min_points=2):
     return sections
 
 #핵심로직(클래스화로 구조변경)
-def annotate_sections(sections: list[list[tuple[float, float]]]) -> list[VIPdata]:
+def annotate_sections(sections: list[list[tuple[float, float]]], broken_chain) -> list[VIPdata]:
     """
     주어진 종단 기울기 구간 데이터를 기반으로 VIP(Vertical Inflection Point) 정보를 생성합니다.
 
@@ -193,6 +193,12 @@ def annotate_sections(sections: list[list[tuple[float, float]]]) -> list[VIPdata
         bvc_staion, prev_pitch = section[0]
         evc_staion, next_pitch = section[-1]
         vip_staion = (evc_staion + bvc_staion) / 2
+
+        #파정 적용
+        bvc_staion += broken_chain
+        evc_staion += broken_chain
+        vip_staion += broken_chain
+
         #종곡선 제원 계산
         vertical_length = evc_staion - bvc_staion #종곡선 길이
         #종곡선 반경
@@ -789,15 +795,57 @@ def select_target_directory():
 
     return target_directory
 
-def process_and_save_sections(data: list[list[tuple[float, float]]]) -> list[VIPdata]:
+def is_civil3d_format(lines):
+    return any('pitch' in cell.lower() for line in lines for cell in line)
+
+def convert_pitch_lines(lines):
+    """
+    .pitch 제거 → ; 를 ,로 변환 → 마지막 , 제거
+    lines가 List[List[str]] 혹은 List[str]인 경우 모두 처리 가능
+    """
+    converted = []
+
+    for line in lines:
+        # line이 리스트이면 문자열로 결합
+        if isinstance(line, list):
+            line = ','.join(line)
+
+        line = line.strip()
+
+        # 1단계: ".CURVE" 등 대소문자 구분 없이 제거 (정규식 사용)
+        line = re.sub(r'\.pitch', '', line, flags=re.IGNORECASE)
+
+        #4단계: line의 각 요소 추출
+        parts = line.split(',')
+        if len(parts) == 1 or len(parts) == 0:
+            print(f"[경고] 잘못된 행 형식: {line} → 건너뜀")
+            continue  # 또는 raise ValueError(f"Invalid line format: {line}")
+        try:
+            if len(parts) == 2:
+                sta, pitch = map(float, parts)
+                pitch *= 0.001 #내부 단위 자료구조 통일을 위해 0.001곱하기
+            else:
+                raise ValueError
+
+            converted.append((sta, pitch))
+
+        except ValueError:
+            print(f"[오류] 숫자 변환 실패: {line} → 건너뜀")
+            continue
+
+    return converted
+
+def process_and_save_sections(lines: list[list[tuple[float, float]]], brokenchain) -> list[VIPdata]:
     """종곡선 정보를 처리하고 파일로 저장"""
 
     # 중복 제거
-    unique_data = remove_duplicate_pitch(data)
+    # Civil3D 형식 여부 판단
+    civil3d = is_civil3d_format(lines)
+    unique_data = convert_pitch_lines(lines) if civil3d else remove_duplicate_pitch(lines)
 
     # 구간 정의 및 처리
     sections = process_sections(unique_data)
-    vipdatas = annotate_sections(sections)
+    vipdatas = annotate_sections(sections, brokenchain)
 
     return vipdatas
 
@@ -987,7 +1035,7 @@ class PitchProcessingApp(tk.Tk):
             # 곡선 데이터 처리
 
             self.log("BVE용 처리 시작...")
-            vipdatas = process_and_save_sections(data)
+            vipdatas = process_and_save_sections(data, self.brokenchain)
 
             objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory)
 
