@@ -14,6 +14,7 @@ import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import csv
 
+
 '''
 BVE구배파일을 바탕으로 기울기표(준고속용)을 설치하는 프로그램
 -made by dger -
@@ -72,6 +73,15 @@ class VIPdata:
     VIP_STA: float = 0.0
     EVC_STA: float = 0.0
 
+@dataclass
+class ObjectDATA:
+    VIPNO: int = 0
+    vcurvetype: str = ''
+    structure: str = ''
+    station: float = 0.0
+    object_index: int = 0
+    filename: str = ''
+    object_path: str = ''
 
 def format_distance(number):
     number *= 0.001
@@ -182,7 +192,7 @@ def annotate_sections(sections: list[list[tuple[float, float]]]) -> list[VIPdata
         #BVC, EVC 추출
         bvc_staion, prev_pitch = section[0]
         evc_staion, next_pitch = section[-1]
-        vip_staion = (evc_staion - bvc_staion) / 2
+        vip_staion = (evc_staion + bvc_staion) / 2
         #종곡선 제원 계산
         vertical_length = evc_staion - bvc_staion #종곡선 길이
         #종곡선 반경
@@ -192,12 +202,12 @@ def annotate_sections(sections: list[list[tuple[float, float]]]) -> list[VIPdata
 
         #종곡선 여부 판단
         if len(section) < 3:
-            iscurve = False
+            isvcurve = False
         else:
-            iscurve = True
+            isvcurve = True
         vipdatas.append(VIPdata(
             VIPNO=i,
-            isvcurve=iscurve,
+            isvcurve=isvcurve,
             seg=seg,
             vradius=vertical_radius,
             vlength=vertical_length,
@@ -215,6 +225,8 @@ def annotate_sections(sections: list[list[tuple[float, float]]]) -> list[VIPdata
 # DXF 파일을 생성하는 함수
 class TunnelPitchCreator:
     """터널 구배 DXF 파일을 생성하는 클래스"""
+    def __init__(self, work_directory):
+        self.work_directory = work_directory
 
     def create_tunnel_pitch_image(self, filename, text):
         """터널 구배 DXF 생성"""
@@ -258,7 +270,7 @@ class TunnelPitchCreator:
             self.create_tunnel_pitch_arrow(msp, is_negative)
 
         # DXF 저장
-        final_path = os.path.join(work_directory, filename)
+        final_path = os.path.join(self.work_directory, filename)
         doc.saveas(final_path)
         return final_path
 
@@ -469,7 +481,7 @@ class DXF2IMG:
           
 #기울기표용
 class GradePost:
-    def __init__(self, work_directory='c:/temp/pitch'):
+    def __init__(self, work_directory: str):
         self.work_directory = work_directory
         if not os.path.exists(self.work_directory):
             os.makedirs(self.work_directory)
@@ -559,9 +571,9 @@ class GradePost:
         arrow_draw.polygon(arrow_points, fill=text_color, outline=text_color)
         return arrow_image
     
-def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP'):
+def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str, source_diretory: str, work_directory: str):
     # Define the input and output file paths
-    open_file = work_directory + open_filename + '.csv'
+    open_file = source_diretory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
     
     # List to store modified lines
@@ -588,17 +600,28 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
 
 
 
-def create_curve_post_txt(data_list,comment):
+def create_pitch_post_txt(data_list: list[ObjectDATA], work_directory: str):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
     output_file = work_directory + "pitch_post.txt"  # 저장할 파일 이름
-    #리스트에서 '\n'을 제거
-    data_list = [data.strip() for data in data_list]
+
     with open(output_file, "w", encoding="utf-8") as file:
-         for data, comm in zip(data_list, comment):  # 두 리스트를 동시에 순회
-            file.write(f"{data},;{comm}\n")  # 원하는 형식으로 저장
-            
+         for data in data_list:  # 두 리스트를 동시에 순회
+            file.write(f"{data.station},.freeobj 0;{data.object_index};,;VIP{data.VIPNO}_{data.vcurvetype}-{data.structure}\n")  # 원하는 형식으로 저장
+
+
+def create_pitch_index_txt(data_list: list[ObjectDATA], work_directory: str):
+    """
+    결과 데이터를 받아 파일로 저장하는 함수.
+    """
+    output_file = work_directory + "pitch_index.txt"  # 저장할 파일 이름
+
+    with open(output_file, "w", encoding="utf-8") as file:
+        for data in data_list:  # 두 리스트를 동시에 순회
+            file.write(f".freeobj({data.object_index}) {data.object_path}/{data.filename}.csv\n")  # 원하는 형식으로 저장
+
+
 def find_structure_section(filepath):
     """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
     structure_list = {'bridge': [], 'tunnel': []}
@@ -619,6 +642,29 @@ def find_structure_section(filepath):
         structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
     
     return structure_list
+
+def apply_brokenchain_to_structure(structure_list, brokenchain):
+    """
+    structure_list의 각 구간(start, end)에 brokenchain 값을 더해서
+    같은 구조로 반환하는 함수.
+
+    :param structure_list: {'bridge': [(start, end), ...], 'tunnel': [(start, end), ...]}
+    :param brokenchain: float, 오프셋 값 (예: 0.0 또는 양수/음수)
+    :return: 수정된 structure_list (같은 구조, 값은 offset 적용)
+    """
+    if brokenchain == 0.0:
+        # 오프셋이 없으면 원본 그대로 반환
+        return structure_list
+
+    updated_structure = {'bridge': [], 'tunnel': []}
+
+    for key in ['bridge', 'tunnel']:
+        for start, end in structure_list.get(key, []):
+            new_start = start + brokenchain
+            new_end = end + brokenchain
+            updated_structure[key].append((new_start, new_end))
+
+    return updated_structure
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
@@ -675,155 +721,46 @@ def calculate_vertical_curve_radius(length: float, start_grade: float, end_grade
 
 
 def format_grade(value):
-    return f"{value:.1f}".rstrip('0').rstrip('.')  # 소수점 이하 0 제거
+    '''
+    구배를 1000곱하고 변환 포맷
+    '''
+    return f"{value * 1000:.1f}".rstrip('0').rstrip('.')  # 소수점 이하 0 제거
 
 #civil3d함수
-def process_sections_civil3d(data):
-    sections = []
-    current_section = []
-    prev_tag = None
-    next_tag = None
-    
-    for i , (station, grade, tag) in enumerate(data):
-        prev_sta, prev_grade, prev_tag = data[i - 1][:3] if i > 0 else (None, None, None)
-        NEXT_sta, NEXT_grade, NEXT_tag = data[i + 1][:3] if i < len(data) - 1 else (None, None, None)
-        
-        
-        if tag == "BP":
-            # BP는 단독 구간으로 추가
-            sections.append([(station, grade, tag)])
-            
-        elif tag in {"BVC", "VIP", "EVC"}:
-            if tag == 'BVC':
-                current_section.append((station, grade, tag))
-            elif tag == 'VIP':
-                if prev_tag == 'BVC':
-                    current_section.append((station, grade, tag))
-                elif prev_tag == 'EVC' or prev_tag == 'VIP':
-                    current_section.append((station, grade, tag))
-                    sections.append(current_section)
-                    current_section = []
+'''WIP'''
 
+def process_verticulcurve(vipdata: VIPdata, viptype: str, current_sta: float, current_structure: str, source_directory: str, work_directory: str):
 
-                    
-            elif tag == 'EVC':
-                current_section.append((station, grade, tag))
-                sections.append(current_section)
-                current_section = []
-        else:
-            current_section.append((station, grade, tag))
-
-    if current_section:  # 마지막 구간 추가
-        sections.append(current_section)
-
-    return sections
-
-def civil3d_profile(sections,  structure_list):
-    #이미지 저장
-    
-    objec_index_name = ''
-    image_names = []
-    isSPPS = False
-
-    text_color = (0,0,0)
-    structure_comment = []
-    VIP_STA_LIST, L_LIST = create_VIP_LIST(sections)
-
-    for i, section in enumerate(sections, start=0):
-        print(f'현재 구간 VIP ; {i}')
-        VCL = float(section[-1][0]) - float(section[0][0])
-        prev_grade = float(section[0][1]) * 1000
-        next_grade = float(section[-1][1]) * 1000
-        
-        R = calculate_vertical_curve_radius(VCL, prev_grade, next_grade)
-        R_text = f'{int(R)}'
-        
-        isSagCrest = get_vertical_curve_type(prev_grade, next_grade)
-        # 🔥 L_LIST 범위를 초과하는 경우 예외 처리
-        if i < len(L_LIST):  
-            current_distance = int(L_LIST[i][1])
-        else:
-            current_distance = 0  # 혹은 0으로 설정할 수도 있음
-        
-        '''
-        print(f'VCL = {VCL}')
-        print(f'R = {R}')
-        print(f'prev_grade = {prev_grade}')
-        print(f'next_grade = {next_grade}')
-        '''
-        
-        for line in section:
-            current_sta, current_grade, current_tag = line
-            current_grade = float(current_grade) * 1000
-            current_sta = float(current_sta)
-            current_sta = int(current_sta)
-            current_structure = isbridge_tunnel(current_sta, structure_list)
-            pitchtype = f'{current_tag}'
-            
-            if i != 0:
-                if 'BVC' in line:
-                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , prev_grade , current_tag, current_structure, isSagCrest, R_text)
-                elif 'VIP' in line:
-
-                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , prev_grade , current_tag, current_structure, isSagCrest, R_text)
-                    process_vertical(i, next_grade, current_distance, current_tag, current_structure)
-                elif 'EVC' in line:
-                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , next_grade , current_tag, current_structure, isSagCrest, R_text)
-
-                copy_and_export_csv(openfile_name, img_f_name,isSPPS,current_grade,pitchtype)
-                image_names.append(img_f_name)
-                structure_comment.append(img_f_name + '-' + current_structure)
-            
-        objec_index_name = create_obj_counter(3025, image_names, structure_comment)
-        
-    create_object_index(objec_index_name)
-    
-    return image_names, structure_comment
-
-def process_verticulcurve(i, current_sta , current_grade , current_tag, current_structure, isSagCrest, R_text):
-
-    
     converter = DXF2IMG()
-    
-    
-    output_image = work_directory + 'output_image.png'
 
-    pitchtype = f'{current_tag}'
-    grade_text = format_grade(current_grade)
+    grade_text = format_grade(vipdata.next_slope)
     station_text = f'{format_distance(current_sta)}'
+
+    img_f_name = f'VIP{vipdata.VIPNO}_{viptype}'
+    r = str(int(vipdata.vradius))
     
-    if pitchtype == 'VIP':
-        img_bg_color = (255, 212, 0) #기울기표 배경
-    else:
-        img_bg_color = (255, 255, 255)
-    
-    img_f_name = f'VIP{i}_{pitchtype}'
-    openfile_name = f'{pitchtype}_{current_structure}용'
-    
-    file_path = work_directory + f'{pitchtype}.dxf'
+    file_path = source_directory + f'{viptype}.dxf'
     final_output_image = work_directory + img_f_name + '.png'
 
     modifed_path = work_directory + 'BVC-수정됨.dxf'
-    replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, isSagCrest, R_text)
+    replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, vipdata.seg , r)
 
     output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
     converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
-    
-    return openfile_name, img_f_name
 
-def process_vertical(i, current_grade, current_distance, pitchtype, structure):
-    grade_post_generator = GradePost()
-    tunnel_post_generator = TunnelPitchCreator()
+def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, structure: str, work_directory: str):
+    grade_post_generator = GradePost(work_directory)
+    tunnel_post_generator = TunnelPitchCreator(work_directory)
     converter = DXF2IMG()
 
     output_image = work_directory + 'output_image.png'
     filename = 'BVC-수정됨.dxf'
-    
-    
+
+    current_grade = vip.next_slope
     img_text2 = format_grade(current_grade)#기울기표 구배문자
-    img_text3 = f'{current_distance}' #기울기표 거리문자                    
+    img_text3 = f'{int(current_distance)}' #기울기표 거리문자
     img_bg_color2 = (255, 255, 255) #기울기표 문자                     
-    img_f_name2 = f'VIP{i}_{pitchtype}_기울기표'#기울기표 파일명
+    img_f_name2 = f'VIP{vip.VIPNO}_{pitchtype}_기울기표'#기울기표 파일명
     openfile_name2 = f'기울기표_{structure}용'
     
     final_output_image = work_directory + img_f_name2 + '.png'    
@@ -836,102 +773,6 @@ def process_vertical(i, current_grade, current_distance, pitchtype, structure):
     else:
         grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
 
-def create_obj_counter(start_number, image_names, structure_comment):
-    # 객체 인덱스 생성
-    objec_index_name = ""
-    object_folder = target_directory.split("Object/")[-1]
-    
-    for img_name, stru in zip(image_names, structure_comment):
-        objec_index_name += f".freeobj({start_number}) {object_folder}/{img_name}.CSV\n"
-        start_number += 1  # 카운터 증가
-    return objec_index_name
-
-def create_outfile(output_file, data):
-    with open(output_file, 'w', encoding='utf-8') as file:
-        for i, section in enumerate(data, start=1):
-            file.write(f"구간 {i}:\n")
-            for line in section:
-                # 튜플을 문자열로 변환하여 괄호와 쉼표 제거
-                file.write(f"{','.join(map(str, line))}\n")
-            file.write("\n")
-
-def search_STA_value(sections , tag_mapping):
-    result_list = []
-    for section_id, entries in sections.items():  # 모든 구간을 순회
-        for sta_value, radius, tags in entries:  # 각 구간의 엔트리를 순회
-
-            result = find_object_index_civil3d(sta_value, sections, tag_mapping)
-
-        
-            if not result == None:
-                result_data = f'{sta_value},.freeobj 0;{result};\n'
-                result_list.append(result_data)
-    return result_list
-
-def find_object_index_civil3d(sta, sections, tag_mapping):
-    """
-    STA 값에 해당하는 구간과 태그를 찾아 오브젝트 인덱스를 반환.
-    """
-    for section_id, points in sections.items():
-        for i, (start_sta, _, tags) in enumerate(points):
-            if sta == start_sta:  # STA가 정확히 일치하는 경우
-                key = f"VIP{section_id}_{tags}"
-                if key in tag_mapping:
-                    return tag_mapping[key]
-    return None
-
-def parse_sections_civil3d(file_content):
-    """
-    파일 내용에서 각 구간과 태그를 파싱하여 리스트로 반환.
-    """
-    sections = {}
-    current_section = None
-
-    for line in file_content:  # file_content는 csv.reader가 반환한 리스트 형태
-        # 리스트 형태의 line을 문자열로 변환
-        line = ",".join(line)
-        
-        if line.startswith("구간"):
-            current_section = int(line.split()[1][:-1])
-            sections[current_section] = []
-        elif current_section is not None and line.strip():
-            sta, pitch, tag = line.split(',', 2)  # split 최대 3부분으로 분리 (sta, pitch, tag)
-            
-            sta = float(sta)  # 구간 시작 위치를 정수로 변환
-            sta = int(sta)  # 구간 시작 위치를 정수로 변환
-            pitch = float(pitch)  # 기울기(pitch)를 실수로 변환 (float가 적합할 수 있음)
-            tags = [tag.strip()]  # 태그를 리스트에 추가, 공백 제거
-            
-            sections[current_section].append((sta, pitch, tag))
-
-    return sections
-
-def remove_first_entry_dictionary(dic):
-    # Remove the first entry of each list and renumber the sections
-    new_dics = {}
-    for idx, (key, value) in enumerate(dic.items()):
-        if value:  # Only keep sections that have entries
-            if value[0] != (0, 0.0, 'BP'):  # Check if the first entry is not (0, 0.0, 'BP')
-                new_dics[idx] = value  # Remove the first entry and reassign section number
-    return new_dics
-
-def create_VIP_LIST(sections):
-    VIP_STA_LIST = []
-    L_LIST = []
-    
-    for i, section in enumerate(sections, start=0):
-        for line in section:
-            current_sta, current_grade, current_tag = line
-            current_sta = float(current_sta)
-            if current_tag == 'VIP' or current_tag == 'EP' or current_tag == 'BP':
-                VIP_STA_LIST.append((i, current_sta))  # 올바르게 리스트에 추가
-                
-                if VIP_STA_LIST:
-                    #VIP_STA_LIST의 각 요소를들 뺄셈하여 L_LIST에 추가
-                    # VIP_STA_LIST의 각 요소를 뺄셈하여 L_LIST에 추가
-                    L_LIST = [(VIP_STA_LIST[j][0], VIP_STA_LIST[j + 1][1] - VIP_STA_LIST[j][1]) for j in range(len(VIP_STA_LIST) - 1)]
-                        
-    return VIP_STA_LIST, L_LIST
 
 def select_target_directory():
     """폴더 선택 다이얼로그를 띄워 target_directory를 설정"""
@@ -960,70 +801,56 @@ def process_and_save_sections(data: list[list[tuple[float, float]]]) -> list[VIP
 
     return vipdatas
 
-def process_bve_profile(vipdats: list[VIPdata], structure_list):
-    
+#1. 곡선 구간(Line) 생성 분리
+def get_vcurve_lines(vip: VIPdata) -> list[list]:
+    if vip.isvcurve:
+        return [['BVC', vip.BVC_STA], ['VIP', vip.VIP_STA], ['EVC', vip.EVC_STA]]
+    else:
+        return [['VIP', vip.VIP_STA]]
+
+def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str):
+    """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
     #이미지 저장
-    object_path = ''
     object_index = 3025
-    line = []
     objects = []
-    isSPPS = None
     object_folder = target_directory.split("Object/")[-1]
 
-    text_color = (0,0,0)
-    structure_comment = []
+    for i, vip in enumerate(vipdats):
+        print(f'현재 구간 VIP : {vip.VIPNO}')
+        lines = get_vcurve_lines(vip)
+        if not lines:
+            continue
 
-    for i, section in enumerate(annotated_sections, start=1):
-        print(f'현재 구간 VIP ; {i}')
-        
-        prev_grade = next((grade for sec, grade in GRADE_LIST if sec == i -1), 0)
-        current_grade = next((grade for sec, grade in GRADE_LIST if sec == i), 0)
-        next_grade = next((grade for sec, grade in GRADE_LIST if sec == i + 1), 0)
-        
-        VCL = next((r for sec, r in VCL_LIST if sec == i), None)
-        R = int(calculate_vertical_curve_radius(VCL, prev_grade, current_grade))
-        R_text = f'{int(R)}'
-        
-        isSagCrest = get_vertical_curve_type(prev_grade, current_grade)
-
-        # VIP 점 찾기 (VIP_STA_LIST 현재 구간(i)과 일치하는 반경을 찾음)
-        VIP_STA = next((r for sec, r in VIP_STA_LIST if sec == i), None)
-        if VIP_STA is None:
-            VIP_STA = 0  # 기본값 (에러 방지)
-                    
-        #일반철도 구배표용 구배거리
-        current_distance = next((r for sec, r in L_LIST if sec == i), None)
-        if current_distance is None:
+        # 일반철도 구배표용 구배거리
+        if i < len(vipdats) - 1:
+            current_distance = vipdats[i+1].VIP_STA - vip.VIP_STA
+        else:
             current_distance = 0  # 기본값 (에러 방지)
 
-        for line in section:
-            if 'BVC' in line or 'EVC' in line or 'VIP' in line:
-                parts = line.split(',')
-                current_sta = int(parts[0])
-                current_structure = isbridge_tunnel(current_sta, structure_list)
-                
-            
-            
-                if 'BVC' in line:
-                    current_tag = 'BVC'
-                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , prev_grade , current_tag, current_structure, isSagCrest, R_text)
-                elif 'VIP' in line:
-                    current_tag = 'VIP'
-                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , prev_grade , current_tag, current_structure, isSagCrest, R_text)
-                    process_vertical(i, next_grade, current_distance, current_tag, current_structure)
-                elif 'EVC' in line:
-                    current_tag = 'EVC'
-                    openfile_name, img_f_name = process_verticulcurve(i, current_sta , next_grade , current_tag, current_structure, isSagCrest, R_text)
+        for key, value in lines:
+            current_sta = value
+            current_structure = isbridge_tunnel(current_sta, structure_list)
+            if key == 'VIP':
+                process_vertical(vip, current_distance, key,  current_structure, work_directory)
+            process_verticulcurve(vip, key, value, current_structure, source_directory, work_directory)
+            img_f_name = f'VIP{vip.VIPNO}_{key}'
+            openfile_name = f'{key}_{current_structure}용'
+            copy_and_export_csv(openfile_name, img_f_name, key, source_directory, work_directory)
 
-                copy_and_export_csv(openfile_name, img_f_name,isSPPS,current_grade,current_tag)
-                image_names.append(img_f_name)
-                structure_comment.append(img_f_name + '-' + current_structure)
-            
-        objec_index_name = create_obj_counter(3025, image_names, structure_comment)
-        print(f'현재 구간 VIP ; {i} - 완료')
-    create_object_index(objec_index_name)
-    
-    return image_names, structure_comment
+            objects.append(ObjectDATA(
+                VIPNO=vip.VIPNO,
+                vcurvetype=key,
+                structure=current_structure,
+                station=value,
+                object_index=object_index,
+                filename=img_f_name,
+                object_path=object_folder
+                )
+            )
+            object_index += 1
+        print(f'현재 구간 VIP ; {vip.VIPNO} - 완료')
+
+    return objects
 
 
 def load_structure_data():
@@ -1037,66 +864,16 @@ def load_structure_data():
         structure_list = []  # 기본 빈 리스트 반환
     return structure_list
 
-def get_output_file_paths(work_directory):
-    """출력 파일 경로 설정"""
-    return {
-        'unique_file': os.path.join(work_directory, '1532326.txt'),
-        'output_file': os.path.join(work_directory, '주석처리된파일.txt'),
-        'temp_file': os.path.join(work_directory, 'annotated_sections.txt'),
-    }
-
-def write_unique_file(filename, unique_data):
-    """unique_file을 저장하는 함수"""
-    with open(filename, 'w', encoding='utf-8') as file:
-        for station, radius in unique_data:
-            file.write(f"{station},{radius}\n")
-
-def write_annotated_sections(filename, annotated_sections):
-    """annotated_sections_file을 저장하는 함수"""
-    with open(filename, 'w', encoding='utf-8') as file:
-        for i, section in enumerate(annotated_sections, start=1):
-            file.write(f"구간 {i}:\n")
-            for line in section:
-                file.write(f"{line}\n")
-            file.write("\n")
-
-def write_sections(filename, sections):
-    """sections_file을 저장하는 함수"""
-    with open(filename, 'w', encoding='utf-8') as file:
-        for line in sections:
-            file.write(f'{line}\n')
-
-def find_STA(sections, tag_mapping):
-    # STA 값 검색
-    result_list =[]
-
-    for section_id, entries in sections.items():  # 모든 구간을 순회
-            for sta_value, radius, tags in entries:  # 각 구간의 엔트리를 순회
-
-                result = find_object_index(sta_value, sections, tag_mapping)
-                
-                if not result == None:
-                    result_data = f'{sta_value},.freeobj 0;{result};\n'
-                    result_list.append(result_data)
-    return result_list
-
-def cleanup_files(file_paths):
-    """불필요한 파일 삭제"""
-    if file_paths:
-        for key, file_path in file_paths.items():
-            os.remove(file_path)
-            print(f"{key} 파일 삭제 완료: {file_path}")
-            
 def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None):
     """
     원본 폴더의 모든 파일을 대상 폴더로 복사 (대상 폴더의 모든 데이터 제거)
-    
+
     :param source_directory: 원본 폴더 경로
     :param target_directory: 대상 폴더 경로
     :param include_extensions: 복사할 확장자의 리스트 (예: ['.txt', '.csv'] → 이 확장자만 복사)
     :param exclude_extensions: 제외할 확장자의 리스트 (예: ['.log', '.tmp'] → 이 확장자는 복사 안 함)
     """
-    
+
     # 대상 폴더가 존재하면 삭제 후 다시 생성
     if os.path.exists(target_directory):
         shutil.rmtree(target_directory)  # 대상 폴더 삭제
@@ -1110,17 +887,20 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
         # 파일만 처리 (폴더는 복사하지 않음)
         if os.path.isfile(source_path):
             file_ext = os.path.splitext(filename)[1].lower()  # 확장자 추출 후 소문자로 변환
-            
+
             # 포함할 확장자가 설정된 경우, 해당 확장자가 아니면 건너뛴다
             if include_extensions and file_ext not in include_extensions:
                 continue
-            
+
             # 제외할 확장자가 설정된 경우, 해당 확장자는 복사하지 않는다
             if exclude_extensions and file_ext in exclude_extensions:
                 continue
-            
+
             # 파일 복사 (메타데이터 유지)
             shutil.copy2(source_path, target_path)
+
+    # 모든작업 종료후 원본폴더째로 삭제
+    shutil.rmtree(source_directory)
 
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
@@ -1128,51 +908,52 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
 class PitchProcessingApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.log_box = None
         self.title("Pitch 데이터 처리기")
         self.geometry("700x500")
 
         self.source_directory = 'c:/temp/pitch/소스/' #원본 소스 위치
         self.work_directory = ''
         self.target_directory = ''
-
-        # 폰트 설정
-        font_path = "C:/Windows/Fonts/gulim.ttc"
-        prop = fm.FontProperties(fname=font_path)
-        plt.rcParams['font.family'] = prop.get_name()
-
+        self.isbrokenchain: bool = False
+        self.brokenchain: float = 0.0
         self.create_widgets()
 
     def create_widgets(self):
-        ttk.Label(self, text="Pitch 데이터 처리 시스템", font=("Arial", 16, "bold")).pack(pady=10)
+        label = ttk.Label(self, text="기울기 데이터 자동 처리 시스템", font=("Arial", 16, "bold"))
+        label.pack(pady=10)
 
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(pady=5)
-
-
-        ttk.Button(btn_frame, text="대상 디렉토리 선택", command=self.select_target_directory).grid(row=0, column=1, padx=5)
-
-        ttk.Button(self, text="데이터 처리 시작", command=self.run_process).pack(pady=10)
-
-        self.log_box = tk.Text(self, height=20, font=("Consolas", 10))
+        self.log_box = tk.Text(self, height=20, wrap=tk.WORD, font=("Consolas", 10))
         self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        run_button = ttk.Button(self, text="기울기 데이터 처리 실행", command=self.run_main)
+        run_button.pack(pady=10)
 
     def log(self, msg):
         self.log_box.insert(tk.END, msg + "\n")
         self.log_box.see(tk.END)
 
-    def select_work_directory(self):
-        path = filedialog.askdirectory(initialdir=self.default_directory, title="작업 디렉토리 선택")
-        if path:
-            self.work_directory = path
-            self.log(f"작업 디렉토리 선택됨: {path}")
+    def process_proken_chain(self):
+        # Y/N 메시지박스
+        result = messagebox.askyesno("파정 확인", "노선에 거리파정이 존재하나요?")
+        if not result:
+            return False
 
-    def select_target_directory(self):
-        path = filedialog.askdirectory(title="대상 디렉토리 선택")
-        if path:
-            self.target_directory = path
-            self.log(f"대상 디렉토리 선택됨: {path}")
+        # float 값 입력 받기
+        while True:
+            value = simpledialog.askstring("파정 입력", "거리파정 값을 입력하세요 (예: 12.34):")
+            if value is None:  # 사용자가 취소를 눌렀을 때
+                return False
+            try:
+                self.isbrokenchain = True if float(value) else False
+                self.brokenchain = float(value)
+                break
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
 
-    def run_process(self):
+        self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
+
+    def run_main(self):
         try:
             # 디렉토리 설정
             self.log("작업 디렉토리 확인 중...")
@@ -1188,61 +969,35 @@ class PitchProcessingApp(tk.Tk):
             self.target_directory = select_target_directory()
             self.log(f"대상 디렉토리: {self.target_directory}")
 
+            # ㅊ파정확인
+            self.process_proken_chain()
+
             # 파일 읽기
-            self.log("파일 읽는 중...")
+            self.log("기울기 정보 파일 읽는 중...")
             data = read_file()
             if not data:
-                self.log("파일이 없거나 읽기 실패.")
+                self.log("파일 없음 또는 불러오기 실패.")
                 return
 
-            # Civil3D 여부 물어보기
-            #is_civil3d = messagebox.askyesno("질문", "pitch_info가 Civil3D인가요? (예: Civil3D, 아니오: BVE)")
-            is_civil3d = False
             # 구조물 데이터 로드
             self.log("구조물 데이터 로드 중...")
             structure_list = load_structure_data()
+            # 구조물 측점 파정처리
+            structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
+            # 곡선 데이터 처리
 
-            if is_civil3d:
-                self.log("Civil3D 처리 시작...")
-                sections = process_sections_civil3d(data)
-                image_names, structure_comment = civil3d_profile(sections, structure_list)
+            self.log("BVE용 처리 시작...")
+            vipdatas = process_and_save_sections(data)
 
-                output_file = os.path.join(self.work_directory, '주석처리된파일.txt')
-                create_outfile(output_file, sections)
+            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory)
 
-                with open(output_file, 'r', encoding='utf-8') as f:
-                    reader1 = csv.reader(f)
-                    lines1 = list(reader1)
-
-                obj_data = os.path.join(self.work_directory, 'pitch_index.txt')
-                with open(obj_data, 'r', encoding='utf-8') as f:
-                    reader2 = csv.reader(f)
-                    lines2 = list(reader2)
-
-                sections_2_f = os.path.join(self.work_directory, 'sections_2_f.txt')
-                sections_2 = parse_sections_civil3d(lines1)
-                sections_2 = remove_first_entry_dictionary(sections_2)
-
-                with open(sections_2_f, 'w', encoding='utf-8') as f:
-                    f.write(str(sections_2))
-
-                tag_mapping = parse_object_index(lines2)
-
-                result_list = search_STA_value(sections_2, tag_mapping)
-                if result_list:
-                    create_curve_post_txt(result_list, structure_comment)
-                self.log("Civil3D 작업 완료")
-
-            else:
-                self.log("BVE 처리 시작...")
-                vipdatas = process_and_save_sections(data)
-
-                image_names, structure_comment = process_bve_profile(vipdatas, structure_list)
-                result_list = parse_and_match_data(self.work_directory, file_paths)
-
-                create_curve_post_txt(result_list, structure_comment)
-                cleanup_files(file_paths)
-                self.log("BVE 작업 완료")
+            # 최종 텍스트 생성
+            if objectdatas:
+                self.log("최종 결과 생성 중...")
+                create_pitch_post_txt(objectdatas, self.work_directory)
+                create_pitch_index_txt(objectdatas, self.work_directory)
+                self.log("결과 파일 생성 완료!")
+            self.log("BVE 작업 완료")
 
             copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
             self.log("모든 작업이 완료되었습니다.")
