@@ -2,17 +2,10 @@ import random
 import math
 import numpy as np
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog
 import os
 
 from pycparser.c_ast import While
-
-# 랜덤 노선의 길이 범위 설정
-MIN_TRACK_POSITION = 600  # 600m
-MAX_TRACK_POSITION = 10000  # 10km
-
-#선형 관련 전역변수
-MIN_RADIUS = 600 #최소곡선반경
 
 class BVECommandGenerator:
 
@@ -56,23 +49,14 @@ class BVECommandGenerator:
 class RandomGenerator:
 
     @staticmethod
-    def create_random_track_position():
-        while True:
-            start_track = random.randrange(MIN_TRACK_POSITION, MAX_TRACK_POSITION)
-            end_track = random.randrange(MIN_TRACK_POSITION, MAX_TRACK_POSITION)
-            if start_track < end_track:
-                return start_track, end_track
-
-    @staticmethod
-    def create_random_radius():
+    def create_random_radius(min_radius):
         """
         일정 범위 내에서 무작위 반지름 생성 (100 단위).
         음수는 좌곡선, 양수는 우곡선.
         """
-        MIN = max(MIN_RADIUS, 300)  # 최소 300m 이상
-        MAX = 3000  # 현실적인 최대 반지름
+        MAX = min_radius * 2  # 현실적인 최대 반지름
 
-        radius = random.randrange(MIN, MAX + 100, 100)
+        radius = random.randrange(min_radius, MAX + 100, 100)
         if random.choice([True, False]):
             radius = -radius  # 좌곡선
         return radius
@@ -96,54 +80,51 @@ class RandomGenerator:
         return result
     
 class AlignmentGenerator:
-    def __init__(self):
+    def __init__(self, max_track_position, min_radius, min_length):
         self.horizontal_radii = []
         self.vertical_pitches = []
         self.curve_segments = []
         self.pitch_segments = []
+        self.max_track_position = max_track_position
+        self.min_radius = min_radius
+        self.min_length = min_length
 
     def create_horizontal_alignment(self, count):
-        curves = []  # (sta, command) 형식으로 저장
+        curves_with_sta = []
         self.horizontal_radii.clear()
-        self.curve_segments = []
-        sta = 0.0
-        MIN_LENGTH = 100
-        MAX_LENGTH = min(600, MAX_TRACK_POSITION / count * 0.7)
-        length = random.randint(MIN_LENGTH, int(MAX_LENGTH))
+        self.curve_segments.clear()
 
+        sta = 0.0
+        MAX_LENGTH = self.min_length * 10
         i = 0
         attemp = 100
+
         while i < attemp:
-            while True:
-                start, _ = RandomGenerator.create_random_track_position()
-                if sta < start:
-                    break
-            # 🔧 25의 배수로 조정
-            start = (start // 25) * 25
-
-            radius = RandomGenerator.create_random_radius()
-            length = random.randint(MIN_LENGTH, int(MAX_LENGTH))
-            ia = length / radius
+            start = sta
+            length = random.randint(self.min_length, MAX_LENGTH)
             end = start + length
-            end = (end // 25) * 25
+            if end > self.max_track_position:
+                break  # 트랙 끝 넘으면 종료
 
-            if length < MAX_LENGTH:
-                cant = RandomGenerator.create_random_cant()
-                curves.append((start, BVECommandGenerator.create_curve(start, radius, cant)))
-                curves.append((end, BVECommandGenerator.create_curve(end, 0, 0)))
-                self.horizontal_radii.append(abs(radius))
-                self.curve_segments.append((start, end, radius, cant))  # 곡선 구간 저장
-                sta = end + 100
-                i += 1
-            if sta > MAX_TRACK_POSITION:
-                break
-        # STA 기준 정렬
-        curves.sort(key=lambda x: x[0])
+            radius = RandomGenerator.create_random_radius(self.min_radius)
+            cant = RandomGenerator.create_random_cant()
 
+            curves_with_sta.append((start, BVECommandGenerator.create_curve(start, radius, cant)))
 
+            curves_with_sta.append((end, BVECommandGenerator.create_curve(end, 0, 0)))
 
-        # command만 추출
-        return [cmd for _, cmd in curves]
+            self.horizontal_radii.append(abs(radius))
+            self.curve_segments.append((start, end, radius, cant))
+
+            sta = end + random.randint(self.min_length, MAX_LENGTH)
+            i += 1
+
+        # 정렬 후 명령어만 반환
+        curves_with_sta.pop(0)
+        self.curve_segments.pop(0)
+        self.horizontal_radii.pop(0)
+        curves_with_sta.sort(key=lambda x: x[0])
+        return [cmd for _, cmd in curves_with_sta]
 
     def create_vertical_alignment(self, count):
         lines_with_sta = []
@@ -161,7 +142,7 @@ class AlignmentGenerator:
             start = (sta // 25) * 25
             length = random.randint(MIN_LENGTH, MAX_LENGTH)
             end = start + length
-            if end > MAX_TRACK_POSITION:
+            if end > self.max_track_position:
                 break  # 종단선형의 끝을 넘으면 종료
 
             pitch = RandomGenerator.create_random_pitch() if i !=0 else 0.0
@@ -253,7 +234,7 @@ class AlignmentGenerator:
 
 class TerrainGerator:
     @staticmethod
-    def create_terrain():
+    def create_terrain(MAX_TRACK_POSITION):
         #25간격으로 지형 생성
         lines = []
         nori = []
@@ -291,15 +272,15 @@ class Tunnel(Structure):
         super().__init__(name, structuretype, start_sta, end_sta)
 
 class StructureGenerator:
-    def __init__(self) -> None:
+    def __init__(self, MAX_TRACK_POSITION) -> None:
         self.structures = []  # 터널/교량 결과 저장 리스트
         self.bridge_count = 0
         self.tunnel_count = 0
-
+        self.max_track_position = MAX_TRACK_POSITION
     def define_structure(self, elevlist):
 
         # Read STATION and ELEVATION lists
-        STATION = list(range(0, MAX_TRACK_POSITION + 1, 25))
+        STATION = list(range(0, self.max_track_position + 1, 25))
         ELEVATION = elevlist
 
         # Initialize group lists and counters
@@ -549,6 +530,7 @@ def estimate_alignment_count(length_m, avg_spacing=1000, max_count=20, difficult
 
 class AlignmentApp:
     def __init__(self, root):
+        self.designspeed: float = 0.0
         self.root = root
         self.root.title("선형 및 구조물 자동 생성기")
         self.root.geometry("700x600")
@@ -577,25 +559,82 @@ class AlignmentApp:
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, folder)
 
+    def input_velocity(self):
+        # float 값 입력 받기
+        while True:
+            value = simpledialog.askstring("설계속도 입력", "설계속도를 입력하세요 (예: 150):")
+            if value is None:  # 사용자가 취소를 눌렀을 때
+                return False
+            try:
+                self.designspeed = float(value)
+                break
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
+
+        self.log_write(f"설계속도 입력 완료: {self.designspeed}")
+
+    def define_track_condition(self):
+        max_track_length = random.randint(10000, 20000)
+        curve_length = self.designspeed * 0.5
+        if self.designspeed <= 70:
+            min_radius = 400
+            max_slope = 35
+            curve_length = 40
+        elif self.designspeed <= 120:
+            min_radius = 700
+            max_slope = 35
+            curve_length = 60
+
+        elif self.designspeed <= 150:
+            min_radius = 1100
+            max_slope = 35
+            curve_length = 80
+        elif self.designspeed <= 200:
+            min_radius = 1900
+            max_slope = 35
+            curve_length = 100
+        elif self.designspeed <= 250:
+            min_radius = 2900
+            max_slope = 35
+            curve_length = 130
+        elif self.designspeed <= 300:
+            min_radius = 4500
+            max_slope = 35
+            curve_length = 150
+        elif self.designspeed <= 350:
+            min_radius = 6100
+            max_slope = 35
+            curve_length = 180
+        elif self.designspeed <= 400:
+            min_radius = 6100
+            max_slope = 35
+            curve_length = 200
+        else:
+            min_radius = 6100
+            max_slope = 25
+            curve_length = curve_length
+        return max_track_length, min_radius, max_slope, curve_length
+
     def generate_alignment(self):
         try:
+            self.input_velocity()
             folder = self.path_entry.get()
             if not folder:
                 messagebox.showerror("오류", "저장 경로를 지정해주세요.")
                 return
 
             self.log_write("생성 중...")
-
+            max_track_length, min_radius, max_slope, curve_length = self.define_track_condition()
             while True:
                 base_txt = create_base_txt()
 
-                count_horizon = estimate_alignment_count(MAX_TRACK_POSITION)
-                count_vertical = estimate_alignment_count(MAX_TRACK_POSITION, 1500)
+                count_horizon = estimate_alignment_count(max_track_length)
+                count_vertical = estimate_alignment_count(max_track_length, 1500)
 
-                align_gen = AlignmentGenerator()
-                elevation, nori, elevation_list = TerrainGerator.create_terrain()
+                align_gen = AlignmentGenerator(max_track_length, min_radius, curve_length)
+                elevation, nori, elevation_list = TerrainGerator.create_terrain(max_track_length)
 
-                struct_gen = StructureGenerator()
+                struct_gen = StructureGenerator(max_track_length)
                 struct_gen.define_structure(elevation_list)
                 out = struct_gen.create_structuesystax()
 
@@ -610,8 +649,8 @@ class AlignmentApp:
                     break
 
             base_txt += "\n,;노선 종점\n"
-            base_txt += f"{MAX_TRACK_POSITION},.sta END STATION;\n"
-            base_txt += f"{MAX_TRACK_POSITION + 100},.stop 0;\n"
+            base_txt += f"{max_track_length},.sta END STATION;\n"
+            base_txt += f"{max_track_length + 100},.stop 0;\n"
 
             align_gen.print_alignment_stats()
 
@@ -623,8 +662,8 @@ class AlignmentApp:
             coord_path = os.path.join(txtfolder, "bve_coordinates.TXT")
             excel_path = os.path.join(txtfolder, "구조물.xlsx")
 
-            align_gen.export_curve_info(MAX_TRACK_POSITION, 25, curve_path)
-            align_gen.export_pitch_info(MAX_TRACK_POSITION, 25, pitch_path)
+            align_gen.export_curve_info(max_track_length, 25, curve_path)
+            align_gen.export_pitch_info(max_track_length, 25, pitch_path)
 
             tc = TrackCalculator(curve_path, pitch_path, interval=25)
             tc.save_to_file(coord_path)
@@ -635,6 +674,7 @@ class AlignmentApp:
                 f.write(base_txt)
 
             self.log_write("✔ 선형 생성 완료")
+            self.log_write(f'✔ 노선연장 : {max_track_length * 0.001}km')
             self.log_write(f"✔ 저장 완료: {csv_path}")
             self.log_write(f"✔ 구조물 정보: {excel_path}")
             self.log_write(f"✔ 좌표 파일: {coord_path}")
