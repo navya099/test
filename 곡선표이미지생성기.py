@@ -1,7 +1,7 @@
 import csv
 from dataclasses import dataclass
 from enum import Enum
-from tkinter import filedialog, ttk, messagebox
+from tkinter import filedialog, ttk, messagebox, simpledialog
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageFont
 import os
@@ -146,7 +146,7 @@ def process_sections(data):
     return sections
 
 #핵심로직(클래스화로 구조변경)
-def annotate_sections(sections):
+def annotate_sections(sections ,brokenchain):
     ipdatas: list[IPdata] = []
     i = 1
     for section in sections:
@@ -201,6 +201,12 @@ def annotate_sections(sections):
                 selected_cant = section[max_index][2]
 
         if curvetype == '원곡선':
+            # STA 결정 직후
+            BC_STA = section[0][0]
+            EC_STA = section[-1][0]
+            BC_STA += brokenchain
+            EC_STA += brokenchain
+
             # IPdata 생성 (예시, 필요에 따라 STA값 할당 조정)
             ipdata = IPdata(
                 IPNO=i,
@@ -208,23 +214,31 @@ def annotate_sections(sections):
                 curve_direction=direction,
                 radius=abs(selected_radius),
                 cant=abs(selected_cant),
-                BC_STA=section[0][0],
-                EC_STA=section[-1][0]
+                BC_STA=BC_STA,
+                EC_STA=EC_STA
             )
             ipdatas.append(ipdata)
             i += 1
         if curvetype == '완화곡선':
-            # IPdata 생성 (예시, 필요에 따라 STA값 할당 조정)
+            SP_STA = section[0][0]
+            PC_STA = pc_sta
+            CP_STA = cp_sta
+            PS_STA = section[-1][0]
+
+            SP_STA += brokenchain
+            PC_STA += brokenchain
+            CP_STA += brokenchain
+            PS_STA += brokenchain
             ipdata = IPdata(
                 IPNO=i,
                 curvetype=curvetype,
                 curve_direction=direction,
                 radius=abs(selected_radius),
                 cant=abs(selected_cant),
-                SP_STA=section[0][0],
-                PC_STA=pc_sta,
-                CP_STA=cp_sta,
-                PS_STA=section[-1][0]
+                SP_STA=SP_STA,
+                PC_STA=PC_STA,
+                CP_STA=CP_STA,
+                PS_STA=PS_STA
             )
             ipdatas.append(ipdata)
             i += 1
@@ -246,7 +260,7 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
             # Replace 'LoadTexture, SP.png,' with 'LoadTexture, output_filename.png,' if found
             if f'LoadTexture, {curvetype}.png,' in line:
                 line = line.replace(f'LoadTexture, {curvetype}.png,', f'LoadTexture, {output_filename}.png,')
-            if isSPPS:
+            if 'LoadTexture, R.png,'in line:
                 line = line.replace('LoadTexture, R.png,', f'LoadTexture, {output_filename}_{R}.png,')
             
             # Append the modified line to the new_lines list
@@ -275,7 +289,7 @@ def create_curve_index_txt(data_list: list[ObjectDATA], work_directory):
 
     with open(output_file, "w", encoding="utf-8") as file:
          for data in data_list:  # 두 리스트를 동시에 순회
-            file.write(f".freeobj 0;{data.object_index} {data.object_path}/{data.filename}.csv\n")  # 원하는 형식으로 저장
+            file.write(f".freeobj({data.object_index}) {data.object_path}/{data.filename}.csv\n")  # 원하는 형식으로 저장
 
 
 def find_structure_section(filepath):
@@ -435,7 +449,10 @@ def create_tunnel_curve_image(filename, text, work_directory):
     style_name = 'GHS'
 
     # 텍스트 스타일 생성
-    doc.styles.add(style_name, font= 'H2GTRE.ttf')
+    try:
+        doc.styles.add(style_name, font= 'H2GTRE.ttf')
+    except:
+        doc.styles.add(style_name, font='HYGTRE.ttf')
 
     # 텍스트 추가
     msp.add_text(text, dxfattribs={'insert': (text_x, text_y), 'height': 75, 'width': width, 'style': style_name})
@@ -616,7 +633,7 @@ def is_civil3d_format(lines):
     return any('curve' in cell.lower() for line in lines for cell in line)
 
 
-def process_and_save_sections(lines):
+def process_and_save_sections(lines , brokenchain):
     """곡선 정보를 처리하고 파일로 저장"""
     print("곡선 정보가 성공적으로 로드되었습니다.")
 
@@ -629,7 +646,7 @@ def process_and_save_sections(lines):
 
     # 구간 정의 및 처리
     sections = process_sections(unique_data)
-    ipdatas = annotate_sections(sections)
+    ipdatas = annotate_sections(sections, brokenchain)
 
     return ipdatas
 
@@ -741,14 +758,39 @@ def load_structure_data():
         structure_list = []  # 기본 빈 리스트 반환
     return structure_list
 
-def process_curve_data(source_directory, work_directory, target_directory, data, structure_list):
+
+def apply_brokenchain_to_structure(structure_list, brokenchain):
+    """
+    structure_list의 각 구간(start, end)에 brokenchain 값을 더해서
+    같은 구조로 반환하는 함수.
+
+    :param structure_list: {'bridge': [(start, end), ...], 'tunnel': [(start, end), ...]}
+    :param brokenchain: float, 오프셋 값 (예: 0.0 또는 양수/음수)
+    :return: 수정된 structure_list (같은 구조, 값은 offset 적용)
+    """
+    if brokenchain == 0.0:
+        # 오프셋이 없으면 원본 그대로 반환
+        return structure_list
+
+    updated_structure = {'bridge': [], 'tunnel': []}
+
+    for key in ['bridge', 'tunnel']:
+        for start, end in structure_list.get(key, []):
+            new_start = start + brokenchain
+            new_end = end + brokenchain
+            updated_structure[key].append((new_start, new_end))
+
+    return updated_structure
+
+
+def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain):
     """곡선 데이터 처리 (파일 저장 및 이미지 & CSV 생성)"""
     if not data:
         print("curve_info가 비어 있습니다.")
         return None, None
 
     # 중복 제거 및 섹션 처리
-    ipdatas = process_and_save_sections(data)
+    ipdatas = process_and_save_sections(data, brokenchain)
 
     # 이미지 및 CSV 생성
     objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory)
@@ -790,6 +832,9 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
             # 파일 복사 (메타데이터 유지)
             shutil.copy2(source_path, target_path)
 
+    #모든작업 종료후 원본폴더째로 삭제
+    shutil.rmtree(source_directory)
+
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
 def select_target_directory():
@@ -812,6 +857,7 @@ def select_target_directory():
 class CurveProcessingApp(tk.Tk):
     def __init__(self):
         super().__init__()
+
         self.log_box = None
         self.title("곡선 데이터 처리기")
         self.geometry("650x450")
@@ -819,7 +865,8 @@ class CurveProcessingApp(tk.Tk):
         self.source_directory = 'c:/temp/curve/소스/' #원본 소스 위치
         self.work_directory = '' #작업물이 저장될 위치
         self.target_directory = ''
-
+        self.isbrokenchain: bool = False
+        self.brokenchain: float = 0.0
         self.create_widgets()
 
     def create_widgets(self):
@@ -835,6 +882,28 @@ class CurveProcessingApp(tk.Tk):
     def log(self, message):
         self.log_box.insert(tk.END, message + "\n")
         self.log_box.see(tk.END)
+
+    def process_proken_chain(self):
+        # Y/N 메시지박스
+        result = messagebox.askyesno("파정 확인", "노선에 거리파정이 존재하나요?")
+        if not result:
+            self.destroy()  # 창 종료
+            return
+
+        # float 값 입력 받기
+        while True:
+            value = simpledialog.askstring("파정 입력", "거리파정 값을 입력하세요 (예: 12.34):")
+            if value is None:  # 사용자가 취소를 눌렀을 때
+                self.destroy()
+                return
+            try:
+                self.isbrokenchain = True if float(value) else False
+                self.brokenchain = float(value)
+                break
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
+
+        self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
 
     def run_main(self):
         try:
@@ -852,6 +921,9 @@ class CurveProcessingApp(tk.Tk):
             self.target_directory = select_target_directory()
             self.log(f"대상 디렉토리: {self.target_directory}")
 
+            #ㅊ파정확인
+            self.process_proken_chain()
+
             # 곡선 정보 파일 읽기
             self.log("곡선 정보 파일 읽는 중...")
             data = read_file()
@@ -862,10 +934,11 @@ class CurveProcessingApp(tk.Tk):
             # 구조물 데이터 로드
             self.log("구조물 데이터 로드 중...")
             structure_list = load_structure_data()
-
+            #구조물 측점 파정처리
+            structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
             # 곡선 데이터 처리
             self.log("곡선 데이터 처리 중...")
-            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list)
+            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain)
 
             # 최종 텍스트 생성
             if objectdatas:
