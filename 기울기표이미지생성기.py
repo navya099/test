@@ -134,7 +134,7 @@ def remove_duplicate_pitch(data):
 
     return filtered_data
 
-def process_sections(data, threshold=75.0, min_points=2):
+def process_sections(data, threshold=75.0, min_points=1):
     sections = []
     current_section = []
     prev_station = None
@@ -250,7 +250,10 @@ class TunnelPitchCreator:
         
         # 텍스트 스타일 설정 및 추가
         style_name = 'GHS'
-        doc.styles.add(style_name, font='H2GTRE.ttf')
+        try:
+            doc.styles.add(style_name, font='H2GTRE.ttf')
+        except:
+            doc.styles.add(style_name, font='HYGTRE.ttf')
         
         # 정수부 텍스트 추가
         self.create_text(msp, formatted_text, text_x, text_y, 59.9864, 1, style_name)
@@ -516,9 +519,9 @@ class GradePost:
         try:
             font_main = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size1)
             font_sub = ImageFont.truetype("gulim.ttc", font_size2)
-        except IOError:
-            print("폰트 파일을 찾을 수 없습니다.")
-            return
+        except:
+            font_main = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', font_size1)
+            font_sub = ImageFont.truetype("gulim.ttc", font_size2)
 
         is_negative = text.startswith('-')
         integer_part, decimal_part = text.lstrip('-').split('.') if '.' in text else (text.lstrip('-'), None)
@@ -531,7 +534,10 @@ class GradePost:
         img.paste(white_bg, post_positions.get(post_direction, (110, 110)))
 
         if decimal_part:
-            font_decimal = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', 75)
+            try:
+                font_decimal = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', 75)
+            except:
+                font_decimal = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', 75)
             decimal_bg = self.create_text_image(decimal_part, font_decimal, text_color, image_size, rotate_angle)
             decimal_positions = self.get_decimal_position(post_direction, integer_part, is_negative)
             img.paste(decimal_bg, decimal_positions)
@@ -754,7 +760,7 @@ def process_verticulcurve(vipdata: VIPdata, viptype: str, current_sta: float, cu
     output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
     converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
 
-def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, structure: str, work_directory: str):
+def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, structure: str, work_directory: str, altype: str):
     grade_post_generator = GradePost(work_directory)
     tunnel_post_generator = TunnelPitchCreator(work_directory)
     converter = DXF2IMG()
@@ -771,7 +777,7 @@ def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, stru
     
     final_output_image = work_directory + img_f_name2 + '.png'    
     
-    if structure == '터널':
+    if structure == '터널' or altype == '도시철도':
         tunnel_post_generator.create_tunnel_pitch_image(filename, img_text2)
         modifed_path = work_directory + 'BVC-수정됨.dxf'
         output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
@@ -856,7 +862,7 @@ def get_vcurve_lines(vip: VIPdata) -> list[list]:
     else:
         return [['VIP', vip.VIP_STA]]
 
-def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str):
+def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str, al_type: str):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
     #이미지 저장
     object_index = 3025
@@ -879,7 +885,7 @@ def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory
             current_sta = value
             current_structure = isbridge_tunnel(current_sta, structure_list)
             if key == 'VIP':
-                process_vertical(vip, current_distance, key,  current_structure, work_directory)
+                process_vertical(vip, current_distance, key,  current_structure, work_directory,al_type)
             process_verticulcurve(vip, key, value, current_structure, source_directory, work_directory)
             img_f_name = f'VIP{vip.VIPNO}_{key}'
             openfile_name = f'{key}_{current_structure}용'
@@ -956,11 +962,13 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
 class PitchProcessingApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.alignment_type = ''
+        self.base_source_directory = 'c:/temp/pitch/소스/'
         self.log_box = None
         self.title("Pitch 데이터 처리기")
         self.geometry("700x500")
 
-        self.source_directory = 'c:/temp/pitch/소스/' #원본 소스 위치
+        self.source_directory = self.base_source_directory #원본 소스 위치
         self.work_directory = ''
         self.target_directory = ''
         self.isbrokenchain: bool = False
@@ -980,6 +988,21 @@ class PitchProcessingApp(tk.Tk):
     def log(self, msg):
         self.log_box.insert(tk.END, msg + "\n")
         self.log_box.see(tk.END)
+
+    def process_interval(self):
+        top = tk.Toplevel()
+        top.title("노선 구분 선택")
+        tk.Label(top, text="노선의 종류를 선택하세요:").pack(pady=10)
+
+        def select(value):
+            self.alignment_type = value
+            top.destroy()
+
+        for option in ["일반철도", "도시철도", "고속철도"]:
+            tk.Button(top, text=option, width=15, command=lambda v=option: select(v)).pack(pady=5)
+
+        top.grab_set()  # 모달처럼 동작
+        top.wait_window()
 
     def process_proken_chain(self):
         # Y/N 메시지박스
@@ -1017,6 +1040,12 @@ class PitchProcessingApp(tk.Tk):
             self.target_directory = select_target_directory()
             self.log(f"대상 디렉토리: {self.target_directory}")
 
+            # 노선 종류 입력받기
+            self.process_interval()
+            # ✅ 항상 base_source_directory에서 새로 경로 만들기
+            self.source_directory = os.path.join(self.base_source_directory, self.alignment_type) + '/'
+            self.log(f"소스 경로: {self.source_directory}")
+
             # ㅊ파정확인
             self.process_proken_chain()
 
@@ -1037,7 +1066,7 @@ class PitchProcessingApp(tk.Tk):
             self.log("BVE용 처리 시작...")
             vipdatas = process_and_save_sections(data, self.brokenchain)
 
-            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory)
+            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory, self.alignment_type)
 
             # 최종 텍스트 생성
             if objectdatas:
