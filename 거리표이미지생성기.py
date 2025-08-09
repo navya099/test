@@ -1,5 +1,7 @@
 import csv
-from tkinter import filedialog
+from dataclasses import dataclass
+from enum import Enum
+from tkinter import filedialog, ttk, messagebox, simpledialog
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageFont
 import os
@@ -7,9 +9,15 @@ import pandas as pd
 import math
 import re
 import textwrap
-import sys
-import time  # 진행률 테스트용
-from tqdm.notebook import tqdm # 이 부분만 변경
+import fitz  # pymupdf
+import matplotlib.pyplot as plt
+import ezdxf
+from ezdxf.addons.drawing import RenderContext, Frontend
+from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+import numpy as np
+import shutil
+import os
+
 
 '''
 BVE파일을 바탕으로 거리표(준고속용)을 설치하는 프로그램
@@ -36,19 +44,6 @@ csv파일에는 텍스쳐명이 bvc와 g 이어야함
 출력파일: OBJECT인덱스 파일 , FREEOBJ구문파일, CSV오브젝트파일, PNG텍스쳐파일
 
 '''
-# 기본 작업 디렉토리
-default_directory = 'c:/temp/km_post/'
-work_directory = None
-# 사용자가 설정한 작업 디렉토리가 없으면 기본값 사용
-if not work_directory:
-    work_directory = default_directory
-
-# 디렉토리가 존재하지 않으면 생성
-if not os.path.exists(work_directory):
-    os.makedirs(work_directory)
-
-print(f"작업 디렉토리: {work_directory}")
-
 def read_file():
     root = tk.Tk()
     root.withdraw()  # Tkinter 창을 숨김
@@ -77,22 +72,22 @@ def read_file():
 def find_last_block(data):
     last_block = None  # None으로 초기화하여 값이 없을 때 오류 방지
     for line in data:
-        if isinstance(line, str):  # 문자열인지 확인
-            match = re.search(r'(\d+),', line)
-            if match:
-                last_block = int(match.group(1))  # 정수 변환하여 저장
+        parts = line.split(',')
+        last_block = float(parts[0])
     
-    return last_block  # 마지막 블록 값 반환
+    return int(last_block)  # 마지막 블록 값 반환
 
 
-def create_km_image(text, bg_color, filename, text_color, image_size=(500, 300), font_size=40):
+def create_km_image(text, bg_color, filename, text_color, work_directory, image_size=(500, 300), font_size=40):
     # 이미지 생성
     img = Image.new('RGB', image_size, color=bg_color)
     draw = ImageDraw.Draw(img)
     
     # 폰트 설정
-    font = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size)
-
+    try:
+        font = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size)
+    except:
+        font = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', font_size)
     # 텍스트 박스 크기 (25px 여백 적용)
     box_x1, box_y1 = 25, 25
     box_x2, box_y2 = image_size[0] - 25, image_size[1] - 25
@@ -126,15 +121,18 @@ def create_km_image(text, bg_color, filename, text_color, image_size=(500, 300),
     final_dir = work_directory + filename
     img.save(final_dir)
 
-def create_m_image(text, text2, bg_color, filename, text_color, image_size=(500, 300), font_size=40, font_size2=40 ):
+def create_m_image(text, text2, bg_color, filename, text_color, work_directory, image_size=(500, 300), font_size=40, font_size2=40 ):
     # 이미지 생성
     img = Image.new('RGB', image_size, color=bg_color)
     draw = ImageDraw.Draw(img)
     
     # 폰트 설정
-    font = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size)
-    font2 = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size2)
-
+    try:
+        font = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size)
+        font2 = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size2)
+    except:
+        font = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', font_size)
+        font2 = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', font_size2)
     #km문자 위치
     #글자수별로 글자 분리
     if len(text) == 1:
@@ -172,10 +170,10 @@ def create_m_image(text, text2, bg_color, filename, text_color, image_size=(500,
         filename += '.png'
     final_dir = work_directory + filename
     img.save(final_dir)
-    
-def copy_and_export_csv(open_filename='km표-토공용', output_filename='13460', ptype = 'km표'):
+
+def copy_and_export_csv(open_filename='km표-토공용', output_filename='13460', ptype = 'km표' ,source_directory='', work_directory=''):
     # Define the input and output file paths
-    open_file = work_directory + open_filename + '.csv'
+    open_file = source_directory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
     
     # List to store modified lines
@@ -264,8 +262,182 @@ def resize_to_length(text, desired_length=1):
             return text.zfill(desired_length)
     return text
 
-def create_km_object(last_block, structure_list):
-    last_block = (last_block // 200)
+
+class DXF2IMG:
+    """DXF 파일을 이미지로 변환하는 클래스"""
+    default_img_format = '.png'
+    default_img_res = 96
+
+    def convert_dxf2img(self, file_paths, img_format=default_img_format, img_res=default_img_res):
+        """DXF를 이미지(PNG)로 변환하는 함수"""
+        output_paths = []
+        for file_path in file_paths:
+            if not os.path.exists(file_path):
+                print(f"❌ 파일을 찾을 수 없음: {file_path}")
+                continue
+
+            try:
+                doc = ezdxf.readfile(file_path)
+                msp = doc.modelspace()
+
+                # DXF 파일 검증
+                auditor = doc.audit()
+                if auditor.has_errors:
+                    print(f"⚠️ DXF 파일에 오류가 있음: {file_path}")
+                    continue
+
+                # Matplotlib 설정
+                fig, ax = plt.subplots(figsize=(10, 10))
+                ax.set_axis_off()  # 축 제거
+
+                # DXF 렌더링
+                ctx = RenderContext(doc)
+                out = MatplotlibBackend(ax)
+                Frontend(ctx, out).draw_layout(msp, finalize=True)
+
+                # 파일 이름 설정 및 저장 경로 지정
+                img_name = re.sub(r"\.dxf$", "", os.path.basename(file_path), flags=re.IGNORECASE)
+                output_path = os.path.join(os.path.dirname(file_path), f"{img_name}{img_format}")
+
+                # 이미지 저장
+                fig.savefig(output_path, dpi=img_res, bbox_inches='tight', pad_inches=0)
+                plt.close(fig)  # 메모리 해제
+
+                print(f"✅ 변환 완료: {output_path}")
+                output_paths.append(output_path)
+
+            except Exception as e:
+                print(f"❌ 변환 실패: {file_path} - {str(e)}")
+
+        return output_paths
+
+    def trim_and_resize_image(self, input_path, output_path, target_size=(500, 300)):
+        """bbox 없이 이미지 여백을 직접 제거하고 500x300 크기로 조정"""
+        try:
+            img = Image.open(input_path).convert("RGB")
+            np_img = np.array(img)
+
+            # 흰색 배경 탐색 (흰색 또는 거의 흰색인 부분 제외)
+            mask = np.any(np_img < [250, 250, 250], axis=-1)
+
+            # 유효한 영역 찾기
+            coords = np.argwhere(mask)
+            if coords.size == 0:
+                print("❌ 유효한 이미지 내용을 찾을 수 없음")
+                return
+
+            y_min, x_min = coords.min(axis=0)
+            y_max, x_max = coords.max(axis=0)
+
+            # 이미지 자르기 (bbox 사용하지 않음)
+            cropped_img = img.crop((x_min, y_min, x_max, y_max))
+
+            # 크기 조정 (500x300)
+            resized_img = cropped_img.resize(target_size, Image.LANCZOS)
+            resized_img.save(output_path)
+            print(f"✅ 여백 제거 및 크기 조정 완료: {output_path}")
+
+        except Exception as e:
+            print(f"❌ 이미지 처리 실패: {e}")
+        #######이미지 생성 로직 끝
+
+
+def replace_kmtext_in_dxf(file_path, modified_path, text):
+    """DXF 파일의 특정 텍스트를 새 텍스트로 교체하고, 특정 레이어 가시성을 조절하는 함수"""
+    try:
+        doc = ezdxf.readfile(file_path)
+        msp = doc.modelspace()
+        definelength = len(text)
+
+        # 🟢 레이어 가시성 조절 (볼록형: 표시, 오목형: 숨김)
+        layers = doc.layers
+
+        # 🟢 특정 레이어의 TEXT 엔티티 찾아서 교체
+        for entity in msp.query("TEXT"):
+            if definelength == 1: # 0km
+                if entity.dxf.layer == "KM-1자리":
+                    entity.dxf.text = text  # STA 변경
+                    layers.get('KM-1자리').on()  # 레이어 가시성 on
+            elif definelength == 2: # 11km
+                if entity.dxf.layer == "KM-2자리":
+                    entity.dxf.text = text  # STA 변경
+                    layers.get('KM-2자리').on()  # 레이어 가시성 on
+
+        # 변경된 DXF 저장
+        doc.saveas(modified_path)
+        # print("✅ DXF 수정 완료")
+        return True
+
+    except Exception as e:
+        print(f"❌ DXF 수정 실패: {e}")
+        return False
+
+
+def replace_mtext_in_dxf(file_path, modified_path, text1, text2):
+    """DXF 파일의 특정 텍스트를 새 텍스트로 교체하고, 특정 레이어 가시성을 조절하는 함수"""
+    try:
+        doc = ezdxf.readfile(file_path)
+        msp = doc.modelspace()
+        kmtext = text1
+        mtext = text2[0] #앞부분만 추출
+        # 🟢 레이어 가시성 조절 (볼록형: 표시, 오목형: 숨김)
+        layers = doc.layers
+
+        # 🟢 특정 레이어의 TEXT 엔티티 찾아서 교체
+        for entity in msp.query("TEXT"):
+            if len(kmtext) == 1:  # 0km100
+                if entity.dxf.layer == "KM-1자리":
+                    entity.dxf.text = kmtext  # STA 변경
+                    layers.get('KM-1자리').on()  # 레이어 가시성 on
+                if entity.dxf.layer == "M-1자리":
+                    entity.dxf.text = mtext  # STA 변경
+            if len(kmtext) == 2:  # 11km100
+                if entity.dxf.layer == "KM-2자리-앞":
+                    entity.dxf.text = kmtext[0]  # STA 변경
+                    layers.get('KM-2자리-앞').on()  # 레이어 가시성 on
+                if entity.dxf.layer == "KM-2자리-뒤":
+                    entity.dxf.text = kmtext[1]  # STA 변경
+                    layers.get('KM-2자리-뒤').on()  # 레이어 가시성 on
+                if entity.dxf.layer == "M-1자리":
+                    entity.dxf.text = mtext  # STA 변경
+        # 변경된 DXF 저장
+        doc.saveas(modified_path)
+        # print("✅ DXF 수정 완료")
+        return True
+
+    except Exception as e:
+        print(f"❌ DXF 수정 실패: {e}")
+        return False
+
+
+def process_dxf_image(text, img_f_name, source_directory, work_directory, post_type):
+    """DXF 파일 수정 및 이미지 변환"""
+    file_path = source_directory + post_type + '.dxf'
+    modifed_path = work_directory + post_type + '-수정됨.dxf'
+
+    # 소수점 앞뒤 자리 나누기
+    current_km_int = text * 0.001
+    km_string, m_string = str(current_km_int).split('.')
+
+    img_text1 = f'{km_string}'
+    img_text2 = f'{m_string}'
+
+    if post_type == 'km표':
+        replace_kmtext_in_dxf(file_path, modifed_path, img_text1)
+    else:
+        replace_mtext_in_dxf(file_path, modifed_path, img_text1, img_text2)
+
+    #이미지 추출
+    final_output_image = os.path.join(work_directory, img_f_name + '.png')
+    converter = DXF2IMG()
+    target_size = (200, 250)
+    output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+
+    if output_paths:
+        converter.trim_and_resize_image(output_paths[0], final_output_image, target_size)
+
+def create_km_object(last_block: int, structure_list: dict, interval: int, alignmenttype: str, source_directory: str, work_directory: str, target_directory: str):
+    last_block = (last_block // interval)
     index_datas=[]
     post_datas= []
     structure_comment=[]
@@ -273,12 +445,13 @@ def create_km_object(last_block, structure_list):
     
     print('-----이미지 생성중-----\n')
     for i in range(last_block):
-        current_sta = i * 200
+        current_sta = i * interval
         current_structure = isbridge_tunnel(current_sta, structure_list)
+        post_type = ''
         if current_sta % 1000 == 0: #1000의 배수이면
             post_type = 'km표'
                        
-        elif current_sta % 200 == 0:#1000의 배수는 제외
+        elif current_sta % interval == 0:#1000의 배수는 제외
             post_type = 'm표'
 
         # 소수점 앞뒤 자리 나누기
@@ -287,40 +460,48 @@ def create_km_object(last_block, structure_list):
 
         img_text1 = f'{km_string}'
         img_text2 = f'{m_string}'
-        img_bg_color = (2, 6, 140)
-        text_color = (255,255,255)
         img_f_name = f'{current_sta}'
+        img_bg_color = (2, 6, 140)
+        text_color = (255, 255, 255)
+
         openfile_name = f'{post_type}_{current_structure}용'
 
-        if len(img_text2) !=1 :#글자수가 1이 아니면 강제로 1로 적용 예)60 >6
-           img_text2 = resize_to_length(img_text2, desired_length=1)
-        if post_type == 'km표':
-            create_km_image(img_text1, img_bg_color, img_f_name, text_color, image_size=(500, 300), font_size=235)
-            
-        elif post_type == 'm표':
-            if int(m_string) != 0:
-                create_m_image(img_text1, img_text2, img_bg_color, img_f_name, text_color, image_size=(250, 400), font_size=144, font_size2=192 )
+        if alignmenttype == '도시철도':
+            process_dxf_image(current_sta, img_f_name, source_directory, work_directory, post_type)
+
+        else:
+
+            if len(img_text2) !=1 :#글자수가 1이 아니면 강제로 1로 적용 예)60 >6
+               img_text2 = resize_to_length(img_text2, desired_length=1)
+            if post_type == 'km표':
+                create_km_image(img_text1, img_bg_color, img_f_name, text_color, work_directory, image_size=(500, 300), font_size=235)
+
+            elif post_type == 'm표':
+                if int(m_string) != 0:
+                    create_m_image(img_text1, img_text2, img_bg_color, img_f_name, text_color, work_directory, image_size=(250, 400), font_size=144, font_size2=192 )
 
         #텍스쳐와 오브젝트 csv생성
-        copy_and_export_csv(openfile_name, img_f_name, post_type)
+        copy_and_export_csv(openfile_name, img_f_name, post_type, source_directory, work_directory)
         
         index = first_index + i
 
         #구문데이터 생성
-        index_data = create_km_index_data(index , current_sta)
+        index_data = create_km_index_data(index , current_sta, target_directory)
         post_data = create_km_post_data(index , current_sta, current_structure)
 
         #리스트에 추가
         index_datas.append(index_data)
         post_datas.append(post_data)
+
     print("\n구문 생성 완료!")      
     print("\n이미지 생성 완료!")
     
    
     return index_datas, post_datas   
 
-def create_km_index_data(idx, sta):
-    data = f'.freeobj({idx}) abcdefg/{sta}.csv\n'
+def create_km_index_data(idx, sta, work_directory):
+    object_folder = work_directory.split("Object/")[-1]
+    data = f'.freeobj({idx}) {object_folder}/{sta}.csv\n'
     return data
 
 def create_km_post_data(idx, sta, struc):
@@ -331,10 +512,62 @@ def create_txt(output_file, data):
     with open(output_file, 'w', encoding='utf-8') as file:
         for line in data:
             file.write(line)
-    
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-import os
+
+def select_target_directory():
+    """폴더 선택 다이얼로그를 띄워 target_directory를 설정"""
+    global target_directory
+    root = tk.Tk()
+    root.withdraw()  # GUI 창 숨기기
+
+    target_directory = filedialog.askdirectory(title="대상 폴더 선택")
+
+    if target_directory:
+        print(f"📁 선택된 대상 폴더: {target_directory}")
+    else:
+        print("❌ 대상 폴더가 선택되지 않았습니다.")
+
+    return target_directory
+
+
+def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None):
+    """
+    원본 폴더의 모든 파일을 대상 폴더로 복사 (대상 폴더의 모든 데이터 제거)
+
+    :param source_directory: 원본 폴더 경로
+    :param target_directory: 대상 폴더 경로
+    :param include_extensions: 복사할 확장자의 리스트 (예: ['.txt', '.csv'] → 이 확장자만 복사)
+    :param exclude_extensions: 제외할 확장자의 리스트 (예: ['.log', '.tmp'] → 이 확장자는 복사 안 함)
+    """
+
+    # 대상 폴더가 존재하면 삭제 후 다시 생성
+    if os.path.exists(target_directory):
+        shutil.rmtree(target_directory)  # 대상 폴더 삭제
+    os.makedirs(target_directory, exist_ok=True)  # 대상 폴더 재생성
+
+    # 원본 폴더의 모든 파일을 가져와 복사
+    for filename in os.listdir(source_directory):
+        source_path = os.path.join(source_directory, filename)
+        target_path = os.path.join(target_directory, filename)
+
+        # 파일만 처리 (폴더는 복사하지 않음)
+        if os.path.isfile(source_path):
+            file_ext = os.path.splitext(filename)[1].lower()  # 확장자 추출 후 소문자로 변환
+
+            # 포함할 확장자가 설정된 경우, 해당 확장자가 아니면 건너뛴다
+            if include_extensions and file_ext not in include_extensions:
+                continue
+
+            # 제외할 확장자가 설정된 경우, 해당 확장자는 복사하지 않는다
+            if exclude_extensions and file_ext in exclude_extensions:
+                continue
+
+            # 파일 복사 (메타데이터 유지)
+            shutil.copy2(source_path, target_path)
+
+    # 모든작업 종료후 원본폴더째로 삭제
+    shutil.rmtree(source_directory)
+
+    print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
 class KmObjectApp(tk.Tk):
     def __init__(self):
@@ -342,15 +575,16 @@ class KmObjectApp(tk.Tk):
         self.title("KM Object 생성기")
         self.geometry("600x400")
 
-        self.work_directory = 'c:/temp/km/'  # 필요 시 변경 가능
-        if not os.path.exists(self.work_directory):
-            os.makedirs(self.work_directory)
-
-        self.structure_excel_path = None
-
+        self.base_source_directory = 'c:/temp/km_post/소스/'  # 원본 소스 기본 경로
+        self.source_directory = self.base_source_directory  # 실제 작업용 경로
+        self.work_directory = ''  # 작업물이 저장될 위치
+        self.target_directory = ''
+        self.structure_excel_path = ''
+        self.alignment_type = ''
         self.create_widgets()
 
     def create_widgets(self):
+
         ttk.Label(self, text="KM Object 생성 프로그램", font=("Arial", 16, "bold")).pack(pady=10)
 
         btn_frame = ttk.Frame(self)
@@ -374,9 +608,43 @@ class KmObjectApp(tk.Tk):
             self.structure_excel_path = path
             self.log(f"선택된 엑셀 파일: {path}")
 
+    def process_interval(self):
+        top = tk.Toplevel()
+        top.title("노선 구분 선택")
+        tk.Label(top, text="노선의 종류를 선택하세요:").pack(pady=10)
+
+        def select(value):
+            self.alignment_type = value
+            top.destroy()
+
+        for option in ["일반철도", "도시철도", "고속철도"]:
+            tk.Button(top, text=option, width=15, command=lambda v=option: select(v)).pack(pady=5)
+
+        top.grab_set()  # 모달처럼 동작
+        top.wait_window()
+
     def run_main(self):
         try:
-            self.log("파일 읽는 중...")
+            # 디렉토리 설정
+            self.log("작업 디렉토리 확인 중...")
+            self.work_directory = 'c:/temp/km_post/result/'
+            if not os.path.exists(self.work_directory):
+                os.makedirs(self.work_directory)
+                self.log(f"디렉토리 생성: {self.work_directory}")
+            else:
+                self.log(f"디렉토리 존재: {self.work_directory}")
+
+            # 대상 디렉토리 선택
+            self.log("대상 디렉토리 선택 중...")
+            self.target_directory = select_target_directory()
+            self.log(f"대상 디렉토리: {self.target_directory}")
+
+            #노선 종류 입력받기
+            self.process_interval()
+            # ✅ 항상 base_source_directory에서 새로 경로 만들기
+            self.source_directory = os.path.join(self.base_source_directory, self.alignment_type) + '/'
+            self.log(f"소스 경로: {self.source_directory}")
+
             data = read_file()
             if not data:
                 self.log("데이터가 비어 있습니다.")
@@ -397,8 +665,9 @@ class KmObjectApp(tk.Tk):
             else:
                 self.log("구조물 정보가 없습니다.")
 
+            intervel = 100 if self.alignment_type == '도시철도' else 200
             self.log("KM Object 생성 중...")
-            index_datas, post_datas = create_km_object(last_block, structure_list)
+            index_datas, post_datas = create_km_object(last_block, structure_list, intervel, self.alignment_type, self.source_directory, self.work_directory, self.target_directory)
 
             index_file = os.path.join(self.work_directory, 'km_index.txt')
             post_file = os.path.join(self.work_directory, 'km_post.txt')
@@ -410,6 +679,11 @@ class KmObjectApp(tk.Tk):
             create_txt(post_file, post_datas)
 
             self.log("txt 작성이 완료됐습니다.")
+
+            # 파일 복사
+            self.log("결과 파일 복사 중...")
+            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
+
             self.log("모든 작업이 완료됐습니다.")
             messagebox.showinfo("완료", "KM Object 생성이 완료되었습니다.")
 
