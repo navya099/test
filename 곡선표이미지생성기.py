@@ -262,7 +262,7 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
                 line = line.replace(f'LoadTexture, {curvetype}.png,', f'LoadTexture, {output_filename}.png,')
             if 'LoadTexture, R.png,'in line:
                 line = line.replace('LoadTexture, R.png,', f'LoadTexture, {output_filename}_{R}.png,')
-            
+     
             # Append the modified line to the new_lines list
             new_lines.append(line)
     
@@ -691,7 +691,7 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
 
         for key, value in lines:
             # 구조물 정보 확인
-            isSPPS = True if key in ['SP','PS'] else False
+            isSPPS = True if key in ['SP','PS', 'BC', 'EC'] else False
             structure = isbridge_tunnel(value, structure_list) # 구조물(토공,교량,터널)
             img_text = format_distance(value) # 측점문자 포맷
             img_f_name = f'IP{i + 1}_{key}' # i는 0부터임으로 1+
@@ -858,11 +858,13 @@ class CurveProcessingApp(tk.Tk):
     def __init__(self):
         super().__init__()
 
+        self.alignment_type = ''
+        self.base_source_directory = 'c:/temp/curve/소스/'
         self.log_box = None
         self.title("곡선 데이터 처리기")
         self.geometry("650x450")
 
-        self.source_directory = 'c:/temp/curve/소스/' #원본 소스 위치
+        self.source_directory = self.base_source_directory #원본 소스 위치
         self.work_directory = '' #작업물이 저장될 위치
         self.target_directory = ''
         self.isbrokenchain: bool = False
@@ -886,15 +888,13 @@ class CurveProcessingApp(tk.Tk):
     def process_proken_chain(self):
         # Y/N 메시지박스
         result = messagebox.askyesno("파정 확인", "노선에 거리파정이 존재하나요?")
-        if not result:
-            self.destroy()  # 창 종료
+        if not result:  # 창 종료
             return
 
         # float 값 입력 받기
         while True:
             value = simpledialog.askstring("파정 입력", "거리파정 값을 입력하세요 (예: 12.34):")
             if value is None:  # 사용자가 취소를 눌렀을 때
-                self.destroy()
                 return
             try:
                 self.isbrokenchain = True if float(value) else False
@@ -904,6 +904,21 @@ class CurveProcessingApp(tk.Tk):
                 messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
 
         self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
+
+    def process_interval(self):
+        top = tk.Toplevel()
+        top.title("노선 구분 선택")
+        tk.Label(top, text="노선의 종류를 선택하세요:").pack(pady=10)
+
+        def select(value):
+            self.alignment_type = value
+            top.destroy()
+
+        for option in ["일반철도", "도시철도", "고속철도"]:
+            tk.Button(top, text=option, width=15, command=lambda v=option: select(v)).pack(pady=5)
+
+        top.grab_set()  # 모달처럼 동작
+        top.wait_window()
 
     def run_main(self):
         try:
@@ -920,6 +935,12 @@ class CurveProcessingApp(tk.Tk):
             self.log("대상 디렉토리 선택 중...")
             self.target_directory = select_target_directory()
             self.log(f"대상 디렉토리: {self.target_directory}")
+
+            # 노선 종류 입력받기
+            self.process_interval()
+            # ✅ 항상 base_source_directory에서 새로 경로 만들기
+            self.source_directory = os.path.join(self.base_source_directory, self.alignment_type) + '/'
+            self.log(f"소스 경로: {self.source_directory}")
 
             #ㅊ파정확인
             self.process_proken_chain()
