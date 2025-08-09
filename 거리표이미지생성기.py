@@ -341,96 +341,110 @@ class DXF2IMG:
             print(f"❌ 이미지 처리 실패: {e}")
         #######이미지 생성 로직 끝
 
+class LineProcessor:
+    LAYER_RULES = {
+        "일반철도": {
+            "km": {
+                1: [("1자리", lambda km, m: km)],
+                2: [
+                    ("2자리-앞", lambda km, m: km[0]),
+                    ("2자리-뒤", lambda km, m: km[1]),
+                ],
+                3: [
+                    ("3자리-앞", lambda km, m: km[0]),
+                    ("3자리-뒤", lambda km, m: km[2]),
+                    ("1자리", lambda km, m: km[1]),
+                ],
+            },
+            "m": {
+                1: [
+                    ("1자리", lambda km, m: km),
+                    ("m", lambda km, m: m),
+                ],
+                2: [
+                    ("2자리-앞", lambda km, m: km[0]),
+                    ("2자리-뒤", lambda km, m: km[1]),
+                    ("m", lambda km, m: m),
+                ],
+                3: [
+                    ("3자리-앞", lambda km, m: km[0]),
+                    ("1자리", lambda km, m: km[1]),
+                    ("3자리-뒤", lambda km, m: km[2]),
+                    ("m", lambda km, m: m),
+                ],
+            }
+        },
+        "도시철도": {
+            "km": {
+                1: [("KM-1자리", lambda km, m: km)],
+                2: [("KM-2자리", lambda km, m: km)],
+            },
+            "m": {
+                1: [
+                    ("KM-1자리", lambda km, m: km),
+                    ("M-1자리", lambda km, m: m[0]),
+                ],
+                2: [
+                    ("KM-2자리-앞", lambda km, m: km[0]),
+                    ("KM-2자리-뒤", lambda km, m: km[1]),
+                    ("M-1자리", lambda km, m: m[0]),
+                ],
+            },
+        },
+    }
 
-def replace_kmtext_in_dxf(file_path, modified_path, text):
-    """DXF 파일의 특정 텍스트를 새 텍스트로 교체하고, 특정 레이어 가시성을 조절하는 함수"""
-    try:
-        doc = ezdxf.readfile(file_path)
-        msp = doc.modelspace()
-        definelength = len(text)
+    def __init__(self, file_path, modified_path, kmtext, mtext, line_type="normal"):
+        self.file_path = file_path
+        self.modified_path = modified_path
+        self.kmtext = kmtext
+        self.mtext = mtext
+        self.line_type = line_type  # "normal" or "city"
 
-        # 🟢 레이어 가시성 조절 (볼록형: 표시, 오목형: 숨김)
-        layers = doc.layers
+    def replace_text_in_dxf(self, mode="km"):
+        """DXF 텍스트 교체"""
+        try:
+            doc = ezdxf.readfile(self.file_path)
+            msp = doc.modelspace()
+            layers = doc.layers
 
-        # 🟢 특정 레이어의 TEXT 엔티티 찾아서 교체
-        for entity in msp.query("TEXT"):
-            if definelength == 1: # 0km
-                if entity.dxf.layer == "KM-1자리":
-                    entity.dxf.text = text  # STA 변경
-                    layers.get('KM-1자리').on()  # 레이어 가시성 on
-            elif definelength == 2: # 11km
-                if entity.dxf.layer == "KM-2자리":
-                    entity.dxf.text = text  # STA 변경
-                    layers.get('KM-2자리').on()  # 레이어 가시성 on
+            rules = self.LAYER_RULES[self.line_type][mode]
+            length = len(self.kmtext)
 
-        # 변경된 DXF 저장
-        doc.saveas(modified_path)
-        # print("✅ DXF 수정 완료")
-        return True
+            if length not in rules:
+                raise ValueError(f"길이 {length}에 대한 규칙 없음")
 
-    except Exception as e:
-        print(f"❌ DXF 수정 실패: {e}")
-        return False
+            for entity in msp.query("TEXT"):
+                for layer, text_func in rules[length]:
+                    if entity.dxf.layer == layer:
+                        entity.dxf.text = text_func(self.kmtext, self.mtext)
+                        layers.get(layer).on()
 
+            doc.saveas(self.modified_path)
+            return True
 
-def replace_mtext_in_dxf(file_path, modified_path, text1, text2):
-    """DXF 파일의 특정 텍스트를 새 텍스트로 교체하고, 특정 레이어 가시성을 조절하는 함수"""
-    try:
-        doc = ezdxf.readfile(file_path)
-        msp = doc.modelspace()
-        kmtext = text1
-        mtext = text2[0] #앞부분만 추출
-        # 🟢 레이어 가시성 조절 (볼록형: 표시, 오목형: 숨김)
-        layers = doc.layers
+        except Exception as e:
+            print(f"❌ DXF 수정 실패: {e}")
+            return False
 
-        # 🟢 특정 레이어의 TEXT 엔티티 찾아서 교체
-        for entity in msp.query("TEXT"):
-            if len(kmtext) == 1:  # 0km100
-                if entity.dxf.layer == "KM-1자리":
-                    entity.dxf.text = kmtext  # STA 변경
-                    layers.get('KM-1자리').on()  # 레이어 가시성 on
-                if entity.dxf.layer == "M-1자리":
-                    entity.dxf.text = mtext  # STA 변경
-            if len(kmtext) == 2:  # 11km100
-                if entity.dxf.layer == "KM-2자리-앞":
-                    entity.dxf.text = kmtext[0]  # STA 변경
-                    layers.get('KM-2자리-앞').on()  # 레이어 가시성 on
-                if entity.dxf.layer == "KM-2자리-뒤":
-                    entity.dxf.text = kmtext[1]  # STA 변경
-                    layers.get('KM-2자리-뒤').on()  # 레이어 가시성 on
-                if entity.dxf.layer == "M-1자리":
-                    entity.dxf.text = mtext  # STA 변경
-        # 변경된 DXF 저장
-        doc.saveas(modified_path)
-        # print("✅ DXF 수정 완료")
-        return True
-
-    except Exception as e:
-        print(f"❌ DXF 수정 실패: {e}")
-        return False
-
-
-def process_dxf_image(text, img_f_name, source_directory, work_directory, post_type):
+def process_dxf_image(img_text1: str, img_text2: str, img_f_name: str, source_directory: str, work_directory: str, post_type: str, alignmenttype: str):
     """DXF 파일 수정 및 이미지 변환"""
     file_path = source_directory + post_type + '.dxf'
     modifed_path = work_directory + post_type + '-수정됨.dxf'
 
-    # 소수점 앞뒤 자리 나누기
-    current_km_int = text * 0.001
-    km_string, m_string = str(current_km_int).split('.')
-
-    img_text1 = f'{km_string}'
-    img_text2 = f'{m_string}'
-
+    lineprogram = LineProcessor(file_path, modifed_path, img_text1, img_text2, alignmenttype)
     if post_type == 'km표':
-        replace_kmtext_in_dxf(file_path, modifed_path, img_text1)
+        lineprogram.replace_text_in_dxf(mode='km')
+
     else:
-        replace_mtext_in_dxf(file_path, modifed_path, img_text1, img_text2)
+        lineprogram.replace_text_in_dxf(mode='m')
 
     #이미지 추출
     final_output_image = os.path.join(work_directory, img_f_name + '.png')
     converter = DXF2IMG()
-    target_size = (200, 250)
+    if alignmenttype == '도시철도':
+        target_size = (200, 250)
+    else:
+        target_size = (180, 650)
     output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
 
     if output_paths:
@@ -455,8 +469,8 @@ def create_km_object(last_block: int, structure_list: dict, interval: int, align
             post_type = 'm표'
 
         # 소수점 앞뒤 자리 나누기
-        current_km_int =  current_sta * 0.001
-        km_string, m_string = str(current_km_int).split('.')
+        current_km_int = round(current_sta * 0.001, 1)  # 소수점 3자리까지만
+        km_string, m_string = f"{current_km_int:.1f}".split('.')  # 문자열로 변환 시 3자리 고정
 
         img_text1 = f'{km_string}'
         img_text2 = f'{m_string}'
@@ -466,8 +480,8 @@ def create_km_object(last_block: int, structure_list: dict, interval: int, align
 
         openfile_name = f'{post_type}_{current_structure}용'
 
-        if alignmenttype == '도시철도':
-            process_dxf_image(current_sta, img_f_name, source_directory, work_directory, post_type)
+        if alignmenttype == '도시철도' or '일반철도':
+            process_dxf_image(img_text1, img_text2, img_f_name, source_directory, work_directory, post_type, alignmenttype)
 
         else:
 
