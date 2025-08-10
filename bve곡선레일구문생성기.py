@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, ttk, messagebox
+from tkinter import filedialog, ttk, messagebox, simpledialog
 import math
 import csv
 import pandas as pd
@@ -63,7 +63,7 @@ def parsing_curveinfo(lines):
     
     for line in lines:
         try:
-            station = int(line[0])
+            station = float(line[0])
         except Exception as e:
             print("station 읽는 중 오류가 발생했습니다:", e)
             station = 0.0
@@ -208,7 +208,7 @@ def cal_mainlogic(curveinfo, C_list):
         
     return freeobj
 
-def create_freeobj(freeobj, structure_list,curve_info):
+def create_freeobj(freeobj, structure_list,curve_info, index_dict: dict):
     content = []
     for sta, x, y, z in freeobj:
         current_structure = isbridge_tunnel(sta, structure_list)
@@ -216,11 +216,11 @@ def create_freeobj(freeobj, structure_list,curve_info):
 
         if iscurve == '곡선':  
             if current_structure == '터널':
-                freeobj_index = 473#콘크리트도상터널전차선x
+                freeobj_index = index_dict['freeobj']['곡선']['터널']['콘크리트도상']#콘크리트도상터널전차선x
             else:
-                freeobj_index = 449#자갈도상신선전차선x
+                freeobj_index = index_dict['freeobj']['곡선']['터널']['자갈도상']#자갈도상터널전차선x
         else:
-            freeobj_index = 499#Null.csv
+            freeobj_index = index_dict['freeobj']['직선']#Null.csv
         content.append(f'{sta},.freeobj 0;{freeobj_index};{x};0;{y};0;{z}\n')
         
     return content
@@ -333,20 +333,20 @@ def modify_content(contents):
                 
     return modified_contents
 
-def create_railtype(curveinfo, structure_list):
+def create_railtype(curveinfo, structure_list, index_dict: dict):
     railtype_list =[]
     for info in curveinfo:
         sta = info[0]
         R = info[1]
         c = info[2]
         currnet_structure = isbridge_tunnel(sta, structure_list)
-        if R == 0:#직선
+        if R == 0:  # 직선
             if currnet_structure == '터널':
-                railtype = 16#콘크리트도상 신선 전차선x
+                railtype = index_dict['railtype']['직선']['터널']['콘크리트도상']#콘크리트도상전차선x
             else:
-                railtype = 9#자갈도상 신선 전차선x
+                railtype = index_dict['railtype']['직선']['터널']['자갈도상']  # 자갈도상 신선 전차선x
         else:
-            railtype = 4
+            railtype = index_dict['railtype']['곡선']
         railtype_list.append(f'{sta},.railtype 0;{railtype};\n')
         
     return railtype_list
@@ -371,6 +371,7 @@ class FreeobjApp(tk.Tk):
         super().__init__()
         self.title("FreeObj 자동 생성기")
         self.geometry("600x400")
+        self.alignment_type = ''
         self.create_widgets()
 
     def create_widgets(self):
@@ -387,8 +388,148 @@ class FreeobjApp(tk.Tk):
         self.log_box.insert(tk.END, message + "\n")
         self.log_box.see(tk.END)
 
+    def preprocess_input_index(self):
+        # alignmenttype별 기본값 딕셔너리
+        default_values = {
+            '도시철도': {
+                'freeobj': {
+                    '곡선': {
+                        '터널': {
+                            '콘크리트도상': 449,
+                            '자갈도상': 450,
+                        }
+                    },
+                    '직선': 499,
+                },
+                'railtype': {
+                    '곡선': 11,
+                    '직선': {
+                        '터널': {
+                            '콘크리트도상': 2,
+                            '자갈도상': 0,
+                        }
+                    }
+                }
+            },
+            '일반철도': {
+                'freeobj': {
+                    '곡선': {
+                        '터널': {
+                            '콘크리트도상': 469,
+                            '자갈도상': 228,
+                        }
+                    },
+                    '직선': 499,
+                },
+                'railtype': {
+                    '곡선': 4,
+                    '직선': {
+                        '터널': {
+                            '콘크리트도상': 22,
+                            '자갈도상': 8,
+                        }
+                    }
+                }
+            },
+            '고속철도': {
+                'freeobj': {
+                    '곡선': {
+                        '터널': {
+                            '콘크리트도상': 490,
+                            '자갈도상': 470,
+                        }
+                    },
+                    '직선': 510,
+                },
+                'railtype': {
+                    '곡선': 6,
+                    '직선': {
+                        '터널': {
+                            '콘크리트도상': 20,
+                            '자갈도상': 13,
+                        }
+                    }
+                }
+            }
+        }
+
+        # 전달받은 alignmenttype에 맞는 기본값 선택
+        defaults = default_values.get(self.alignment_type)
+        if defaults is None:
+            messagebox.showerror("오류", f"알 수 없는 노선 유형: {self.alignment_type}")
+            return None
+
+        def get_input(prompt, default_value):
+            value = simpledialog.askstring(prompt, f"{prompt} (기본값: {default_value})")
+            if value is None:  # 취소 시 None 반환
+                return None
+            return int(value) if value.strip() else default_value
+
+        # 사용자 입력 또는 기본값
+        v1 = get_input("freeobj 곡선-터널-콘크리트도상", defaults['freeobj']['곡선']['터널']['콘크리트도상'])
+        if v1 is None: return
+        v2 = get_input("freeobj 곡선-터널-자갈도상", defaults['freeobj']['곡선']['터널']['자갈도상'])
+        if v2 is None: return
+        v3 = get_input("freeobj 직선", defaults['freeobj']['직선'])
+        if v3 is None: return
+
+        v4 = get_input("railtype 곡선", defaults['railtype']['곡선'])
+        if v4 is None: return
+        v5 = get_input("railtype 직선-터널-콘크리트도상", defaults['railtype']['직선']['터널']['콘크리트도상'])
+        if v5 is None: return
+        v6 = get_input("railtype 직선-터널-자갈도상", defaults['railtype']['직선']['터널']['자갈도상'])
+        if v6 is None: return
+
+        self.log(
+            f"[Freeobj] 곡선-터널-콘크리트: {v1}, "
+            f"곡선-터널-자갈: {v2}, "
+            f"직선: {v3} | "
+            f"[Railtype] 곡선: {v4}, "
+            f"직선-터널-콘크리트: {v5}, "
+            f"직선-터널-자갈: {v6}"
+        )
+
+        return {
+            'freeobj': {
+                '곡선': {
+                    '터널': {
+                        '콘크리트도상': v1,
+                        '자갈도상': v2,
+                    }
+                },
+                '직선': v3,
+            },
+            'railtype': {
+                '곡선': v4,
+                '직선': {
+                    '터널': {
+                        '콘크리트도상': v5,
+                        '자갈도상': v6,
+                    }
+                }
+            }
+        }
+
+    def process_interval(self):
+        top = tk.Toplevel()
+        top.title("노선 구분 선택")
+        tk.Label(top, text="노선의 종류를 선택하세요:").pack(pady=10)
+
+        def select(value):
+            self.alignment_type = value
+            top.destroy()
+
+        for option in ["일반철도", "도시철도", "고속철도"]:
+            tk.Button(top, text=option, width=15, command=lambda v=option: select(v)).pack(pady=5)
+
+        top.grab_set()  # 모달처럼 동작
+        top.wait_window()
+
+
     def run_main(self):
         try:
+            self.process_interval()
+            index_dict  = self.preprocess_input_index()
             self.log("파일을 읽는 중...")
             lines = read_file()
             if not lines:
@@ -410,12 +551,12 @@ class FreeobjApp(tk.Tk):
             freeobj = cal_mainlogic(curveinfo, C_list)
 
             self.log("FreeObj 생성 중...")
-            content = create_freeobj(freeobj, structure_list, curveinfo)
+            content = create_freeobj(freeobj, structure_list, curveinfo, index_dict)
             save_files(content)
             self.log("FreeObj 저장 완료!")
 
             self.log("Railtype 생성 중...")
-            railtype = create_railtype(curveinfo, structure_list)
+            railtype = create_railtype(curveinfo, structure_list, index_dict)
             save_railtype(railtype)
             self.log("Railtype 저장 완료!")
 
