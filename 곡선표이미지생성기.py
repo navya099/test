@@ -673,8 +673,94 @@ def process_dxf_image(img_f_name, structure, radius, source_directory, work_dire
     if output_paths:
         converter.trim_and_resize_image(output_paths[0], final_output_image, target_size)
 
+
+#도시철도용 곡선처리
+def citylineprocess(curve_type: str, radius: float, cant: float,
+                    img_f_name: str, source_directory: str, work_directory: str):
+    """도시철도용 곡선 DXF 처리 및 이미지 변환"""
+
+    def cal_slack(rad: float) -> float:
+        """여유(슬랙) 계산"""
+        slack = 2400 / rad
+        return slack - 5 if slack >= 30 else slack
+
+    def modify_dxf(origin_file_path: str, new_file_path: str,
+                   current_curve_type: str, current_radius: str,
+                   current_cant: str, slack: str) -> bool:
+        """DXF의 특정 레이어 텍스트를 변경"""
+        try:
+            doc = ezdxf.readfile(origin_file_path)
+            msp = doc.modelspace()
+            layers = doc.layers
+
+            # 곡선 타입별 표시 레이어 설정
+            if current_curve_type in ['BTC', 'BCC', 'ECC', 'ETC']:
+                layers.get('제원문자-앞').on()
+                layers.get('제원문자-중간').on()
+                layers.get('제원문자-뒤').on()
+            elif current_curve_type in ['BC', 'EC']:
+                layers.get('제원문자-앞').on()
+                layers.get('제원문자-뒤').on()
+
+            # TEXT 엔티티 수정
+            for entity in msp.query("TEXT"):
+                if current_curve_type in ['BTC', 'BCC', 'ECC', 'ETC']:
+                    if entity.dxf.layer == "제원문자-앞":
+                        entity.dxf.text = current_curve_type[0]
+                    elif entity.dxf.layer == "제원문자-중간":
+                        entity.dxf.text = current_curve_type[1]
+                    elif entity.dxf.layer == "제원문자-뒤":
+                        entity.dxf.text = current_curve_type[2]
+                elif current_curve_type in ['BC', 'EC']:
+                    if entity.dxf.layer == "제원문자-앞":
+                        entity.dxf.text = current_curve_type[0]
+                    elif entity.dxf.layer == "제원문자-뒤":
+                        entity.dxf.text = current_curve_type[1]
+
+                if entity.dxf.layer == "R":
+                    entity.dxf.text = current_radius
+                elif entity.dxf.layer == "C":
+                    entity.dxf.text = current_cant
+                elif entity.dxf.layer == "S":
+                    entity.dxf.text = slack
+
+            doc.saveas(new_file_path)
+            print("✅ DXF 텍스트 교체 완료")
+            return True
+
+        except Exception as e:
+            print(f"❌ DXF 텍스트 교체 실패: {e}")
+            return False
+
+    # 곡선 타입 변환
+    curve_map = {
+        'SP': 'BTC', 'PC': 'BCC', 'CP': 'ECC', 'PS': 'ETC',
+        'BC': 'BC', 'EC': 'EC'
+    }
+    new_curve_type = curve_map.get(curve_type, curve_type)
+
+    # 문자 포맷
+    r_text = f'R={int(radius)}'
+    c_text = f'C={int(cant)}'
+    s_text = f'S={int(cal_slack(radius))}'
+
+    # 파일 경로
+    file_path = os.path.join(source_directory, '곡선표.dxf')
+    modified_path = os.path.join(work_directory, '곡선표-수정됨.dxf')
+    img_f_name_for_tunnel = f'{img_f_name}_{r_text}'
+    final_output_image = os.path.join(work_directory, img_f_name + '.png')
+
+    # DXF 수정
+    if modify_dxf(file_path, modified_path, new_curve_type, r_text, c_text, s_text):
+        # 변환 및 이미지 처리
+        converter = DXF2IMG()
+        output_paths = converter.convert_dxf2img([modified_path], img_format='.png')
+        if output_paths:
+            converter.trim_and_resize_image(output_paths[0], final_output_image, (300, 210))
+
+
 #핵심 로직2 (클래스화 구조변경)
-def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory):
+def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory, altype: str):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
 
     object_path = ''
@@ -696,10 +782,13 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
             img_text = format_distance(value) # 측점문자 포맷
             img_f_name = f'IP{i + 1}_{key}' # i는 0부터임으로 1+
             openfile_name = f'{key}_{structure}용' #소스폴더에서 열 파일명.csv원본
-            create_png_from_ai(key, img_text, str(ip.cant), img_f_name, source_directory, work_directory) #이미지 생성 함수
+            if altype == '도시철도':
+                citylineprocess(key, ip.radius, ip.cant, img_f_name, source_directory, work_directory)
+            else:
+                create_png_from_ai(key, img_text, str(ip.cant), img_f_name, source_directory, work_directory) #이미지 생성 함수
 
-            if isSPPS:
-                process_dxf_image(img_f_name, structure, ip.radius, source_directory, work_directory)
+                if isSPPS:
+                    process_dxf_image(img_f_name, structure, ip.radius, source_directory, work_directory)
             copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory) # csv 원본복사 후 추출함수
             #print(object_path)
             #print(f'{img_f_name}-{openfile_name}-{key}:{img_text}-{objec_index}')
@@ -783,7 +872,7 @@ def apply_brokenchain_to_structure(structure_list, brokenchain):
     return updated_structure
 
 
-def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain):
+def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain, altype: str):
     """곡선 데이터 처리 (파일 저장 및 이미지 & CSV 생성)"""
     if not data:
         print("curve_info가 비어 있습니다.")
@@ -793,7 +882,7 @@ def process_curve_data(source_directory, work_directory, target_directory, data,
     ipdatas = process_and_save_sections(data, brokenchain)
 
     # 이미지 및 CSV 생성
-    objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory)
+    objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory, altype)
 
     return objectdatas
 
@@ -959,7 +1048,7 @@ class CurveProcessingApp(tk.Tk):
             structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
             # 곡선 데이터 처리
             self.log("곡선 데이터 처리 중...")
-            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain)
+            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain, self.alignment_type)
 
             # 최종 텍스트 생성
             if objectdatas:
