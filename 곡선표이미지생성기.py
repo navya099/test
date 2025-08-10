@@ -74,6 +74,7 @@ class ObjectDATA:
     object_index: int = 0
     filename: str = ''
     object_path: str = ''
+    speed: int = 0
 
 def format_distance(number):
     return f"{number / 1000:.3f}"
@@ -270,6 +271,8 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
     with open(output_file, 'w', encoding='utf-8') as file:
         # Write the modified lines to the output file
         file.writelines(new_lines)
+
+    return output_file
 
 def create_curve_post_txt(data_list: list[ObjectDATA], work_directory):
     """
@@ -675,25 +678,29 @@ def process_dxf_image(img_f_name, structure, radius, source_directory, work_dire
 
 
 #도시철도용 곡선처리
-def citylineprocess(curve_type: str, radius: float, cant: float,
+def citylineprocess(curve_type: str, radius: float, cant: float, tcl: int,
                     img_f_name: str, source_directory: str, work_directory: str):
-    """도시철도용 곡선 DXF 처리 및 이미지 변환"""
-
     def cal_slack(rad: float) -> float:
-        """여유(슬랙) 계산"""
         slack = 2400 / rad
         return slack - 5 if slack >= 30 else slack
 
+    def cal_speed(radius: float) -> float:
+        return (radius * 160 / 11.8) ** 0.5
+
+    def cal_cant(speed: float, radius: float, original_cant: float) -> float:
+        if original_cant == 0:
+            value = 11.8 * (speed ** 2) / radius
+            return min(value, 160)
+        return original_cant
+
     def modify_dxf(origin_file_path: str, new_file_path: str,
                    current_curve_type: str, current_radius: str,
-                   current_cant: str, slack: str) -> bool:
-        """DXF의 특정 레이어 텍스트를 변경"""
+                   current_cant: str, slack: str, tcl_value: int) -> bool:
         try:
             doc = ezdxf.readfile(origin_file_path)
             msp = doc.modelspace()
             layers = doc.layers
 
-            # 곡선 타입별 표시 레이어 설정
             if current_curve_type in ['BTC', 'BCC', 'ECC', 'ETC']:
                 layers.get('제원문자-앞').on()
                 layers.get('제원문자-중간').on()
@@ -702,7 +709,6 @@ def citylineprocess(curve_type: str, radius: float, cant: float,
                 layers.get('제원문자-앞').on()
                 layers.get('제원문자-뒤').on()
 
-            # TEXT 엔티티 수정
             for entity in msp.query("TEXT"):
                 if current_curve_type in ['BTC', 'BCC', 'ECC', 'ETC']:
                     if entity.dxf.layer == "제원문자-앞":
@@ -717,12 +723,21 @@ def citylineprocess(curve_type: str, radius: float, cant: float,
                     elif entity.dxf.layer == "제원문자-뒤":
                         entity.dxf.text = current_curve_type[1]
 
-                if entity.dxf.layer == "R":
-                    entity.dxf.text = current_radius
-                elif entity.dxf.layer == "C":
-                    entity.dxf.text = current_cant
-                elif entity.dxf.layer == "S":
-                    entity.dxf.text = slack
+                if current_curve_type in ['BCC', 'BC', 'EC', 'ECC']:
+                    layers.get('R').on()
+                    layers.get('C').on()
+                    layers.get('S').on()
+
+                    if entity.dxf.layer == "R":
+                        entity.dxf.text = current_radius
+                    elif entity.dxf.layer == "C":
+                        entity.dxf.text = current_cant
+                    elif entity.dxf.layer == "S":
+                        entity.dxf.text = slack
+                elif current_curve_type in ['BTC', 'ETC']:
+                    layers.get('TCL').on()
+                    if entity.dxf.layer == "TCL":
+                        entity.dxf.text = str(tcl_value)
 
             doc.saveas(new_file_path)
             print("✅ DXF 텍스트 교체 완료")
@@ -732,32 +747,96 @@ def citylineprocess(curve_type: str, radius: float, cant: float,
             print(f"❌ DXF 텍스트 교체 실패: {e}")
             return False
 
-    # 곡선 타입 변환
+    def process_speed_limit_post(speedfile_path: str, modified_speedfile_path: str,
+                                 radius: float, speed_value: int) -> bool:
+        try:
+            doc = ezdxf.readfile(speedfile_path)
+            msp = doc.modelspace()
+
+            for entity in msp.query("TEXT"):
+                if entity.dxf.layer == "V":
+                    entity.dxf.text = str(speed_value)
+                if entity.dxf.layer == "R":
+                    entity.dxf.text = str(int(radius))
+
+            doc.saveas(modified_speedfile_path)
+            print("✅ 속도 제한 DXF 텍스트 교체 완료")
+            return True
+
+        except Exception as e:
+            print(f"❌ 속도 제한 DXF 텍스트 교체 실패: {e}")
+            return False
+
     curve_map = {
         'SP': 'BTC', 'PC': 'BCC', 'CP': 'ECC', 'PS': 'ETC',
         'BC': 'BC', 'EC': 'EC'
     }
     new_curve_type = curve_map.get(curve_type, curve_type)
 
-    # 문자 포맷
+    speed = cal_speed(radius)
+    cant_val = cal_cant(speed, radius, cant)
+
     r_text = f'R={int(radius)}'
-    c_text = f'C={int(cant)}'
+    c_text = f'C={int(cant_val)}'
     s_text = f'S={int(cal_slack(radius))}'
 
-    # 파일 경로
     file_path = os.path.join(source_directory, '곡선표.dxf')
     modified_path = os.path.join(work_directory, '곡선표-수정됨.dxf')
-    img_f_name_for_tunnel = f'{img_f_name}_{r_text}'
-    final_output_image = os.path.join(work_directory, img_f_name + '.png')
+    speedfile_path = os.path.join(source_directory, '속도제한표.dxf')
+    modified_speedfile_path = os.path.join(work_directory, '속도제한표-수정됨.dxf')
 
-    # DXF 수정
-    if modify_dxf(file_path, modified_path, new_curve_type, r_text, c_text, s_text):
-        # 변환 및 이미지 처리
-        converter = DXF2IMG()
+    img_f_name_for_speed = f'{img_f_name}_{int(radius)}'
+    final_output_image = os.path.join(work_directory, img_f_name + '.png')
+    speedlimit_image = os.path.join(work_directory, img_f_name_for_speed + '.png')
+
+    converter = DXF2IMG()
+
+    if modify_dxf(file_path, modified_path, new_curve_type, r_text, c_text, s_text, tcl):
         output_paths = converter.convert_dxf2img([modified_path], img_format='.png')
         if output_paths:
             converter.trim_and_resize_image(output_paths[0], final_output_image, (300, 210))
 
+    if new_curve_type in ['BC', 'BCC']:
+        if speed < 120:
+            if process_speed_limit_post(speedfile_path, modified_speedfile_path, radius, int(speed)):
+                output_paths = converter.convert_dxf2img([modified_speedfile_path], img_format='.png')
+                if output_paths:
+                    converter.trim_and_resize_image(output_paths[0], speedlimit_image, (200, 200))
+
+
+def insert_speedlimt_syntax(open_filename: str, struecture: str, source_directory: str, work_directory: str):
+    # 기존 파일의 최하단에 source_file의 모든 내용을 붙여넣기
+
+    source_file = source_directory + f'속도제한표-{struecture}용.csv'
+
+    # 기존 파일 내용 읽기
+    with open(open_filename, 'r', encoding='utf-8') as f:
+        original_lines = f.readlines()
+
+    # 추가할 내용 읽기
+    with open(source_file, 'r', encoding='utf-8') as f:
+        add_lines = f.readlines()
+
+    # 합쳐서 output_file에 쓰기
+    with open(open_filename, 'w', encoding='utf-8') as f:
+        f.writelines(original_lines)
+        f.writelines(add_lines)
+
+    print(f"✅ '{open_filename}.csv' 파일에 속도제한표 내용 추가 완료")
+
+
+def modify_r_text_in_file(file_path, output_filename, R: str):
+    new_lines = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if 'LoadTexture, R.png,' in line:
+                line = line.replace('LoadTexture, R.png,', f'LoadTexture, {output_filename}_{R}.png,')
+            new_lines.append(line)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.writelines(new_lines)
+
+def cal_speed(radius: float) -> float:
+    return (radius * 160 / 11.8) ** 0.5
 
 #핵심 로직2 (클래스화 구조변경)
 def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory, altype: str):
@@ -772,24 +851,33 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
 
     for i, ip in enumerate(ipdatas):
         lines = get_curve_lines(ip)
+
         if not lines:
             continue
 
         for key, value in lines:
             # 구조물 정보 확인
             isSPPS = True if key in ['SP','PS', 'BC', 'EC'] else False
+            tcl = 'TCL=' + str(int(ip.PC_STA - ip.SP_STA)) if ip.curvetype == '완화곡선' else 0
+            speed = int(cal_speed(ip.radius))
             structure = isbridge_tunnel(value, structure_list) # 구조물(토공,교량,터널)
             img_text = format_distance(value) # 측점문자 포맷
             img_f_name = f'IP{i + 1}_{key}' # i는 0부터임으로 1+
             openfile_name = f'{key}_{structure}용' #소스폴더에서 열 파일명.csv원본
             if altype == '도시철도':
-                citylineprocess(key, ip.radius, ip.cant, img_f_name, source_directory, work_directory)
+                citylineprocess(key, ip.radius, ip.cant, tcl, img_f_name, source_directory, work_directory)
+
+                output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory,
+                                    work_directory)  # csv 원본복사 후 추출함수
+                if speed < 120 and key in ['BC', 'PC']:
+                    insert_speedlimt_syntax(output_file, structure, source_directory, work_directory) #속도제한표 추가
+                    modify_r_text_in_file(output_file, img_f_name, str(int(ip.radius)))
             else:
                 create_png_from_ai(key, img_text, str(ip.cant), img_f_name, source_directory, work_directory) #이미지 생성 함수
 
                 if isSPPS:
                     process_dxf_image(img_f_name, structure, ip.radius, source_directory, work_directory)
-            copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory) # csv 원본복사 후 추출함수
+                output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory) # csv 원본복사 후 추출함수
             #print(object_path)
             #print(f'{img_f_name}-{openfile_name}-{key}:{img_text}-{objec_index}')
             #클래스에ㅐ 속성 추가
@@ -800,7 +888,8 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
                 station=value,
                 object_index=object_index,
                 filename=img_f_name,
-                object_path=object_folder
+                object_path=object_folder,
+                speed=speed
                 )
             )
             object_index += 1
@@ -941,6 +1030,19 @@ def select_target_directory():
 
     return target_directory
 
+def create_speed_limit(datalist: list[ObjectDATA], work_directory: str):
+    """
+        결과 데이터를 받아 파일로 저장하는 함수.
+        """
+    output_file = work_directory + "speed_limit.txt"  # 저장할 파일 이름
+
+    with open(output_file, "w", encoding="utf-8") as file:
+        for data in datalist:  # 두 리스트를 동시에 순회
+            file.write(f',;IPNO {data.IPNO}\n')
+            if data.curvetype in ['BC', 'SP']:
+                file.write(f"{data.station},.LIMIT {data.speed};\n")  # 원하는 형식으로 저장
+            elif data.curvetype in ['EC', 'PS']:
+                file.write(f"{data.station},.LIMIT 0;\n")  # 원하는 형식으로 저장
 
 #메인 gui클래스
 class CurveProcessingApp(tk.Tk):
@@ -1055,6 +1157,7 @@ class CurveProcessingApp(tk.Tk):
                 self.log("최종 결과 생성 중...")
                 create_curve_post_txt(objectdatas, self.work_directory)
                 create_curve_index_txt(objectdatas, self.work_directory)
+                create_speed_limit(objectdatas, self.work_directory)
                 self.log("결과 파일 생성 완료!")
 
             # 파일 복사
