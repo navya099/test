@@ -122,6 +122,7 @@ class PlotFrame(tk.Frame):
 
     def plot_multiple(self, alignments, title):
         self.ax.clear()
+        self.original_colors.clear()
         self.apply_decoration(title, "Station", "x")
         for alignment in alignments:
             x_data = [rail.station for rail in alignment.raildata]
@@ -244,6 +245,14 @@ class EventHandler:
                 #모든 배선 플로팅
                 self.main_app.plot_frame.plot_multiple(alignments, filename)
 
+    def reload(self):
+        filepath = self.file_controller.filepath
+        if filepath:
+            lines = self.file_controller.read_file()
+            alignments = self.app_controller.process_lines_to_alginment_data(lines)
+            if alignments:
+                self.main_app.plot_frame.plot_multiple(alignments, os.path.basename(filepath))
+
     def on_file_save(self):
         self.file_controller.save_file()
 
@@ -347,6 +356,11 @@ class AppController:
         max_station = max(station_list) + 600
         #자선 추가
         alignments.append(self.create_mainline(min_station, max_station))
+
+        #마지막 선형 추가
+        # 반복문 끝난 뒤 마지막 alignment 추가
+        if alignment and alignment.raildata:
+            alignments.append(alignment)
         return alignments
 
     def create_mainline(self, min_station, max_station):
@@ -386,6 +400,13 @@ class MainApp(tk.Tk):
         self.plot_frame = PlotFrame(main_frame)
         self.plot_frame.pack(fill=tk.BOTH, expand=True)
 
+        # F5 키 바인딩
+        self.bind("<F5>", self.on_refresh)
+
+    def on_refresh(self, event=None):
+        # 새로고침 기능 구현
+        # 예: 파일 다시 열기, 그래프 다시 그리기 등 원하는 동작 수행
+        self.event_handler.reload()
 
 if __name__ == "__main__":
     app = MainApp()
