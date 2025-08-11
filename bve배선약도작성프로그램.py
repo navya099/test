@@ -5,6 +5,7 @@ import matplotlib
 # ---- Matplotlib Tkinter 연결 ----
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+import os
 
 # bve클래스 정의
 # alignment.py
@@ -46,10 +47,10 @@ class EditMenu(tk.Menu):
 
 # menus/settings_menu.py
 class SettingsMenu(tk.Menu):
-    def __init__(self, master, controller):
+    def __init__(self, master, controller, event_handler):
         super().__init__(master, tearoff=0)
         self.controller = controller
-        self.add_command(label="환경 설정", command=self.controller.open_settings)
+        self.add_command(label="환경 설정", command=event_handler.on_open_settings)
 
 
 # 도움말 및 정보 메뉴
@@ -67,7 +68,7 @@ class MenuGUI:
         menubar = tk.Menu(master)
         menubar.add_cascade(label="파일", menu=FileMenu(menubar, event_handler))
         menubar.add_cascade(label="편집", menu=EditMenu(menubar, edit_ctrl))
-        menubar.add_cascade(label="설정", menu=SettingsMenu(menubar, settings_ctrl))
+        menubar.add_cascade(label="설정", menu=SettingsMenu(menubar, settings_ctrl, event_handler))
         menubar.add_cascade(label="도움말", menu=HelpMenu(menubar, help_ctrl))
         master.config(menu=menubar)
 
@@ -78,6 +79,7 @@ class MenuGUI:
 class PlotFrame(tk.Frame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
+        self.original_colors = {}  # 선 객체별 원래 색 저장용 딕셔너리
 
         # Matplotlib Figure 생성
         fig = Figure(figsize=(5, 4), dpi=100)
@@ -118,14 +120,15 @@ class PlotFrame(tk.Frame):
             self.toolbar.pack_forget()
         self.canvas.draw()
 
-    def plot_multiple(self, alignments):
+    def plot_multiple(self, alignments, title):
         self.ax.clear()
-        self.apply_decoration("정거장", "Station", "x")
+        self.apply_decoration(title, "Station", "x")
         for alignment in alignments:
             x_data = [rail.station for rail in alignment.raildata]
-            y_data = [rail.rail_x for rail in alignment.raildata]
+            y_data = [rail.rail_x * -1 for rail in alignment.raildata] #bve좌표계와 반대
             if x_data and y_data:
-                self.ax.plot(x_data, y_data, marker="o", label=alignment.name)
+                line, = self.ax.plot(x_data, y_data, label=alignment.name)
+                self.original_colors[line] = line.get_color()  # 원래 색 저장
 
         self.ax.legend()
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -223,6 +226,7 @@ def parse_rail_components(components, linenumber):
 #EVNET.PY
 class EventHandler:
     def __init__(self, main_app, app_controller, file_controller, settings_controller):
+        self.some_option_var = None
         self.main_app = main_app
         self.app_controller = app_controller
         self.file_controller = file_controller
@@ -230,20 +234,46 @@ class EventHandler:
 
     def on_file_open(self):
         self.file_controller.open_file()
-        filename = self.file_controller.filepath
-        if filename:
+        filepath = self.file_controller.filepath
+        filename = os.path.basename(filepath)
+        if filepath:
             lines = self.file_controller.read_file()
             alignments = self.app_controller.process_lines_to_alginment_data(lines)
 
             if alignments:
                 #모든 배선 플로팅
-                self.main_app.plot_frame.plot_multiple(alignments)
+                self.main_app.plot_frame.plot_multiple(alignments, filename)
 
     def on_file_save(self):
         self.file_controller.save_file()
 
     def on_open_settings(self):
-        self.settings_controller.open_settings()
+        settings_win = tk.Toplevel(self.main_app)
+        settings_win.title("환경 설정")
+        settings_win.geometry("300x150")
+
+        self.some_option_var = tk.BooleanVar(value=False)
+        # 체크박스가 바뀔 때 호출할 함수 연결
+        chk = tk.Checkbutton(settings_win, text="배선 색 모두 동일하게", variable=self.some_option_var,
+                             command=self.on_check_box_visible)
+        chk.pack(pady=20)
+
+        close_btn = tk.Button(settings_win, text="닫기", command=settings_win.destroy)
+        close_btn.pack(pady=10)
+
+    def on_check_box_visible(self):
+        lines = self.main_app.plot_frame.ax.lines
+        if self.some_option_var.get():
+            for line in lines:
+                line.set_color('black')
+        else:
+            for line in lines:
+                original_color = self.main_app.plot_frame.original_colors.get(line, None)
+                if original_color:
+                    line.set_color(original_color)
+                else:
+                    line.set_color(None)
+        self.main_app.plot_frame.canvas.draw()
 
 
 # 기능 클래스(모든 기능을 넣을 예정)
