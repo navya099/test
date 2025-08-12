@@ -6,6 +6,10 @@ import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 import os
+import math
+
+from pandas.core.ops.mask_ops import raise_for_nan
+
 
 # bve클래스 정의
 # alignment.py
@@ -38,9 +42,9 @@ class FormData:
 
 class Alignment:
     def __init__(self, name: str):
-        self.name: str = name
+        self.name = name
         self.raildata: list[Rail] = []
-
+        self.curvedata: list[Curve] = []
 
 # 메뉴 클래스
 # gui.py
@@ -142,12 +146,31 @@ class PlotFrame(tk.Frame):
         self.ax.clear()
         self.original_colors.clear()
         self.apply_decoration(title, "Station", "x")
+
+        # 자선 찾기
+        main_alignment = next((a for a in alignments if a.name == '자선'), None)
+        if not main_alignment:
+            print("자선이 없습니다.")
+            main_station_to_y = {}
+        else:
+            # station: rail_y 딕셔너리 생성 (station은 고유한 키)
+            main_station_to_y = {rail.station: rail.rail_x for rail in main_alignment.raildata}
+
         for alignment in alignments:
             x_data = [rail.station for rail in alignment.raildata]
-            y_data = [rail.rail_x * -1 for rail in alignment.raildata] #bve좌표계와 반대
+
+            if alignment.name == '자선':
+                y_data = [-rail.rail_x for rail in alignment.raildata]
+            else:
+                y_data = []
+                for i, rail in enumerate(alignment.raildata):
+                    offset = main_station_to_y.get(rail.station, 0)  # station 기준 매칭, 없으면 0
+                    y_val = -(rail.rail_x + offset)  # 기존 rail_x 반전 + 자선 rail_y 오프셋
+                    y_data.append(y_val)
+
             if x_data and y_data:
                 line, = self.ax.plot(x_data, y_data, label=alignment.name)
-                self.original_colors[line] = line.get_color()  # 원래 색 저장
+                self.original_colors[line] = line.get_color()
 
         self.ax.legend()
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -303,6 +326,18 @@ def parse_form_components(components, linenumber):
             print(f"ValueError: 줄 {linenumber} 열 {i} 파싱 실패: {val}")
     return a, b, c, d
 
+def parse_curve_components(components, linenumber):
+    a, b = 0.0, 0.0
+    for i, val in enumerate(components):
+        try:
+            if i == 0:
+                a = try_parse_float(val)
+            elif i == 1:
+                b = try_parse_float(val)
+        except ValueError:
+            print(f"ValueError: 줄 {linenumber} 열 {i} 파싱 실패: {val}")
+    return a, b
+
 #이벤트 핸들러
 #EVNET.PY
 class EventHandler:
@@ -322,6 +357,8 @@ class EventHandler:
             alignments, forms = self.app_controller.process_lines_to_alginment_data(lines)
 
             if alignments:
+                #자선 y값 조정(곡선반경 적용)
+                alignments = self.app_controller.calculate_mainline_coordinates(alignments)
                 #모든 배선 플로팅
                 self.main_app.plot_frame.plot_multiple(alignments, filename)
             if forms:
@@ -333,6 +370,7 @@ class EventHandler:
             lines = self.file_controller.read_file()
             alignments ,forms = self.app_controller.process_lines_to_alginment_data(lines)
             if alignments:
+                # 모든 배선 플로팅
                 self.main_app.plot_frame.plot_multiple(alignments, os.path.basename(filepath))
             if forms:
                 self.main_app.plot_frame.plot_forms(alignments, forms)
@@ -428,25 +466,49 @@ class AppController:
 
         return form
 
+    def parse_lines_to_curve(self, line, linenumber):
+        parts = line.split(',', 1)
+        if len(parts) < 2:
+            print(f"형식 오류: 줄 {linenumber}: {line}")
+            return 0
+
+        try:
+            station = float(parts[0])
+        except ValueError:
+            print(f"ValueError: 줄 {linenumber} station parsing 실패")
+            station = 0.0
+        curve_info = parts[1].strip().split(' ', 1)
+        if len(curve_info) < 2:
+            print(f"형식 오류: 줄 {linenumber}: {line}")
+            return 0
+
+        curve_components = curve_info[1].split(';')
+        try:
+            radius, cant = parse_curve_components(curve_components, linenumber)
+        except Exception as e:
+            print(f"함수 실행 실패: {e} ")
+            radius, cant = 0.0, 0.0 # 안전값 할당
+        curve = Curve(station, radius, cant)
+
+        return curve
+
     def process_lines_to_alginment_data(self, lines):
-        linenumber = 1  # 줄번호 추적변수
-        currnet_rail_name = ''  # 배선이름
-        currnetpart = 1  # 현재 파츠
+        # 기존 변수 초기화
         alignment = None
         alignments = []
-        max_station = 0.0 #배선에서의 최소 측점
-        min_station = 0.0 #배선에서의 최대측점
-        station_list = [] #측점 저장 리스트
-        forms = [] #폼 저장 리스트
-        formdata = None #폼 객체
+        station_list = []
+        forms = []
+        formdata = None
+
+        curve_list_for_main = []  # 자선에 넣을 curve 리스트 따로 저장
+
         for linenumber, line in enumerate(lines, start=1):
             line = line.strip()
             if not line:
                 continue
 
-            # 주석으로 배선 이름 찾기 (예: ',;배선명')
             if line.startswith(',;'):
-                # 이전 alignment가 있고, raildata가 있으면 저장
+                # 기존 alignment 저장
                 if alignment and alignment.raildata:
                     alignments.append(alignment)
 
@@ -456,49 +518,51 @@ class AppController:
 
                 if formdata and formdata.formdata:
                     forms.append(formdata)
-
-                #승강장명 생성
                 formdata = FormData(current_rail_name)
 
                 continue
 
-            # rail 또는 railend 라인 처리
-            # 예: '47725,.rail 5;10.895;0;'
             if '.rail' in line.lower() and '.railtype' not in line.lower():
                 rail, station = self.parse_lines_to_rail(line, linenumber)
                 station_list.append(station)
-                if alignment is not None:
+                if alignment:
                     alignment.raildata.append(rail)
                 else:
                     print(f"경고: 줄 {linenumber} - 배선 이름이 설정되지 않음")
-            #form 구문 처리추가
-            #예 : 56650,.form 13;11;0;7;
+
+            # curve 구문은 기존 alignment에 넣지 말고 별도 리스트에 저장
+            elif '.curve' in line.lower():
+                try:
+                    curve = self.parse_lines_to_curve(line, linenumber)
+                    if curve:
+                        curve_list_for_main.append(curve)  # 자선에 넣을 곡선 데이터 따로 저장
+                except Exception as e:
+                    print(f"경고: 줄 {linenumber}, parse_lines_to_curve에서 예외발생: 텍스트:{line}, 예외:{e}")
+
             elif '.form' in line.lower():
                 try:
                     form = self.parse_lines_to_form(line, linenumber)
                     if form:
                         formdata.formdata.append(form)
-
                 except Exception as e:
-                    print(f"경고: 줄 {linenumber} 에서 예외발생: 텍스트:{line}, 예외:{e}")
+                    print(f"경고: 줄 {linenumber}, parse_lines_to_form에서 예외발생: 텍스트:{line}, 예외:{e}")
             else:
-                # rail 관련 구문이 아니면 무시
                 continue
 
-        #최소 최대 범위설정(bve 최소가시거리 600)
         min_station = min(station_list) - 600
         max_station = max(station_list) + 600
-        #자선 추가
+
+        # 자선 생성 및 curve 데이터 할당
         main_alignment = self.create_mainline(min_station, max_station)
+        main_alignment.curvedata.extend(curve_list_for_main)  # 자선에만 curve 데이터 넣기
         alignments.append(main_alignment)
 
-        #마지막 선형 추가
-        # 반복문 끝난 뒤 마지막 alignment 추가
+        # 마지막 배선, 폼 데이터 누락 방지
         if alignment and alignment.raildata:
             alignments.append(alignment)
-        #마지막 form 데이터 누락방지
         if formdata and formdata.formdata:
             forms.append(formdata)
+
         return alignments, forms
 
     def create_mainline(self, min_station, max_station):
@@ -508,6 +572,92 @@ class AppController:
             current_station = min_station + i * 25
             al.raildata.append(Rail(current_station,railindex=0, rail_x=0.0, rail_y=0.0,object_index=0))
         return al
+
+    def calculate_mainline_coordinates(self, alignments: list[Alignment]):
+        import math
+
+        # 자선 찾기
+        main_alignment = next((a for a in alignments if a.name == '자선'), None)
+        if not main_alignment:
+            print('자선이 존재하지 않습니다.')
+            return alignments  # 자선 없음
+
+        curvedata = sorted(main_alignment.curvedata, key=lambda c: c.station)
+        raildata = main_alignment.raildata
+
+        # raildata에 station별 radius 할당 (곡선 반경 범위 할당)
+        radius_map = {}
+
+        current_radius = 0.0
+        prev_station = 0.0
+
+        for curve in curvedata:
+            start_station = prev_station
+            end_station = curve.station
+
+            # start_station 이상 end_station 미만 범위의 raildata에 현재 radius 할당
+            for rail in raildata:
+                if start_station <= rail.station < end_station:
+                    radius_map[rail.station] = current_radius
+
+            current_radius = curve.radius
+            prev_station = end_station
+
+        # 마지막 곡선 이후 구간에 반경 할당
+        for rail in raildata:
+            if rail.station >= prev_station:
+                radius_map[rail.station] = current_radius
+
+        # 좌표 계산 초기화
+        current_angle = 0.0  # 라디안
+        current_x = 0.0
+        current_y = 0.0
+
+        for i, rail in enumerate(raildata):
+            station = rail.station
+            radius = radius_map.get(station, 0.0)
+
+            if i == 0:
+                # 첫 지점은 (station, 0)
+                rail.rail_y = 0.0
+                current_x = station
+                current_y = 0.0
+                prev_station = station
+                prev_angle = current_angle
+                prev_x = current_x
+                prev_y = current_y
+                continue
+
+            delta_s = station - prev_station
+
+            if radius == 0.0:
+                # 직선 구간
+                dx = delta_s * math.cos(current_angle)
+                dy = delta_s * math.sin(current_angle)
+            else:
+                # 곡선 구간
+                delta_theta = delta_s / radius
+                theta_new = current_angle + delta_theta
+
+                dx = radius * (math.sin(theta_new) - math.sin(current_angle))
+                dy = radius * (-math.cos(theta_new) + math.cos(current_angle))
+
+                current_angle = theta_new  # 각도 누적
+
+            current_x = prev_x + dx
+            current_y = prev_y + dy
+
+            rail.rail_x = current_y  # rail_y 값 수정
+
+            # 다음 루프를 위해 이전 값 갱신
+            prev_station = station
+            prev_angle = current_angle
+            prev_x = current_x
+            prev_y = current_y
+
+
+        return alignments
+
 
 # 메인클래스 main.py
 class MainApp(tk.Tk):
