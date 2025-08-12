@@ -17,6 +17,24 @@ class Rail:
         self.rail_y = rail_y
         self.object_index = object_index
 
+class Curve:
+    def __init__(self, station: float, radius: float, cant: float):
+        self.station = station
+        self.radius = radius
+        self.cant = cant
+
+class Form:
+    def __init__(self, station: float, rail1_index: int, rail2_index: int, roofindex: int, objindex: int):
+        self.station = station
+        self.rail1_index = rail1_index
+        self.rail2_index = rail2_index
+        self.roofindex = roofindex
+        self.objindex = objindex
+
+class FormData:
+    def __init__(self, name: str):
+        self.name = name
+        self.formdata: list[Form] = []
 
 class Alignment:
     def __init__(self, name: str):
@@ -135,6 +153,52 @@ class PlotFrame(tk.Frame):
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.draw()
 
+    def plot_forms(self, alignments: list[Alignment], forms: list[FormData]):
+        for formdata in forms:
+            x_data = []
+            y_data = []
+            x1_data = []
+            y1_data = []
+            rail_map = {}
+            for alignment in alignments:
+                for rail in alignment.raildata:
+                    key = (rail.railindex, rail.station)
+                    rail_map[key] = rail
+
+            for form in formdata.formdata:
+                key1 = (form.rail1_index, form.station)
+                key2 = (form.rail2_index, form.station)
+
+                rail1 = rail_map.get(key1)
+                rail2 = rail_map.get(key2)
+
+                if rail1 and rail2:
+                    x_data.append(rail1.station)
+                    y_data.append((rail1.rail_x * -1) - 2)  # 2 이격, bve 좌표계 변환
+
+                    x1_data.append(rail2.station)
+                    y1_data.append((rail2.rail_x * -1) + 2)  # 반대 방향 이격
+
+            x1_data.reverse()
+            y1_data.reverse()
+
+            x_data.extend(x1_data)
+            y_data.extend(y1_data)
+
+            # 닫힌 도형 위해 시작점 다시 추가
+            if x_data and y_data:
+                x_data.append(x_data[0])
+                y_data.append(y_data[0])
+
+            self.ax.plot(x_data, y_data, color='gray')
+
+            # 중심 좌표 계산
+            center_x = sum(x_data) / len(x_data)
+            center_y = sum(y_data) / len(y_data)
+
+            # 텍스트 추가 (formdata 이름 등 필요에 따라 바꾸기)
+            self.ax.text(center_x, center_y, formdata.name, fontsize=12, ha='center', va='center', color='black')
+
     def apply_decoration(self, title, xlabel, ylabel, show_grid=True):
         """그래프 기본 스타일 적용"""
         self.ax.set_title(title)
@@ -223,6 +287,22 @@ def parse_rail_components(components, linenumber):
             print(f"ValueError: 줄 {linenumber} 열 {i} 파싱 실패: {val}")
     return rail_index, x, y, obj_index
 
+def parse_form_components(components, linenumber):
+    a, b, c, d = 0, 0, 0, 0
+    for i, val in enumerate(components):
+        try:
+            if i == 0:
+                a = try_parse_int(val)
+            elif i == 1:
+                b = try_parse_int(val)
+            elif i == 2:
+                c = try_parse_int(val)
+            elif i == 3:
+                d = try_parse_int(val)
+        except ValueError:
+            print(f"ValueError: 줄 {linenumber} 열 {i} 파싱 실패: {val}")
+    return a, b, c, d
+
 #이벤트 핸들러
 #EVNET.PY
 class EventHandler:
@@ -239,19 +319,23 @@ class EventHandler:
         filename = os.path.basename(filepath)
         if filepath:
             lines = self.file_controller.read_file()
-            alignments = self.app_controller.process_lines_to_alginment_data(lines)
+            alignments, forms = self.app_controller.process_lines_to_alginment_data(lines)
 
             if alignments:
                 #모든 배선 플로팅
                 self.main_app.plot_frame.plot_multiple(alignments, filename)
+            if forms:
+                self.main_app.plot_frame.plot_forms(alignments, forms)
 
     def reload(self):
         filepath = self.file_controller.filepath
         if filepath:
             lines = self.file_controller.read_file()
-            alignments = self.app_controller.process_lines_to_alginment_data(lines)
+            alignments ,forms = self.app_controller.process_lines_to_alginment_data(lines)
             if alignments:
                 self.main_app.plot_frame.plot_multiple(alignments, os.path.basename(filepath))
+            if forms:
+                self.main_app.plot_frame.plot_forms(alignments, forms)
 
     def on_file_save(self):
         self.file_controller.save_file()
@@ -291,6 +375,59 @@ class AppController:
         self.main_app = main_app  # MainApp 인스턴스 (UI 접근용)
         self.file_ctrl = file_controller
 
+    def parse_lines_to_rail(self, line, linenumber):
+        parts = line.split(',', 1)
+        if len(parts) < 2:
+            print(f"형식 오류: 줄 {linenumber}: {line}")
+            return 0
+
+        try:
+            station = float(parts[0])
+        except ValueError:
+            print(f"ValueError: 줄 {linenumber} station parsing 실패")
+            station = 0.0
+        rail_info = parts[1].strip().split(' ', 1)
+        if len(rail_info) < 2:
+            print(f"형식 오류: 줄 {linenumber}: {line}")
+            return 0
+
+        rail_components = rail_info[1].split(';')
+        try:
+            rail_index, x, y, obj_index = parse_rail_components(rail_components, linenumber)
+        except Exception as e:
+            print(f"함수 실행 실패: {e} ")
+            rail_index, x, y, obj_index = 0, 0.0, 0.0, 0  # 안전값 할당
+        rail = Rail(station, rail_index, x, y, obj_index)
+
+
+        return rail, station
+
+    def parse_lines_to_form(self, line, linenumber):
+        parts = line.split(',', 1)
+        if len(parts) < 2:
+            print(f"형식 오류: 줄 {linenumber}: {line}")
+            return 0
+
+        try:
+            station = float(parts[0])
+        except ValueError:
+            print(f"ValueError: 줄 {linenumber} station parsing 실패")
+            station = 0.0
+        form_info = parts[1].strip().split(' ', 1)
+        if len(form_info) < 2:
+            print(f"형식 오류: 줄 {linenumber}: {line}")
+            return 0
+
+        form_components = form_info[1].split(';')
+        try:
+            rail1_index, rail2_index, roof_index, obj_index = parse_form_components(form_components, linenumber)
+        except Exception as e:
+            print(f"함수 실행 실패: {e} ")
+            rail1_index, rail2_index, roof_index, obj_index = 0, 0, 0, 0  # 안전값 할당
+        form = Form(station, rail1_index, rail2_index, roof_index, obj_index)
+
+        return form
+
     def process_lines_to_alginment_data(self, lines):
         linenumber = 1  # 줄번호 추적변수
         currnet_rail_name = ''  # 배선이름
@@ -300,7 +437,8 @@ class AppController:
         max_station = 0.0 #배선에서의 최소 측점
         min_station = 0.0 #배선에서의 최대측점
         station_list = [] #측점 저장 리스트
-
+        forms = [] #폼 저장 리스트
+        formdata = None #폼 객체
         for linenumber, line in enumerate(lines, start=1):
             line = line.strip()
             if not line:
@@ -315,38 +453,34 @@ class AppController:
                 # 새 배선 생성
                 current_rail_name = line.split(';', 1)[1].strip()
                 alignment = Alignment(current_rail_name)
+
+                if formdata and formdata.formdata:
+                    forms.append(formdata)
+
+                #승강장명 생성
+                formdata = FormData(current_rail_name)
+
                 continue
 
             # rail 또는 railend 라인 처리
             # 예: '47725,.rail 5;10.895;0;'
             if '.rail' in line.lower() and '.railtype' not in line.lower():
-                parts = line.split(',', 1)
-                if len(parts) < 2:
-                    print(f"형식 오류: 줄 {linenumber}: {line}")
-                    continue
-
-                try:
-                    station = float(parts[0])
-                except ValueError:
-                    print(f"ValueError: 줄 {linenumber} station parsing 실패")
-                    station = 0.0
+                rail, station = self.parse_lines_to_rail(line, linenumber)
                 station_list.append(station)
-                rail_info = parts[1].strip().split(' ', 1)
-                if len(rail_info) < 2:
-                    print(f"형식 오류: 줄 {linenumber}: {line}")
-                    continue
-
-                rail_components = rail_info[1].split(';')
-                try:
-                    rail_index, x, y, obj_index = parse_rail_components(rail_components, linenumber)
-                except Exception as e:
-                    print(f"함수 실행 실패: {e} ")
-                    rail_index, x, y, obj_index = 0, 0.0, 0.0, 0  # 안전값 할당
-                rail = Rail(station, rail_index, x, y, obj_index)
                 if alignment is not None:
                     alignment.raildata.append(rail)
                 else:
                     print(f"경고: 줄 {linenumber} - 배선 이름이 설정되지 않음")
+            #form 구문 처리추가
+            #예 : 56650,.form 13;11;0;7;
+            elif '.form' in line.lower():
+                try:
+                    form = self.parse_lines_to_form(line, linenumber)
+                    if form:
+                        formdata.formdata.append(form)
+
+                except Exception as e:
+                    print(f"경고: 줄 {linenumber} 에서 예외발생: 텍스트:{line}, 예외:{e}")
             else:
                 # rail 관련 구문이 아니면 무시
                 continue
@@ -355,13 +489,17 @@ class AppController:
         min_station = min(station_list) - 600
         max_station = max(station_list) + 600
         #자선 추가
-        alignments.append(self.create_mainline(min_station, max_station))
+        main_alignment = self.create_mainline(min_station, max_station)
+        alignments.append(main_alignment)
 
         #마지막 선형 추가
         # 반복문 끝난 뒤 마지막 alignment 추가
         if alignment and alignment.raildata:
             alignments.append(alignment)
-        return alignments
+        #마지막 form 데이터 누락방지
+        if formdata and formdata.formdata:
+            forms.append(formdata)
+        return alignments, forms
 
     def create_mainline(self, min_station, max_station):
         al = Alignment(name='자선')
