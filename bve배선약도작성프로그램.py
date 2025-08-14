@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 import matplotlib
+import numpy as np
 # ---- Matplotlib Tkinter 연결 ----
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
@@ -20,6 +21,7 @@ class Rail:
         self.rail_x = rail_x
         self.rail_y = rail_y
         self.object_index = object_index
+        self.coord = Vector3(x=0, y=0, z=0)
 
 class Curve:
     def __init__(self, station: float, radius: float, cant: float):
@@ -154,18 +156,19 @@ class PlotFrame(tk.Frame):
             main_station_to_y = {}
         else:
             # station: rail_y 딕셔너리 생성 (station은 고유한 키)
-            main_station_to_y = {rail.station: rail.rail_x for rail in main_alignment.raildata}
+            main_station_to_y = {rail.station: rail.coord.y for rail in main_alignment.raildata}
 
         for alignment in alignments:
             x_data = [rail.station for rail in alignment.raildata]
 
             if alignment.name == '자선':
-                y_data = [-rail.rail_x for rail in alignment.raildata]
+                y_data = [rail.coord.y for rail in alignment.raildata]
             else:
                 y_data = []
                 for i, rail in enumerate(alignment.raildata):
                     offset = main_station_to_y.get(rail.station, 0)  # station 기준 매칭, 없으면 0
-                    y_val = -(rail.rail_x + offset)  # 기존 rail_x 반전 + 자선 rail_y 오프셋
+                    y_val = -(rail.rail_x - offset)
+                    # 기존 rail_x 반전 + 자선 rail_y 오프셋
                     y_data.append(y_val)
 
             if x_data and y_data:
@@ -574,7 +577,6 @@ class AppController:
         return al
 
     def calculate_mainline_coordinates(self, alignments: list[Alignment]):
-        import math
 
         # 자선 찾기
         main_alignment = next((a for a in alignments if a.name == '자선'), None)
@@ -607,57 +609,81 @@ class AppController:
         for rail in raildata:
             if rail.station >= prev_station:
                 radius_map[rail.station] = current_radius
-
-        # 좌표 계산 초기화
-        current_angle = 0.0  # 라디안
-        current_x = 0.0
-        current_y = 0.0
-
+        direction = Vector2(x=1.0, y=0.0)
+        position = Vector3(x=raildata[0].station, y=0.0, z=0.0)
         for i, rail in enumerate(raildata):
             station = rail.station
             radius = radius_map.get(station, 0.0)
 
-            if i == 0:
-                # 첫 지점은 (station, 0)
-                rail.rail_y = 0.0
-                current_x = station
-                current_y = 0.0
-                prev_station = station
-                prev_angle = current_angle
-                prev_x = current_x
-                prev_y = current_y
-                continue
 
-            delta_s = station - prev_station
+            data = []
+            a = 0.0
+            c = 25
+            h = 0.0
+            pitch = 0
 
-            if radius == 0.0:
-                # 직선 구간
-                dx = delta_s * math.cos(current_angle)
-                dy = delta_s * math.sin(current_angle)
-            else:
-                # 곡선 구간
-                delta_theta = delta_s / radius
-                theta_new = current_angle + delta_theta
+            rail.coord.x = position.copy().x
+            rail.coord.z = position.copy().y
+            rail.coord.y = position.copy().z
 
-                dx = radius * (math.sin(theta_new) - math.sin(current_angle))
-                dy = radius * (-math.cos(theta_new) + math.cos(current_angle))
+            if radius != 0.0 and pitch != 0.0:
+                d = 25
+                p = pitch
+                r = radius
+                s = d / math.sqrt(1.0 + p * p)
+                h = s * p
+                b = s / abs(r)
+                c = math.sqrt(2.0 * r * r * (1.0 - math.cos(b)))
 
-                current_angle = theta_new  # 각도 누적
+                a = 0.5 * np.sign(r) * b
+                direction.rotate(math.cos(-a), math.sin(-a))
+            elif radius != 0.0:
+                d = 25
+                r = radius
+                b = d / abs(r)
+                c = math.sqrt(2.0 * r * r * (1.0 - math.cos(b)))
+                a = 0.5 * np.sign(r) * b
+                direction.rotate(math.cos(-a), math.sin(-a))
+            elif pitch != 0.0:
+                p = pitch
+                d = 25
+                c = d / math.sqrt(1.0 + p * p)
+                h = c * p
 
-            current_x = prev_x + dx
-            current_y = prev_y + dy
+            TrackYaw = math.atan2(direction.x, direction.y)
+            TrackPitch = math.atan(pitch)
 
-            rail.rail_x = current_y  # rail_y 값 수정
+            position.x += direction.x * c
+            position.y += h
+            position.z += direction.y * c
 
-            # 다음 루프를 위해 이전 값 갱신
-            prev_station = station
-            prev_angle = current_angle
-            prev_x = current_x
-            prev_y = current_y
+            if a != 0.0:
+                direction.rotate(math.cos(-a), math.sin(-a))
 
 
         return alignments
 
+class Vector2:
+    def __init__(self, x=0.0, y=0.0):
+        self.x = x
+        self.y = y
+
+    def rotate(self, cosine_of_angle, sine_of_angle):
+        x_new = cosine_of_angle * self.x - sine_of_angle * self.y
+        y_new = sine_of_angle * self.x + cosine_of_angle * self.y
+        self.x, self.y = x_new, y_new
+
+    def copy(self):
+        return Vector2(self.x, self.y)
+
+class Vector3:
+    def __init__(self, x=0.0, y=0.0, z=0.0):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def copy(self):
+        return Vector3(self.x, self.y, self.z)
 
 # 메인클래스 main.py
 class MainApp(tk.Tk):
