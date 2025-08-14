@@ -200,10 +200,18 @@ class PlotFrame(tk.Frame):
 
                 if rail1 and rail2:
                     x_data.append(rail1.station)
-                    y_data.append((rail1.rail_x * -1) - 2)  # 2 이격, bve 좌표계 변환
-
                     x1_data.append(rail2.station)
-                    y1_data.append((rail2.rail_x * -1) + 2)  # 반대 방향 이격
+                    if rail1.rail_x < rail2.rail_x:
+                        y_data.append((rail1.rail_x * -1) - 2)  # 2 이격, bve 좌표계 변환
+                        y1_data.append((rail2.rail_x * -1) + 2)
+                    else:
+                        y_data.append((rail1.rail_x * -1) + 2)  # 2 이격, bve 좌표계 변환
+                        y1_data.append((rail2.rail_x * -1) - 2)
+
+                elif rail1 and form.rail2_index == -1:
+                    # rail2가 없을 때는 rail1만 사용
+                    x_data.append(rail1.station)
+                    y_data.append((rail1.rail_x * -1) - 5)  # 5 이격 (단일선)
 
             x1_data.reverse()
             y1_data.reverse()
@@ -321,6 +329,8 @@ def parse_form_components(components, linenumber):
                 a = try_parse_int(val)
             elif i == 1:
                 b = try_parse_int(val)
+                if b == -1 or (isinstance(val, str) and val.strip().lower() == 'l'):
+                    b = -1
             elif i == 2:
                 c = try_parse_int(val)
             elif i == 3:
