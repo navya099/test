@@ -115,7 +115,7 @@ def read_file():
         return []
 
     print("[선택된 파일]:", file_path)
-    return try_read_file(file_path)
+    return file_path
 
 def remove_duplicate_pitch(data):
     filtered_data = []
@@ -678,6 +678,40 @@ def apply_brokenchain_to_structure(structure_list, brokenchain):
 
     return updated_structure
 
+def find_pitch_section(filepath):
+    df = pd.read_excel(filepath,  header=0)
+
+    ip_list = []
+    current_ip = None
+    ip_counter = 1
+
+    for _, row in df.iterrows():
+        number = row['번호'] if pd.notna(row['번호']) else 0
+        vipsta = row['PVI 측점'] if pd.notna(row['PVI 측점']) else 0.0
+        prev_pitch = row['종단 진입부 경사'] if pd.notna(row['종단 진입부 경사']) else 0.0
+        next_pitch = row['종단 진출부 경사'] if pd.notna(row['종단 진출부 경사']) else 0.0
+        seg = row['종단 원곡선 유형'].strip() if pd.notna(row['종단 원곡선 유형']) else ''
+        vlength = row['종단 원곡선 길이'] if pd.notna(row['종단 원곡선 길이']) else 0.0
+        vradius = row['원곡선 반지름'] if pd.notna(row['원곡선 반지름']) else 0.0
+        isverticalvurve = True if seg == '볼록형' or seg == '오목형' else False
+
+        if current_ip:  # 이전 IP 저장
+            ip_list.append(current_ip)
+        current_ip = VIPdata(VIPNO=ip_counter)
+        ip_counter += 1
+        current_ip.VIP_STA = vipsta
+        current_ip.seg =  seg
+        current_ip.vradius = vradius
+        current_ip.isvcurve = isverticalvurve
+        current_ip.vlength = vlength
+        current_ip.prev_slope = prev_pitch * 0.001 #퍼밀을 0..01로 변환
+        current_ip.next_slope = next_pitch * 0.001 #퍼밀을 0..01로 변환
+        #bvc evc 계산
+        current_ip.BVC_STA = vipsta - (vlength / 2) #BVC
+        current_ip.EVC_STA = vipsta + (vlength / 2) #EVC
+
+    return ip_list
+
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
     for start, end in structure_list['bridge']:
@@ -841,17 +875,23 @@ def convert_pitch_lines(lines):
 
     return converted
 
-def process_and_save_sections(lines: list[list[tuple[float, float]]], brokenchain) -> list[VIPdata]:
+def process_and_save_sections(lines: list[list[tuple[float, float]]], brokenchain, flag: str, data) -> list[VIPdata]:
     """종곡선 정보를 처리하고 파일로 저장"""
 
-    # 중복 제거
-    # Civil3D 형식 여부 판단
-    civil3d = is_civil3d_format(lines)
-    unique_data = convert_pitch_lines(lines) if civil3d else remove_duplicate_pitch(lines)
+    if not data:
+        print("curve_info가 비어 있습니다.")
+        return None
+    if flag == 'BVE':
+        # 중복 제거
+        # Civil3D 형식 여부 판단
+        civil3d = is_civil3d_format(lines)
+        unique_data = convert_pitch_lines(lines) if civil3d else remove_duplicate_pitch(lines)
+        # 구간 정의 및 처리
+        sections = process_sections(unique_data)
+        vipdatas = annotate_sections(sections, brokenchain)
+    else:
+        vipdatas = data
 
-    # 구간 정의 및 처리
-    sections = process_sections(unique_data)
-    vipdatas = annotate_sections(sections, brokenchain)
 
     return vipdatas
 
@@ -1050,10 +1090,24 @@ class PitchProcessingApp(tk.Tk):
             self.process_proken_chain()
 
             # 파일 읽기
-            self.log("기울기 정보 파일 읽는 중...")
-            data = read_file()
-            if not data:
-                self.log("파일 없음 또는 불러오기 실패.")
+            data = None
+            try:
+                file_path = read_file()
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext == ".txt":
+                    data = try_read_file(file_path)  # TXT 읽기 시도
+                    self.log('bve txt타입 감지됨')
+                    flag = 'BVE'
+                elif ext == ".xlsx":
+                    data = find_pitch_section(file_path)  # xlsx읽기 시도
+                    self.log('civil3d xlsx 타입 감지됨')
+                    flag = 'CIVIL3D'
+                else:
+                    self.log(f"지원하지 않는 형식: {ext}")
+                    return
+            except Exception as e:
+                self.log(f'파일처리 예외발생 {e}')
+                flag = None
                 return
 
             # 구조물 데이터 로드
@@ -1063,8 +1117,8 @@ class PitchProcessingApp(tk.Tk):
             structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
             # 곡선 데이터 처리
 
-            self.log("BVE용 처리 시작...")
-            vipdatas = process_and_save_sections(data, self.brokenchain)
+            self.log(f"{flag}용 처리 시작...")
+            vipdatas = process_and_save_sections(data, self.brokenchain, flag, data)
 
             objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory, self.alignment_type)
 
