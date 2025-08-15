@@ -106,7 +106,7 @@ def read_file():
         return []
 
     print("[선택된 파일]:", file_path)
-    return try_read_file(file_path)
+    return file_path
 
 def remove_duplicate_radius(data):
     filtered_data = []
@@ -319,6 +319,60 @@ def find_structure_section(filepath):
         structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
     
     return structure_list
+
+
+def find_curve_section(filepath):
+    df = pd.read_excel(filepath,  header=4)
+
+    ip_list = []
+    current_ip = None
+    ip_counter = 1
+
+    for _, row in df.iterrows():
+        point_type = row['구분'].strip() if pd.notna(row['구분']) else ''
+        sta = row['측점'] if pd.notna(row['측점']) else 0.0
+        direction = row['방향'] if pd.notna(row['방향']) else ''
+        radius = row['반지름'] if pd.notna(row['반지름']) else 0.0
+
+        if point_type == 'SP:':
+            if current_ip:  # 이전 IP 저장
+                ip_list.append(current_ip)
+            current_ip = IPdata(IPNO=ip_counter)
+            ip_counter += 1
+            current_ip.SP_STA = sta
+            current_ip.curve_direction = CurveDirection.LEFT if direction =='-' else CurveDirection.RIGHT
+            current_ip.curvetype = '완화곡선'
+        elif point_type == 'PC:':
+            if current_ip:
+                current_ip.PC_STA = sta
+                current_ip.radius = radius
+
+        elif point_type == 'CP:':
+            if current_ip:
+                current_ip.CP_STA = sta
+
+        elif point_type == 'PS:':
+            if current_ip:
+                current_ip.PS_STA = sta
+                ip_list.append(current_ip)
+                current_ip = None
+
+        elif point_type == 'BC:':
+            if current_ip:
+                ip_list.append(current_ip)
+            current_ip = IPdata(IPNO=ip_counter)
+            ip_counter += 1
+            current_ip.BC_STA = sta
+            current_ip.radius = radius
+            current_ip.curve_direction = CurveDirection.LEFT if direction == '-' else CurveDirection.RIGHT
+            current_ip.curvetype = '원곡선'
+        elif point_type == 'EC:':
+            if current_ip:
+                current_ip.EC_STA = sta
+                ip_list.append(current_ip)
+                current_ip = None
+
+    return ip_list
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
@@ -961,15 +1015,16 @@ def apply_brokenchain_to_structure(structure_list, brokenchain):
     return updated_structure
 
 
-def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain, altype: str):
+def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain, altype: str, flag: str):
     """곡선 데이터 처리 (파일 저장 및 이미지 & CSV 생성)"""
     if not data:
         print("curve_info가 비어 있습니다.")
         return None, None
-
-    # 중복 제거 및 섹션 처리
-    ipdatas = process_and_save_sections(data, brokenchain)
-
+    if flag == 'BVE':
+        # 중복 제거 및 섹션 처리
+        ipdatas = process_and_save_sections(data, brokenchain)
+    else:
+        ipdatas = data
     # 이미지 및 CSV 생성
     objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory, altype)
 
@@ -1138,11 +1193,25 @@ class CurveProcessingApp(tk.Tk):
 
             # 곡선 정보 파일 읽기
             self.log("곡선 정보 파일 읽는 중...")
-            data = read_file()
-            if not data:
-                self.log("파일 없음 또는 불러오기 실패.")
+            data = None
+            try:
+                file_path = read_file()
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext == ".txt":
+                    data = try_read_file(file_path) #TXT 읽기 시도
+                    self.log('bve txt타입 감지됨')
+                    flag = 'BVE'
+                elif ext == ".xlsx":
+                    data =  find_curve_section(file_path) #xlsx읽기 시도
+                    self.log('civil3d xlsx 타입 감지됨')
+                    flag = 'CIVIL3D'
+                else:
+                    self.log(f"지원하지 않는 형식: {ext}")
+                    return
+            except Exception as e:
+                self.log('파일처리 예외발생 {e}')
+                flag = None
                 return
-
             # 구조물 데이터 로드
             self.log("구조물 데이터 로드 중...")
             structure_list = load_structure_data()
@@ -1150,7 +1219,7 @@ class CurveProcessingApp(tk.Tk):
             structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
             # 곡선 데이터 처리
             self.log("곡선 데이터 처리 중...")
-            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain, self.alignment_type)
+            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain, self.alignment_type, flag)
 
             # 최종 텍스트 생성
             if objectdatas:
