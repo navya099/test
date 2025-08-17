@@ -1,5 +1,8 @@
 # 평면선형 계산 테스트
 import math
+from dataclasses import dataclass
+from enum import Enum
+
 '''
 hor_option = [
             '시작측점 누가거리',
@@ -8,15 +11,197 @@ hor_option = [
             '측점 표시방법(NO)',
             '측점 계산 간격'
             ]
-            
-rows = [,
-,
-,
-,
-,
-]
 '''
 
+class VisibleType(Enum):
+    """
+    출력/표시 유형을 나타내는 Enum 클래스.
+
+    Attributes:
+        STA (int): STA형식 출력
+        NO (int): NO형식 출력
+    """
+    STA = 0
+    NO = 1
+
+@dataclass
+class HorOption:
+    """
+    HorOption은 평면선형 계산 옵션을 저장하는 데이터 클래스입니다.
+
+    Attributes:
+        start_sta (float): 계산 시작 위치(STA)
+        start_ip_number (float): 시작 IP 번호
+        visible_type (VisibleType): 출력/표시 유형 (예: STA, NO 등)
+        calculation_distance (float): 계산 간격
+    """
+    start_sta: float = 0.0
+    start_ip_number: float = 0.0
+    visible_type: VisibleType = VisibleType.STA  # 실제 VisibleType Enum 참조
+    calculation_distance: float = 0.0
+
+
+@dataclass
+class HorizonInputData:
+    """
+    HorizonInputData는 평면선형 계산을 위한 입력 데이터를 저장하는 데이터 클래스입니다.
+
+    Attributes:
+        ipnumber (int): 해당 IP (Intersection Point) 번호
+        ip_x_coord (float): IP의 X 좌표
+        ip_y_coord (float): IP의 Y 좌표
+        radius (float): 곡선 반경
+        A1 (float): 시작 클로소이드 파라미터 A1
+        A2 (float): 종료 클로소이드 파라미터 A2
+    """
+    ipnumber: int = 0
+    ip_x_coord: float = 0.0
+    ip_y_coord: float = 0.0
+    radius: float = 0.0
+    A1: float = 0.0
+    A2: float = 0.0
+
+
+@dataclass
+class SimpleCurve:
+    """
+    SimpleCurve는 평면 곡선 요소 계산 결과를 저장하는 데이터 클래스입니다.
+
+    Attributes:
+        tangent_len (float): 접선 거리(T)
+        arc_len (float): 곡선 길이(L)
+        external (float): 곡선 편심(E)
+        mid_ord (float): 곡선 높이 변화(M)
+        chord_len (float): 곡선 현 길이(C)
+        direction (int): 곡선 진행 방향 플래그 (0: 정상, 1: 역방향)
+    """
+    tangent_len: float = 0.0
+    arc_len: float = 0.0
+    external: float = 0.0
+    mid_ord: float = 0.0
+    chord_len: float = 0.0
+    direction: int = 0
+
+@dataclass
+class ClothoidCurve:
+    """
+    ClothoidCurve는 클로소이드 곡선 계산 결과를 저장하는 데이터 클래스입니다.
+
+    Attributes:
+        T (float): 타우
+        shift (float): 이정량
+        dist (float): 이정거리
+        delta (float): 곡선 변화각
+        arc_len (float): 곡선 아크 길이
+        length (float): 클로소이드 길이
+        X (float): 클로소이드 횡거 X
+        Y (float): 클로소이드 횡거 Y
+        theta (float): 클로소이드 각도
+        Yc (float): 보정된 Y 좌표
+        Xc (float): 보정된 X 좌표
+        TL (float): 접선 길이 보정
+        tan_off (float): 접선 오프셋
+        phi (float): 클로소이드 회전각
+        R_eff (float): 유효 반경
+    """
+    T: float = 0.0
+    shift: float = 0.0
+    dist: float = 0.0
+    delta: float = 0.0
+    arc_len: float = 0.0
+    length: float = 0.0
+    X: float = 0.0
+    Y: float = 0.0
+    theta: float = 0.0
+    Yc: float = 0.0
+    Xc: float = 0.0
+    TL: float = 0.0
+    tan_off: float = 0.0
+    phi: float = 0.0
+    R_eff: float = 0.0
+
+@dataclass
+class HorResult:
+    ip_va: list       # VIP 정보 리스트
+    gou: list         # 곡선 각 리스트
+    ip_list: list     # 단순 곡선 리스트
+    bang: list        # 방위각 리스트
+    clothoid_list: list  # 클로소이드 리스트
+
+@dataclass
+class IPVA:
+    """
+    VIP(Virtual Intersection Point) 정보를 나타내는 데이터 클래스입니다.
+
+    Attributes:
+        curvetype (int): 곡선 구분 (예: 단곡선, 복곡선 등).
+        iptype (int): VIP의 종류 구분 (예: 시작점, 종점 등).
+        sta (float): 측점, 노선 상의 위치.
+        x (float): X 좌표 (평면상 좌표).
+        y (float): Y 좌표 (평면상 좌표).
+        r (float): 곡선 반경.
+        a1 (float): 클로소이드 시점 파라미터 A1.
+        a2 (float): 클로소이드 종점 파라미터 A2.
+        bang (float): 방위각 (라디안 단위).
+    """
+    curvetype: int       # 곡선 구분
+    iptype: int          # 종류 구분
+    sta: float           # 측점
+    x: float             # X좌표
+    y: float             # Y좌표
+    r: float             # 반경
+    a1: float            # 클로소이드 A1
+    a2: float            # 클로소이드 A2
+    bang: float          # 방위각
+
+
+@dataclass
+class BCDATA:
+    """
+    곡선 시작점(BC, Begin of Curve) 좌표를 저장하는 데이터 클래스.
+
+    Attributes:
+        bc_x (float): BC의 X 좌표
+        bc_y (float): BC의 Y 좌표
+    """
+    bc_x: float = 0.0
+    bc_y: float = 0.0
+
+@dataclass
+class ECDATA:
+    """
+    곡선 종료점(EC, End of Curve) 좌표를 저장하는 데이터 클래스.
+
+    Attributes:
+        ec_x (float): EC의 X 좌표
+        ec_y (float): EC의 Y 좌표
+    """
+    ec_x: float = 0.0
+    ec_y: float = 0.0
+
+@dataclass
+class BTCDATA:
+    """
+    곡선 전 클로소이드 종료점(BTC, Begin of Transition Curve) 좌표를 저장하는 데이터 클래스.
+
+    Attributes:
+        btc_x (float): BTC의 X 좌표
+        btc_y (float): BTC의 Y 좌표
+    """
+    btc_x: float = 0.0
+    btc_y: float = 0.0
+
+@dataclass
+class ETCDATA:
+    """
+    곡선 후 클로소이드 시작점(ETC, End of Transition Curve) 좌표를 저장하는 데이터 클래스.
+
+    Attributes:
+        etc_x (float): ETC의 X 좌표
+        etc_y (float): ETC의 Y 좌표
+    """
+    etc_x: float = 0.0
+    etc_y: float = 0.0
 
 
 
@@ -24,119 +209,78 @@ class HorCalqu:
     """HorCalqu"""
 
     def __init__(self):
-        self.cursor_hor = None
-        self.conn_hor = None
-        self.rows = None
-        self.sta = None
+        self.rows = []
+        self.sta = 0.0
 
-    def print_dxf(self, cursor_hor, conn_hor, hor_option):
+    def print_dxf(self, hor_option):
         pass
 
-    def print_01(self, cursor_hor, conn_hor, hor_option):
+    def print_xlsx(self, hor_option):
         pass
 
 
-    def basic_calqu(self, hor_option, rows):
+    def basic_calqu(self, hor_option: HorOption, rows: list[HorizonInputData]):
         self.rows = rows
         ip_count = len(self.rows)
-        self.sta = float(hor_option[0]) #시작 측점 누가거리
-        gan = float(hor_option[4]) #계산 간격 DEFAULT 20.00
+        self.sta = hor_option.start_sta #시작 측점 누가거리
+        gan = hor_option.calculation_distance #계산 간격 DEFAULT 20.00
         ip_va = []  # 최종 VIP/곡선 점 계산값 저장
         lo = []  # 구간 길이
         gou = []  # 각도 변화량
-        ip = []  # IP 관련 계산값
-        bc = []  # 시작점 좌표 (Begin Coordinate)
-        ec = []  # 종료점 좌표 (End Coordinate)
-        btc = []  # BTC 좌표 (보조)
-        etc = []  # ETC 좌표 (보조)
+        ip_list = []  # IP 관련 계산값
+        bc_list = []  # 시작점 좌표 (Begin Coordinate)
+        ec_list = []  # 종료점 좌표 (End Coordinate)
+        btc_list = []  # BTC 좌표 (보조)
+        etc_list = []  # ETC 좌표 (보조)
         bang = []  # 방위각 각도(방향)
-        clo = []  # 클로소이드 계산용 배열
+        clothoid_list = []  # 클로소이드 계산용 배열
         for i in range(0, ip_count - 1):
+            #초기에 각 ip별 빈 리스트 생성
             lo.append(0)
             gou.append(0)
-            ip.append([
-                0,
-                0,
-                0,
-                0,
-                0,
-                0])
-            bc.append([
-                0,
-                0])
-            ec.append([
-                0,
-                0])
-            btc.append([
-                0,
-                0,
-                0])
-            etc.append([
-                0,
-                0,
-                0])
+            ip_list.append(SimpleCurve())
+            bc_list.append(BCDATA())
+            ec_list.append(ECDATA())
+            btc_list.append(BTCDATA())
+            etc_list.append(ETCDATA())
             bang.append(0)
-            clo.append([
-                [
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0],
-                [
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0]])
+            clothoid_list.append([ClothoidCurve(),ClothoidCurve()]) #시점측 종점측 두개 생성
         back = 0
 
         try:
             for i in range(0, ip_count - 1):
+                # ----- 2. 곡선 요소 계산 -----
+                ipnumber = self.rows[i].ipnumber
+                ip_x_coord = self.rows[i].ip_x_coord
+                next_ip_x_coord = self.rows[i + 1].ip_x_coord
+                ip_y_coord = self.rows[i].ip_y_coord
+                next_ip_y_coord = self.rows[i + 1].ip_y_coord
+                radius = self.rows[i].radius
+                clothoid_a1 = self.rows[i].A1
+                clothoid_a2 = self.rows[i].A2
+
                 # 두 점 사이의 직선 거리 계산 (유클리드 거리)
                 temp_ip_dist = math.hypot(
-                    self.rows[i + 1][1] - self.rows[i][1],  # ΔX
-                    self.rows[i + 1][2] - self.rows[i][2]  # ΔY
+                    next_ip_x_coord - ip_x_coord,  # ΔX
+                    next_ip_y_coord - ip_y_coord # ΔY
                 )
 
                 # 두 점의 X 좌표가 같으면 수직선 처리
-                if self.rows[i + 1][1] == self.rows[i][1]:
-                    if self.rows[i][2] > self.rows[i + 1][2]:
+                if next_ip_x_coord == ip_x_coord:
+                    if ip_y_coord > next_ip_y_coord:
                         temp_bang_yui = math.pi * -1 / 2  # -90도 (아래 방향)
                     else:
                         temp_bang_yui = math.pi / 2  # 90도 (위 방향)
                 else:
                     # 일반적인 두 점의 방향 각도 계산 (atan2 대신 atan 사용)
                     temp_bang_yui = math.atan(
-                        (self.rows[i + 1][2] - self.rows[i][2]) /
-                        (self.rows[i + 1][1] - self.rows[i][1])
+                        (next_ip_y_coord - ip_y_coord) /
+                        (next_ip_x_coord - ip_x_coord)
                     )
 
                 # 추가 보정: X 좌표 증가 방향에 따라 각도 조정
-                if self.rows[i][1] <= self.rows[i + 1][1]:
-                    if self.rows[i][2] > self.rows[i + 1][2]:
+                if ip_x_coord <= next_ip_x_coord:
+                    if ip_y_coord > next_ip_y_coord:
                         temp_bang_yui = temp_bang_yui + math.pi * 2  # 아래쪽 이동 시 보정
                     else:
                         temp_bang_yui = temp_bang_yui + math.pi  # 위쪽 이동 시 보정
@@ -164,13 +308,28 @@ class HorCalqu:
                 else:
                     back = bang[i - 1] + math.pi
 
-                # 2. 곡선 요소 계산
-                ip[i][0] = self.rows[i][3] * math.tan(gou[i] / 2)  # 접선 거리
-                ip[i][1] = self.rows[i][3] * gou[i]  # 곡선 길이
-                ip[i][2] = self.rows[i][3] * (1 / math.cos(gou[i] / 2) - 1)  # 곡선 편심
-                ip[i][3] = self.rows[i][3] * (1 - math.cos(gou[i] / 2))  # 곡선 높이 변화
-                ip[i][4] = 2 * self.rows[i][3] * math.sin(gou[i] / 2)  # 곡선 폭
-                ip[i][5] = 0 if bang[i] > bang[i - 1] else 1  # 곡선 진행 방향 플래그
+                # ----- 2. 곡선 요소 계산 -----
+                ipnumber = self.rows[i].ipnumber
+                ip_x_coord = self.rows[i].ip_x_coord
+                ip_y_coord = self.rows[i].ip_y_coord
+                radius = self.rows[i].radius
+                clothoid_a1 = self.rows[i].A1
+                clothoid_a2 = self.rows[i].A2
+
+                tangent_len = radius * math.tan(gou[i] / 2)  # 접선 거리 T
+                arc_len = radius * gou[i]  # 곡선 길이 L
+                external = radius * (1 / math.cos(gou[i] / 2) - 1)  # 편심 E
+                mid_ord = radius * (1 - math.cos(gou[i] / 2))  # 높이 변화 M
+                chord_len = 2 * radius * math.sin(gou[i] / 2)  # 현 길이 C
+                direction = 0 if bang[i] > bang[i - 1] else 1  # 방향 플래그 # 0 = 정방향, 1 = 역방향
+
+                # 배열에 저장
+                ip_list[i].tangent_len = tangent_len
+                ip_list[i].arc_len = arc_len
+                ip_list[i].external = external
+                ip_list[i].mid_ord = mid_ord
+                ip_list[i].chord_len = chord_len
+                ip_list[i].direction = direction
 
                 # 3. 각도 예외 처리: 반시계/시계 방향 보정
                 if math.pi * 2 > bang[i - 1] > math.pi:
@@ -179,187 +338,259 @@ class HorCalqu:
                     elif bang[i - 1] + math.pi <= bang[i] <= 2 * math.pi:
                         ip[i][5] = 1
 
-                # 4. 각 점의 왼쪽/오른쪽 클로징(clo) 계산
-                for k in range(0, 2):  # 0=왼쪽, 1=오른쪽
-                    if self.rows[i][4 + k] == 0:  # 클로징 값이 0이면 초기화
-                        for j in range(5, 15):
-                            clo[i][k][j] = 0
+                # 4. 클로소이드 시점 우측  제원 계산
+                '''
+                for k in range(0, 2): # 0=시점쪽, 1=종점쪽 
+                    if self.rows[i][4 + k] == 0: # 클로소이드 A2값이 0이면 초기화(단곡선) 
+                        for j in range(5, 15): 
+                            clothoid_list[i][k][j] = 0 
                         continue
+                '''
+                for k in range(0, 2):  # 0=시점쪽, 1=종점쪽
+                    if self.rows[i].A1 == 0 and self.rows[i].A2 == 0:
+                        c = clothoid_list[i][k]
+                        c.length = c.X = c.Y = 0.0
+                        c.theta = c.Yc = c.Xc = c.TL = 0.0
+                        c.tan_off = c.phi = c.R_eff = 0.0
 
                     # 곡선 요소 기반 계산
-                    clo[i][k][5] = self.rows[i][4 + k] ** 2 / self.rows[i][3]
-                    clo[i][k][6] = self.jclox(clo[i][k][5], self.rows[i][3])
-                    clo[i][k][7] = self.jcloy(clo[i][k][5], self.rows[i][3])
-                    clo[i][k][8] = clo[i][k][5] / 2 * self.rows[i][3]
-                    clo[i][k][9] = clo[i][k][7] + self.rows[i][3] * math.cos(clo[i][k][8]) - self.rows[i][3]
-                    clo[i][k][10] = clo[i][k][6] - self.rows[i][3] * math.sin(clo[i][k][8])
-                    clo[i][k][11] = clo[i][k][7] / math.sin(clo[i][k][8])
-                    clo[i][k][12] = clo[i][k][6] - clo[i][k][7] / math.tan(clo[i][k][8])
-                    clo[i][k][13] = math.atan(clo[i][k][7] / clo[i][k][6])
-                    clo[i][k][14] = clo[i][k][7] / math.sin(clo[i][k][13])
+                    if k == 0:
+                        L = self.rows[i].A1 ** 2 / radius  # 클로소이드 길이
+                    elif k == 1:
+                        L = self.rows[i].A2 ** 2 / radius
+                    X = self.jclox(L, radius)  # 클로소이드 횡거 X
+                    Y = self.jcloy(L, radius)  # 클로소이드 종거 Y
+                    theta = (L / 2) * radius  # 진행각(가정)
 
-                # 5. clo[i] 좌표 기반 최종 위치 계산
-                clo[i][0][0] = clo[i][1][0] = (self.rows[i][3] + clo[i][1][9]) * math.tan(gou[i] / 2)
-                clo[i][0][1] = (clo[i][0][9] - clo[i][1][9]) / math.tan(gou[i])
-                clo[i][1][1] = (clo[i][0][9] - clo[i][1][9]) / math.sin(gou[i])
-                clo[i][0][2] = clo[i][0][10] + clo[i][0][0] - clo[i][0][1]
-                clo[i][1][2] = clo[i][1][10] + clo[i][1][0] + clo[i][1][1]
-                clo[i][0][3] = clo[i][1][3] = gou[i] - clo[i][0][8] + clo[i][1][8]
-                clo[i][0][4] = clo[i][1][4] = self.rows[i][3] * clo[i][0][3]
+                    Xc = X - (radius * math.sin(theta))  # 접합 X좌표
+                    Yc = Y + ((radius * math.cos(theta)) - radius)  # 접합 Y좌표
+                    tan_len = Y / math.sin(theta)  # 보정값1
+                    tan_off = X - Y / math.tan(theta)  # 보정값2
+                    phi = math.atan(Y / X)  # 진행각(라디안)
+                    R_eff = Y / math.sin(phi)  # 환산 반경
 
-                # 6. 곡선의 시작/종료 좌표 계산
-                btc[i][0] = self.rows[i][1] + clo[i][0][2] * math.cos(back)
-                btc[i][1] = self.rows[i][2] + clo[i][0][2] * math.sin(back)
-                etc[i][0] = self.rows[i][1] + clo[i][1][2] * math.cos(bang[i])
-                etc[i][1] = self.rows[i][2] + clo[i][1][2] * math.sin(bang[i])
+                    # 배열에 넣기
+                    clothoid_list[i][k].length = L
+                    clothoid_list[i][k].X = X
+                    clothoid_list[i][k].Y = Y
+                    clothoid_list[i][k].theta = theta
+                    clothoid_list[i][k].Yc = Yc
+                    clothoid_list[i][k].Xc = Xc
+                    clothoid_list[i][k].TL = tan_len
+                    clothoid_list[i][k].tan_off = tan_off
+                    clothoid_list[i][k].phi = phi
+                    clothoid_list[i][k].R_eff = R_eff
+
+                # ----- 5. clo[i] 좌표 기반 최종 위치 계산 -----
+                T = (radius + Yc) * math.tan(gou[i] / 2)  # 접선 길이
+                start_Yc = clothoid_list[i][0].Yc
+                end_Yc = clothoid_list[i][1].Yc
+                shift_tan = (start_Yc - end_Yc) / math.tan(gou[i])  # 보정값 (tan)
+                shift_sin = (start_Yc - end_Yc) / math.sin(gou[i])  # 보정값 (sin)
+
+                start_Xc = clothoid_list[i][0].Xc
+                end_Xc = clothoid_list[i][1].Xc
+
+                dist_start = start_Xc + T - shift_tan  # 시작점 보정거리
+                dist_end = end_Xc + T + shift_sin  # 종료점 보정거리
+
+                start_theta = clothoid_list[i][0].theta
+                end_theta = clothoid_list[i][1].theta
+                delta = gou[i] - start_theta + end_theta  # 중심각 Δ
+                arc_len = radius * delta  # 원호 길이 = R * Δ
+
+                # ----- 6. 곡선 시작/종료 좌표 계산 -----
+                btc_x = ip_x_coord + dist_start * math.cos(back)
+                btc_y = ip_y_coord + dist_start * math.sin(back)
+                etc_x = ip_x_coord + dist_end * math.cos(bang[i])
+                etc_y = ip_x_coord + dist_end * math.sin(bang[i])
+
+                # ----- 배열에 저장 -----
+                clothoid_list[i][0].T = clothoid_list[i][1].T = T
+                clothoid_list[i][0].shift = shift_tan
+                clothoid_list[i][1].shift = shift_sin
+                clothoid_list[i][0].dist = dist_start
+                clothoid_list[i][1].dist = dist_end
+                clothoid_list[i][0].delta = clothoid_list[i][1].delta = delta
+                clothoid_list[i][0].arc_len = clothoid_list[i][1].arc_len = arc_len
+
+                btc_list[i].btc_x, btc_list[i].btc_y = btc_x, btc_y
+                etc_list[i].etc_x, etc_list[i].etc_y = etc_x, etc_y
 
                 # 7. 곡선 진행 각도 계산 (s1, s2)
-                if ip[i][5] == 0:
-                    s1 = self.j_hab(bang[i - 1], clo[i][0][13])
+                if ip_list[i].direction == 0:
+                    s1 = self.j_hab(bang[i - 1], clothoid_list[i][0].phi)
                     if bang[i] >= math.pi:
                         back = bang[i] - math.pi
                     else:
                         back = bang[i] + math.pi
-                    s2 = self.j_cha(back, clo[i][1][13])
+                    s2 = self.j_cha(back, clothoid_list[i][1].phi)
                 else:
-                    s1 = self.j_cha(bang[i - 1], clo[i][0][13])
+                    s1 = self.j_cha(bang[i - 1], clothoid_list[i][0].phi)
                     if bang[i] >= math.pi:
                         back = bang[i] - math.pi
                     else:
                         back = bang[i] + math.pi
-                    s2 = self.j_hab(back, clo[i][1][13])
+                    s2 = self.j_hab(back, clothoid_list[i][1].phi)
 
-                # 8. 최종 곡선 좌표 계산
-                bc[i][0] = btc[i][0] + clo[i][0][14] * math.cos(s1)
-                bc[i][1] = btc[i][1] + clo[i][0][14] * math.sin(s1)
-                ec[i][0] = etc[i][0] + clo[i][1][14] * math.cos(s2)
-                ec[i][1] = etc[i][1] + clo[i][1][14] * math.sin(s2)
+                # ----- 8. 최종 곡선 좌표 계산 -----
+
+                # 곡선 시작점 BC
+                bc_x = btc_list[i].btc_x + clothoid_list[i][0].R_eff * math.cos(s1)
+                bc_y = btc_list[i].btc_y + clothoid_list[i][0].R_eff * math.sin(s1)
+
+                # 곡선 끝점 EC
+                ec_x = etc_list[i].etc_x + clothoid_list[i][1].R_eff * math.cos(s2)
+                ec_y = etc_list[i].etc_y + clothoid_list[i][1].R_eff * math.sin(s2)
+
+                # 배열에 저장
+                bc_list[i].bc_x = bc_x
+                bc_list[i].bc_y = bc_y
+                ec_list[i].ec_x = ec_x
+                ec_list[i].ec_y = ec_y
 
         finally:
             pass
         print('계산이 완료되었습니다.')
+
         j_g = 0
-        j_what = ip[1][5]
+        j_what = ip_list[1].direction
         j_sta = 0
-        j_x = self.rows[0][1]
-        j_y = self.rows[0][2]
+        j_x = self.rows[0].ip_x_coord #시작 x좌표
+        j_y = self.rows[0].ip_y_coord #끝 y좌표
         j_r = 0
         j_a1 = 0
         j_a2 = 0
         j_bang = bang[0]
-        ip_va.append([
-            j_g,
-            j_what,
-            j_sta,
-            j_x,
-            j_y,
-            j_r,
-            j_a1,
-            j_a2,
-            j_bang])
+        ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
         # VIP(Intersection Point)별로 좌표와 곡선 정보 계산
         for i in range(1, ip_count - 1):
-            # 좌측 곡선(clo[i][0])이 존재하면
-            if clo[i][0][5] != 0:
-                # 곡선 시작점 정보 추가
+
+            direction = ip_list[1].direction
+
+
+            arc_len = clothoid_list[i][0].arc_len # 호 길이
+            start_L = clothoid_list[i][0].length  # 시점측 클로소이드길이
+            end_L = clothoid_list[i][1].length
+            start_theta = clothoid_list[i][0].theta
+            end_theta = clothoid_list[i][1].theta
+
+            # 곡선 시작점 정보 추가
+            btc_x, btc_y = btc_list[i].btc_x, btc_list[i].btc_y
+            bc_x, bc_y = bc_list[i].bc_x, bc_list[i].bc_y
+            ec_x, ec_y = ec_list[i].ec_x, ec_list[i].ec_y
+            etc_x, etc_y = etc_list[i].etc_x, etc_list[i].etc_y
+
+            # ----- 2. 곡선 요소 계산 -----
+            ipnumber = self.rows[i].ipnumber
+            ip_x_coord = self.rows[i].ip_x_coord
+            ip_y_coord = self.rows[i].ip_y_coord
+            radius = self.rows[i].radius
+            clothoid_a1 = self.rows[i].A1
+            clothoid_a2 = self.rows[i].A2
+
+            if start_L != 0: #클로소이드 곡선 길이가 0이 아닌경우
+
+
                 j_g = 5  # 구간 타입 코드 (5 = 곡선 시작점)
-                j_what = ip[i][5]  # 좌우 방향 정보
-                j_sta = self.jround(j_sta + math.hypot(j_x - btc[i][0], j_y - btc[i][1]), 5)  # 거리 누적
-                j_x = self.jround(btc[i][0], 5)  # x좌표
-                j_y = self.jround(btc[i][1], 5)  # y좌표
-                j_r = self.rows[i][3]  # 곡선 반경
-                j_a1 = self.rows[i][4]  # 추가 파라미터1
-                j_a2 = self.rows[i][5]  # 추가 파라미터2
-                j_bang = bang[i - 1]  # 이전 방향각
-                ip_va.append([j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang])
+                j_what = direction  # 좌우 방향 정보
+                j_sta = self.jround(j_sta + math.hypot(j_x - btc_x, j_y - btc_y), 5)  # 거리 누적
+                j_x = self.jround(btc_x, 5)  # x좌표
+                j_y = self.jround(btc_y, 5)  # y좌표
+                j_r = radius  # 곡선 반경
+                j_a1 = clothoid_a1  # 시점측 클로소이드 매개변수 A1
+                j_a2 = clothoid_a2  # 종점측 클로소이드 매개변수 A2
+                j_bang = bang[i - 1]  # 이전 방위각
+                ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
 
                 # 곡선 중간점 정보 추가
                 j_g = 1  # 구간 타입 코드 (1 = 곡선 중간점)
-                j_what = ip[i][5]
-                j_sta = self.jround(j_sta + clo[i][0][5], 5)  # 좌측 곡선 거리
-                j_x = self.jround(bc[i][0], 5)  # 중간 x
-                j_y = self.jround(bc[i][1], 5)  # 중간 y
-                j_r = self.rows[i][3]
-                j_a1 = self.rows[i][4]
-                j_a2 = self.rows[i][5]
+                j_what = direction
+                j_sta = self.jround(j_sta + L, 5)  # 좌측 곡선 거리
+                j_x = self.jround(bc_x, 5)  # 중간 x
+                j_y = self.jround(bc_y, 5)  # 중간 y
+                j_r = radius
+                j_a1 = clothoid_a1
+                j_a2 = clothoid_a2
 
                 # 곡선 진행 방향에 따라 방위각 계산
                 if j_what == 0:
-                    j_bang = self.j_hab(bang[i - 1], clo[i][0][8])
+                    j_bang = self.j_hab(bang[i - 1],start_theta)
                 else:
-                    j_bang = self.j_cha(bang[i - 1], clo[i][0][8])
-                ip_va.append([j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang])
+                    j_bang = self.j_cha(bang[i - 1], start_theta)
+                ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
 
             # 좌측 곡선이 없으면 곡선 중간점만 추가
             else:
                 j_g = 1
-                j_what = ip[i][5]
-                j_sta = self.jround(j_sta + math.hypot(j_x - bc[i][0], j_y - bc[i][1]), 5)
-                j_x = self.jround(bc[i][0], 5)
-                j_y = self.jround(bc[i][1], 5)
-                j_r = self.rows[i][3]
-                j_a1 = self.rows[i][4]
-                j_a2 = self.rows[i][5]
+                j_what = direction
+                j_sta = self.jround(j_sta + math.hypot(j_x - bc_x, j_y - bc_y), 5)
+                j_x = self.jround(bc_x, 5)
+                j_y = self.jround(bc_y, 5)
+                j_r = radius
+                j_a1 = clothoid_a1
+                j_a2 = clothoid_a1
                 j_bang = bang[i - 1]
-                ip_va.append([j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang])
+                ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
 
             # 우측 곡선(clo[i][1])이 존재하면
-            if clo[i][1][5] != 0:
+            if end_L != 0:
                 # 곡선 중간점
                 j_g = 2
-                j_what = ip[i][5]
-                j_sta = self.jround(j_sta + clo[i][1][4], 5)
-                j_x = self.jround(ec[i][0], 5)
-                j_y = self.jround(ec[i][1], 5)
-                j_r = self.rows[i][3]
-                j_a1 = self.rows[i][4]
-                j_a2 = self.rows[i][5]
+                j_what = direction
+                j_sta = self.jround(j_sta + arc_len, 5)
+                j_x = self.jround(ec_x, 5)
+                j_y = self.jround(ec_y, 5)
+                j_r = radius
+                j_a1 = clothoid_a1
+                j_a2 = clothoid_a2
 
                 if j_what == 0:
-                    j_bang = self.j_cha(bang[i], clo[i][1][8])
+                    j_bang = self.j_cha(bang[i], end_theta)
                 else:
-                    j_bang = self.j_hab(bang[i], clo[i][1][8])
-                ip_va.append([j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang])
+                    j_bang = self.j_hab(bang[i], end_theta)
+                ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
 
                 # 곡선 끝점
                 j_g = 6
-                j_what = ip[i][5]
-                j_sta = self.jround(j_sta + clo[i][1][5], 5)
-                j_x = self.jround(etc[i][0], 5)
-                j_y = self.jround(etc[i][1], 5)
-                j_r = self.rows[i][3]
-                j_a1 = self.rows[i][4]
-                j_a2 = self.rows[i][5]
+                j_what = direction
+                j_sta = self.jround(j_sta + end_L, 5)
+                j_x = self.jround(etc_x, 5)
+                j_y = self.jround(etc_y, 5)
+                j_r = radius
+                j_a1 = clothoid_a1
+                j_a2 = clothoid_a2
                 j_bang = bang[i]
-                ip_va.append([j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang])
+                ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
                 continue
 
             # 우측 곡선이 없으면 중간점만 추가
             j_g = 2
-            j_what = ip[i][5]
-            j_sta = self.jround(j_sta + clo[i][1][4], 5)
-            j_x = self.jround(ec[i][0], 5)
-            j_y = self.jround(ec[i][1], 5)
-            j_r = self.rows[i][3]
-            j_a1 = self.rows[i][4]
-            j_a2 = self.rows[i][5]
+            j_what = direction
+            j_sta = self.jround(j_sta + arc_len, 5)
+            j_x = self.jround(ec_x, 5)
+            j_y = self.jround(ec_y, 5)
+            j_r = radius
+            j_a1 = clothoid_a1
+            j_a2 = clothoid_a2
             j_bang = bang[i]
-            ip_va.append([j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang])
+            ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
 
         # 마지막 VIP(종점) 추가
         j_g = 3
-        j_what = ip[ip_count - 2][5]
-        j_sta = self.jround(j_sta + math.hypot(j_x - self.rows[ip_count - 1][1], j_y - self.rows[ip_count - 1][2]), 5)
-        j_x = self.rows[ip_count - 1][1]
-        j_y = self.rows[ip_count - 1][2]
-        j_r = self.rows[ip_count - 1][3]
-        j_a1 = self.rows[ip_count - 1][4]
-        j_a2 = self.rows[ip_count - 1][5]
+        j_what = ip_list[ip_count - 2].direction
+        j_sta = self.jround(j_sta + math.hypot(j_x - self.rows[ip_count - 1].ip_x_coord, j_y - self.rows[ip_count - 1].ip_y_coord), 5)
+        j_x = self.rows[ip_count - 1].ip_x_coord
+        j_y = self.rows[ip_count - 1].ip_y_coord
+        j_r = self.rows[ip_count - 1].radius
+        j_a1 = self.rows[ip_count - 1].A1
+        j_a2 = self.rows[ip_count - 1].A2
         j_bang = bang[ip_count - 2]
-        ip_va.append([j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang])
+        ip_va.append(IPVA(j_g, j_what, j_sta, j_x, j_y, j_r, j_a1, j_a2, j_bang))
 
         # 최종 반환: VIP 좌표와 곡선 정보
-        return (ip_va, gou, ip, bang, clo)
+        return HorResult(ip_va=ip_va, gou=gou, ip_list=ip_list, bang=bang, clothoid_list=clothoid_list)
+
 
     def jround(self, val_01, val_02):
         """
@@ -382,14 +613,23 @@ class HorCalqu:
         return temp
 
     def jclox(self, jclo, jr):
-        clox = jclo * (((
-                                    1 - jclo ** 2 / 40 * jr ** 2) + jclo ** 4 / 3456 * jr ** 4 - jclo ** 6 / 599040 * jr ** 6) + jclo ** 8 / 1.75473e+08 * jr ** 8)
+        clox = jclo * (
+                1
+                - ((jclo ** 2) / (40 * (jr ** 2))
+                   + (jclo ** 4) / (3456 * (jr ** 4))
+                   - (jclo ** 6) / (599040 * (jr ** 6))
+                   + (jclo ** 8) / (1.75473e+08 * (jr ** 8)))
+        )
         return clox
 
-
     def jcloy(self, jclo, jr):
-        cloy = (jclo ** 2 / 6 * jr) * (((
-                                                    1 - jclo ** 2 / 56 * jr ** 2) + jclo ** 4 / 7040 * jr ** 4 - jclo ** 6 / 1.6128e+06 * jr ** 6) + jclo ** 8 / 5.88349e+08 * jr ** 8)
+        cloy = ((jclo ** 2) / (6 * jr)) * (
+                1
+                - ((jclo ** 2) / (56 * (jr ** 2))
+                   + (jclo ** 4) / (7040 * (jr ** 4))
+                   - (jclo ** 6) / (1.6128e+06 * (jr ** 6))
+                   + (jclo ** 8) / (5.88349e+08 * (jr ** 8)))
+        )
         return cloy
 
     def j_hab(self, a, b):
@@ -456,7 +696,7 @@ class HorCalqu:
         Returns:
             subgae (list): 계산된 결과 (x, y, r, angle 등)
         """
-        for k in range(0, q):
+        for k in range(0, q, 1):
             # 현재 위치가 k 구간과 k+1 구간 사이에 있는지 확인
             if acount >= subjks[k][2] and acount < subjks[k + 1][2]:
 
@@ -651,20 +891,15 @@ class HorCalqu:
         subgae.append(subjks[8])
         return subgae
 
-hor_option = [
-    0,
-    1,
-    True,
-    False,
-    20.00
-]
+hor_option = HorOption(0,1,VisibleType.STA,20.00)
+HorizonInputData()
 rows = [
-    ['BP', 1000, 2100, 0, 0, 0],
-    [1, 1500, 1700, 99, 20, 20],
-    [2, 1600, 1660, 100, 20, 20],
-    [3, 1750, 1650, 100, 20, 20],
-    ['EP', 1800, 1000, 0, 0, 0]
+    HorizonInputData(0, 1000, 2100, 0, 0, 0),
+    HorizonInputData(1, 1500, 1700, 99, 20, 20),
+    HorizonInputData(2, 1600, 1660, 100, 20, 20),
+    HorizonInputData(3, 1750, 1650, 100, 20, 20),
+    HorizonInputData(4, 1800, 1000, 0, 0, 0)
 ]
 hor_cal = HorCalqu()
 a = hor_cal.basic_calqu(hor_option, rows)
-print('피니쉬')
+print(a.ip_va[0].x, a.ip_va[0].y)  # x, y 좌표 출력
