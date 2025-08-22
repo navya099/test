@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 import matplotlib
 import numpy as np
+from ezdxf.render import forms
 # ---- Matplotlib Tkinter 연결 ----
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
@@ -22,6 +23,7 @@ class Rail:
         self.rail_y = rail_y
         self.object_index = object_index
         self.coord = Vector3(x=0, y=0, z=0)
+        self.direction = Vector2(x=0, y=0)
 
 class Curve:
     def __init__(self, station: float, radius: float, cant: float):
@@ -305,51 +307,7 @@ def try_parse_float(value, default=0.0):
         return default
 
 
-def parse_rail_components(components, linenumber):
-    rail_index, x, y, obj_index = 0, 0.0, 0.0, 0
-    for i, val in enumerate(components):
-        try:
-            if i == 0:
-                rail_index = try_parse_int(val)
-            elif i == 1:
-                x = try_parse_float(val)
-            elif i == 2:
-                y = try_parse_float(val)
-            elif i == 3:
-                obj_index = try_parse_int(val)
-        except ValueError:
-            print(f"ValueError: 줄 {linenumber} 열 {i} 파싱 실패: {val}")
-    return rail_index, x, y, obj_index
 
-def parse_form_components(components, linenumber):
-    a, b, c, d = 0, 0, 0, 0
-    for i, val in enumerate(components):
-        try:
-            if i == 0:
-                a = try_parse_int(val)
-            elif i == 1:
-                b = try_parse_int(val)
-                if b == -1 or (isinstance(val, str) and val.strip().lower() == 'l'):
-                    b = -1
-            elif i == 2:
-                c = try_parse_int(val)
-            elif i == 3:
-                d = try_parse_int(val)
-        except ValueError:
-            print(f"ValueError: 줄 {linenumber} 열 {i} 파싱 실패: {val}")
-    return a, b, c, d
-
-def parse_curve_components(components, linenumber):
-    a, b = 0.0, 0.0
-    for i, val in enumerate(components):
-        try:
-            if i == 0:
-                a = try_parse_float(val)
-            elif i == 1:
-                b = try_parse_float(val)
-        except ValueError:
-            print(f"ValueError: 줄 {linenumber} 열 {i} 파싱 실패: {val}")
-    return a, b
 
 #이벤트 핸들러
 #EVNET.PY
@@ -367,11 +325,16 @@ class EventHandler:
         filename = os.path.basename(filepath)
         if filepath:
             lines = self.file_controller.read_file()
-            alignments, forms = self.app_controller.process_lines_to_alginment_data(lines)
+            alignments, forms, curves,min_station, max_station = self.app_controller.parser.process_lines_to_alginment_data(lines)
 
             if alignments:
-                #자선 y값 조정(곡선반경 적용)
-                alignments = self.app_controller.calculate_mainline_coordinates(alignments)
+                #자선 생성
+                main_alignment = self.app_controller.calculator.create_mainline(min_station, max_station)
+                main_alignment.curvedata.extend(curves)  # 자선에만 curve 데이터 넣기
+                #자선을 선형 리스트에 추가
+                alignments.append(main_alignment)
+                #자선 world좌표 계산
+                alignments = self.app_controller.calculator.calculate_mainline_coordinates(alignments)
                 #모든 배선 플로팅
                 self.main_app.plot_frame.plot_multiple(alignments, filename)
             if forms:
@@ -379,12 +342,20 @@ class EventHandler:
 
     def reload(self):
         filepath = self.file_controller.filepath
+        filename = os.path.basename(filepath)
         if filepath:
             lines = self.file_controller.read_file()
-            alignments ,forms = self.app_controller.process_lines_to_alginment_data(lines)
+            alignments ,forms, curves, min_station, max_station = self.app_controller.process_lines_to_alginment_data(lines)
             if alignments:
+                # 자선 생성
+                main_alignment = self.app_controller.calculator.create_mainline(min_station, max_station)
+                main_alignment.curvedata.extend(curves)  # 자선에만 curve 데이터 넣기
+                # 자선을 선형 리스트에 추가
+                alignments.append(main_alignment)
+                # 자선 world좌표 계산
+                alignments = self.app_controller.calculator.calculate_mainline_coordinates(alignments)
                 # 모든 배선 플로팅
-                self.main_app.plot_frame.plot_multiple(alignments, os.path.basename(filepath))
+                self.main_app.plot_frame.plot_multiple(alignments, filename)
             if forms:
                 self.main_app.plot_frame.plot_forms(alignments, forms)
 
@@ -420,91 +391,158 @@ class EventHandler:
         self.main_app.plot_frame.canvas.draw()
 
 
+class Vector2:
+    def __init__(self, x=0.0, y=0.0):
+        self.x = x
+        self.y = y
+
+    def rotate(self, cosine_of_angle, sine_of_angle):
+        x_new = cosine_of_angle * self.x - sine_of_angle * self.y
+        y_new = sine_of_angle * self.x + cosine_of_angle * self.y
+        self.x, self.y = x_new, y_new
+
+    def copy(self):
+        return Vector2(self.x, self.y)
+
+    def todegree(self) -> float:
+        """벡터의 방향을 degree 단위로 반환 (0°=+X, 반시계 증가)."""
+        return math.degrees(math.atan2(self.y, self.x))
+
+class Vector3:
+    def __init__(self, x=0.0, y=0.0, z=0.0):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def copy(self):
+        return Vector3(self.x, self.y, self.z)
+
+class Math:
+    #2D MATH 변환
+    @staticmethod
+    def calculate_destination_coordinates(coord: Vector2, bearing: float, distance: float) -> Vector2:
+        # Calculate the destination coordinates given a starting point, bearing, and distance in Cartesian coordinates
+        angle = math.radians(bearing)
+        x2 = coord.x + distance * math.cos(angle)
+        y2 = coord.y + distance * math.sin(angle)
+        return Vector2(x2, y2)
+
 # 기능 클래스(모든 기능을 넣을 예정)
 class AppController:
     def __init__(self, main_app, file_controller):
         self.main_app = main_app  # MainApp 인스턴스 (UI 접근용)
         self.file_ctrl = file_controller
 
-    def parse_lines_to_rail(self, line, linenumber):
-        parts = line.split(',', 1)
+        # Alignment 데이터 컨테이너
+        self.alignments: list[Alignment] = []
+
+        # 기능 전담 클래스 인스턴스 보관
+        self.parser = AlignmentParser()
+        self.calculator = AlignmentCalculator()
+
+#라인파서
+class AlignmentParser:
+    def __init__(self):
+        self.lines: list[str] = []
+        self.line: str = ''
+        self.linenumber: int = 0
+
+    def _parse_line(self):
+        """공통 파싱: station과 components 리스트 추출"""
+        parts = self.line.split(',', 1)
         if len(parts) < 2:
-            print(f"형식 오류: 줄 {linenumber}: {line}")
-            return 0
+            print(f"형식 오류: 줄 {self.linenumber}: {self.line}")
+            return 0.0, []
 
         try:
             station = float(parts[0])
         except ValueError:
-            print(f"ValueError: 줄 {linenumber} station parsing 실패")
+            print(f"ValueError: 줄 {self.linenumber} station parsing 실패")
             station = 0.0
-        rail_info = parts[1].strip().split(' ', 1)
-        if len(rail_info) < 2:
-            print(f"형식 오류: 줄 {linenumber}: {line}")
+
+        info = parts[1].strip().split(' ', 1)
+        if len(info) < 2:
+            print(f"형식 오류: 줄 {self.linenumber}: {self.line}")
+            return station, []
+
+        components = info[1].split(';')
+        return station, components
+
+    def parse_line(self, parse_func, cls):
+        """
+        제네릭 파서
+        parse_func: components -> 필요한 값 반환
+        cls: 생성할 도메인 클래스(Rail, Form, Curve 등)
+        return: 생성한 클래스 객체
+        """
+        station, components = self._parse_line()
+        if not components:
             return 0
 
-        rail_components = rail_info[1].split(';')
         try:
-            rail_index, x, y, obj_index = parse_rail_components(rail_components, linenumber)
+            parsed_values = parse_func(components)
         except Exception as e:
-            print(f"함수 실행 실패: {e} ")
-            rail_index, x, y, obj_index = 0, 0.0, 0.0, 0  # 안전값 할당
-        rail = Rail(station, rail_index, x, y, obj_index)
+            print(f"{cls.__name__} 파싱 실패: {e}")
+            # 안전값 반환
+            if cls.__name__ == "Rail":
+                parsed_values = (0, 0.0, 0.0, 0)
+            elif cls.__name__ == "Form":
+                parsed_values = (0, 0, 0, 0)
+            elif cls.__name__ == "Curve":
+                parsed_values = (0.0, 0.0)
+            else:
+                parsed_values = ()
 
+        # 객체 생성
+        obj = cls(station, *parsed_values)
+        return obj
 
-        return rail, station
+    def parse_rail_components(self, components):
+        rail_index, x, y, obj_index = 0, 0.0, 0.0, 0
+        for i, val in enumerate(components):
+            try:
+                if i == 0:
+                    rail_index = try_parse_int(val)
+                elif i == 1:
+                    x = try_parse_float(val)
+                elif i == 2:
+                    y = try_parse_float(val)
+                elif i == 3:
+                    obj_index = try_parse_int(val)
+            except ValueError:
+                print(f"ValueError: 줄 {self.linenumber} 열 {i} 파싱 실패: {val}")
+        return rail_index, x, y, obj_index
 
-    def parse_lines_to_form(self, line, linenumber):
-        parts = line.split(',', 1)
-        if len(parts) < 2:
-            print(f"형식 오류: 줄 {linenumber}: {line}")
-            return 0
+    def parse_form_components(self, components):
+        a, b, c, d = 0, 0, 0, 0
+        for i, val in enumerate(components):
+            try:
+                if i == 0:
+                    a = try_parse_int(val)
+                elif i == 1:
+                    b = try_parse_int(val)
+                    if b == -1 or (isinstance(val, str) and val.strip().lower() == 'l'):
+                        b = -1
+                elif i == 2:
+                    c = try_parse_int(val)
+                elif i == 3:
+                    d = try_parse_int(val)
+            except ValueError:
+                print(f"ValueError: 줄 {self.linenumber} 열 {i} 파싱 실패: {val}")
+        return a, b, c, d
 
-        try:
-            station = float(parts[0])
-        except ValueError:
-            print(f"ValueError: 줄 {linenumber} station parsing 실패")
-            station = 0.0
-        form_info = parts[1].strip().split(' ', 1)
-        if len(form_info) < 2:
-            print(f"형식 오류: 줄 {linenumber}: {line}")
-            return 0
-
-        form_components = form_info[1].split(';')
-        try:
-            rail1_index, rail2_index, roof_index, obj_index = parse_form_components(form_components, linenumber)
-        except Exception as e:
-            print(f"함수 실행 실패: {e} ")
-            rail1_index, rail2_index, roof_index, obj_index = 0, 0, 0, 0  # 안전값 할당
-        form = Form(station, rail1_index, rail2_index, roof_index, obj_index)
-
-        return form
-
-    def parse_lines_to_curve(self, line, linenumber):
-        parts = line.split(',', 1)
-        if len(parts) < 2:
-            print(f"형식 오류: 줄 {linenumber}: {line}")
-            return 0
-
-        try:
-            station = float(parts[0])
-        except ValueError:
-            print(f"ValueError: 줄 {linenumber} station parsing 실패")
-            station = 0.0
-        curve_info = parts[1].strip().split(' ', 1)
-        if len(curve_info) < 2:
-            print(f"형식 오류: 줄 {linenumber}: {line}")
-            return 0
-
-        curve_components = curve_info[1].split(';')
-        try:
-            radius, cant = parse_curve_components(curve_components, linenumber)
-        except Exception as e:
-            print(f"함수 실행 실패: {e} ")
-            radius, cant = 0.0, 0.0 # 안전값 할당
-        curve = Curve(station, radius, cant)
-
-        return curve
-
+    def parse_curve_components(self, components):
+        a, b = 0.0, 0.0
+        for i, val in enumerate(components):
+            try:
+                if i == 0:
+                    a = try_parse_float(val)
+                elif i == 1:
+                    b = try_parse_float(val)
+            except ValueError:
+                print(f"ValueError: 줄 {self.linenumber} 열 {i} 파싱 실패: {val}")
+        return a, b
+    #통합 처리 메소드
     def process_lines_to_alginment_data(self, lines):
         # 기존 변수 초기화
         alignment = None
@@ -512,12 +550,21 @@ class AppController:
         station_list = []
         forms = []
         formdata = None
-
+        self.lines = lines
         curve_list_for_main = []  # 자선에 넣을 curve 리스트 따로 저장
 
-        for linenumber, line in enumerate(lines, start=1):
-            line = line.strip()
-            if not line:
+        line_type_map = {
+            '.rail': (self.parse_rail_components, Rail),
+            '.curve': (self.parse_curve_components, Curve),
+            '.form': (self.parse_form_components, Form)
+        }
+
+        for linenumber, line in enumerate(self.lines, start=1):
+            #linenumber와 line 상태저장
+            self.linenumber = linenumber
+            self.line = line.strip()
+
+            if not self.line:
                 continue
 
             if line.startswith(',;'):
@@ -535,40 +582,25 @@ class AppController:
 
                 continue
 
-            if '.rail' in line.lower() and '.railtype' not in line.lower():
-                rail, station = self.parse_lines_to_rail(line, linenumber)
-                station_list.append(station)
-                if alignment:
-                    alignment.raildata.append(rail)
-                else:
-                    print(f"경고: 줄 {linenumber} - 배선 이름이 설정되지 않음")
-
-            # curve 구문은 기존 alignment에 넣지 말고 별도 리스트에 저장
-            elif '.curve' in line.lower():
-                try:
-                    curve = self.parse_lines_to_curve(line, linenumber)
-                    if curve:
-                        curve_list_for_main.append(curve)  # 자선에 넣을 곡선 데이터 따로 저장
-                except Exception as e:
-                    print(f"경고: 줄 {linenumber}, parse_lines_to_curve에서 예외발생: 텍스트:{line}, 예외:{e}")
-
-            elif '.form' in line.lower():
-                try:
-                    form = self.parse_lines_to_form(line, linenumber)
-                    if form:
-                        formdata.formdata.append(form)
-                except Exception as e:
-                    print(f"경고: 줄 {linenumber}, parse_lines_to_form에서 예외발생: 텍스트:{line}, 예외:{e}")
-            else:
-                continue
-
-        min_station = min(station_list) - 600
-        max_station = max(station_list) + 600
-
-        # 자선 생성 및 curve 데이터 할당
-        main_alignment = self.create_mainline(min_station, max_station)
-        main_alignment.curvedata.extend(curve_list_for_main)  # 자선에만 curve 데이터 넣기
-        alignments.append(main_alignment)
+            line_lower = self.line.lower()
+            matched = False
+            for key, (parse_func, cls) in line_type_map.items():
+                if key == '.rail' and key in line_lower and '.railtype' not in line_lower:
+                    matched = True
+                elif key != '.rail' and key in line_lower:
+                    matched = True
+                if matched:
+                    obj = self.parse_line(parse_func, cls)
+                    if obj:
+                        if isinstance(obj, Rail):
+                            station_list.append(obj.station)
+                            if alignment:
+                                alignment.raildata.append(obj)
+                        elif isinstance(obj, Form) and formdata:
+                            formdata.formdata.append(obj)
+                        elif isinstance(obj, Curve):
+                            curve_list_for_main.append(obj)
+                    break  # 한 줄은 한 타입만
 
         # 마지막 배선, 폼 데이터 누락 방지
         if alignment and alignment.raildata:
@@ -576,7 +608,11 @@ class AppController:
         if formdata and formdata.formdata:
             forms.append(formdata)
 
-        return alignments, forms
+        return alignments, forms ,curve_list_for_main,  min(station_list), max(station_list)
+
+class AlignmentCalculator:
+    def __init__(self):
+        self.alignments: list[Alignment] = []
 
     def create_mainline(self, min_station, max_station):
         al = Alignment(name='자선')
@@ -635,6 +671,7 @@ class AppController:
             rail.coord.x = position.copy().x
             rail.coord.z = position.copy().y
             rail.coord.y = position.copy().z
+            rail.direction = direction.copy()
 
             if radius != 0.0 and pitch != 0.0:
                 d = 25
@@ -673,27 +710,26 @@ class AppController:
 
         return alignments
 
-class Vector2:
-    def __init__(self, x=0.0, y=0.0):
-        self.x = x
-        self.y = y
+    def calculate_otherline_coordinates(self, alignments: list[Alignment]):
+        # 자선 찾기
+        main_alignment = next((a for a in alignments if a.name == '자선'), None)
+        if not main_alignment:
+            print('자선이 존재하지 않습니다.')
+            return alignments  # 자선 없음
+        for i, mainrail in enumerate(main_alignment.raildata):
+            for al in alignments:
+                for j , rail in enumerate(al.raildata):
+                    if mainrail.station == rail.station:
+                        # 변수 할당 후 좌표변환 실행
+                        newcoord = Math.calculate_destination_coordinates(
+                            Vector2(mainrail.coord.x, mainrail.coord.y),
+                            mainrail.direction.todegree() + 90 if rail.rail_x < 0 else mainrail.direction.todegree() - 90,
+                            abs(rail.rail_x)
+                        )
+                        rail.coord.x = newcoord.x
+                        rail.coord.y = newcoord.y
+        return None
 
-    def rotate(self, cosine_of_angle, sine_of_angle):
-        x_new = cosine_of_angle * self.x - sine_of_angle * self.y
-        y_new = sine_of_angle * self.x + cosine_of_angle * self.y
-        self.x, self.y = x_new, y_new
-
-    def copy(self):
-        return Vector2(self.x, self.y)
-
-class Vector3:
-    def __init__(self, x=0.0, y=0.0, z=0.0):
-        self.x = x
-        self.y = y
-        self.z = z
-
-    def copy(self):
-        return Vector3(self.x, self.y, self.z)
 
 # 메인클래스 main.py
 class MainApp(tk.Tk):
