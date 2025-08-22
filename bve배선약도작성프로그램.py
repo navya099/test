@@ -106,11 +106,13 @@ class PlotFrame(tk.Frame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self.original_colors = {}  # 선 객체별 원래 색 저장용 딕셔너리
+        self.alignments = []
 
         # Matplotlib Figure 생성
         fig = Figure(figsize=(5, 4), dpi=100)
         self.ax = fig.add_subplot(111)
 
+        self.current_view = "plan"  # 기본 뷰
         # 한글 폰트 설정 (전역 설정)
 
         matplotlib.rcParams['font.family'] = 'Malgun Gothic'
@@ -133,46 +135,36 @@ class PlotFrame(tk.Frame):
         self.toolbar.update()
         self.toolbar.pack_forget()  # 초기에는 숨김
 
-    def update_plot(self, x_data, y_data, title="그래프"):
-        self.ax.clear()
+    def show_view(self, view_name):
+        """뷰 전환 및 redraw"""
+        self.current_view = view_name
+        if self.alignments:
+            self.redraw()
 
-        if x_data and y_data:  # 데이터가 있으면 툴바 보임
-            self.apply_decoration(title, "X", "Y")
-            self.ax.plot(x_data, y_data, marker="o")
-            self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)  # 툴바 보이기
-        else:
-            # 데이터 없으면 빈 도화지 + 축 숨김 + 툴바 숨김
-            self.ax.axis('off')
-            self.toolbar.pack_forget()
-        self.canvas.draw()
+    def redraw(self):
+        """현재 alignments 기준으로 현재 뷰 redraw"""
+        if self.current_view == "plan":
+            self.plot_plan_view(self.alignments, '평면')
+        elif self.current_view == "profile":
+            self.plot_profile_view(self.alignments, '종단')
+        elif self.current_view == "section":
+            self.plot_section_view(self.alignments, '횡단')
 
-    def plot_multiple(self, alignments, title):
+    def set_data(self, alignments, title):
+        """새 데이터 설정"""
+        self.alignments = alignments
+        self.title = title
+        self.redraw()
+
+    def plot_plan_view(self, alignments, title):
         self.ax.clear()
         self.original_colors.clear()
         self.apply_decoration(title, "Station", "x")
 
-        # 자선 찾기
-        main_alignment = next((a for a in alignments if a.name == '자선'), None)
-        if not main_alignment:
-            print("자선이 없습니다.")
-            main_station_to_y = {}
-        else:
-            # station: rail_y 딕셔너리 생성 (station은 고유한 키)
-            main_station_to_y = {rail.station: rail.coord.y for rail in main_alignment.raildata}
-
         for alignment in alignments:
-            x_data = [rail.station for rail in alignment.raildata]
-
-            if alignment.name == '자선':
-                y_data = [rail.coord.y for rail in alignment.raildata]
-            else:
-                y_data = []
-                for i, rail in enumerate(alignment.raildata):
-                    offset = main_station_to_y.get(rail.station, 0)  # station 기준 매칭, 없으면 0
-                    y_val = -(rail.rail_x - offset)
-                    # 기존 rail_x 반전 + 자선 rail_y 오프셋
-                    y_data.append(y_val)
-
+            x_data = [rail.coord.x for rail in alignment.raildata]
+            y_data = [rail.coord.y for rail in alignment.raildata]
+            z_data = [rail.coord.z for rail in alignment.raildata]
             if x_data and y_data:
                 line, = self.ax.plot(x_data, y_data, label=alignment.name)
                 self.original_colors[line] = line.get_color()
@@ -181,12 +173,32 @@ class PlotFrame(tk.Frame):
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.draw()
 
+    def plot_profile_view(self, alignments, title):
+        self.ax.clear()
+        self.original_colors.clear()
+        self.apply_decoration(title, "Station", "x")
+
+        for alignment in alignments:
+            x_data = [rail.coord.x for rail in alignment.raildata]
+            y_data = [rail.coord.y for rail in alignment.raildata]
+            z_data = [rail.coord.z for rail in alignment.raildata]
+            if x_data and y_data:
+                line, = self.ax.plot(x_data, z_data, label=alignment.name)
+                self.original_colors[line] = line.get_color()
+
+        self.ax.legend()
+        self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.canvas.draw()
+
+    def plot_section_view(self, alignments, title):
+        pass
+
     def plot_forms(self, alignments: list[Alignment], forms: list[FormData]):
         for formdata in forms:
-            x_data = []
-            y_data = []
             x1_data = []
             y1_data = []
+            x_data = []
+            y_data = []
             rail_map = {}
             for alignment in alignments:
                 for rail in alignment.raildata:
@@ -201,19 +213,37 @@ class PlotFrame(tk.Frame):
                 rail2 = rail_map.get(key2)
 
                 if rail1 and rail2:
-                    x_data.append(rail1.station)
-                    x1_data.append(rail2.station)
-                    if rail1.rail_x < rail2.rail_x:
-                        y_data.append((rail1.rail_x * -1) - 2)  # 2 이격, bve 좌표계 변환
-                        y1_data.append((rail2.rail_x * -1) + 2)
-                    else:
-                        y_data.append((rail1.rail_x * -1) + 2)  # 2 이격, bve 좌표계 변환
-                        y1_data.append((rail2.rail_x * -1) - 2)
+                    angle = rail1.direction.todegree()  - 90
+                    left_form_coord = Math.calculate_destination_coordinates(
+                        Vector2(rail1.coord.x,rail1.coord.y),
+                    angle,
+                    2
+                    )
+                    angle = rail2.direction.todegree() + 90
+                    right_form_coord = Math.calculate_destination_coordinates(
+                        Vector2(rail2.coord.x, rail2.coord.y),
+                        angle,
+                        -2
+                    )
+                    x_data.append(left_form_coord.x)
+                    y_data.append(left_form_coord.y)
+                    x1_data.append(right_form_coord.x)
+                    y1_data.append(right_form_coord.y)
 
                 elif rail1 and form.rail2_index == -1:
-                    # rail2가 없을 때는 rail1만 사용
-                    x_data.append(rail1.station)
-                    y_data.append((rail1.rail_x * -1) - 5)  # 5 이격 (단일선)
+                    angle = rail1.direction.todegree() + 90
+                    left_form_coord = Math.calculate_destination_coordinates(
+                        Vector2(rail1.coord.x, rail1.coord.y),
+                        angle,
+                        -2
+                    )
+                    right_form_coord = Math.calculate_destination_coordinates(
+                        Vector2(rail1.coord.x, rail1.coord.y),
+                        angle,
+                        -7
+                    )
+                    x_data.append(rail1.coord.x)
+                    y_data.append(rail1.coord.y)
 
             x1_data.reverse()
             y1_data.reverse()
@@ -243,6 +273,21 @@ class PlotFrame(tk.Frame):
         if show_grid:
             self.ax.grid(True)
         self.ax.axis('on')
+
+class PlanViewFrame(tk.Frame):
+    def plot(self, alignments, title):
+        # 기존 plot_multiple 로직 적용
+        pass
+
+class ProfileViewFrame(tk.Frame):
+    def plot(self, alignments, title):
+        # 종단선용 y/z 좌표 plot
+        pass
+
+class SectionViewFrame(tk.Frame):
+    def plot(self, alignments, title):
+        # 단면도용 x/z or 특정 cross-section plot
+        pass
 
 # 컨트롤러 클래스
 # controller.py
@@ -322,42 +367,30 @@ class EventHandler:
     def on_file_open(self):
         self.file_controller.open_file()
         filepath = self.file_controller.filepath
-        filename = os.path.basename(filepath)
         if filepath:
+            filename = os.path.basename(filepath)
             lines = self.file_controller.read_file()
-            alignments, forms, curves,min_station, max_station = self.app_controller.parser.process_lines_to_alginment_data(lines)
-
-            if alignments:
-                #자선 생성
-                main_alignment = self.app_controller.calculator.create_mainline(min_station, max_station)
-                main_alignment.curvedata.extend(curves)  # 자선에만 curve 데이터 넣기
-                #자선을 선형 리스트에 추가
-                alignments.append(main_alignment)
-                #자선 world좌표 계산
-                alignments = self.app_controller.calculator.calculate_mainline_coordinates(alignments)
-                #모든 배선 플로팅
-                self.main_app.plot_frame.plot_multiple(alignments, filename)
-            if forms:
-                self.main_app.plot_frame.plot_forms(alignments, forms)
+            self._process_and_plot(lines, filename)
 
     def reload(self):
         filepath = self.file_controller.filepath
-        filename = os.path.basename(filepath)
         if filepath:
+            filename = os.path.basename(filepath)
             lines = self.file_controller.read_file()
-            alignments ,forms, curves, min_station, max_station = self.app_controller.process_lines_to_alginment_data(lines)
-            if alignments:
-                # 자선 생성
-                main_alignment = self.app_controller.calculator.create_mainline(min_station, max_station)
-                main_alignment.curvedata.extend(curves)  # 자선에만 curve 데이터 넣기
-                # 자선을 선형 리스트에 추가
-                alignments.append(main_alignment)
-                # 자선 world좌표 계산
-                alignments = self.app_controller.calculator.calculate_mainline_coordinates(alignments)
-                # 모든 배선 플로팅
-                self.main_app.plot_frame.plot_multiple(alignments, filename)
-            if forms:
-                self.main_app.plot_frame.plot_forms(alignments, forms)
+            self._process_and_plot(lines, filename)
+
+    def _process_and_plot(self, lines, filename):
+        # AppController에서 파싱과 메인라인 생성까지 책임지게 하는 게 깔끔
+        alignments, forms = self.app_controller.build_alignments(lines)
+
+        if alignments:
+            self.app_controller.calculator.calculate_mainline_coordinates(alignments)
+            self.app_controller.calculator.calculate_otherline_coordinates(alignments)
+            # PlotFrame에 데이터 설정
+            self.main_app.plot_frame.set_data(alignments, filename)
+
+        if forms:
+            self.main_app.plot_frame.plot_forms(alignments, forms)
 
     def on_file_save(self):
         self.file_controller.save_file()
@@ -439,6 +472,16 @@ class AppController:
         # 기능 전담 클래스 인스턴스 보관
         self.parser = AlignmentParser()
         self.calculator = AlignmentCalculator()
+
+    def build_alignments(self, lines):
+        alignments, forms, curves, min_station, max_station = self.parser.process_lines_to_alginment_data(lines)
+
+        if alignments:
+            main_alignment = self.calculator.create_mainline(min_station - 600, max_station + 600)
+            main_alignment.curvedata.extend(curves)
+            alignments.append(main_alignment)
+
+        return alignments, forms
 
 #라인파서
 class AlignmentParser:
@@ -707,29 +750,35 @@ class AlignmentCalculator:
             if a != 0.0:
                 direction.rotate(math.cos(-a), math.sin(-a))
 
-
-        return alignments
-
     def calculate_otherline_coordinates(self, alignments: list[Alignment]):
         # 자선 찾기
         main_alignment = next((a for a in alignments if a.name == '자선'), None)
         if not main_alignment:
             print('자선이 존재하지 않습니다.')
-            return alignments  # 자선 없음
-        for i, mainrail in enumerate(main_alignment.raildata):
-            for al in alignments:
-                for j , rail in enumerate(al.raildata):
-                    if mainrail.station == rail.station:
-                        # 변수 할당 후 좌표변환 실행
-                        newcoord = Math.calculate_destination_coordinates(
-                            Vector2(mainrail.coord.x, mainrail.coord.y),
-                            mainrail.direction.todegree() + 90 if rail.rail_x < 0 else mainrail.direction.todegree() - 90,
-                            abs(rail.rail_x)
-                        )
-                        rail.coord.x = newcoord.x
-                        rail.coord.y = newcoord.y
-        return None
+            return alignments
 
+        # station -> mainrail dict 생성
+        mainrail_map = {rail.station: rail for rail in main_alignment.raildata}
+
+        for al in alignments:
+            if al.name == '자선':
+                continue  # 자선 스킵
+            for rail in al.raildata:
+                mainrail = mainrail_map.get(rail.station)
+                if not mainrail:
+                    continue
+                # 좌표 변환
+                #평면좌표
+                angle = mainrail.direction.todegree() + (90 if rail.rail_x < 0 else -90)
+                newcoord = Math.calculate_destination_coordinates(
+                    Vector2(mainrail.coord.x, mainrail.coord.y),
+                    angle,
+                    abs(rail.rail_x)
+                )
+                new_z = mainrail.coord.z + rail.rail_y
+                rail.coord.x = newcoord.x
+                rail.coord.y = newcoord.y
+                rail.coord.z = new_z
 
 # 메인클래스 main.py
 class MainApp(tk.Tk):
@@ -760,8 +809,11 @@ class MainApp(tk.Tk):
         self.plot_frame = PlotFrame(main_frame)
         self.plot_frame.pack(fill=tk.BOTH, expand=True)
 
-        # F5 키 바인딩
+        #키 바인딩
         self.bind("<F5>", self.on_refresh)
+        self.bind("<F6>", lambda e: self.plot_frame.show_view("plan"))
+        self.bind("<F7>", lambda e: self.plot_frame.show_view("profile"))
+        self.bind("<F8>", lambda e: self.plot_frame.show_view("section"))
 
     def on_refresh(self, event=None):
         # 새로고침 기능 구현
