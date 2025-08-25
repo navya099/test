@@ -118,6 +118,15 @@ class PlotFrame(tk.Frame):
         matplotlib.rcParams['font.family'] = 'Malgun Gothic'
         matplotlib.rcParams['axes.unicode_minus'] = False
 
+        # Section 뷰용 콤보박스
+        self.station_var = tk.StringVar()
+        self.station_combo = ttk.Combobox(self, textvariable=self.station_var, state="readonly")
+        self.station_combo.pack(side=tk.TOP, fill=tk.X)
+        self.station_combo.bind("<<ComboboxSelected>>", self.on_station_selected)
+
+        # 기본 숨김
+        self.station_combo.pack_forget()
+
         # 빈 상태라 아무 축도 설정하지 않음
         self.ax.clear()
 
@@ -139,7 +148,33 @@ class PlotFrame(tk.Frame):
         """뷰 전환 및 redraw"""
         self.current_view = view_name
         if self.alignments:
+            if self.current_view == "section":
+                # station 선택 UI 노출
+                self.station_combo.pack(side=tk.TOP, fill=tk.X)
+                self.populate_stations()
+            else:
+                # 다른 뷰에서는 숨김
+                self.station_combo.pack_forget()
             self.redraw()
+
+    def populate_stations(self):
+        """alignments에서 station 목록 채우기"""
+        if not self.alignments:
+            return
+        stations = []
+        #자선 찾기
+        main_alignment = next((a for a in self.alignments if a.name == '자선'), None)
+        for rail in main_alignment.raildata:
+            if hasattr(rail, "station") and rail.station:  # station 정보가 있는 경우
+                stations.append(rail.station)
+        stations = sorted(set(stations))  # 중복 제거
+        self.station_combo["values"] = stations
+        if stations:
+            self.station_combo.current(0)  # 첫 번째 선택
+
+    def on_station_selected(self, event=None):
+        """콤보박스에서 station 선택 시 갱신"""
+        self.redraw()
 
     def redraw(self):
         """현재 alignments 기준으로 현재 뷰 redraw"""
@@ -191,7 +226,51 @@ class PlotFrame(tk.Frame):
         self.canvas.draw()
 
     def plot_section_view(self, alignments, title):
-        pass
+        """선택한 station만 횡단면 표시 (x,y 좌표 사용)"""
+        self.ax.clear()
+        self.original_colors.clear()
+        self.apply_decoration(title, "x", "y")
+
+        selected_station = self.station_var.get()
+        if not selected_station:
+            self.canvas.draw()
+            return
+
+        # { alignment_name: (rail_x, rail_y) }
+        station_points = {}
+
+        for alignment in alignments:
+            if alignment.name == '자선':  # 자선 건너뛰기
+                continue
+            coords = self.get_railx_and_raily_by_station(alignment, float(selected_station))
+            if coords is None:
+                continue
+
+            #그리기
+            railx, raily = coords
+            self.ax.scatter(railx, raily, marker='x')
+            self.ax.text(railx, raily, f"{alignment.name}\nCL")
+
+        # 자선 기준점
+        # 자선 찾기
+        main_alignment = next((a for a in self.alignments if a.name == '자선'), None)
+        #자선도 selected_station에 해당하는 railx raily가져오기
+        mainrailx, mainraily = self.get_railx_and_raily_by_station(main_alignment, float(selected_station))
+        # 점 찍기
+        self.ax.scatter(mainrailx, mainraily, marker='x')
+        self.ax.text(mainrailx, mainraily, '자선\nCL')
+        # 그래프 가독성을 위해 좌우 20 만큼 가상 점추가
+        self.ax.scatter(-20, 10, s=0)
+        self.ax.scatter(20, -10, s=0)
+        self.canvas.draw()
+
+    def get_railx_and_raily_by_station(self, alignment: Alignment, selected_station: float) -> tuple[float, float] | None:
+        rail = next(
+            (r for r in alignment.raildata if getattr(r, "station", None) == selected_station),
+            None
+        )
+        if rail:
+            return (rail.rail_x, rail.rail_y)
 
     def apply_decoration(self, title, xlabel, ylabel, show_grid=True):
         """그래프 기본 스타일 적용"""
@@ -516,6 +595,8 @@ class AlignmentParser:
         return: 생성한 클래스 객체
         """
         station, components = self._parse_line()
+        block_index = int(math.floor(station / 25 + 0.001)) #내림처리
+        station = block_index * 25
         if not components:
             return 0
 
