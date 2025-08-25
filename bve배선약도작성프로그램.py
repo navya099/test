@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 import matplotlib
 import numpy as np
+from ezdxf.addons.drawing import RenderContext, Frontend
+from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 from ezdxf.render import forms
 # ---- Matplotlib Tkinter 연결 ----
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -107,10 +109,13 @@ class PlotFrame(tk.Frame):
         super().__init__(master, **kwargs)
         self.original_colors = {}  # 선 객체별 원래 색 저장용 딕셔너리
         self.alignments = []
+        self.drawn_lines = []  # ✅ 그린 선을 저장할 리스트
+        self.drawn_texts = []  # ✅ 그린 문자를 저장할 리스트
+        self.drawn_dots = []  # ✅ 그린 점을 저장할 리스트(scatter객체)
 
         # Matplotlib Figure 생성
-        fig = Figure(figsize=(5, 4), dpi=100)
-        self.ax = fig.add_subplot(111)
+        self.fig = Figure(figsize=(5, 4), dpi=100)
+        self.ax = self.fig.add_subplot(111)
         self.formplotter = FormPlotter(self.ax)  # 인스턴스 참조
         self.current_view = "plan"  # 기본 뷰
         # 한글 폰트 설정 (전역 설정)
@@ -135,7 +140,7 @@ class PlotFrame(tk.Frame):
         self.ax.axis('off')
 
         # Figure를 Tkinter Canvas에 붙이기
-        self.canvas = FigureCanvasTkAgg(fig, master=self)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
@@ -143,6 +148,25 @@ class PlotFrame(tk.Frame):
         self.toolbar = NavigationToolbar2Tk(self.canvas, self)
         self.toolbar.update()
         self.toolbar.pack_forget()  # 초기에는 숨김
+
+        # xlim, ylim 변경 시 호출
+        self.ax.callbacks.connect('xlim_changed', lambda ax: self.update_scale())
+        self.ax.callbacks.connect('ylim_changed', lambda ax: self.update_scale())
+
+    def update_scale(self):
+        """현재 화면의 x, y 눈금 간격 계산"""
+        xlim = self.ax.get_xlim()
+        ylim = self.ax.get_ylim()
+
+        xticks = self.ax.get_xticks()
+        yticks = self.ax.get_yticks()
+
+        x_scale = xticks[1] - xticks[0] if len(xticks) > 1 else None
+        y_scale = yticks[1] - yticks[0] if len(yticks) > 1 else None
+
+        # 예시: 출력
+        print(f"[update_scale] X축 범위: {xlim}, 눈금 간격: {x_scale}")
+        print(f"[update_scale] Y축 범위: {ylim}, 눈금 간격: {y_scale}")
 
     def show_view(self, view_name):
         """뷰 전환 및 redraw"""
@@ -203,6 +227,7 @@ class PlotFrame(tk.Frame):
         self.ax.clear()
         self.original_colors.clear()
         self.apply_decoration(title, "Station", "x")
+        self.drawn_lines.clear()
 
         for alignment in alignments:
             x_data = [rail.coord.x for rail in alignment.raildata]
@@ -211,7 +236,7 @@ class PlotFrame(tk.Frame):
             if x_data and y_data:
                 line, = self.ax.plot(x_data, y_data, label=alignment.name)
                 self.original_colors[line] = line.get_color()
-
+                self.drawn_lines.append(line)  # ✅ 추가
         self.ax.legend()
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.draw()
@@ -220,6 +245,7 @@ class PlotFrame(tk.Frame):
         self.ax.clear()
         self.original_colors.clear()
         self.apply_decoration(title, "Station", "x")
+        self.drawn_lines.clear()
 
         for alignment in alignments:
             x_data = [rail.coord.x for rail in alignment.raildata]
@@ -228,7 +254,7 @@ class PlotFrame(tk.Frame):
             if x_data and y_data:
                 line, = self.ax.plot(x_data, z_data, label=alignment.name)
                 self.original_colors[line] = line.get_color()
-
+                self.drawn_lines.append(line)  # ✅ 추가
         self.ax.legend()
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.draw()
@@ -238,7 +264,7 @@ class PlotFrame(tk.Frame):
         self.ax.clear()
         self.original_colors.clear()
         self.apply_decoration(title, "x", "y")
-
+        self.drawn_dots.clear()
         selected_station = self.station_var.get()
         if not selected_station:
             self.canvas.draw()
@@ -253,8 +279,10 @@ class PlotFrame(tk.Frame):
 
             #그리기
             railx, raily = coords
-            self.ax.scatter(railx, raily, marker='x')
-            self.ax.text(railx, raily, f"{alignment.name}\nCL")
+            dot = self.ax.scatter(railx, raily, marker='x')
+            text = self.ax.text(railx, raily, f"{alignment.name}\nCL")
+            self.drawn_dots.append(dot)
+            self.drawn_texts.append(text)
 
         # 자선 기준점
         # 자선 찾기
@@ -262,8 +290,11 @@ class PlotFrame(tk.Frame):
         #자선도 selected_station에 해당하는 railx raily가져오기
         mainrailx, mainraily = self.get_railx_and_raily_by_station(main_alignment, float(selected_station))
         # 점 찍기
-        self.ax.scatter(mainrailx, mainraily, marker='x')
-        self.ax.text(mainrailx, mainraily, '자선\nCL')
+        dot  = self.ax.scatter(mainrailx, mainraily, marker='x')
+        text = self.ax.text(mainrailx, mainraily, '자선\nCL')
+        self.drawn_dots.append(dot)
+        self.drawn_texts.append(text)
+
         # 그래프 가독성을 위해 좌우 20 만큼 가상 점추가
         self.ax.scatter(-10, 10, s=0)
         self.ax.scatter(10, -10, s=0)
@@ -290,6 +321,9 @@ class PlotFrame(tk.Frame):
 class FormPlotter:
     def __init__(self, ax):
         self.ax = ax
+        self.drawn_lines = []  # ✅ 그린 선을 저장할 리스트
+        self.drawn_texts = []  # ✅ 그린 문자를 저장할 리스트
+        self.drawn_dots = []  # ✅ 그린 점을 저장할 리스트(scatter객체)
 
     def get_rail(self, rail_map, index, station):
         """rail_map에서 rail 찾기"""
@@ -355,6 +389,7 @@ class FormPlotter:
 
 
     def plot_plan_view_forms(self, alignments: list[Alignment], forms: list[FormData]):
+        self.drawn_lines.clear()
         # rail data dictionary
         rail_map = {(rail.railindex, rail.station): rail
                     for alignment in alignments
@@ -380,14 +415,17 @@ class FormPlotter:
                 xs = list(xs) + [xs[0]]
                 ys = list(ys) + [ys[0]]
 
-                self.ax.plot(xs, ys, color="gray")
+                line, = self.ax.plot(xs, ys, color="gray")
 
                 # 중심 좌표 계산
                 center_x = sum(xs) / len(xs)
                 center_y = sum(ys) / len(ys)
 
                 # 텍스트 추가 (formdata 이름 등 필요에 따라 바꾸기)
-                self.ax.text(center_x, center_y, formdata.name, fontsize=12, ha='center', va='center', color='black')
+                text = self.ax.text(center_x, center_y, formdata.name, fontsize=12, ha='center', va='center', color='black')
+                self.drawn_texts.append(text)
+                self.drawn_lines.append(line)
+
     def plot_profile_view_forms(self, alignments: list[Alignment], forms: list[FormData]):
         # rail data dictionary
         rail_map = {(rail.railindex, rail.station): rail
@@ -461,10 +499,85 @@ class FormPlotter:
                     self.ax.text(center_x, center_y, formdata.name,
                                  fontsize=12, ha='center', va='center', color='black')
 # 컨트롤러 클래스
+class DXFController:
+    def _draw_objects_to_dxf(self, msp, lines=None, scatters=None, texts=None, x_scale=1, y_scale=1):
+        """주어진 객체를 DXF로 변환"""
+        lines = lines or []
+        scatters = scatters or []
+        texts = texts or []
+
+        # Line
+        for line in lines:
+            xdata = line.get_xdata()
+            ydata = line.get_ydata()
+            points = [(x * x_scale, y * y_scale) for x, y in zip(xdata, ydata)]
+            if len(points) >= 2:
+                msp.add_lwpolyline(points)
+
+        # Scatter
+        for scatter in scatters:
+            offsets = scatter.get_offsets()
+            for x, y in offsets:
+                msp.add_circle(center=(x * x_scale, y * y_scale), radius=1)
+
+        # Text
+        for text in texts:
+            x, y = text.get_position()
+            content = text.get_text()
+            x_dxf = x * x_scale
+            y_dxf = y * y_scale
+            if '\n' in content:
+                mtext = msp.add_mtext(content, dxfattribs={'insert': (x_dxf, y_dxf)})
+                mtext.dxf.char_height = 2 * y_scale  # height 속성으로 지정
+            else:
+                msp.add_text(content, dxfattribs={'insert': (x_dxf, y_dxf), 'height': 2 * y_scale})
+
+    def export_dxf(self, plot_frame, filepath: str):
+        import ezdxf
+
+        doc = ezdxf.new()
+        msp = doc.modelspace()
+        ax = plot_frame.ax
+
+        # 화면 스케일 계산
+        xticks = ax.get_xticks()
+        yticks = ax.get_yticks()
+        x_tick = xticks[1] - xticks[0] if len(xticks) > 1 else 1
+        y_tick = yticks[1] - yticks[0] if len(yticks) > 1 else 1
+        x_scale = 1.0
+        y_scale = x_tick / y_tick
+
+        # PlotFrame 객체 변환
+        self._draw_objects_to_dxf(
+            msp,
+            lines=plot_frame.drawn_lines,
+            scatters=getattr(plot_frame, "drawn_dots", []),
+            texts=getattr(plot_frame, "drawn_texts", []),
+            x_scale=x_scale,
+            y_scale=y_scale
+        )
+
+        # FormPlotter 객체 변환
+        if hasattr(plot_frame, "formplotter"):
+            fp = plot_frame.formplotter
+            self._draw_objects_to_dxf(
+                msp,
+                lines=getattr(fp, "drawn_lines", []),
+                scatters=getattr(fp, "drawn_dots", []),
+                texts=getattr(fp, "drawn_texts", []),
+                x_scale=x_scale,
+                y_scale=y_scale
+            )
+
+        doc.saveas(filepath)
+
+
 # controller.py
 class FileController:
     def __init__(self):
         self.filepath: str = ''
+        self.savefilepath: str = ''
+        self.dxfilemanager = DXFController()
 
     def open_file(self):
         filename = filedialog.askopenfilename(title="파일 열기")
@@ -473,9 +586,15 @@ class FileController:
             self.filepath = filename
 
     def save_file(self):
-        filename = filedialog.asksaveasfilename(title="파일 저장")
+        filename = filedialog.asksaveasfilename(
+            title="파일 저장",
+            defaultextension=".dxf",
+            filetypes=[("DXF Files", "*.dxf")]
+        )
         if filename:
-            messagebox.showinfo("저장", f"저장 위치: {filename}")
+            self.savefilepath = filename
+            return filename
+        return None
 
     # 파일 읽기 함수
     def read_file(self):
@@ -488,6 +607,12 @@ class FileController:
 
         return lines
 
+    def export_dxf(self, plot_frame, filepath=None):
+        if filepath is None:
+            filepath = self.savefilepath
+        if filepath:
+            self.dxfilemanager.export_dxf(plot_frame, filepath)
+            messagebox.showinfo("dxf 저장", f"dxf 저장 성공!")
 
 class EditController:
     def copy(self):
@@ -561,7 +686,9 @@ class EventHandler:
             self.main_app.plot_frame.set_data(alignments, forms, filename)
 
     def on_file_save(self):
-        self.file_controller.save_file()
+        filename = self.file_controller.save_file()
+        if filename:
+            self.file_controller.dxfilemanager.export_dxf(self.main_app.plot_frame, filename)
 
     def on_open_settings(self):
         settings_win = tk.Toplevel(self.main_app)
