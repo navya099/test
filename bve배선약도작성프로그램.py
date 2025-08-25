@@ -129,6 +129,17 @@ class PlotFrame(tk.Frame):
         self.station_combo.pack(side=tk.TOP, fill=tk.X)
         self.station_combo.bind("<<ComboboxSelected>>", self.on_station_selected)
 
+        # 바인딩 (Up/Down도 같이 지원하면 편해요)
+        self.station_combo.bind("<Left>",  self._on_combo_move)
+        self.station_combo.bind("<Right>", self._on_combo_move)
+        self.station_combo.bind("<Up>",    self._on_combo_move)
+        self.station_combo.bind("<Down>",  self._on_combo_move)
+        # Home/End/PageUp/PageDown 키 입력 처리
+        self.station_combo.bind("<Home>", self.on_special_keys)
+        self.station_combo.bind("<End>", self.on_special_keys)
+        self.station_combo.bind("<Prior>", self.on_special_keys)   # PageUp
+        self.station_combo.bind("<Next>", self.on_special_keys)    # PageDown
+        
         # 기본 숨김
         self.station_combo.pack_forget()
 
@@ -152,7 +163,50 @@ class PlotFrame(tk.Frame):
         # xlim, ylim 변경 시 호출
         self.ax.callbacks.connect('xlim_changed', lambda ax: self.update_scale())
         self.ax.callbacks.connect('ylim_changed', lambda ax: self.update_scale())
+    
+    def _on_combo_move(self, event):
+        values = self.station_combo['values']
+        if not values:
+            return "break"
 
+        cur = self.station_combo.current()
+        if cur < 0:
+            cur = 0
+
+        # 좌/상: -1, 우/하: +1
+        delta = -1 if event.keysym in ("Left", "Up") else 1
+        new = (cur + delta) % len(values)
+
+        # 선택 변경
+        self.station_combo.current(new)
+        self.station_var.set(values[new])
+
+        # on_station_selected와 동일한 흐름으로 처리
+        self.station_combo.event_generate("<<ComboboxSelected>>")
+        return "break"  # 기본 동작(커서 이동 등) 막기
+    def on_special_keys(self, event):
+        values = self.station_combo["values"]
+        if not values:
+            return
+
+        current_index = self.station_combo.current()
+        if current_index == -1:  # 아무것도 선택 안 된 경우
+            current_index = 0
+
+        if event.keysym == "Home":
+            new_index = 0
+        elif event.keysym == "End":
+            new_index = len(values) - 1
+        elif event.keysym == "Prior":  # PageUp
+            new_index = max(0, current_index - 4)
+        elif event.keysym == "Next":  # PageDown
+            new_index = min(len(values) - 1, current_index + 4)
+        else:
+            return
+
+        self.station_combo.current(new_index)
+        self.on_station_selected(None)
+        
     def update_scale(self):
         """현재 화면의 x, y 눈금 간격 계산"""
         xlim = self.ax.get_xlim()
@@ -176,6 +230,7 @@ class PlotFrame(tk.Frame):
                 # station 선택 UI 노출
                 self.station_combo.pack(side=tk.TOP, fill=tk.X)
                 self.populate_stations()
+                self.station_combo.focus_set()   # ← 포커스 주기 (중요)
             else:
                 # 다른 뷰에서는 숨김
                 self.station_combo.pack_forget()
