@@ -111,7 +111,7 @@ class PlotFrame(tk.Frame):
         # Matplotlib Figure 생성
         fig = Figure(figsize=(5, 4), dpi=100)
         self.ax = fig.add_subplot(111)
-
+        self.formplotter = FormPlotter(self.ax)  # 인스턴스 참조
         self.current_view = "plan"  # 기본 뷰
         # 한글 폰트 설정 (전역 설정)
 
@@ -193,78 +193,6 @@ class PlotFrame(tk.Frame):
     def plot_section_view(self, alignments, title):
         pass
 
-    def plot_forms(self, alignments: list[Alignment], forms: list[FormData]):
-        for formdata in forms:
-            x1_data = []
-            y1_data = []
-            x_data = []
-            y_data = []
-            rail_map = {}
-            for alignment in alignments:
-                for rail in alignment.raildata:
-                    key = (rail.railindex, rail.station)
-                    rail_map[key] = rail
-
-            for form in formdata.formdata:
-                key1 = (form.rail1_index, form.station)
-                key2 = (form.rail2_index, form.station)
-
-                rail1 = rail_map.get(key1)
-                rail2 = rail_map.get(key2)
-
-                if rail1 and rail2:
-                    angle = rail1.direction.todegree()  - 90
-                    left_form_coord = Math.calculate_destination_coordinates(
-                        Vector2(rail1.coord.x,rail1.coord.y),
-                    angle,
-                    2
-                    )
-                    angle = rail2.direction.todegree() + 90
-                    right_form_coord = Math.calculate_destination_coordinates(
-                        Vector2(rail2.coord.x, rail2.coord.y),
-                        angle,
-                        -2
-                    )
-                    x_data.append(left_form_coord.x)
-                    y_data.append(left_form_coord.y)
-                    x1_data.append(right_form_coord.x)
-                    y1_data.append(right_form_coord.y)
-
-                elif rail1 and form.rail2_index == -1:
-                    angle = rail1.direction.todegree() + 90
-                    left_form_coord = Math.calculate_destination_coordinates(
-                        Vector2(rail1.coord.x, rail1.coord.y),
-                        angle,
-                        -2
-                    )
-                    right_form_coord = Math.calculate_destination_coordinates(
-                        Vector2(rail1.coord.x, rail1.coord.y),
-                        angle,
-                        -7
-                    )
-                    x_data.append(rail1.coord.x)
-                    y_data.append(rail1.coord.y)
-
-            x1_data.reverse()
-            y1_data.reverse()
-
-            x_data.extend(x1_data)
-            y_data.extend(y1_data)
-
-            # 닫힌 도형 위해 시작점 다시 추가
-            if x_data and y_data:
-                x_data.append(x_data[0])
-                y_data.append(y_data[0])
-
-            self.ax.plot(x_data, y_data, color='gray')
-
-            # 중심 좌표 계산
-            center_x = sum(x_data) / len(x_data)
-            center_y = sum(y_data) / len(y_data)
-
-            # 텍스트 추가 (formdata 이름 등 필요에 따라 바꾸기)
-            self.ax.text(center_x, center_y, formdata.name, fontsize=12, ha='center', va='center', color='black')
-
     def apply_decoration(self, title, xlabel, ylabel, show_grid=True):
         """그래프 기본 스타일 적용"""
         self.ax.set_title(title)
@@ -274,20 +202,89 @@ class PlotFrame(tk.Frame):
             self.ax.grid(True)
         self.ax.axis('on')
 
-class PlanViewFrame(tk.Frame):
-    def plot(self, alignments, title):
-        # 기존 plot_multiple 로직 적용
-        pass
+class FormPlotter:
+    def __init__(self, ax):
+        self.ax = ax
 
-class ProfileViewFrame(tk.Frame):
-    def plot(self, alignments, title):
-        # 종단선용 y/z 좌표 plot
-        pass
+    def get_rail(self, rail_map, index, station):
+        """rail_map에서 rail 찾기"""
+        return rail_map.get((index, station))
 
-class SectionViewFrame(tk.Frame):
-    def plot(self, alignments, title):
-        # 단면도용 x/z or 특정 cross-section plot
-        pass
+    def get_left_right_rail(self, rail1, rail2):
+        """
+        rail1, rail2 중 좌/우 구분 (rail1.direction 기준)
+        두 레일은 항상 같은 방향을 향한다고 가정.
+        """
+        fwd = rail1.direction  # 진행 방향 (Vector2)
+        v12 = Vector2(rail2.coord.x - rail1.coord.x,
+                      rail2.coord.y - rail1.coord.y)
+
+        cross = fwd.x * v12.y - fwd.y * v12.x
+
+        if cross > 0:
+            return rail2, rail1  # (좌, 우)
+        else:
+            return rail1, rail2  # (좌, 우)
+
+    def offset_coord(self, rail, angle_offset, distance):
+        """rail 좌표에서 방향 오프셋 좌표 계산"""
+        angle = rail.direction.todegree() + angle_offset
+        return Math.calculate_destination_coordinates(
+            Vector2(rail.coord.x, rail.coord.y),
+            angle,
+            distance
+        )
+
+    def get_form_polygon(self, form, rail_map, offset=2):
+        """form 정보를 받아 polygon 좌표 리스트 반환"""
+        rail1 = self.get_rail(rail_map, form.rail1_index, form.station)
+        rail2 = self.get_rail(rail_map, form.rail2_index, form.station)
+
+        if not rail1 or not rail2:
+            return []
+
+        left_rail, right_rail = self.get_left_right_rail(rail1, rail2)
+
+        left_form = self.offset_coord(left_rail, -90, offset)
+        right_form = self.offset_coord(right_rail, +90, offset)
+
+        return [(left_form.x, left_form.y), (right_form.x, right_form.y)]
+
+    def plot_forms(self, alignments: list[Alignment], forms: list[FormData]):
+        # rail data dictionary
+        rail_map = {(rail.railindex, rail.station): rail
+                    for alignment in alignments
+                    for rail in alignment.raildata}
+
+        for formdata in forms:
+            left_coords = []
+            right_coords = []
+
+            for form in formdata.formdata:
+                polygon_points = self.get_form_polygon(form, rail_map, offset=2)
+                if polygon_points:
+                    left_coords.append(polygon_points[0])
+                    right_coords.append(polygon_points[1])
+
+            # polygon 완성
+            right_coords.reverse()
+            polygon = left_coords + right_coords
+
+            if polygon:
+                xs, ys = zip(*polygon)
+                # 닫기
+                xs = list(xs) + [xs[0]]
+                ys = list(ys) + [ys[0]]
+
+                self.ax.plot(xs, ys, color="gray")
+
+                # 중심 좌표 계산
+                center_x = sum(xs) / len(xs)
+                center_y = sum(ys) / len(ys)
+
+                # 텍스트 추가 (formdata 이름 등 필요에 따라 바꾸기)
+                self.ax.text(center_x, center_y, formdata.name, fontsize=12, ha='center', va='center', color='black')
+
 
 # 컨트롤러 클래스
 # controller.py
@@ -390,7 +387,7 @@ class EventHandler:
             self.main_app.plot_frame.set_data(alignments, filename)
 
         if forms:
-            self.main_app.plot_frame.plot_forms(alignments, forms)
+            self.main_app.plot_frame.formplotter.plot_forms(alignments, forms)
 
     def on_file_save(self):
         self.file_controller.save_file()
