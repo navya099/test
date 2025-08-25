@@ -180,15 +180,23 @@ class PlotFrame(tk.Frame):
         """현재 alignments 기준으로 현재 뷰 redraw"""
         if self.current_view == "plan":
             self.plot_plan_view(self.alignments, '평면')
+            if self.forms:
+                self.formplotter.plot_plan_view_forms(self.alignments, self.forms)
         elif self.current_view == "profile":
             self.plot_profile_view(self.alignments, '종단')
+            if self.forms:
+                self.formplotter.plot_profile_view_forms(self.alignments, self.forms)
         elif self.current_view == "section":
             self.plot_section_view(self.alignments, '횡단')
+            if self.forms:
+                selected_station = self.station_var.get()
+                self.formplotter.plot_section_view_forms(self.alignments, self.forms, selected_station)
 
-    def set_data(self, alignments, title):
+    def set_data(self, alignments, forms, title):
         """새 데이터 설정"""
         self.alignments = alignments
         self.title = title
+        self.forms = forms
         self.redraw()
 
     def plot_plan_view(self, alignments, title):
@@ -236,9 +244,6 @@ class PlotFrame(tk.Frame):
             self.canvas.draw()
             return
 
-        # { alignment_name: (rail_x, rail_y) }
-        station_points = {}
-
         for alignment in alignments:
             if alignment.name == '자선':  # 자선 건너뛰기
                 continue
@@ -260,8 +265,8 @@ class PlotFrame(tk.Frame):
         self.ax.scatter(mainrailx, mainraily, marker='x')
         self.ax.text(mainrailx, mainraily, '자선\nCL')
         # 그래프 가독성을 위해 좌우 20 만큼 가상 점추가
-        self.ax.scatter(-20, 10, s=0)
-        self.ax.scatter(20, -10, s=0)
+        self.ax.scatter(-10, 10, s=0)
+        self.ax.scatter(10, -10, s=0)
         self.canvas.draw()
 
     def get_railx_and_raily_by_station(self, alignment: Alignment, selected_station: float) -> tuple[float, float] | None:
@@ -271,6 +276,7 @@ class PlotFrame(tk.Frame):
         )
         if rail:
             return (rail.rail_x, rail.rail_y)
+        return None
 
     def apply_decoration(self, title, xlabel, ylabel, show_grid=True):
         """그래프 기본 스타일 적용"""
@@ -329,7 +335,26 @@ class FormPlotter:
 
         return [(left_form.x, left_form.y), (right_form.x, right_form.y)]
 
-    def plot_forms(self, alignments: list[Alignment], forms: list[FormData]):
+    def get_form_polygon_by_station(self, form, rail_map, selected_station, offset=2) -> list:
+        """선택한 station만 처리하는 section용 폴리곤 좌표 반환"""
+        selected_station = int(selected_station)
+        if form.station != selected_station:
+            return []
+
+        rail1 = rail_map.get((form.rail1_index, selected_station))
+        rail2 = rail_map.get((form.rail2_index, selected_station))
+
+        if not rail1 or not rail2:
+            return []
+
+        left_rail, right_rail = self.get_left_right_rail(rail1, rail2)
+        left_form = (left_rail.rail_x + offset, offset)
+        right_form = (right_rail.rail_x - offset, offset)
+
+        return [left_form, right_form]
+
+
+    def plot_plan_view_forms(self, alignments: list[Alignment], forms: list[FormData]):
         # rail data dictionary
         rail_map = {(rail.railindex, rail.station): rail
                     for alignment in alignments
@@ -363,8 +388,78 @@ class FormPlotter:
 
                 # 텍스트 추가 (formdata 이름 등 필요에 따라 바꾸기)
                 self.ax.text(center_x, center_y, formdata.name, fontsize=12, ha='center', va='center', color='black')
+    def plot_profile_view_forms(self, alignments: list[Alignment], forms: list[FormData]):
+        # rail data dictionary
+        rail_map = {(rail.railindex, rail.station): rail
+                    for alignment in alignments
+                    for rail in alignment.raildata}
 
+        for formdata in forms:
+            left_coords = []
+            right_coords = []
 
+            for form in formdata.formdata:
+                polygon_points = self.get_form_polygon(form, rail_map, offset=2)
+                if polygon_points:
+                    left_coords.append(polygon_points[0])
+                    right_coords.append(polygon_points[1])
+
+            # 원좌표에서 x만 추출 후 2집어넣기
+            top_coords = [(x, 1) for (x, y) in left_coords]
+            bottom_coords = [(x, 0) for (x, y) in left_coords]
+            bottom_coords.reverse()
+            polygon = top_coords + bottom_coords
+
+            if polygon:
+                xs, ys = zip(*polygon)
+                xs = list(xs) + [xs[0]]
+                ys = list(ys) + [ys[0]]
+
+                self.ax.plot(xs, ys, color="gray")
+
+                # 중심 좌표 계산
+                center_x = sum(xs) / len(xs)
+                center_y = sum(ys) / len(ys)
+
+                # 텍스트 추가 (formdata 이름 등 필요에 따라 바꾸기)
+                self.ax.text(center_x, center_y, formdata.name, fontsize=12, ha='center', va='center', color='black')
+    def plot_section_view_forms(self, alignments: list[Alignment], forms: list[FormData], selected_station):
+        if not selected_station:
+            return
+        # rail data dictionary
+        rail_map = {(rail.railindex, rail.station): rail
+                    for alignment in alignments
+                    for rail in alignment.raildata}
+
+        for formdata in forms:
+            left_coords = []
+            right_coords = []
+
+            for form in formdata.formdata:
+                polygon_points = self.get_form_polygon_by_station(form, rail_map, selected_station, offset=1)
+
+                # polygon_points가 2개 점일 때만 처리
+                if len(polygon_points) == 2:
+                    # 하단을 닫아주기 위해 (x,0) 점 추가
+                    polygon = [
+                        polygon_points[0],
+                        polygon_points[1],
+                        (polygon_points[1][0], 0),
+                        (polygon_points[0][0], 0)
+                    ]
+
+                    xs, ys = zip(*polygon)
+                    xs = list(xs) + [xs[0]]
+                    ys = list(ys) + [ys[0]]
+
+                    self.ax.plot(xs, ys, color="gray")
+
+                    # 중심 좌표 계산
+                    center_x = sum(xs) / len(xs)
+                    center_y = sum(ys) / len(ys)
+
+                    self.ax.text(center_x, center_y, formdata.name,
+                                 fontsize=12, ha='center', va='center', color='black')
 # 컨트롤러 클래스
 # controller.py
 class FileController:
@@ -463,10 +558,7 @@ class EventHandler:
             self.app_controller.calculator.calculate_mainline_coordinates(alignments)
             self.app_controller.calculator.calculate_otherline_coordinates(alignments)
             # PlotFrame에 데이터 설정
-            self.main_app.plot_frame.set_data(alignments, filename)
-
-        if forms:
-            self.main_app.plot_frame.formplotter.plot_forms(alignments, forms)
+            self.main_app.plot_frame.set_data(alignments, forms, filename)
 
     def on_file_save(self):
         self.file_controller.save_file()
