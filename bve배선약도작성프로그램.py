@@ -11,7 +11,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 import os
 import math
-
+import copy
 from pandas.core.ops.mask_ops import raise_for_nan
 
 
@@ -735,6 +735,9 @@ class EventHandler:
         alignments, forms = self.app_controller.build_alignments(lines)
 
         if alignments:
+            #빠진 블록 채우기
+            self.app_controller.aladjustor.create_missing_blocks(alignments)
+            #좌표계산
             self.app_controller.calculator.calculate_mainline_coordinates(alignments)
             self.app_controller.calculator.calculate_otherline_coordinates(alignments)
             # PlotFrame에 데이터 설정
@@ -822,11 +825,13 @@ class AppController:
         # 기능 전담 클래스 인스턴스 보관
         self.parser = AlignmentParser()
         self.calculator = AlignmentCalculator()
+        self.aladjustor = AlignmentAdjuster()
 
     def build_alignments(self, lines):
         alignments, forms, curves, min_station, max_station = self.parser.process_lines_to_alginment_data(lines)
 
         if alignments:
+
             main_alignment = self.calculator.create_mainline(min_station - 600, max_station + 600)
             main_alignment.curvedata.extend(curves)
             alignments.append(main_alignment)
@@ -1131,6 +1136,30 @@ class AlignmentCalculator:
                 rail.coord.x = newcoord.x
                 rail.coord.y = newcoord.y
                 rail.coord.z = new_z
+
+class AlignmentAdjuster:
+    def __init__(self):
+        self.alignments: list[Alignment] = []
+
+    def create_missing_blocks(self, alignments: list[Alignment], interval=25):
+        self.alignments = alignments
+
+        for al in self.alignments:
+            i = 0
+            while i < len(al.raildata) - 1:
+                start = al.raildata[i].station
+                end = al.raildata[i + 1].station
+                currentrail = al.raildata[i]
+                if end - start > interval:
+                    # 누락 블록 생성
+                    new_station = start + interval
+
+                    new_rail = copy.deepcopy(currentrail) #참조복사
+                    new_rail.station = start + interval  # 반드시 station 갱신
+                    al.raildata.insert(i + 1, new_rail)
+                    # i 그대로, 새 블록도 확인
+                else:
+                    i += 1
 
 # 메인클래스 main.py
 class MainApp(tk.Tk):
