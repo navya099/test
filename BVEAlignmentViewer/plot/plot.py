@@ -1,0 +1,50 @@
+import tkinter as tk
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+class PlotFrame(tk.Frame):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+
+        # Matplotlib Figure 생성
+        fig = Figure(figsize=(5, 4), dpi=100)
+        self.ax = fig.add_subplot(111)
+
+        # 한글 폰트 설정 (전역 설정)
+
+        matplotlib.rcParams['font.family'] = 'Malgun Gothic'
+        matplotlib.rcParams['axes.unicode_minus'] = False
+
+        # 빈 상태라 아무 축도 설정하지 않음
+        self.ax.clear()
+
+        #빈 도화지라 축 숨김
+        self.ax.grid(True)
+        self.ax.axis('off')
+
+        # Figure를 Tkinter Canvas에 붙이기
+        self.canvas = FigureCanvasTkAgg(fig, master=self)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # 툴바 생성 및 배치
+        self.toolbar = NavigationToolbar2Tk(self.canvas, self)
+        self.toolbar.update()
+        self.toolbar.pack_forget()  # 초기에는 숨김
+
+    def update_plot(self, x_data, y_data, title="그래프"):
+        self.ax.clear()
+        if x_data and y_data:  # 데이터가 있으면 툴바 보임
+            self.ax.plot(x_data, y_data, marker="o")
+            self.ax.set_title(title)
+            self.ax.set_xlabel("X축")
+            self.ax.set_ylabel("Y축")
+            self.ax.axis('on')  # 축 보임
+            self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)  # 툴바 보이기
+        else:
+            # 데이터 없으면 빈 도화지 + 축 숨김 + 툴바 숨김
+            self.ax.axis('off')
+            self.toolbar.pack_forget()
+        self.canvas.draw()
