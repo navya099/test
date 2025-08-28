@@ -1,3 +1,9 @@
+from dataclasses import dataclass, field
+from enum import Enum
+
+from modules.vector2 import Vector2
+
+
 @dataclass
 class Curve:
     """
