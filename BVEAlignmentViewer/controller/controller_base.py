@@ -1,24 +1,33 @@
 from tkinter import filedialog, messagebox
 
+from core.calculator import Calculator
+from core.datacontainer import BVERouteFactory
 from core.parser import CSVRouteParser
+from core.processor import RouteProcessor
+from model.model import BVERouteData
+from utils import remove_duplicate_radius
 
 
 # 기능 클래스(모든 기능을 넣을 예정)
 class AppController:
     def __init__(self, main_app, file_controller):
-        self.route_data = None
+        self.current_route = None
         self.main_app = main_app  # MainApp 인스턴스 (UI 접근용)
         self.file_ctrl = file_controller
-
         # Alignment 데이터 컨테이너
 
         # 기능 전담 클래스 인스턴스 보관
         self.parser = CSVRouteParser()
+        self.calculator = Calculator()
 
     def load_route(self, filepath: str):
         self.parser.parse_route(filepath) #루트 파싱 실행
-        self.route_data = self.parser.current_route # 파싱후 current_route 저장
-        return self.route_data
+        self.current_route = self.parser.current_route # 파싱후 current_route 저장
+        datalist = self.parser.extract_currentroute() # 필요한 요소만 리스트로 추출
+        return datalist
+
+    def convert_to_bveroute(self, current_route):
+        return BVERouteFactory.from_current_route(current_route)
 
 class FileController:
     def __init__(self):

@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
-from modules.vector2 import Vector2
+from OpenBveApi.Math.Vectors.Vector3 import Vector3
+from vector2 import Vector2
 
 
 @dataclass
@@ -57,11 +58,13 @@ class BVERouteData:
     curves: list[Curve] = None
     pitchs: list[Pitch] = None
     stations: list[Station] = None
+    coords: list[Vector3] = None
 
     def __post_init__(self):
         self.curves = self.curves or []
         self.pitchs = self.pitchs or []
         self.stations = self.stations or []
+        self.coords = self.coords or []
 
 class CurveDirection(Enum):
     """
