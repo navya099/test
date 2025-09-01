@@ -1,0 +1,60 @@
+import math
+
+def get_block_index(number, interval):
+    return int(math.floor(number / interval + 0.001))
+
+def get_station_by_block_index(index, interval):
+    return index * interval
+
+def calculate_coordinates(x1,y1,bearing,distance):
+    """
+    1점에서 각도로 거리만큼 이동한 점의 좌표 계산
+    Args:
+        x1:
+        y1:
+        bearing:
+        distance:
+
+    Returns:
+        x2,y2
+    """
+    angle = math.radians(bearing)
+    x2 = x1 + distance * math.cos(angle)
+    y2 = y1 + distance * math.sin(angle)
+    return x2,y2
+
+def calculate_bearing(x1, y1, x2, y2):
+    """
+    두 점의 각도 계산
+    Args:
+        x1:
+        y1:
+        x2:
+        y2:
+
+    Returns:
+        bearing
+    """
+    dx = x2 - x1
+    dy = y2 - y1
+    bearing = math.degrees(math.atan2(dy, dx))
+    return bearing
+
+def calculate_bearing_civil_coord(x1, y1, x2, y2):
+    """
+    두 점의 각도계산(토목좌표)
+    Args:
+        x1:
+        y1:
+        x2:
+        y2:
+
+    Returns:
+        bearing
+    """
+    dx = x2 - x1
+    dy = y2 - y1
+    bearing = math.degrees(math.atan2(dx, dy))
+    if bearing < 0:
+        bearing = 360 + bearing
+    return bearing
