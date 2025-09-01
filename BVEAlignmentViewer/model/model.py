@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from enum import Enum
-
-from OpenBveApi.Math.Vectors.Vector3 import Vector3
+import math
+from vector3 import Vector3
+from math_utils import get_block_index
 from vector2 import Vector2
 
 
@@ -53,18 +54,35 @@ class BVERouteData:
         curves (list[Curve]): 곡선 저장 리스트
         pitchs (list[Pitch]): 구배 저장 리스트
         stations (list[Station]): 정거장 저장 리스트
+        coords (list(Vector3): 좌표 리스트
+        directions (list(Vector3): 방향벡터 3차원 리스트
+        lastblock(float): 마지막 블록 측점
+        block_interval(float): 블록 간격 default 25
+        lastindex(float): 마지막 블록 인덱스
     """
     name: str
     curves: list[Curve] = None
     pitchs: list[Pitch] = None
     stations: list[Station] = None
     coords: list[Vector3] = None
+    directions: list[Vector3] = None
+    lastblock: float = 0.0
+    block_interval: float = 25.0
+    lastindex: float = 0.0
 
     def __post_init__(self):
         self.curves = self.curves or []
         self.pitchs = self.pitchs or []
         self.stations = self.stations or []
         self.coords = self.coords or []
+        self.directions = self.directions or []
+        # lastblock = 가장 큰 station 값
+        if self.stations:
+            self.lastblock = max(s.station for s in self.curves)
+        else:
+            self.lastblock = 0.0
+
+        self.lastindex = get_block_index(self.lastblock, self.block_interval)
 
 class CurveDirection(Enum):
     """
@@ -131,8 +149,7 @@ class IPdata:
         curvetype (CurveType): 곡선 종류
         curve_direction (CurveDirection): 곡선 방향
         radius (float): 곡선 반지름
-        ip_x_coord (float): IP X 좌표
-        ip_y_coord (float): IP Y 좌표
+        ip_coord (Vector2): IP 좌표
         ia (float): 교각
         curve_segment (CurveSegment): BC/EC 좌표 정보
     """
@@ -140,7 +157,6 @@ class IPdata:
     curvetype: CurveType = CurveType.Simple
     curve_direction: CurveDirection = CurveDirection.RIGHT
     radius: float = 0.0
-    ip_x_coord: float = 0.0
-    ip_y_coord: float = 0.0
+    ip_coord: Vector2 = Vector2(x=0, y= 0)
     ia: float = 0.0
     curve_segment: CurveSegment = field(default_factory=lambda: CurveSegment())
