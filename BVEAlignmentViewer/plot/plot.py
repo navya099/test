@@ -57,24 +57,50 @@ class PlotFrame(tk.Frame):
             self.toolbar.pack_forget()
         self.canvas.draw()
 
-    def set_data(self, alignments, title):
+    def set_data(self, alignments, origin_bve_data):
         """새 데이터 설정"""
         self.alignments = alignments
-        self.title = title
+        self.origin_bve_data = origin_bve_data
+        self.title = self.current_view
         self.redraw()
 
     def redraw(self):
         """현재 alignments 기준으로 현재 뷰 redraw"""
         if self.current_view == ViewType.PLAN:
-            self.plot_plan_view(self.alignments, ViewType.PLAN.value)
+            self.plot_plan_view(ViewType.PLAN.value)
         elif self.current_view == ViewType.PROFILE:
             self.plot_profile_view(self.alignments, ViewType.PROFILE.value)
         elif self.current_view == ViewType.SECTION:
             self.plot_section_view(self.alignments, ViewType.SECTION.value)
 
-    def plot_plan_view(self, alignments, viewtype):
-        pass
+    def plot_plan_view(self, title):
+        self.ax.clear()
+        self.apply_decoration(title, "X(N)", "Y(E)")
+
+        #IP라인 그리기
+        x_data = [alignment.coord.x for alignment in self.alignments]
+        y_data = [alignment.coord.y for alignment in self.alignments]
+        if x_data and y_data:
+            line, = self.ax.plot(x_data, y_data, label='IP라인')
+        #곡선 그리기
+        x_data = [coord.x for coord in self.origin_bve_data.coords]
+        y_data = [coord.y for coord in self.origin_bve_data.coords]
+        if x_data and y_data:
+            line, = self.ax.plot(x_data, y_data, color='red', label='FL')
+        self.ax.legend()
+        self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.canvas.draw()
+
     def plot_profile_view(self, alignments, viewtype):
         pass
     def plot_section_view(self, alignments, viewtype):
         pass
+    def apply_decoration(self, title, xlabel, ylabel, show_grid=True):
+        """그래프 기본 스타일 적용"""
+        self.ax.set_title(title)
+        self.ax.set_xlabel(xlabel)
+        self.ax.set_ylabel(ylabel)
+        if show_grid:
+            self.ax.grid(True)
+        self.ax.axis('on')
+        self.ax.set_aspect('equal')
