@@ -39,16 +39,22 @@ class EventHandler:
         filepath = self.file_controller.filepath
 
         if filepath:
-            extracted_list = self.app_controller.load_route(filepath)  # ✅ 공식 인터페이스 호출
-            if extracted_list:
-                bve_data = self.app_controller.convert_to_bveroute(extracted_list) #bvedata로 변환
-                #전처리
-                routeprocessor = RouteProcessor(bve_data) #인스턴스 생성
-                routeprocessor.run()
-                #인스턴스 초기화
-                self.app_controller.calculator.init_bvedata(bve_data)
-                #선형객체 빌드
-                self.app_controller.calculator.build_ipdata_from_sections()
+            self._process_and_plot(filepath)
+
+    def _process_and_plot(self, filepath):
+        extracted_list = self.app_controller.load_route(filepath)  # ✅ 공식 인터페이스 호출
+        if extracted_list:
+            bve_data = self.app_controller.convert_to_bveroute(extracted_list)  # bvedata로 변환
+            # 전처리
+            routeprocessor = RouteProcessor(bve_data)  # 인스턴스 생성
+            routeprocessor.run()
+            # 인스턴스 초기화
+            self.app_controller.calculator.init_bvedata(bve_data)
+            # 선형객체 빌드
+            alignments = self.app_controller.calculator.build_ipdata_from_sections()
+            # 선형객체 출력
+            # PlotFrame에 데이터 설정
+            self.main_app.plot_frame.set_data(alignments ,'선형뷰어')
 
     def on_file_save(self):
         filename = self.file_controller.save_file()

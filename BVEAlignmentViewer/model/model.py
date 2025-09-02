@@ -109,54 +109,85 @@ class CurveType(Enum):
     Complex = '복심곡선'
 
 @dataclass
-class CurveSegment:
+class Segment:
+    """
+    공통 세그멘트 객체
+    Attributes:
+        start_coord (Vector2): 시작 좌표
+        end_coord (Vector2): 끝 좌표
+        start_azimuth (float): 시작 각도(라디안)
+        end_azimuth (float): 종점 각도(라디안)
+        length(float): 길이
+    """
+    start_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
+    end_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
+    start_azimuth: float = 0.0
+    end_azimuth: float = 0.0
+    length: float = 0.0
+
+@dataclass
+class StraightSegment(Segment):
+    pass
+
+@dataclass
+class CurveSegment(Segment):
     """
     구간별 곡선 세그먼트 저장용 클래스 (단곡선).
 
     Attributes:
-        bc_sta (float): BC 측점
-        ec_sta (float): EC 측점
-        bc_coord (Vector2): BC 좌표
-        ec_coord (Vector2): EC 좌표
+        start_sta (float): BC 측점
+        end_sta (float): EC 측점
+
         center_coord (Vector2): 원곡선 중심 좌표
         tl (float): 접선장(Tangent Length, TL)
         cl (float): 곡선장(Curve Length, CL)
         sl (float): 외할장(Chord Length, SL)
         m (float): 중앙종거(Middle Ordinate)
-        start_azimuth (float): 원곡선 시작 방위각(도)
-        end_azimuth (float): 원곡선 종점 방위각(도)
+
     """
     radius: float = 0.0
-    bc_sta: float = 0.0
-    ec_sta: float = 0.0
-    bc_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
-    ec_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
+    start_sta: float = 0.0
+    end_sta: float = 0.0
     center_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
     tl: float = 0.0
     cl: float = 0.0
     sl: float = 0.0
     m: float = 0.0
-    start_azimuth: float = 0.0
-    end_azimuth: float = 0.0
 
 @dataclass
-class IPdata:
+class BasePoint:
     """
-    IP 정보 저장용 데이터 클래스.
+    공통 좌표정보 클래스
+    Attributes:
+        coord(Vector2): 좌표
+    """
+    coord: Vector2 = Vector2(x=0, y= 0)
+
+@dataclass
+class EndPoint(BasePoint):
+    """
+    BP/EP용 클래스 (BasePoint 상속)
+    Attributes:
+        direction(float): 방향각도(라디안)
+    """
+    direction: float = 0.0
+
+@dataclass
+class IPdata(BasePoint):
+    """
+    IP 정보 저장용 데이터 클래스(BasePoint) 상속.
 
     Attributes:
         ipno (int): IP 번호
         curvetype (CurveType): 곡선 종류
         curve_direction (CurveDirection): 곡선 방향
         radius (float): 곡선 반지름
-        ip_coord (Vector2): IP 좌표
         ia (float): 교각
-        curve_segment (CurveSegment): BC/EC 좌표 정보
+        segment (CurveSegment): 세그먼트 정보
     """
     ipno: int = 0
     curvetype: CurveType = CurveType.Simple
     curve_direction: CurveDirection = CurveDirection.RIGHT
     radius: float = 0.0
-    ip_coord: Vector2 = Vector2(x=0, y= 0)
     ia: float = 0.0
-    curve_segment: CurveSegment = field(default_factory=lambda: CurveSegment())
+    segment: CurveSegment = field(default_factory=lambda: CurveSegment())

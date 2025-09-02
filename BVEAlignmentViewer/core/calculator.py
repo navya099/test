@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from math_utils import get_station_by_block_index, get_block_index
-from model.model import Curve, IPdata, CurveDirection, CurveSegment, BVERouteData, CurveType
+from model.model import Curve, IPdata, CurveDirection, CurveSegment, BVERouteData, CurveType, EndPoint
 from vector2 import Vector2
 from vector3 import Vector3, to2d
 
@@ -17,42 +17,6 @@ class Calculator:
 
     def init_bvedata(self, bvedata: BVERouteData):
         self.bvedata = bvedata
-
-    def calculate_curve_type(self, curves: list[Curve])-> list[str]:
-        """
-        curve 리스트에서 곡선 타입을 계산하는 메소드
-        Args:
-            curves (list[Curve]): curves 리스트 [Curve.station, Curve.radius, Curve.cant]
-        Returns:
-            curve_type (list[str]): 곡선 타입 문자열 리스트 'BP','EP','BC','EC','PCC'
-        """
-        #리스트 초기화
-        curve_type = []
-
-        for i, curve in enumerate(curves):
-            if i == 0:
-                curve_type.append("BP")  # 시작점
-            elif i == len(curves) - 1:
-                curve_type.append("EP")  # 끝점
-            elif curve.radius == 0:
-                curve_type.append("EC")  # 곡선 종점
-            elif curves[i - 1].radius == 0 and curve.radius != 0:
-                curve_type.append("BC")  # 곡선 시작점
-            else:
-                curve_type.append("PCC")  # 복심곡선
-
-        return curve_type
-
-    def define_dirction(self, radius):
-        result = []
-        for a in radius:
-            if a < 0:
-                result.append(-1)
-            elif a > 0:
-                result.append(1)
-            else:
-                pass
-        return result
 
     def calculate_intersection_point(self, bc, ec, theta1, theta2)-> Vector2 | None:
         """
@@ -127,67 +91,66 @@ class Calculator:
 
     def build_ipdata_from_sections(self) -> list[IPdata]:
         """
-        BVERouteData객체의 속성을 이용해서 선형 객체를 만드는 메소드
-        Returns:
-            list(IPdata): IPdata객체 리스트
+        BVERouteData 속성으로 IPdata 리스트 생성.
+        BP -> 곡선 -> EP 순서 처리
         """
         ipdata_list = []
-        #구간 분할
         sections = self.split_by_curve_sections(self.bvedata.curves)
 
-        coords = self.bvedata.coords
-        directions = self.bvedata.directions
-
-        #ip번호만큼 반복
         for i, section in enumerate(sections):
-            if i == 0:
-                continue
-            ipno = i
-            # 곡선 세그먼트 (BC ~ EC)
-            bc_curve = section[0]
-            ec_curve = section[-1]
-            bc_sta = bc_curve.station #bc측점
-            ec_sta = ec_curve.station #ec측점
-            cl = ec_sta - bc_sta #곡선장
-            radius = bc_curve.radius
+            if i ==0:
+                # BP
+                ipdata_list.append(self._process_endpoint(bp=True))
+            else:#곡선구간 처리
+                ipdata_list.append(self._process_curve_section(section, ipno=i))
 
-            # 곡선 방향 (반경 부호 or azimuth 비교로 결정 가능)
-            curve_direction = CurveDirection.RIGHT if radius > 0 else CurveDirection.LEFT
-
-            #곡선 제원 계산
-            r, ia, tl, m, sl = self._calculate_curve_geometry(radius, cl)
-
-            #좌표 및 방위각 계산
-            bc_coord, ec_coord, bc_azimuth, ec_azimuth = self._extract_coords_and_azimuth(bc_sta, ec_sta)
-
-            #원곡선 중심 계산
-            center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
-
-            #ip좌표 계산
-            ip_coord = self._calculate_ip_coord(bc_coord, ec_coord, bc_azimuth, ec_azimuth)
-
-            #curve_segment 생성
-            curve_segment = self._create_curve_segment(
-                r, bc_sta, ec_sta, bc_coord, ec_coord, center_coord,
-                tl, cl, sl, m, bc_azimuth, ec_azimuth
-            )
-
-            #ipdata 생성
-            ipdata = IPdata(
-                ipno=ipno,
-                curvetype=CurveType.Simple,  # TODO: 조건에 따라 Simple / Compound
-                curve_direction=curve_direction,
-                radius=r,
-                ip_coord=ip_coord,
-                ia=ia,
-                curve_segment=curve_segment
-            )
-
-            ipdata_list.append(ipdata)
+        # EP 추가
+        ipdata_list.append(self._process_endpoint(bp=False))
 
         return ipdata_list
 
-    def calculate_curve_center(self, bc_xy: Vector3, ec_xy: Vector3, radius: float, direction: CurveDirection) -> Vector2:
+    # --------------------- Private methods ---------------------
+    def _process_endpoint(self, bp: bool) -> EndPoint:
+        """BP 또는 EP 처리"""
+        coord3d = self.bvedata.coords[0] if bp else self.bvedata.coords[-1]
+        dir3d = self.bvedata.directions[0] if bp else self.bvedata.directions[-1]
+        coord2d = to2d(coord3d)
+        azimuth = to2d(dir3d).toradian()
+
+        return EndPoint(
+            coord=coord2d,
+            direction=azimuth,
+        )
+
+    def _process_curve_section(self, section: list[Curve], ipno: int) -> IPdata:
+        """단곡선 구간 처리"""
+        bc_curve = section[0]
+        ec_curve = section[-1]
+        bc_sta, ec_sta = bc_curve.station, ec_curve.station
+        cl = ec_sta - bc_sta
+        r = bc_curve.radius
+        curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
+
+        r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
+        bc_coord, ec_coord, bc_azimuth, ec_azimuth = self._extract_coords_and_azimuth(bc_sta, ec_sta)
+        center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
+        ip_coord = self._calculate_ip_coord(bc_coord, ec_coord, bc_azimuth, ec_azimuth)
+
+        curve_segment = self._create_curve_segment(
+            r, bc_sta, ec_sta, bc_coord, ec_coord, center_coord,
+            tl, cl, sl, m, bc_azimuth, ec_azimuth
+        )
+
+        return IPdata(
+            ipno=ipno,
+            curvetype=CurveType.Simple,
+            curve_direction=curve_direction,
+            radius=r,
+            coord=ip_coord,
+            ia=ia,
+            segment=curve_segment
+        )
+    def calculate_curve_center(self, bc_xy: Vector2, ec_xy: Vector2, radius: float, direction: CurveDirection) -> Vector2:
         """
         bc좌표와 ec좌표 r 방향으로 원곡선 중심 계산하는 메소드
         Args:
@@ -236,15 +199,15 @@ class Calculator:
 
     def _extract_coords_and_azimuth(self, bc_sta, ec_sta):
         """
-        Private메소드 단곡선 좌표 및 방위각 추출
+        Private메소드 단곡선 좌표 및 방위각 각도 추출
         Args:
             bc_sta(float): bc측점
             ec_sta(float): ec측점
         Returns:
-            bc_coord(Vector3):
-            ec_coord(Vector3):
-            bc_azimuth(Vector3):
-            ec_azimuth(Vector3):
+            bc_coord(Vector2):
+            ec_coord(Vector2):
+            bc_azimuth(float): 시작 각도 라디안
+            ec_azimuth(float): 끝 각도 라디안
         """
         #중복 제거후 매핑데이터 생성
         station_to_data = {
@@ -256,25 +219,29 @@ class Calculator:
         bc_coord, bc_azimuth = station_to_data[bc_sta]
         ec_coord, ec_azimuth = station_to_data[ec_sta]
 
+        #3d벡터를 2d벡터로 변환
+        bc_coord = to2d(bc_coord)
+        bc_azimuth = to2d(bc_azimuth)
+        ec_coord = to2d(ec_coord)
+        ec_azimuth = to2d(ec_azimuth)
+
+        #라디안 변환 수행
+        bc_azimuth = bc_azimuth.toradian()
+        ec_azimuth = ec_azimuth.toradian()
+
         return bc_coord, ec_coord, bc_azimuth, ec_azimuth
 
     def _calculate_ip_coord(self, bc_xy, ec_xy, bc_azimuth, ec_azimuth) -> Vector2:
         """
-        Private 메소드: IP 좌표 계산
+        Private 메소드: IP 좌표 계산 래퍼
         Args:
-            bc_xy (Vector3): BC 좌표
-            ec_xy (Vector3): EC 좌표
-            bc_azimuth (Vector3): BC 방위각 벡터
-            ec_azimuth (Vector3): EC 방위각 벡터
+            bc_xy (Vector2): BC 좌표
+            ec_xy (Vector2): EC 좌표
+            bc_azimuth (float): BC 각도 라디안
+            ec_azimuth (float): EC 각도 라디안
         Returns:
             Vector2: IP 좌표
         """
-        #Vector2로 변환 수행
-        bc_azimuth = to2d(bc_azimuth)
-        ec_azimuth = to2d(ec_azimuth)
-        #라디안 변환 수행
-        bc_azimuth = bc_azimuth.toradian()
-        ec_azimuth = ec_azimuth.toradian()
         return  self.calculate_intersection_point(bc_xy, ec_xy, bc_azimuth, ec_azimuth)
 
     def _create_curve_segment(self, r, bc_sta, ec_sta, bc_coord, ec_coord, center_coord,
@@ -292,17 +259,17 @@ class Calculator:
             cl (float): 곡선장
             sl (float): 외할장
             m (float): 중앙종거
-            bc_azimuth (float): 시작 방위각
-            ec_azimuth (float): 종료 방위각
+            bc_azimuth (float): 시작 방위각 라디안
+            ec_azimuth (float): 종료 방위각 라디안
         Returns:
             CurveSegment
         """
         return CurveSegment(
             radius=r,
-            bc_sta=bc_sta,
-            ec_sta=ec_sta,
-            bc_coord=bc_coord,
-            ec_coord=ec_coord,
+            start_sta=bc_sta,
+            end_sta=ec_sta,
+            start_coord=bc_coord,
+            end_coord=ec_coord,
             center_coord=center_coord,
             tl=tl,
             cl=cl,

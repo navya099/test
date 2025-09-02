@@ -1,14 +1,22 @@
 import tkinter as tk
+from enum import Enum
+
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+class ViewType(Enum):
+    PLAN = '평면'
+    PROFILE = '종단'
+    SECTION = '횡단'
 
 class PlotFrame(tk.Frame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
         # Matplotlib Figure 생성
+        self.current_view = ViewType.PLAN
         fig = Figure(figsize=(5, 4), dpi=100)
         self.ax = fig.add_subplot(111)
 
@@ -48,3 +56,25 @@ class PlotFrame(tk.Frame):
             self.ax.axis('off')
             self.toolbar.pack_forget()
         self.canvas.draw()
+
+    def set_data(self, alignments, title):
+        """새 데이터 설정"""
+        self.alignments = alignments
+        self.title = title
+        self.redraw()
+
+    def redraw(self):
+        """현재 alignments 기준으로 현재 뷰 redraw"""
+        if self.current_view == ViewType.PLAN:
+            self.plot_plan_view(self.alignments, ViewType.PLAN.value)
+        elif self.current_view == ViewType.PROFILE:
+            self.plot_profile_view(self.alignments, ViewType.PROFILE.value)
+        elif self.current_view == ViewType.SECTION:
+            self.plot_section_view(self.alignments, ViewType.SECTION.value)
+
+    def plot_plan_view(self, alignments, viewtype):
+        pass
+    def plot_profile_view(self, alignments, viewtype):
+        pass
+    def plot_section_view(self, alignments, viewtype):
+        pass
