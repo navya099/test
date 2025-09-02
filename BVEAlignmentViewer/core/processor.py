@@ -17,12 +17,14 @@ class RouteProcessor:
         3. 중복 구배 제거
         4. coords 크기 맞추기
         5. direction 크기 맞추기
+        6. bve좌표계 변환 xyz -> xzy
         """
         self._slice_to_lastblock()
         self._remove_duplicate_radius()
         self._remove_duplicate_pitchs()
         self._remove_coords_by_indices()
         self._remove_directions_by_indices()
+        self._convert_bve_coordinatesystem()
 
     def _slice_to_lastblock(self):
         """
@@ -75,3 +77,18 @@ class RouteProcessor:
         directions = self.current_route.directions
         for idx in reversed(self.removed_indices):
             del directions[idx]
+
+    def _convert_bve_coordinatesystem(self):
+        """
+        bve좌표계의 y와 z를 변환
+        변환대상- coord와 direction
+        """
+        for coord in self.current_route.coords:
+            coord.x = coord.x
+            coord.y = coord.z
+            coord.z = coord.y
+
+        for direction in self.current_route.directions:
+            direction.x = direction.x
+            direction.y = direction.z
+            direction.z = direction.y
