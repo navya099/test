@@ -110,7 +110,7 @@ class CurveType(Enum):
     Simple = '원곡선'
     Spiral = '완화곡선'
     Complex = '복심곡선'
-
+    NONE = 'None'
 @dataclass
 class Segment:
     """

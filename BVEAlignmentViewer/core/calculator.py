@@ -122,13 +122,70 @@ class Calculator:
             direction=azimuth,
         )
 
+    def define_iscurve(self, section: list[Curve]) -> CurveType:
+        """
+        단곡선(Simple) / 복심곡선(Compound) / 완화곡선(Spiral) 구분
+
+        Args:
+            section (list[Curve]): 구간 곡선 리스트 (BC~EC)
+
+        Returns:
+           CurveType
+        """
+        radii = [c.radius for c in section]
+
+        # ✅ 단곡선 (ex: [600, 0])
+        if len(section) == 2 and radii[-1] == 0:
+            return CurveType.Simple
+
+        # ✅ 복심곡선 (ex: [600, 500, 0] or [600, -500, 0])
+        if len(section) == 3 and radii[-1] == 0:
+            return CurveType.Complex
+
+        # ✅ 완화곡선
+        if len(section) > 3 and radii[-1] == 0 and all(r != 0 for r in radii[:-1]):
+            return CurveType.Spiral
+
+
+        # 안전장치: 기본값
+        return CurveType.NONE
+
+    def define_section_radius(self, section: list[Curve]) -> float:
+        """
+        구간내 곡선반경 찾기
+        Args:
+            section:  Curve객체 리스트
+
+        Returns:
+            radius (float): 찾은 반경
+        """
+        #곡선 타입 호출
+        curvetype = self.define_iscurve(section)
+        if curvetype == CurveType.Simple:
+            radius = section[0].radius
+        elif curvetype == CurveType.Complex:
+            radius = section[0].radius
+        else:
+            #첫번째 요소만 보고 판단
+            isminus = (section[0].radius < 0)
+            # 0 제외한 반경만 뽑기
+            nonzero_radii = [sec.radius for sec in section if sec.radius != 0]
+
+            if isminus:
+                radius = max(nonzero_radii)
+            else:
+                radius = min(nonzero_radii)
+        return radius
+
     def _process_curve_section(self, section: list[Curve], ipno: int) -> IPdata:
-        """단곡선 구간 처리"""
+        #곡선타입 결정
+        curvetype = self.define_iscurve(section)
         bc_curve = section[0]
         ec_curve = section[-1]
         bc_sta, ec_sta = bc_curve.station, ec_curve.station
         cl = ec_sta - bc_sta
-        r = bc_curve.radius
+        # ✅ 대표 반경 계산
+        r = self.define_section_radius(section)
         curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
 
         r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
