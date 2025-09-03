@@ -1,7 +1,7 @@
 # BVEParser 루트 경로를 sys.path에 추가
 from tkinter import messagebox
 from OpenBveApi.System.BaseOptions import BaseOptions
-from Plugins.RouteCsvRw.Plugin import Plugin
+from Plugins.RouteCsvRw.Plugin import Plugin, detect_encoding
 from RouteManager2.CurrentRoute import CurrentRoute
 
 class CSVRouteParser:
@@ -28,10 +28,11 @@ class CSVRouteParser:
         Plugin.FileSystem = None
         Plugin.CurrentOptions = BaseOptions()
 
+        encoding = detect_encoding(filename)
         # ✅ 루트 로드 (백그라운드에서 실행)
         result = plugin.LoadRoute(
             filename,
-            'utf-8',
+            encoding,
             '',
             '',
             '',

@@ -132,7 +132,8 @@ class Calculator:
         curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
 
         r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
-        bc_coord, ec_coord, bc_azimuth, ec_azimuth = self._extract_coords_and_azimuth(bc_sta, ec_sta)
+        bc_coord, ec_coord, bc_azimuth, ec_azimuth = bc_curve.coord, ec_curve.coord, bc_curve.direction, ec_curve.direction
+
         center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
         ip_coord = self._calculate_ip_coord(bc_coord, ec_coord, bc_azimuth, ec_azimuth)
 
@@ -272,7 +273,7 @@ class Calculator:
             end_coord=ec_coord,
             center_coord=center_coord,
             tl=tl,
-            cl=cl,
+            length=cl,
             sl=sl,
             m=m,
             start_azimuth=bc_azimuth,

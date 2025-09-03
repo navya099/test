@@ -5,44 +5,47 @@ from vector3 import Vector3
 from math_utils import get_block_index
 from vector2 import Vector2
 
-
 @dataclass
-class Curve:
+class BVETrack:
     """
-    BVE 곡선 정보 저장용 데이터 클래스.
-
+    BVE 정보 저장용 데이터 클래스.
     Attributes:
         station (float): 블록 시점 측점
+    """
+    station: float
+
+@dataclass
+class Curve(BVETrack):
+    """
+    BVE 곡선 저장용 데이터 클래스.
         radius (float): 블록 곡선반경 R
         cant (float): 블록 캔트
+        direction(flaot): 블록 방향각
     """
-    station: float
     radius: float
     cant: float
+    coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
+    direction: float = 0
 
 @dataclass
-class Pitch:
+class Pitch(BVETrack):
     """
     BVE 구배 정보 저장용 데이터 클래스.
-
     Attributes:
-        station (float): 블록 시점 측점
         pitch (float): 블록 pitch
     """
-    station: float
     pitch: float
 
 @dataclass
-class Station:
+class Station(BVETrack):
     """
     BVE 정거장 정보 저장용 데이터 클래스.
 
     Attributes:
-        station (float): 정거장 시작 측점
         name (str): 정거장 이름
     """
-    station: float
     name: str
+    coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
 
 @dataclass
 class BVERouteData:
@@ -113,12 +116,16 @@ class Segment:
     """
     공통 세그멘트 객체
     Attributes:
+        start_sta (float): 시작 측점
+        end_sta (float): 끝 측점
         start_coord (Vector2): 시작 좌표
         end_coord (Vector2): 끝 좌표
         start_azimuth (float): 시작 각도(라디안)
         end_azimuth (float): 종점 각도(라디안)
         length(float): 길이
     """
+    start_sta: float = 0.0
+    end_sta: float = 0.0
     start_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
     end_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
     start_azimuth: float = 0.0
@@ -133,24 +140,17 @@ class StraightSegment(Segment):
 class CurveSegment(Segment):
     """
     구간별 곡선 세그먼트 저장용 클래스 (단곡선).
-
     Attributes:
-        start_sta (float): BC 측점
-        end_sta (float): EC 측점
-
+        radius(float): 원곡선 반경 R
         center_coord (Vector2): 원곡선 중심 좌표
         tl (float): 접선장(Tangent Length, TL)
-        cl (float): 곡선장(Curve Length, CL)
         sl (float): 외할장(Chord Length, SL)
         m (float): 중앙종거(Middle Ordinate)
 
     """
     radius: float = 0.0
-    start_sta: float = 0.0
-    end_sta: float = 0.0
     center_coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
     tl: float = 0.0
-    cl: float = 0.0
     sl: float = 0.0
     m: float = 0.0
 

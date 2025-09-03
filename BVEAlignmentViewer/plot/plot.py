@@ -1,10 +1,15 @@
 import tkinter as tk
 from enum import Enum
+from tkinter import messagebox
+from typing import Union
 
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+from model.model import BVERouteData, EndPoint, IPdata
+
 
 class ViewType(Enum):
     PLAN = '평면'
@@ -57,10 +62,10 @@ class PlotFrame(tk.Frame):
             self.toolbar.pack_forget()
         self.canvas.draw()
 
-    def set_data(self, alignments, origin_bve_data):
+    def set_data(self, alignments: list[Union[EndPoint, IPdata]], bvedata:BVERouteData):
         """새 데이터 설정"""
         self.alignments = alignments
-        self.origin_bve_data = origin_bve_data
+        self.bvedata = bvedata
         self.title = self.current_view
         self.redraw()
 
@@ -81,15 +86,25 @@ class PlotFrame(tk.Frame):
         x_data = [alignment.coord.x for alignment in self.alignments]
         y_data = [alignment.coord.y for alignment in self.alignments]
         if x_data and y_data:
-            line, = self.ax.plot(x_data, y_data, label='IP라인')
+            line, = self.ax.plot(x_data, y_data, color='gray', label='IP라인')
+        #IP제원
+        for i, alignment in enumerate(self.alignments):
+            if i== 0:
+                text = 'BP'
+            elif i == len(self.alignments)-1:
+                text = 'EP'
+            else:
+                text = f'IP{alignment.ipno}\nR={alignment.radius}'
+            self.ax.text(alignment.coord.x, alignment.coord.y, text)
         #곡선 그리기
-        x_data = [coord.x for coord in self.origin_bve_data.coords]
-        y_data = [coord.y for coord in self.origin_bve_data.coords]
+        x_data = [coord.x for coord in self.bvedata.coords]
+        y_data = [coord.y for coord in self.bvedata.coords]
         if x_data and y_data:
             line, = self.ax.plot(x_data, y_data, color='red', label='FL')
         self.ax.legend()
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.draw()
+        messagebox.showinfo("플롯 완료", f"플롯 완료")
 
     def plot_profile_view(self, alignments, viewtype):
         pass
@@ -104,3 +119,5 @@ class PlotFrame(tk.Frame):
             self.ax.grid(True)
         self.ax.axis('on')
         self.ax.set_aspect('equal')
+        self.ax.set_xlim(left=-100000, right=100000)
+        self.ax.set_ylim(bottom=-100000, top=100000)

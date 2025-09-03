@@ -1,4 +1,5 @@
 from model.model import BVERouteData, Curve, Pitch
+from vector2 import Vector2
 
 class RouteProcessor:
     """
@@ -8,23 +9,30 @@ class RouteProcessor:
     """
     def __init__(self, current_route: BVERouteData):
         self.current_route = current_route
+        self._station_coord_map: dict[float, Vector2] = {}  # 캐시용 속성
 
     def run(self):
         """
         전처리 실행 메소드
         1. 라스트블럭 인덱스만큼 각 리스트들 자르기
-        2. 중복 반경 제거
-        3. 중복 구배 제거
-        4. coords 크기 맞추기
-        5. direction 크기 맞추기
-        6. bve좌표계 변환 xyz -> xzy
+        2. bve좌표계 변환 xyz -> xzy
+        3. 좌표맵 생성
+        4. 각도맵 생성
+        5. 정거장 좌표할당
+        6. 곡선에 좌표할당
+        7. 중복 R 제거
+        8. 중복 구배 제거
         """
+
         self._slice_to_lastblock()
+        self._convert_bve_coordinatesystem()
+        self._build_station_coord_map()
+        self._build_station_direction_map()
+        self.set_station_coord()
+        self.set_curve_coord_and_direction()
+
         self._remove_duplicate_radius()
         self._remove_duplicate_pitchs()
-        self._remove_coords_by_indices()
-        self._remove_directions_by_indices()
-        self._convert_bve_coordinatesystem()
 
     def _slice_to_lastblock(self):
         """
@@ -40,13 +48,10 @@ class RouteProcessor:
         """
         블록내 중복된 반경을 제거하는 메소드
         """
-        self.removed_indices = [] #1회용 속성
         curves = self.current_route.curves
         for i in range(len(curves) - 1, 0, -1):
             if curves[i].radius == curves[i - 1].radius:
-                self.removed_indices.append(i)
                 del curves[i]
-        self.removed_indices.reverse()
 
     def _remove_duplicate_pitchs(self):
         """
@@ -60,23 +65,41 @@ class RouteProcessor:
             else:
                 i += 1
 
-    def _remove_coords_by_indices(self):
+    def get_coord(self, station_value: float) -> Vector2 | None:
         """
-        중복된 곡선반경 리스트 크기를 인덱스를 사용하여 제거하는 메소드
-        실행 후 coords의 크기가 curve와 동일해짐
+        특정 station의 좌표 반환
+        없으면 None 반환
         """
-        coords = self.current_route.coords
-        for idx in reversed(self.removed_indices):
-            del coords[idx]
+        if not self._station_coord_map:
+            self._build_station_coord_map()
 
-    def _remove_directions_by_indices(self):
-        """
-        중복된 곡선반경 리스트 크기를 인덱스를 사용하여 제거하는 메소드
-        실행 후 directrion 크기가 curve와 동일해짐
-        """
-        directions = self.current_route.directions
-        for idx in reversed(self.removed_indices):
-            del directions[idx]
+        return self._station_coord_map.get(station_value, None)
+
+    def set_station_coord(self):
+        """정거장 좌표를 station 정보에 매핑"""
+        if not self._station_coord_map:
+            self._build_station_coord_map()
+
+        for station in self.current_route.stations:
+            coord = self._station_coord_map.get(station.station)
+            if coord:
+                station.coord = Vector2(coord.x, coord.y)
+
+    def get_direction(self, station_value: float):
+        if not self._station_direction_map:
+            self._build_station_direction_map()
+
+        return self._station_direction_map.get(station_value, None)
+
+    def set_station_directions(self):
+        """정거장 좌표를 station 정보에 매핑"""
+        if not self._station_direction_map:
+            self._build_station_direction_map()
+
+        for station in self.current_route.stations:
+            direction = self._station_direction_map.get(station.station)
+            if direction:
+                station.direction = direction
 
     def _convert_bve_coordinatesystem(self):
         """
@@ -92,3 +115,33 @@ class RouteProcessor:
             direction.x = direction.x
             direction.y = direction.z
             direction.z = direction.y
+
+    def _build_station_coord_map(self):
+        """곡선 station → 좌표 매핑 딕셔너리 생성"""
+        curves = self.current_route.curves
+        coords = self.current_route.coords
+
+        self._station_coord_map = {r.station: Vector2(c.x, c.y) for r, c in zip(curves, coords)}
+
+    def _build_station_direction_map(self):
+        """곡선 station → 각도 매핑 딕셔너리 생성"""
+        curves = self.current_route.curves
+        directions = self.current_route.directions
+
+        self._station_direction_map = {r.station: Vector2(c.x, c.y).toradian() for r, c in zip(curves, directions)}
+
+    def set_curve_coord_and_direction(self):
+        """좌표를 곡선 정보에 매핑"""
+        if not self._station_direction_map:
+            self._build_station_direction_map()
+        if not self._station_coord_map:
+            self._build_station_coord_map()
+
+        curves = self.current_route.curves
+        for curve in curves:
+            if curve.station in self._station_coord_map:
+                curve.coord = self._station_coord_map[curve.station]
+                # 방향 매핑
+                direction = self._station_direction_map.get(curve.station)
+                if direction:
+                    curve.direction = direction
