@@ -100,4 +100,4 @@ class SettingsController:
         messagebox.showinfo("환경 설정", "환경 설정 창 열기")
 class HelpController:
     def show_help(self):
-        messagebox.showinfo(title='정보', message='개발자 : dger 2025/08/28')
+        messagebox.showinfo(title='정보', message='개발자 : dger  빌드날짜 2025/09/04')
