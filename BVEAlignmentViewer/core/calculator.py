@@ -55,35 +55,46 @@ class Calculator:
 
     def split_by_curve_sections(self, curves: list[Curve]) -> list[list[Curve]]:
         """
-        곡선 리스트(curves)를 분석해,
-        BP + BC~EC 단위로 구간을 나눈다.
-
-        Args:
-            curves (list[Curve]): Curve 리스트
-
-        Returns:
-            sections (list[list[Curve]]): 구간이 분할된 리스트
-                [BP, SEC1[BC~EC], SEC2[BC~EC], ...]
+        곡선 리스트를 분석해 구간을 나누되,
+        복심곡선이면 PCC 기준으로 2개 구간으로 분할.
+        방향 전환 시에는 경계 곡선을 양쪽 구간에 포함.
         """
         sections = []
         current_section = []
+        prev_radius = None
 
         for i, curve in enumerate(curves):
-            current_section.append(curve)
-
-            # BP 처리: 첫 요소가 radius==0이면 BP 섹션으로 바로 추가
+            # BP 처리
             if i == 0:
                 sections.append([curve])
-                current_section = []
+                prev_radius = curve.radius
                 continue
 
-            # EC(=radius==0) 발견 → 구간 끊기
+            current_section.append(curve)
+
+            # 방향 전환 감지
+            if prev_radius is not None and prev_radius * curve.radius < 0:
+                sections.append(current_section[:])
+                current_section = [curve]
+
+            # 곡선 타입 판단
+            curvetype = self.define_iscurve(current_section)
+            if curvetype == CurveType.Complex:
+                # PCC 곡선(중간) 분할
+                pcc_curve = current_section[1]
+                sections.append(current_section[:2])  # BC~PCC
+                sections.append(current_section[1:])  # PCC~EC
+                current_section = []
+
+            # EC 처리
             if curve.radius == 0:
-                if len(current_section) > 1:
+                if current_section:
                     sections.append(current_section)
                 current_section = []
 
-        # 마지막 남은 구간이 있다면 추가
+            prev_radius = curve.radius
+
+        # 남은 구간 처리
         if current_section:
             sections.append(current_section)
 
@@ -150,21 +161,23 @@ class Calculator:
         # 안전장치: 기본값
         return CurveType.NONE
 
-    def define_section_radius(self, section: list[Curve]) -> float:
+    def define_section_radius(self, section: list[Curve]) -> tuple[float, float]:
         """
         구간내 곡선반경 찾기
         Args:
             section:  Curve객체 리스트
 
         Returns:
-            radius (float): 찾은 반경
+            radius (tuple[float, float]): 찾은 반경 리스트(복심곡선용)
         """
+        radius2 = 0.0
         #곡선 타입 호출
         curvetype = self.define_iscurve(section)
         if curvetype == CurveType.Simple:
             radius = section[0].radius
         elif curvetype == CurveType.Complex:
             radius = section[0].radius
+            radius2 = section[1].radius
         else:
             #첫번째 요소만 보고 판단
             isminus = (section[0].radius < 0)
@@ -175,39 +188,130 @@ class Calculator:
                 radius = max(nonzero_radii)
             else:
                 radius = min(nonzero_radii)
-        return radius
+        return radius, radius2
 
     def _process_curve_section(self, section: list[Curve], ipno: int) -> IPdata:
-        #곡선타입 결정
+        """곡선 구간 처리 메인"""
         curvetype = self.define_iscurve(section)
-        bc_curve = section[0]
-        ec_curve = section[-1]
+
+        if curvetype == CurveType.Simple:
+            return self._process_simple_curve(section, ipno)
+        elif curvetype == CurveType.Complex:
+            return self._process_complex_curve(section, ipno)
+        elif curvetype == CurveType.Spiral:
+            return self._process_spiral_curve(section, ipno)
+        else:
+            raise ValueError(f"Unknown CurveType: {curvetype}")
+
+    # ---------------------
+    # 단곡선 처리
+    def _process_simple_curve(self, section: list[Curve], ipno: int) -> IPdata:
+        bc_curve, ec_curve = section[0], section[-1]
         bc_sta, ec_sta = bc_curve.station, ec_curve.station
         cl = ec_sta - bc_sta
-        # ✅ 대표 반경 계산
-        r = self.define_section_radius(section)
+        r, _ = self.define_section_radius(section)
         curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
 
         r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
-        bc_coord, ec_coord, bc_azimuth, ec_azimuth = bc_curve.coord, ec_curve.coord, bc_curve.direction, ec_curve.direction
-
+        bc_coord, ec_coord = bc_curve.coord, ec_curve.coord
+        bc_azimuth, ec_azimuth = bc_curve.direction, ec_curve.direction
         center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
         ip_coord = self._calculate_ip_coord(bc_coord, ec_coord, bc_azimuth, ec_azimuth)
 
-        curve_segment = self._create_curve_segment(
-            r, bc_sta, ec_sta, bc_coord, ec_coord, center_coord,
-            tl, cl, sl, m, bc_azimuth, ec_azimuth
-        )
+        curve_segment = self._create_curve_segment(r, bc_sta, ec_sta,
+                                                   bc_coord, ec_coord, center_coord,
+                                                   tl, cl, sl, m,
+                                                   bc_azimuth, ec_azimuth)
+        return IPdata(ipno=ipno,
+                      curvetype=CurveType.Simple,
+                      curve_direction=curve_direction,
+                      radius=r,
+                      ia=ia,
+                      coord=ip_coord,
+                      segment=[curve_segment])
 
-        return IPdata(
-            ipno=ipno,
-            curvetype=CurveType.Simple,
-            curve_direction=curve_direction,
-            radius=r,
-            coord=ip_coord,
-            ia=ia,
-            segment=curve_segment
-        )
+    # ---------------------
+    # 복심곡선 처리
+    def _process_complex_curve(self, section: list[Curve], ipno: int) -> IPdata:
+        """
+        복심곡선 처리 메소드
+        Args:
+            section: 구간
+            ipno: ip번호
+
+        Returns:
+            IPdata
+        """
+        #BC,PCC,EC 언팩
+        bc_curve, pcc_curve, ec_curve = section[0], section[1], section[-1]
+        bc_sta, pcc_sta, ec_sta = bc_curve.station, pcc_curve.station, ec_curve.station
+        # 전체 cl
+        cl = ec_sta - bc_sta
+        #개별 cl
+        cl1, cl2 = pcc_sta - bc_sta, ec_sta - pcc_sta
+        cl_list = cl1 , cl2
+        radii = self.define_section_radius(section)
+        #복심곡선 반경1, 반경2
+        r1,r2 = radii
+        curve_direction = CurveDirection.RIGHT if r1 > 0 else CurveDirection.LEFT
+        curve_segment_list = []
+
+        #개별 R별 처리
+        ia_list = []
+        for i, (r, cl) in enumerate(zip(radii, cl_list)):
+            # 각 구간 BC, EC 설정
+            if i == 0:
+                bc_curve_seg, ec_curve_seg = bc_curve, pcc_curve
+            else:
+                bc_curve_seg, ec_curve_seg = pcc_curve, ec_curve
+            r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
+            ia_list.append(ia)
+            bc_coord, ec_coord = bc_curve_seg.coord, ec_curve_seg.coord
+            bc_azimuth, ec_azimuth = bc_curve_seg.direction, ec_curve_seg.direction
+            center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
+            curve_segment_list.append(
+                self._create_curve_segment(r,bc_sta, ec_sta,
+                                           bc_coord, ec_coord, center_coord,
+                                           tl, cl, sl, m,
+                                           bc_azimuth, ec_azimuth)
+            )
+        #대표 IP제원 다시계산
+        ia = sum(ia_list)
+        ip_coord = self._calculate_ip_coord(bc_curve.coord, ec_curve.coord, bc_curve.direction, ec_curve.direction)
+        return IPdata(ipno=ipno,
+                      curvetype=CurveType.Complex,
+                      curve_direction=curve_direction,
+                      radius=radii,
+                      ia=ia,
+                      coord=ip_coord,
+                      segment=curve_segment_list)
+
+    # ---------------------
+    # 완화곡선 처리
+    def _process_spiral_curve(self, section: list[Curve], ipno: int) -> IPdata:
+        bc_curve, ec_curve = section[0], section[-1]
+        bc_sta, ec_sta = bc_curve.station, ec_curve.station
+        cl = ec_sta - bc_sta
+        r, _ = self.define_section_radius(section)
+        curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
+
+        r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
+        bc_coord, ec_coord = bc_curve.coord, ec_curve.coord
+        bc_azimuth, ec_azimuth = bc_curve.direction, ec_curve.direction
+        center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
+        ip_coord = self._calculate_ip_coord(bc_coord, ec_coord, bc_azimuth, ec_azimuth)
+
+        curve_segment = self._create_curve_segment(r, bc_sta, ec_sta,
+                                                   bc_coord, ec_coord, center_coord,
+                                                   tl, cl, sl, m,
+                                                   bc_azimuth, ec_azimuth)
+        return IPdata(ipno=ipno,
+                      curvetype=CurveType.Simple,
+                      curve_direction=curve_direction,
+                      radius=r,
+                      ia=ia,
+                      coord=ip_coord,
+                      segment=[curve_segment])
     def calculate_curve_center(self, bc_xy: Vector2, ec_xy: Vector2, radius: float, direction: CurveDirection) -> Vector2:
         """
         bc좌표와 ec좌표 r 방향으로 원곡선 중심 계산하는 메소드
@@ -336,3 +440,43 @@ class Calculator:
             start_azimuth=bc_azimuth,
             end_azimuth=ec_azimuth,
         )
+
+    def define_spiral_spec(self, section: list[Curve], direction: CurveDirection) -> \
+            tuple[int, int]:
+        """
+        구간내에서 완화곡선 제원 인덱스 찾기
+        Args:
+            section: list[Curve]
+            direction: CurveDirection
+
+        Returns:
+            PC, CP 인덱스
+        """
+
+        # 0 제외 반경 리스트
+        nonzero_radii = [sec.radius for sec in section if sec.radius != 0]
+        min_value = min(nonzero_radii)
+        max_value = max(nonzero_radii)
+
+        # 원래 section에서 해당 radius 값의 첫 인덱스 찾기
+        min_index = next(i for i, curve in enumerate(section) if curve.radius == min_value)
+        max_index = next(i for i, curve in enumerate(section) if curve.radius == max_value)
+
+        #좌향곡선은 최댓값이 R
+        if direction == CurveDirection.LEFT:
+            pc_index = max_index
+            cp_index = max_index + 1
+            selected_radius = max_value
+            selected_cant = section[pc_index].cant
+            pc_sta = section[pc_index].station
+            cp_sta = section[cp_index].station
+        #우향곡선은 최솟값이 R
+        else:
+            pc_index = min_index
+            cp_index = min_index + 1
+            selected_radius = min_value
+            selected_cant = section[pc_index].cant
+            pc_sta = section[pc_index].station
+            cp_sta = section[cp_index].station
+
+        return pc_index, cp_index

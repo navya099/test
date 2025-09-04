@@ -183,11 +183,11 @@ class IPdata(BasePoint):
         curve_direction (CurveDirection): 곡선 방향
         radius (float): 곡선 반지름
         ia (float): 교각
-        segment (CurveSegment): 세그먼트 정보
+        segment (CurveSegment): 세그먼트 정보 리스트
     """
     ipno: int = 0
     curvetype: CurveType = CurveType.Simple
     curve_direction: CurveDirection = CurveDirection.RIGHT
-    radius: float = 0.0
+    radius: float | tuple[float,...] = 0.0
     ia: float = 0.0
-    segment: CurveSegment = field(default_factory=lambda: CurveSegment())
+    segment: list[CurveSegment] = field(default_factory=list)  # ⚡ 빈 리스트로 초기화
