@@ -18,85 +18,91 @@ class Calculator:
     def init_bvedata(self, bvedata: BVERouteData):
         self.bvedata = bvedata
 
-    def calculate_intersection_point(self, bc, ec, theta1, theta2)-> Vector2 | None:
+    def calculate_intersection_point(self, bc: Vector2, ec: Vector2, theta1: float, theta2: float) -> Vector2 | None:
         """
-        교점을 찾는 메소드
-        bc: (x1, y1) 곡선시작점
-        theta1: 시작점 방향각 (라디안)
-        ec: (x2, y2) 곡선종점
-        theta2: 종점 방향각 (라디안)
+        교점을 찾는 메소드 (방향 벡터 방식)
+
+        Args:
+            bc: 시작점 (Vector2)
+            theta1: 시작점 방향각 (라디안)
+            ec: 종점 (Vector2)
+            theta2: 종점 방향각 (라디안)
+
         Returns:
-            ip: (Vector2): IP좌표
+            Vector2: 교점 좌표, 평행이면 None
         """
         x1, y1 = bc.x, bc.y
         x2, y2 = ec.x, ec.y
 
-        # 수직선 처리
-        if math.isclose(math.cos(theta1), 0.0):
-            if math.isclose(math.cos(theta2), 0.0):
-                return None
-            return Vector2(x1, math.tan(theta2) * x1 + y2 - math.tan(theta2) * x2)
-        elif math.isclose(math.cos(theta2), 0.0):
-            return Vector2(x2, math.tan(theta1) * x2 + y1 - math.tan(theta1) * x1)
+        # 방향 벡터
+        dx1, dy1 = math.cos(theta1), math.sin(theta1)
+        dx2, dy2 = math.cos(theta2), math.sin(theta2)
 
-        m1 = math.tan(theta1)
-        m2 = math.tan(theta2)
+        # 행렬식(det) 계산 (평행 여부 확인)
+        det = dx1 * (-dy2) - (-dx2) * dy1
+        if math.isclose(det, 0.0):
+            return None  # 평행 직선
 
-        if math.isclose(m1, m2):
-            return None
+        # 매개변수 t 계산
+        t = ((x2 - x1) * (-dy2) - (y2 - y1) * (-dx2)) / det
 
-        b1 = y1 - m1 * x1
-        b2 = y2 - m2 * x2
+        x = x1 + t * dx1
+        y = y1 + t * dy1
 
-        x = (b2 - b1) / (m1 - m2)
-        y = m1 * x + b1
-
-        return Vector2(x,y)
+        return Vector2(x, y)
 
     def split_by_curve_sections(self, curves: list[Curve]) -> list[list[Curve]]:
         """
-        곡선 리스트를 분석해 구간을 나누되,
-        복심곡선이면 PCC 기준으로 2개 구간으로 분할.
-        방향 전환 시에는 경계 곡선을 양쪽 구간에 포함.
+        곡선 리스트를 분석해 구간을 나누는 새 구현.
+        방식:
+          1. 각 리스트 순회
+          2. 리스트에 추가하면서 길이 검사
+          3. 길이 및 조건으로로 판단
         """
         sections = []
         current_section = []
-        prev_radius = None
-
         for i, curve in enumerate(curves):
-            # BP 처리
-            if i == 0:
-                sections.append([curve])
-                prev_radius = curve.radius
-                continue
-
-            current_section.append(curve)
-
-            # 방향 전환 감지
-            if prev_radius is not None and prev_radius * curve.radius < 0:
-                sections.append(current_section[:])
-                current_section = [curve]
-
-            # 곡선 타입 판단
-            curvetype = self.define_iscurve(current_section)
-            if curvetype == CurveType.Complex:
-                # PCC 곡선(중간) 분할
-                pcc_curve = current_section[1]
-                sections.append(current_section[:2])  # BC~PCC
-                sections.append(current_section[1:])  # PCC~EC
+            station = curve.station
+            radius = curve.radius
+            if i == 0:  # 첫번째 경우로 BP
+                current_section.append(curve)
+                sections.append(current_section)
                 current_section = []
-
-            # EC 처리
-            if curve.radius == 0:
-                if current_section:
-                    sections.append(current_section)
-                current_section = []
-
-            prev_radius = curve.radius
-
-        # 남은 구간 처리
-        if current_section:
-            sections.append(current_section)
+            else:
+                current_section.append(curve)
+                if len(current_section) == 2:
+                    first_radius = current_section[0].radius
+                    second_radius = current_section[1].radius
+                    if first_radius != 0 and second_radius == 0:
+                        # 단곡선
+                        curve_type = CurveType.Simple
+                        sections.append(current_section)
+                        current_section = []
+                    else:
+                        continue
+                elif len(current_section) == 3:
+                    first_radius = current_section[0].radius
+                    second_radius = current_section[1].radius
+                    third_radius = current_section[2].radius
+                    if first_radius != 0 and second_radius != 0 and third_radius == 0:
+                        # 복심곡선 판단[166,300,0]
+                        if first_radius * second_radius > 0:
+                            # 복심곡선
+                            curve_type = CurveType.Complex
+                            sections.append(current_section)
+                            current_section = []
+                        elif first_radius * second_radius < 0:
+                            # 반향곡선[166,-166,0]
+                            curve_type = CurveType.Reverse
+                            sections.append(current_section[:2])
+                            sections.append(current_section[1:])
+                            current_section = []
+                # 완화곡선
+                elif len(current_section) > 3 and current_section[-1].radius == 0:
+                    radii = [c.radius for c in current_section]
+                    if all(r != 0 for r in radii[:-1]):
+                        sections.append(current_section)
+                        current_section = []
 
         return sections
 
@@ -157,8 +163,11 @@ class Calculator:
         if len(section) > 3 and radii[-1] == 0 and all(r != 0 for r in radii[:-1]):
             return CurveType.Spiral
 
-
+        # ✅ 반향곡선
+        if len(section) == 2 and radii[-1] != 0:
+            return CurveType.Reverse
         # 안전장치: 기본값
+
         return CurveType.NONE
 
     def define_section_radius(self, section: list[Curve]) -> tuple[float, float]:
@@ -194,7 +203,7 @@ class Calculator:
         """곡선 구간 처리 메인"""
         curvetype = self.define_iscurve(section)
 
-        if curvetype == CurveType.Simple:
+        if curvetype == CurveType.Simple or curvetype == CurveType.Reverse:
             return self._process_simple_curve(section, ipno)
         elif curvetype == CurveType.Complex:
             return self._process_complex_curve(section, ipno)
