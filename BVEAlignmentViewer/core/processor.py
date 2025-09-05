@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from model.model import BVERouteData, Curve, Pitch
 from vector2 import Vector2
 
@@ -37,21 +39,29 @@ class RouteProcessor:
     def _slice_to_lastblock(self):
         """
         마지막 블럭 인덱스만큼 리스트를 자르는 매소드
-        실행 후 curves,pitchs, coords, directions들 크기 상태 변화
+        첫 인덱스가 0이 아닌 경우에도 정상 동작하도록 수정
         """
-        self.current_route.curves = self.current_route.curves[:self.current_route.lastindex + 1]
-        self.current_route.pitchs = self.current_route.pitchs[:self.current_route.lastindex + 1]
-        self.current_route.coords = self.current_route.coords[:self.current_route.lastindex + 1]
-        self.current_route.directions = self.current_route.directions[:self.current_route.lastindex + 1]
+
+        # 슬라이싱
+        self.current_route.curves = self.current_route.curves[0:self.current_route.lastindex + 1 - self.current_route.firstindex]
+        self.current_route.pitchs = self.current_route.pitchs[0:self.current_route.lastindex + 1 - self.current_route.firstindex]
+        self.current_route.coords = self.current_route.coords[0:self.current_route.lastindex + 1 -  self.current_route.firstindex]
+        self.current_route.directions = self.current_route.directions[0:self.current_route.lastindex + 1 - self.current_route.firstindex]
 
     def _remove_duplicate_radius(self):
         """
         블록내 중복된 반경을 제거하는 메소드
         """
         curves = self.current_route.curves
+        last_curve = curves[-1]
         for i in range(len(curves) - 1, 0, -1):
             if curves[i].radius == curves[i - 1].radius:
                 del curves[i]
+        #마지막 CURVE가 곡선인경우 마지막 블록 추가
+        if curves[-1].radius != 0:
+            curves.append(last_curve)
+            #곡선반경을 0으로
+            last_curve.radius = 0
 
     def _remove_duplicate_pitchs(self):
         """
