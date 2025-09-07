@@ -13,7 +13,8 @@ module BVE
       end
 
       def to_point
-        Geom::Point3d.new(@x, @y, @z)
+        # BVE (X,Z,Y) -> SketchUp (X,Y,Z)
+        Geom::Point3d.new(@x.m, @z.m, @y.m)
       end
     end
 
@@ -85,8 +86,6 @@ module BVE
           @meshes.each do |mesh|
             mesh.color = color
           end
-        else
-          # 기타 명령 무시
         end
       end
     end
@@ -97,30 +96,37 @@ module BVE
 
       parser = ObjectParser.new
       parser.parse_file(filepath)
+
       model = Sketchup.active_model
       entities = model.active_entities
 
-      parser.meshes.each_with_index do |mesh, idx|
+      # 배치 작업 시작
+      model.start_operation("Import BVE Object", true)
+
+      parser.meshes.each do |mesh|
         group = entities.add_group
         mesh_entities = group.entities
 
         points = mesh.vertices.map(&:to_point)
+        pm = Geom::PolygonMesh.new
 
         mesh.faces.each do |face|
-          begin
-            face_points = face.vertex_indices.map { |i| points[i] }
-            skp_face = mesh_entities.add_face(face_points)
+          # 좌표계 변경 후 앞면이 뒤집히는 문제 해결
+          pm.add_polygon(face.vertex_indices.map { |i| points[i] }.reverse)
+        end
 
-            if mesh.color
-              skp_face.material = mesh.color
-              skp_face.back_material = mesh.color if face.double_sided
-            end
-          rescue => e
-            puts "Failed to create face: #{e.message}"
+        mesh_entities.add_faces_from_mesh(pm)
+
+        # 색상 적용 및 double-sided 처리
+        if mesh.color
+          mesh_entities.each do |ent|
+            next unless ent.is_a?(Sketchup::Face)
+            ent.material = mesh.color
           end
         end
       end
 
+      model.commit_operation
       UI.messagebox("✅ Import complete: #{parser.meshes.size} mesh(es) created.")
     end
 
