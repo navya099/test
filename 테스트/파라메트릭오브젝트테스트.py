@@ -1,3 +1,6 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+
 def B2_colum():
     colum = """
 ;Jeminie SketchUp to CSV
@@ -626,18 +629,68 @@ def export(filename,path,lines):
         f.write(lines)
         f.close()
 
-linedistance = float(input('선로중심간격 입력:' ))
-length = float(input('길이 입력:' ))
-width = float(input('승강장 폭 입력:' ))
-formtoraildistance = 1.7
-tranlatex = linedistance / 2
-lines = ''
-lines += platform(width,length)
-lines += translate(x=-(formtoraildistance + tranlatex),y=0,z=0)
-lines += wall(linedistance, length, width, formtoraildistance)
-lines += translateall(x=tranlatex,y=0,z=0)
-export_dir = 'D:/BVE/루트/Railway/Object/abcdefg/'
-filename = 'test.csv'
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("BVE 플랫폼 생성기")
+        self.geometry("500x400")
 
-export(filename,export_dir,lines)
+        # 변수 선언
+        self.linedistance = tk.DoubleVar(value=4.0)
+        self.length = tk.DoubleVar(value=100.0)
+        self.width = tk.DoubleVar(value=3.0)
+        self.formtoraildistance = tk.DoubleVar(value=1.7)
 
+        # UI 생성
+        self.create_widgets()
+
+    def create_widgets(self):
+        # linedistance
+        self.add_slider("선로중심간격 (m)", self.linedistance, 2, 10)
+        # length
+        self.add_slider("길이 (m)", self.length, 10, 500)
+        # width
+        self.add_slider("승강장 폭 (m)", self.width, 1, 10)
+
+        # formtoraildistance
+        frm = ttk.Frame(self)
+        frm.pack(pady=10, fill="x")
+        ttk.Label(frm, text="Form to Rail Distance (m):").pack(side="left", padx=5)
+        ttk.Entry(frm, textvariable=self.formtoraildistance, width=10).pack(side="left")
+
+        # 실행 버튼
+        ttk.Button(self, text="생성", command=self.generate).pack(pady=20)
+
+    def add_slider(self, label, variable, frm, to):
+        frame = ttk.Frame(self)
+        frame.pack(pady=5, fill="x")
+
+        ttk.Label(frame, text=label).pack(anchor="w")
+
+        scale = ttk.Scale(frame, variable=variable, from_=frm, to=to, orient="horizontal")
+        scale.pack(side="left", expand=True, fill="x", padx=5)
+
+        entry = ttk.Entry(frame, textvariable=variable, width=8)
+        entry.pack(side="right", padx=5)
+
+    def generate(self):
+        linedistance = self.linedistance.get()
+        length = self.length.get()
+        width = self.width.get()
+        formtoraildistance = self.formtoraildistance.get()
+
+        tranlatex = linedistance / 2
+        lines = ""
+        lines += platform(width, length)
+        lines += translate(x=-(formtoraildistance + tranlatex), y=0, z=0)
+        lines += wall(linedistance, length, width, formtoraildistance)
+        lines += translateall(x=tranlatex, y=0, z=0)
+
+        export_dir = "D:/BVE/루트/Railway/Object/abcdefg/"
+        filename = "test.csv"
+        export(filename, export_dir, lines)
+        messagebox.showinfo('생성 및 저장 완료',f'{export_dir}에 성공적으로 저장되었습니다.')
+
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
