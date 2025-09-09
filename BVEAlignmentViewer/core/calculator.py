@@ -259,7 +259,7 @@ class Calculator:
 
     # ---------------------
     # 복심곡선 처리
-    def _process_complex_curve(self, section: list[Curve], ipno: int) -> IPdata:
+    def _process_complex_curve(self, section: list[Curve], ipno: int) -> list[IPdata]:
         """
         복심곡선 처리 메소드
         Args:
@@ -269,21 +269,47 @@ class Calculator:
         Returns:
             IPdata
         """
-        #BC,PCC,EC 언팩
+        # BC,PCC,EC 언팩
         bc_curve, pcc_curve, ec_curve = section[0], section[1], section[-1]
         bc_sta, pcc_sta, ec_sta = bc_curve.station, pcc_curve.station, ec_curve.station
         # 전체 cl
         cl = ec_sta - bc_sta
-        #개별 cl
+        # 개별 cl
         cl1, cl2 = pcc_sta - bc_sta, ec_sta - pcc_sta
-        cl_list = cl1 , cl2
+        cl_list = cl1, cl2
         radii = self.define_section_radius(section)
-        #복심곡선 반경1, 반경2
-        r1,r2 = radii
+        # 복심곡선 반경1, 반경2
+        r1, r2 = radii
         curve_direction = CurveDirection.RIGHT if r1 > 0 else CurveDirection.LEFT
         curve_segment_list = []
 
-        #개별 R별 처리
+        # ----- 1) total IA 빠른 계산 -----
+        ia_list = []
+        for r, cl in zip(radii, cl_list):
+            _, ia, _, _, _ = self._calculate_curve_geometry(r, cl)
+            ia_list.append(ia)
+
+        total_ia = sum(ia_list)
+
+        # ----- 2) IA > 180° 이면 즉시 분할 후 SimpleCurve로 위임 -----
+        if total_ia > math.pi:
+            ipdata_list = []
+            for (r, cl, bc_seg, ec_seg, ia) in [
+                (r1, cl1, bc_curve, pcc_curve, ia_list[0]),
+                (r2, cl2, pcc_curve, ec_curve, ia_list[1]),
+            ]:
+                # IA가 90° 넘는 반경만 분할
+                if ia > math.pi / 2:
+                    pcc_curve2 = self.split_simplecurve_section(bc_seg, ec_seg, r, curve_direction)
+                    section1 = [bc_seg, pcc_curve2]
+                    section2 = [pcc_curve2, ec_seg]
+                    for i, sec in enumerate([section1, section2], start=1):
+                        ipdata_list.extend(self._process_simple_curve(sec, f'{ipno}-{i + 1}'))
+                else:
+                    ipdata_list.extend(self._process_simple_curve([bc_seg, ec_seg], f'{ipno}-{1}'))
+            return ipdata_list
+
+        # 정상로직
         ia_list = []
         for i, (r, cl) in enumerate(zip(radii, cl_list)):
             # 각 구간 BC, EC 설정
@@ -297,21 +323,21 @@ class Calculator:
             bc_azimuth, ec_azimuth = bc_curve_seg.direction, ec_curve_seg.direction
             center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
             curve_segment_list.append(
-                self._create_curve_segment(r,bc_sta, ec_sta,
+                self._create_curve_segment(r, bc_sta, ec_sta,
                                            bc_coord, ec_coord, center_coord,
                                            tl, cl, sl, m,
                                            bc_azimuth, ec_azimuth)
             )
-        #대표 IP제원 다시계산
+        # 대표 IP제원 다시계산
         ia = sum(ia_list)
         ip_coord = self._calculate_ip_coord(bc_curve.coord, ec_curve.coord, bc_curve.direction, ec_curve.direction)
-        return IPdata(ipno=ipno,
-                      curvetype=CurveType.Complex,
-                      curve_direction=curve_direction,
-                      radius=radii,
-                      ia=ia,
-                      coord=ip_coord,
-                      segment=curve_segment_list)
+        return [IPdata(ipno=ipno,
+                       curvetype=CurveType.Complex,
+                       curve_direction=curve_direction,
+                       radius=radii,
+                       ia=ia,
+                       coord=ip_coord,
+                       segment=curve_segment_list)]
 
     # ---------------------
     # 완화곡선 처리
