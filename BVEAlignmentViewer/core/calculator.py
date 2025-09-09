@@ -412,6 +412,54 @@ class Calculator:
                       segment=segment_list
                       )
 
+    def split_simplecurve_section(self, bc_curve: Curve, ec_curve: Curve ,r: float, direction: CurveDirection) -> Curve:
+        """
+        단곡선을 복심곡선으로 분할하는 메소드
+        Returns:
+            Curve(Curve): 분할된 중간 Curve객체
+        """
+        midstation = bc_curve.station + (ec_curve.station - bc_curve.station) / 2
+        mid_point = self.calculate_point_by_station_for_simplecurve(bc_curve, ec_curve, r, direction, midstation)
+
+        return mid_point
+
+    def calculate_point_by_station_for_simplecurve(
+            self, bc_curve: Curve, ec_curve: Curve,
+            r: float,direction: CurveDirection, station: float
+    ):
+        """
+        단곡선내 측점(station)으로 좌표를 찾고 해당 구간 Curve객체 생성 후 반환
+        Args:
+            bc_curve: bc Curve객체
+            ec_curve: ec Curve객체
+
+        Returns:
+            Curve(Curve): Curve객체
+        """
+        #언팩
+        bcxy = bc_curve.coord
+        ecxy = ec_curve.coord
+        #1 .bc점에서 떨어진 거리 구하기
+        length = station - bc_curve.station
+        #2 내각 ia
+        ia = length / r
+        #CENTER 구하기
+        center = self.calculate_curve_center(bcxy, ecxy, r, direction)
+        #3. 원점 O -> BC 까지의 방위각
+        azimuth_o_bc = calculate_bearing(center.x, center.y, bcxy.x, bcxy.y)
+        #4. 원점 O -> station 까지의 방위각
+        # 4. 원점 O -> station 까지의 방위각
+        if direction == CurveDirection.RIGHT:
+            azimuth_o_station = azimuth_o_bc - ia
+        else:
+            azimuth_o_station = azimuth_o_bc + ia
+        #5 station의 좌표
+        stationxy = calculate_coordinates(center.x, center.y, azimuth_o_station, r)
+        #6 stationxy 좌표에서 접선의 방위각
+        azimuth_tangent = azimuth_o_station - (math.pi / 2) if direction == CurveDirection.RIGHT else azimuth_o_station + (math.pi / 2)
+        #7. Curve객체 생성
+        return Curve(station=station, radius=r, direction=azimuth_tangent,cant=0,coord=Vector2(x=stationxy[0], y=stationxy[1]))
+
     def calculate_curve_center(self, bc_xy: Vector2, ec_xy: Vector2,
                                radius: float, direction: CurveDirection) -> Vector2:
         """
