@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from math_utils import get_station_by_block_index, get_block_index
+from math_utils import get_station_by_block_index, get_block_index, calculate_bearing, calculate_coordinates
 from model.model import Curve, IPdata, CurveDirection, CurveSegment, BVERouteData, CurveType, EndPoint, SpiralSegment
 from vector2 import Vector2
 from vector3 import Vector3, to2d
