@@ -203,11 +203,11 @@ class Calculator:
                 radius = min(nonzero_radii)
         return radius, radius2
 
-    def _process_curve_section(self, section: list[Curve], ipno: int) -> IPdata:
+    def _process_curve_section(self, section: list[Curve], ipno: int) -> list[IPdata]:
         """곡선 구간 처리 메인"""
         curvetype = self.define_iscurve(section)
 
-        if curvetype == CurveType.Simple or curvetype == CurveType.Reverse:
+        if curvetype in (CurveType.Simple, CurveType.Reverse):
             return self._process_simple_curve(section, ipno)
         elif curvetype == CurveType.Complex:
             return self._process_complex_curve(section, ipno)
