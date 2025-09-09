@@ -112,14 +112,16 @@ class Calculator:
         BP -> 곡선 -> EP 순서 처리
         """
         ipdata_list = []
+        curvesection_ipdata_list = []
         sections = self.split_by_curve_sections(self.bvedata.curves)
 
         for i, section in enumerate(sections):
-            if i ==0:
+            if i == 0:
                 # BP
                 ipdata_list.append(self._process_endpoint(bp=True))
-            else:#곡선구간 처리
-                ipdata_list.append(self._process_curve_section(section, ipno=i))
+            else:  # 곡선구간 처리
+                curvesection_ipdata_list = self._process_curve_section(section, ipno=i)
+                ipdata_list.extend(curvesection_ipdata_list)
 
         # EP 추가
         ipdata_list.append(self._process_endpoint(bp=False))
