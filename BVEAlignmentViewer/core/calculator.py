@@ -170,7 +170,7 @@ class Calculator:
 
         return CurveType.NONE
 
-    def define_section_radius(self, section: list[Curve]) -> tuple[float, float]:
+    def define_section_radius(self, section: list[Curve], curvetype: CurveType = None) -> tuple[float, float]:
         """
         구간내 곡선반경 찾기
         Args:
@@ -179,16 +179,18 @@ class Calculator:
         Returns:
             radius (tuple[float, float]): 찾은 반경 리스트(복심곡선용)
         """
+
         radius2 = 0.0
-        #곡선 타입 호출
-        curvetype = self.define_iscurve(section)
+        # 곡선 타입 호출
+        if curvetype is None:
+            curvetype = self.define_iscurve(section)
         if curvetype == CurveType.Simple:
             radius = section[0].radius
         elif curvetype == CurveType.Complex:
             radius = section[0].radius
             radius2 = section[1].radius
         else:
-            #첫번째 요소만 보고 판단
+            # 첫번째 요소만 보고 판단
             isminus = (section[0].radius < 0)
             # 0 제외한 반경만 뽑기
             nonzero_radii = [sec.radius for sec in section if sec.radius != 0]
