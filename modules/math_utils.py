@@ -18,9 +18,8 @@ def calculate_coordinates(x1,y1,bearing,distance):
     Returns:
         x2,y2
     """
-    angle = math.radians(bearing)
-    x2 = x1 + distance * math.cos(angle)
-    y2 = y1 + distance * math.sin(angle)
+    x2 = x1 + distance * math.cos(bearing)
+    y2 = y1 + distance * math.sin(bearing)
     return x2,y2
 
 def calculate_bearing(x1, y1, x2, y2):
@@ -37,7 +36,7 @@ def calculate_bearing(x1, y1, x2, y2):
     """
     dx = x2 - x1
     dy = y2 - y1
-    bearing = math.degrees(math.atan2(dy, dx))
+    bearing = math.atan2(dy, dx)
     return bearing
 
 def calculate_bearing_civil_coord(x1, y1, x2, y2):
