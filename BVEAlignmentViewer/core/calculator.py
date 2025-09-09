@@ -218,14 +218,26 @@ class Calculator:
 
     # ---------------------
     # 단곡선 처리
-    def _process_simple_curve(self, section: list[Curve], ipno: int) -> IPdata:
+    def _process_simple_curve(self, section: list[Curve], ipno: int | str) -> list[IPdata]:
         bc_curve, ec_curve = section[0], section[-1]
         bc_sta, ec_sta = bc_curve.station, ec_curve.station
         cl = ec_sta - bc_sta
-        r, _ = self.define_section_radius(section)
+        r, _ = self.define_section_radius(section, CurveType.Simple)
         curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
 
         r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
+
+        # ia가 180° 이상이면 분할메소드 처리
+        if ia > math.pi:
+            # 재귀호출
+            pcc_curve = self.split_simplecurve_section(bc_curve, ec_curve, r, curve_direction)
+            section1 = [bc_curve, pcc_curve]
+            section2 = [pcc_curve, ec_curve]
+            ipdata_list = []
+            ipdata_list.extend(self._process_simple_curve(section1, f"{ipno}-1"))
+            ipdata_list.extend(self._process_simple_curve(section2, f"{ipno}-2"))
+            return ipdata_list
+
         bc_coord, ec_coord = bc_curve.coord, ec_curve.coord
         bc_azimuth, ec_azimuth = bc_curve.direction, ec_curve.direction
         center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
@@ -235,13 +247,15 @@ class Calculator:
                                                    bc_coord, ec_coord, center_coord,
                                                    tl, cl, sl, m,
                                                    bc_azimuth, ec_azimuth)
-        return IPdata(ipno=ipno,
-                      curvetype=CurveType.Simple,
-                      curve_direction=curve_direction,
-                      radius=r,
-                      ia=ia,
-                      coord=ip_coord,
-                      segment=[curve_segment])
+        ipdata = IPdata(ipno=ipno,
+                        curvetype=CurveType.Simple,
+                        curve_direction=curve_direction,
+                        radius=r,
+                        ia=ia,
+                        coord=ip_coord,
+                        segment=[curve_segment])
+
+        return [ipdata]
 
     # ---------------------
     # 복심곡선 처리
