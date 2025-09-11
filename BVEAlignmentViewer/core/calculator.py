@@ -1,4 +1,6 @@
 import math
+import statistics
+
 import numpy as np
 from math_utils import get_station_by_block_index, get_block_index, calculate_bearing, calculate_coordinates
 from model.model import Curve, IPdata, CurveDirection, CurveSegment, BVERouteData, CurveType, EndPoint, SpiralSegment
@@ -174,33 +176,130 @@ class Calculator:
 
     def define_section_radius(self, section: list[Curve], curvetype: CurveType = None) -> tuple[float, float]:
         """
-        구간내 곡선반경 찾기
+        구간 내 곡선 반경(r1, r2) 찾기 (단곡선, 복곡선, 완화곡선 포함)
+
         Args:
-            section:  Curve객체 리스트
+            section (list[Curve]): Curve 객체 리스트
+            curvetype (CurveType, optional): 곡선 타입 지정 (없으면 자동 판별)
 
         Returns:
-            radius (tuple[float, float]): 찾은 반경 리스트(복심곡선용)
+            (r1, r2): 시작반경(r1), 끝반경(r2)
         """
-
+        radius = 0.0
         radius2 = 0.0
-        # 곡선 타입 호출
+
+        # ------------------------
+        # 곡선 타입 판별
+        # ------------------------
         if curvetype is None:
             curvetype = self.define_iscurve(section)
+
+        # 단곡선: 반경 1개만 존재
         if curvetype == CurveType.Simple:
             radius = section[0].radius
+
+        # 복곡선: 반경 2개 존재
         elif curvetype == CurveType.Complex:
             radius = section[0].radius
             radius2 = section[1].radius
-        else:
-            # 첫번째 요소만 보고 판단
-            isminus = (section[0].radius < 0)
-            # 0 제외한 반경만 뽑기
-            nonzero_radii = [sec.radius for sec in section if sec.radius != 0]
 
-            if isminus:
-                radius = max(nonzero_radii)
+        # 완화곡선: r1, r2 및 PCC 여부 판단
+        elif curvetype == CurveType.Spiral:
+
+            # ========================
+            # 1. nonzero_section 준비
+            #    (반경이 0이 아닌 구간만 필터링)
+            # ========================
+            nonzero_section = [(idx, c) for idx, c in enumerate(section) if c.radius != 0]
+            if not nonzero_section:
+                return 0.0, 0.0
+
+            # typical spacing (구간 간격의 중간값) 계산 → threshold 산출
+            stations = [pair[1].station for pair in nonzero_section]
+            if len(stations) >= 2:
+                deltas = [stations[i] - stations[i - 1] for i in range(1, len(stations))]
+                try:
+                    typical_spacing = statistics.median(deltas)
+                except Exception:
+                    typical_spacing = 25.0
             else:
-                radius = min(nonzero_radii)
+                typical_spacing = 25.0
+
+            # threshold: 간격이 일정 이상 벌어지면 새로운 구간으로 판단
+            threshold = max(typical_spacing * 4, 100.0)
+
+            # ========================
+            # 2. r1: 시점 완화곡선 찾기
+            # ========================
+            r1 = nonzero_section[0][1].radius
+            r1_idx = nonzero_section[0][0]
+            found_r1 = False
+
+            for i in range(1, len(nonzero_section)):
+                prev_station = nonzero_section[i - 1][1].station
+                curr_station = nonzero_section[i][1].station
+                delta = curr_station - prev_station
+
+                # 구간 간격이 threshold 이상 벌어지면 r1 결정
+                if delta > threshold:
+                    r1 = nonzero_section[i - 1][1].radius
+                    r1_idx = nonzero_section[i - 1][0]
+                    found_r1 = True
+                    break
+
+            # 못 찾은 경우 → 앞 절반에서 최소 반경 선택
+            if not found_r1:
+                n_half = max(1, len(nonzero_section) // 2)
+                front_half = nonzero_section[:n_half]
+                r1_idx, curve_obj = min(front_half, key=lambda pair: abs(pair[1].radius))
+                r1 = curve_obj.radius
+
+            radius = r1
+
+            # ========================
+            # 3. r2: 종점 완화곡선 찾기
+            # ========================
+            r2 = nonzero_section[-1][1].radius
+            r2_idx = nonzero_section[-1][0]
+            found_r2 = False
+
+            for i in range(len(nonzero_section) - 2, -1, -1):
+                prev_station = nonzero_section[i + 1][1].station
+                curr_station = nonzero_section[i][1].station
+                delta = prev_station - curr_station
+
+                # 구간 간격이 threshold 이상 벌어지면 r2 결정
+                if delta > threshold:
+                    r2 = nonzero_section[i + 1][1].radius
+                    r2_idx = nonzero_section[i + 1][0]
+                    found_r2 = True
+                    break
+
+            # 못 찾은 경우 → 뒤 절반에서 최소 반경 선택
+            if not found_r2:
+                n_half = max(1, len(nonzero_section) // 2)
+                back_half = nonzero_section[n_half:]
+                r2_idx, curve_obj = min(back_half, key=lambda pair: abs(pair[1].radius))
+                r2 = curve_obj.radius
+
+            radius2 = r2
+
+            # ========================
+            # 4. PCC 여부 확인
+            #    (r1과 r2 사이에 추가 반경 값이 존재하면 PCC)
+            # ========================
+            if r1_idx < r2_idx:
+                between = section[r1_idx + 1:r2_idx]
+            else:
+                between = section[r2_idx + 1:r1_idx]
+
+            if between:
+                pcc_candidates = [c.radius for c in between if c.radius != 0]
+                if pcc_candidates:
+                    radius2 = pcc_candidates[0]  # PCC 반경으로 교체
+            else:
+                radius2 = 0.0
+
         return radius, radius2
 
     def _process_curve_section(self, section: list[Curve], ipno: int) -> list[IPdata]:
