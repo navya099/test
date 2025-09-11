@@ -53,7 +53,8 @@ class EventHandler:
             self.app_controller.calculator.init_bvedata(bve_data)
             # 선형객체 빌드
             alignments = self.app_controller.calculator.build_ipdata_from_sections()
-            # 선형객체 출력
+            # 선형객체 저장
+            self.app_controller.alignments = alignments
             # PlotFrame에 데이터 설정
             self.main_app.plot_frame.set_data(alignments, bve_data)
 
