@@ -341,7 +341,7 @@ class Calculator:
 
     # ---------------------
     # 완화곡선 처리
-    def _process_spiral_curve(self, section: list[Curve], ipno: int) -> IPdata:
+    def _process_spiral_curve(self, section: list[Curve], ipno: int) -> list[IPdata]:
         #원곡선 반경
         r, _ = self.define_section_radius(section)
         curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
@@ -403,14 +403,14 @@ class Calculator:
                 self._calculate_spiralcurve_geometry(r, l2, ia)
             )
 
-        return IPdata(ipno=ipno,
+        return [IPdata(ipno=ipno,
                       curvetype=CurveType.Spiral,
                       curve_direction=curve_direction,
                       radius=r,
                       ia=ia,
                       coord=ip_coord,
                       segment=segment_list
-                      )
+                      )]
 
     def split_simplecurve_section(self, bc_curve: Curve, ec_curve: Curve ,r: float, direction: CurveDirection) -> Curve:
         """
