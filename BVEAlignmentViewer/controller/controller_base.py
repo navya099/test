@@ -4,6 +4,7 @@ from RouteManager2.CurrentRoute import CurrentRoute
 from core.calculator import Calculator
 from core.datacontainer import BVERouteFactory
 from core.parser import CSVRouteParser
+from fileexporter.dxfmanager import DXFController
 from model.model import BVERouteData
 
 
@@ -86,6 +87,7 @@ class FileController:
     def save_file(self):
         filename = filedialog.asksaveasfilename(title="파일 저장")
         if filename:
+            self.savefilepath = filename
             messagebox.showinfo("저장", f"저장 위치: {filename}")
 
     # 파일 읽기 함수
