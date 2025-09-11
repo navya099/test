@@ -623,13 +623,6 @@ class Calculator:
             end_azimuth=ec_azimuth,
         )
 
-    def _create_spiral_curve_segment(self):
-        """
-        완화곡선 세그먼트 생성 메소드
-        Returns:
-            SpiralSegment
-        """
-        return SpiralSegment()
     def define_spiral_spec(self, section: list[Curve], direction: CurveDirection) -> \
             tuple[int, int]:
         """
