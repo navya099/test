@@ -1,5 +1,8 @@
 import math
 
+from vector2 import Vector2
+
+
 def get_block_index(number, interval):
     return int(math.floor(number / interval + 0.001))
 
@@ -57,3 +60,10 @@ def calculate_bearing_civil_coord(x1, y1, x2, y2):
     if bearing < 0:
         bearing = 360 + bearing
     return bearing
+
+def angle_from_center(center: Vector2, point: Vector2):
+    """호 중심 기준 각도 계산 (0° = x축, 반시계 방향)"""
+    dx = point.x - center.x
+    dy = point.y - center.y
+    angle = math.degrees(math.atan2(dy, dx)) % 360
+    return angle
