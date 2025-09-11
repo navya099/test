@@ -25,7 +25,7 @@ class AppController:
         self.main_app = main_app  # MainApp 인스턴스 (UI 접근용)
         self.file_ctrl = file_controller
         # Alignment 데이터 컨테이너
-
+        self.alignments = None
         # 기능 전담 클래스 인스턴스 보관
         self.parser = CSVRouteParser()
         self.calculator = Calculator()
@@ -60,6 +60,17 @@ class AppController:
             BVERouteData: 변환된 BVERouteData 객체
         """
         return BVERouteFactory.from_current_route(extracted_currentroute_list)
+
+    def export_dxf(self, filename: str):
+        """
+        DXF 파일로 alignments 저장.
+        """
+        if not self.alignments:
+            raise ValueError("저장할 alignments 데이터가 없습니다. 먼저 노선을 로드하세요.")
+
+        dxfmanager = DXFController()
+        dxfmanager.export_dxf(self.alignments, filename)  # alignments 전달
+        return True
 
 class FileController:
     def __init__(self):
