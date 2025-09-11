@@ -574,39 +574,6 @@ class Calculator:
             xb=xb,
             b=b
         )
-    def _extract_coords_and_azimuth(self, bc_sta, ec_sta):
-        """
-        Private메소드 단곡선 좌표 및 방위각 각도 추출
-        Args:
-            bc_sta(float): bc측점
-            ec_sta(float): ec측점
-        Returns:
-            bc_coord(Vector2):
-            ec_coord(Vector2):
-            bc_azimuth(float): 시작 각도 라디안
-            ec_azimuth(float): 끝 각도 라디안
-        """
-        #중복 제거후 매핑데이터 생성
-        station_to_data = {
-            curve.station: (coord, dir)
-            for curve, coord, dir in zip(self.bvedata.curves, self.bvedata.coords, self.bvedata.directions)
-        }
-
-        # 좌표와 방위각 추출
-        bc_coord, bc_azimuth = station_to_data[bc_sta]
-        ec_coord, ec_azimuth = station_to_data[ec_sta]
-
-        #3d벡터를 2d벡터로 변환
-        bc_coord = to2d(bc_coord)
-        bc_azimuth = to2d(bc_azimuth)
-        ec_coord = to2d(ec_coord)
-        ec_azimuth = to2d(ec_azimuth)
-
-        #라디안 변환 수행
-        bc_azimuth = bc_azimuth.toradian()
-        ec_azimuth = ec_azimuth.toradian()
-
-        return bc_coord, ec_coord, bc_azimuth, ec_azimuth
 
     def _calculate_ip_coord(self, bc_xy, ec_xy, bc_azimuth, ec_azimuth) -> Vector2:
         """
