@@ -58,9 +58,12 @@ class EventHandler:
             self.main_app.plot_frame.set_data(alignments, bve_data)
 
     def on_file_save(self):
-        filename = self.file_controller.save_file()
+        self.file_controller.save_file()
+        filename = self.file_controller.savefilepath
         if filename:
-            messagebox.showinfo("파일 저장 기능", f"파일 저장 기능 {filename}")
+            # dxf 인스턴스 생성
+            self.app_controller.export_dxf(filename)
+            messagebox.showinfo("도면 저장", f"dxf 저장 성공 {filename}")
 
     def on_open_settings(self):
         messagebox.showinfo("설정 기능", f"설정 저장 기능")
