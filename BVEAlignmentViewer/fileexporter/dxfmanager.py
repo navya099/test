@@ -1,4 +1,6 @@
 import ezdxf
+
+from core.calculator import Calculator
 from math_utils import angle_from_center
 from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment
 from utils import try_parse_int
@@ -117,8 +119,11 @@ class DXFController:
                         if isinstance(seg, SpiralSegment):#완화곡선
                             # 완화곡선 시작점 추가
                             points.append((seg.start_coord.x, seg.start_coord.y, 0))
-                            #완화곡선구간 샘플링(추후 구현예정)
-                            pass
+                            #완화곡선구간 샘플링
+                            cla= Calculator()
+                            for coord in cla.sample_spiral(seg, step=1):
+                                points.append((coord[0], coord[1], 0))  # Bulge는 0으로
+
                             # 완화곡선 끝점 추가
                             points.append((seg.end_coord.x, seg.end_coord.y, 0))
 
