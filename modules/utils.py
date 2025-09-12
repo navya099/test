@@ -25,3 +25,16 @@ def remove_duplicate_radius(data: list[list[str]]) -> list[tuple[int, float, flo
 
     return filtered_data
 
+def try_parse_int(value, default=0):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def try_parse_float(value, default=0.0):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
