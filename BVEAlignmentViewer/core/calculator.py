@@ -378,27 +378,16 @@ class Calculator:
         #ip좌표
         ip_coord = self._calculate_ip_coord(sp_curve.coord, ps_curve.coord, sp_curve.direction, ps_curve.direction)
 
-        #세그먼트 계산
-        #유형별로 객체 생성
-        #case1 완화곡선-원곡선-완화곡선
-        #case2 완화곡선-원곡선
-        #case3 원곡선 -완화곡선
-        #case4 완화곡선-완화곡선
-
-        #객체 초기화
-        segment_list = []
-        segment = None
-
         # 세그먼트 계산
         segment_list = []
 
         # 시점 완화곡선 여부
         if l1 > 0:
-            segment_list.append(
-                self._calculate_spiralcurve_geometry(r, l1, ia)
+            spiral_parameter = self._calculate_spiralcurve_geometry(r, l1, ia)
+            segment_list.append(self._create_spiral_segment(spiral_parameter, sp_sta, pc_sta, l1, sp_curve,pc_curve)
             )
 
-        # 원곡선
+        # 중간 원곡선
         if lc > 0:
             r, ia2, tl, m, sl = self._calculate_curve_geometry(r, lc)
             center_coord = self.calculate_curve_center(pc_coord, cp_coord, r, curve_direction)
@@ -413,10 +402,9 @@ class Calculator:
 
         # 종점 완화곡선 여부
         if l2 > 0:
-            segment_list.append(
-                self._calculate_spiralcurve_geometry(r, l2, ia)
-            )
-
+            spiral_parameter = self._calculate_spiralcurve_geometry(r, l2, ia)
+            segment_list.append(self._create_spiral_segment(spiral_parameter, cp_sta, ps_sta, l2, cp_curve, ps_curve)
+                                )
         return [IPdata(ipno=ipno,
                       curvetype=CurveType.Spiral,
                       curve_direction=curve_direction,
@@ -543,7 +531,7 @@ class Calculator:
 
         return r, ia, tl, m, sl
 
-    def _calculate_spiralcurve_geometry(self, radius, length, ia) -> SpiralSegment:
+    def _calculate_spiralcurve_geometry(self, radius, length, ia) -> tuple:
         """
         완화곡선 제원 산출용 프라이베이트 메소드
         Returns:
@@ -569,25 +557,7 @@ class Calculator:
         xb = math.pi / 2 - theta_pc  # XB
         b = math.pi / 2 - c - xb
 
-        return SpiralSegment(
-            x1=x1,
-            x2=x2,
-            w13=w13,
-            y1=y1,
-            w15=w15,
-            f=f,
-            s=s,
-            k=k,
-            w=w,
-            tl=tl,
-            lc=lc,
-            total_length=cl,
-            sl=sl,
-            ria=ia2,
-            c=c,
-            xb=xb,
-            b=b
-        )
+        return x1, x2, w13, y1, w15,f, s, k, w, tl,lc, cl, sl, ia2,c, xb, b
 
     def _calculate_ip_coord(self, bc_xy, ec_xy, bc_azimuth, ec_azimuth) -> Vector2:
         """
@@ -635,6 +605,48 @@ class Calculator:
             m=m,
             start_azimuth=bc_azimuth,
             end_azimuth=ec_azimuth,
+        )
+
+    def _create_spiral_segment(self, parameter: tuple, start_sta: float, end_sta: float, length: float, start: Curve, end: Curve) -> SpiralSegment:
+        """
+        Private 메소드: SpiralSegment객체 생성
+        Args:
+            parameter(tuple): 완화곡선 파라메터 튜플 create_curve_segment
+            start_sta(float): 시작 측점
+            end_sta(float): 끝 측점
+            length(float): 길이
+            start(Curve): 시작 Curve객체
+            end(Curve): 끝 Curve객체
+        Returns:
+            SpiralSegment
+        """
+
+        x1, x2, w13, y1, w15, f, s, k, w, tl, lc, cl, sl, ia2, c, xb, b = parameter
+        return SpiralSegment(
+            start_sta=start_sta,
+            end_sta=end_sta,
+            length=length,
+            start_coord=start.coord,
+            end_coord=end.coord,
+            start_azimuth=start.direction,
+            end_azimuth=end.direction,
+            x1=x1,
+            x2=x2,
+            w13=w13,
+            y1=y1,
+            w15=w15,
+            f=f,
+            s=s,
+            k=k,
+            w=w,
+            tl=tl,
+            lc=lc,
+            total_length=cl,
+            sl=sl,
+            ria=ia2,
+            c=c,
+            xb=xb,
+            b=b
         )
 
     def define_spiral_spec(self, section: list[Curve], direction: CurveDirection) -> \
