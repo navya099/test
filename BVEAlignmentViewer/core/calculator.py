@@ -688,3 +688,40 @@ class Calculator:
             cp_sta = section[cp_index].station
 
         return pc_index, cp_index
+
+    def sample_spiral(self, seg: SpiralSegment, step: float = 5.0) -> list[tuple[float, float]]:
+        """
+        완화곡선 세그먼트를 일정 간격으로 샘플링한 좌표 목록 반환
+        step: 샘플링 간격 (m 단위)
+        """
+        coords = []
+        length = seg.length
+        t = 0.0
+        while t <= length:
+            x, y = self._calc_spiral_point(seg, t)  # t 지점 좌표 계산
+            coords.append((x, y))
+            t += step
+
+        # 마지막 끝점 보정 (step으로 정확히 안 맞을 수 있으므로)
+        coords.append((seg.end_coord.x, seg.end_coord.y))
+        return coords
+
+    def _calc_spiral_point(self, seg: SpiralSegment, s: float) -> tuple[float, float]:
+        r = seg.w13
+        l = seg.length
+        a = math.sqrt(r * l)
+
+        # 클로소이드 근사식
+        x_local = s - (s ** 5) / (40 * a ** 4)
+        y_local = (s ** 3) / (6 * a ** 2) - (s ** 7) / (336 * a ** 6)
+
+        # 시작 방향 각도 (rad)
+        theta0 = seg.start_azimuth  # SpiralSegment에 방향 정보 필요
+
+        # 좌표 회전
+        x_rot = x_local * math.cos(theta0) - y_local * math.sin(theta0)
+        y_rot = x_local * math.sin(theta0) + y_local * math.cos(theta0)
+
+        # 절대 좌표
+        return seg.start_coord.x + x_rot, seg.start_coord.y + y_rot
+
