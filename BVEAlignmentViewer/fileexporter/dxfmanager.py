@@ -1,6 +1,6 @@
 import ezdxf
 from math_utils import angle_from_center
-from model.model import IPdata, CurveType, CurveDirection, CurveSegment
+from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment
 from utils import try_parse_int
 import math
 
@@ -112,8 +112,36 @@ class DXFController:
                     if isinstance(ip, CurveSegment):
                         next_segment = ipdata_list[i + 1].segment[0]
                         points.append((next_segment.start_coord.x, next_segment.start_coord.y, 0))
+                else:#완화곡선
+                    for j, seg in enumerate(ip.segment):
+                        if isinstance(seg, SpiralSegment):#완화곡선
+                            # 완화곡선 시작점 추가
+                            points.append((seg.start_coord.x, seg.start_coord.y, 0))
+                            #완화곡선구간 샘플링(추후 구현예정)
+                            pass
+                            # 완화곡선 끝점 추가
+                            points.append((seg.end_coord.x, seg.end_coord.y, 0))
 
+                        else:#원곡선
+                            # Bulge 계산
+                            start_angle = angle_from_center(seg.center_coord, seg.start_coord)
+                            end_angle = angle_from_center(seg.center_coord, seg.end_coord)
+                            # LEFT: 반시계 +, RIGHT: 시계 -
+                            if ip.curve_direction == CurveDirection.LEFT:
+                                sweep = (end_angle - start_angle + 360) % 360
+                            else:
+                                sweep = (start_angle - end_angle + 360) % 360
+                                sweep = -sweep  # Bulge 정의상 음수
 
+                            bulge = math.tan(math.radians(sweep / 4))
+                            # 곡선 시작점 추가
+                            points.append((seg.start_coord.x, seg.start_coord.y, bulge))
+                            # 곡선 끝점 추가
+                            points.append((seg.end_coord.x, seg.end_coord.y, 0))
+                    # 다음 세그먼트 직선 연결
+                    if isinstance(ip, CurveSegment):
+                        next_segment = ipdata_list[i + 1].segment[0]
+                        points.append((next_segment.start_coord.x, next_segment.start_coord.y, 0))
 
         # LWPOLYLINE 생성
         self.msp.add_lwpolyline(points, format='xyb', dxfattribs={'layer': 'FL','color': 10})
