@@ -380,11 +380,10 @@ class Calculator:
 
         # 세그먼트 계산
         segment_list = []
-
         # 시점 완화곡선 여부
         if l1 > 0:
             spiral_parameter = self._calculate_spiralcurve_geometry(r, l1, ia)
-            segment_list.append(self._create_spiral_segment(spiral_parameter, sp_sta, pc_sta, l1, sp_curve,pc_curve)
+            segment_list.append(self._create_spiral_segment(spiral_parameter, sp_sta, pc_sta, l1, sp_curve,pc_curve, isstart=True)
             )
 
         # 중간 원곡선
@@ -402,8 +401,9 @@ class Calculator:
 
         # 종점 완화곡선 여부
         if l2 > 0:
+            start = False
             spiral_parameter = self._calculate_spiralcurve_geometry(r, l2, ia)
-            segment_list.append(self._create_spiral_segment(spiral_parameter, cp_sta, ps_sta, l2, cp_curve, ps_curve)
+            segment_list.append(self._create_spiral_segment(spiral_parameter, cp_sta, ps_sta, l2, cp_curve, ps_curve, isstart=False)
                                 )
         return [IPdata(ipno=ipno,
                       curvetype=CurveType.Spiral,
@@ -607,7 +607,7 @@ class Calculator:
             end_azimuth=ec_azimuth,
         )
 
-    def _create_spiral_segment(self, parameter: tuple, start_sta: float, end_sta: float, length: float, start: Curve, end: Curve) -> SpiralSegment:
+    def _create_spiral_segment(self, parameter: tuple, start_sta: float, end_sta: float, length: float, start: Curve, end: Curve, isstart=True) -> SpiralSegment:
         """
         Private 메소드: SpiralSegment객체 생성
         Args:
@@ -617,6 +617,7 @@ class Calculator:
             length(float): 길이
             start(Curve): 시작 Curve객체
             end(Curve): 끝 Curve객체
+            isstart(bool): 시작 완화곡선 여부
         Returns:
             SpiralSegment
         """
@@ -646,7 +647,8 @@ class Calculator:
             ria=ia2,
             c=c,
             xb=xb,
-            b=b
+            b=b,
+            isstarted=isstart,
         )
 
     def define_spiral_spec(self, section: list[Curve], direction: CurveDirection) -> \

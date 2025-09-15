@@ -186,6 +186,7 @@ class SpiralSegment(Segment):
         c:(float): Thita
         xb(float): XB
         b(float): B
+        isstarted(bool): 시작 완화곡선 여부
     """
     x1: float = 0.0
     x2: float = 0.0
@@ -204,6 +205,7 @@ class SpiralSegment(Segment):
     c: float = 0.0
     xb: float = 0.0
     b: float = 0.0
+    isstarted: bool = False
 
 @dataclass
 class BasePoint:
