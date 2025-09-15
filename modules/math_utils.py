@@ -67,3 +67,23 @@ def angle_from_center(center: Vector2, point: Vector2):
     dy = point.y - center.y
     angle = math.degrees(math.atan2(dy, dx)) % 360
     return angle
+
+
+def degrees_to_dms(degrees):
+    """
+    Converts decimal degrees to degrees, minutes, seconds.
+
+    Args:
+    degrees (float): Decimal degrees value.
+
+    Returns:
+    tuple: Degrees, minutes, seconds.
+    """
+    if degrees < 0:
+        degrees = degrees * -1
+
+    deg = int(degrees)
+    minutes = int((degrees - deg) * 60)
+    seconds = (degrees - deg - minutes / 60) * 3600
+
+    return f"{deg}° {minutes}' {seconds:.2f}\""
