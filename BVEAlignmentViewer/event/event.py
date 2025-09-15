@@ -45,7 +45,9 @@ class EventHandler:
     def _process_and_plot(self, filepath):
         extracted_list = self.app_controller.load_route(filepath)  # ✅ 공식 인터페이스 호출
         if extracted_list:
-            bve_data = self.app_controller.convert_to_bveroute(extracted_list)  # bvedata로 변환
+            self.app_controller.convert_to_bveroute(extracted_list)
+            # bvedata로 변환
+            bve_data = self.app_controller.bvedata
             # 전처리
             routeprocessor = RouteProcessor(bve_data)  # 인스턴스 생성
             routeprocessor.run()

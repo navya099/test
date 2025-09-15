@@ -2,7 +2,7 @@ import ezdxf
 
 from core.calculator import Calculator
 from math_utils import angle_from_center
-from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment
+from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment, BVERouteData
 from utils import try_parse_int
 import math
 
@@ -11,7 +11,7 @@ class DXFController:
         self.msp = None
         self.doc = None
 
-    def export_dxf(self, ipdata: list[IPdata], filepath: str):
+    def export_dxf(self, ipdata: list[IPdata], bvedata: BVERouteData ,filepath: str):
         self.doc = ezdxf.new()
         self.msp = self.doc.modelspace()
 
@@ -19,7 +19,7 @@ class DXFController:
         self._draw_ipline(ipdata)
 
         #FL 그리기
-        self._draw_fl(ipdata)
+        self._draw_fl(ipdata ,bvedata)
 
         # IP문자
         self._draw_texts(ipdata, 'IP문자',
@@ -73,7 +73,7 @@ class DXFController:
                     'color': 1,
                     'layer': layer
                 })
-    def _draw_fl(self, ipdata_list: list[IPdata]):
+    def _draw_fl(self, ipdata_list: list[IPdata], bvedata: BVERouteData):
         """
         BP -> CurveSegment -> EP를 한 줄의 LWPOLYLINE으로 연결
         """
@@ -120,9 +120,10 @@ class DXFController:
                             # 완화곡선 시작점 추가
                             points.append((seg.start_coord.x, seg.start_coord.y, 0))
                             #완화곡선구간 샘플링
-                            cla= Calculator()
-                            for coord in cla.sample_spiral(seg, step=1):
-                                points.append((coord[0], coord[1], 0))  # Bulge는 0으로
+                            for i, coord in enumerate(bvedata.coords):
+                                sta = bvedata.firstblock + i * bvedata.block_interval
+                                if seg.start_sta < sta < seg.end_sta:
+                                    points.append((coord.x, coord.y, 0))
 
                             # 완화곡선 끝점 추가
                             points.append((seg.end_coord.x, seg.end_coord.y, 0))
