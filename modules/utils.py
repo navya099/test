@@ -38,3 +38,19 @@ def try_parse_float(value, default=0.0):
     except (ValueError, TypeError):
         return default
 
+
+def format_distance(number):
+    negative = False
+    if number < 0:
+        negative = True
+        number = abs(number)
+
+    km = int(number) // 1000
+    remainder = "{:.2f}".format(number % 1000)
+    formatted_distance = "{:d}km{:06.2f}".format(km, float(remainder))
+
+    if negative:
+        formatted_distance = "-" + formatted_distance
+
+    return formatted_distance
+
