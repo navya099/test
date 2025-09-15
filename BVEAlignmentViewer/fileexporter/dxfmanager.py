@@ -1,10 +1,14 @@
 import ezdxf
+from numpy.f2py.symbolic import normalize
 
 from core.calculator import Calculator
-from math_utils import angle_from_center
+from math_utils import angle_from_center, calculate_coordinates
 from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment, BVERouteData
 from utils import try_parse_int
 import math
+
+from vector3 import to2d
+
 
 class DXFController:
     def __init__(self):
@@ -30,7 +34,8 @@ class DXFController:
         self._draw_mtexts(ipdata, 'R문자',
                          lambda ip, i, n: None if i == 0 or i == n - 1 else f'\nR={ip.radius:.2f}' if isinstance(
                              ip.radius, float) else f'\nR1={ip.radius[0]:.2f}\nR2={ip.radius[1]:.2f}')
-
+        #chain선 및 chian불록
+        self._draw_chain(bvedata)
         #저장
         self.doc.saveas(filepath)
 
@@ -183,3 +188,53 @@ class DXFController:
                     end_angle=end_angle,
                     dxfattribs={'layer': 'FL'}
                 )
+
+    def _define_chain_blocks(self):
+        # 25m tick 블록 정의
+        blk = self.doc.blocks.new(name="CHAIN_TICK25")
+        blk.add_line((-1.5, 0), (1.5, 0), dxfattribs={'color': 1, 'layer': 'byblock'})
+
+        # 200m 작은 원 블록 정의
+        blk = self.doc.blocks.new(name="CHAIN_CIRCLE200")
+        blk.add_circle(center=(0, 0), radius=1.5, dxfattribs={'color': 2})
+
+        # 1000m 큰 원 블록 정의
+        blk = self.doc.blocks.new(name="CHAIN_CIRCLE1000")
+        blk.add_circle(center=(0, 0), radius=2, dxfattribs={'color': 3})
+
+    def _draw_chain(self, bvedata: BVERouteData):
+        #chain불록 생성
+        self._define_chain_blocks()
+        #선형에 배치
+        for i, coord in enumerate(bvedata.coords):
+            sta = bvedata.firstblock + i * bvedata.block_interval
+            angle = to2d(bvedata.directions[i]).todegree() #선형진행각도
+            normalize_angle = angle - 90 #선형에 수직인 각도
+            offset_coord = calculate_coordinates(coord.x, coord.y, normalize_angle, 2)
+            kmtext = f"{sta // 1000}km"  # 몫만 사용
+            mtext = f"{int(sta % 1000):03d}"  # 3자리로 맞춤
+            #chian 선
+            self.msp.add_blockref("CHAIN_TICK25", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
+            # 200m 작은 원
+            if sta % 200 == 0 and sta % 1000 != 0:
+                self.msp.add_blockref("CHAIN_CIRCLE200", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
+
+                self.msp.add_text(mtext,
+                    dxfattribs={
+                        'insert': (offset_coord[0], offset_coord[1]),
+                        'height': 3,
+                        'color': 1,
+                        'layer': '200문자',
+                        'rotation': angle,
+                    })
+            #1km원
+            if sta % 1000 == 0:
+                self.msp.add_blockref("CHAIN_CIRCLE1000", insert=(coord.x, coord.y), dxfattribs={"rotation": angle})
+                self.msp.add_text(kmtext,
+                                  dxfattribs={
+                                      'insert': (offset_coord[0], offset_coord[1]),
+                                      'height': 3,
+                                      'color': 1,
+                                      'layer': 'km문자',
+                                      'rotation': angle
+                                  })
