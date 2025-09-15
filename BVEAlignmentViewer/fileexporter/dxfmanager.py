@@ -2,7 +2,7 @@ import ezdxf
 from numpy.f2py.symbolic import normalize
 
 from core.calculator import Calculator
-from math_utils import angle_from_center, calculate_coordinates
+from math_utils import angle_from_center, calculate_coordinates, degrees_to_dms
 from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment, BVERouteData
 from utils import try_parse_int
 import math
@@ -29,11 +29,15 @@ class DXFController:
         self._draw_texts(ipdata, 'IP문자',
                          lambda ip, i, n: 'BP' if i == 0 else 'EP' if i == n - 1 else f'IP{ip.ipno}' if try_parse_int(
                              ip.ipno) else str(ip.ipno))
-
+        '''
         # R문자
         self._draw_mtexts(ipdata, 'R문자',
                          lambda ip, i, n: None if i == 0 or i == n - 1 else f'\nR={ip.radius:.2f}' if isinstance(
                              ip.radius, float) else f'\nR1={ip.radius[0]:.2f}\nR2={ip.radius[1]:.2f}')
+        '''
+        #ip제원표
+        self._draw_ip_table(ipdata)
+
         #chain선 및 chian불록
         self._draw_chain(bvedata)
         #저장
@@ -201,7 +205,82 @@ class DXFController:
         # 1000m 큰 원 블록 정의
         blk = self.doc.blocks.new(name="CHAIN_CIRCLE1000")
         blk.add_circle(center=(0, 0), radius=2, dxfattribs={'color': 3})
-
+    def _define_iptable_blocks(self):
+        blk = self.doc.blocks.new(name="IPTABLE")
+        layer = 'IPTABLE'
+        color = 1
+        height = 3
+        #테두리
+        blk.add_line((0, 0), (51, 0), dxfattribs={'color': color, 'layer': layer}) #하단 테두리
+        blk.add_line((51, 0), (51, 51), dxfattribs={'color': color, 'layer': layer})#우측 테두리
+        blk.add_line((51, 51), (0, 51), dxfattribs={'color': color, 'layer': layer})#상단 테두리
+        blk.add_line((0, 51), (0, 0), dxfattribs={'color': color, 'layer': layer})#좌측테두리
+        #태이블 내부 가로선
+        blk.add_line((0, 7), (51, 7), dxfattribs={'color': color, 'layer': layer})
+        blk.add_line((0, 14), (51, 14), dxfattribs={'color': color, 'layer': layer})
+        blk.add_line((0, 21), (51, 21), dxfattribs={'color': color, 'layer': layer})
+        blk.add_line((0, 28), (51, 28), dxfattribs={'color': color, 'layer': layer})
+        blk.add_line((0, 35), (51, 35), dxfattribs={'color': color, 'layer': layer})
+        blk.add_line((0, 42), (51, 42), dxfattribs={'color': color, 'layer': layer})
+        #테이블 내부 세로선
+        blk.add_line((12, 42), (12, 0), dxfattribs={'color': color, 'layer': layer})
+        #테이블 내부 문자
+        blk.add_text('IA',
+                          dxfattribs={
+                              'insert': (3, 37),
+                              'height': height,
+                              'color': color,
+                              'layer': layer,
+                          })
+        blk.add_text('R',
+                     dxfattribs={
+                         'insert': (4.5, 30),
+                         'height': height,
+                         'color': color,
+                         'layer': layer,
+                     })
+        blk.add_text('TL',
+                     dxfattribs={
+                         'insert': (3, 23),
+                         'height': height,
+                         'color': color,
+                         'layer': layer,
+                     })
+        blk.add_text('CL',
+                     dxfattribs={
+                         'insert': (3, 16),
+                         'height': height,
+                         'color': color,
+                         'layer': layer,
+                     })
+        blk.add_text('X',
+                     dxfattribs={
+                         'insert': (4.5, 9),
+                         'height': height,
+                         'color': color,
+                         'layer': layer,
+                     })
+        blk.add_text('Y',
+                     dxfattribs={
+                         'insert': (4.5, 2),
+                         'height': height,
+                         'color': color,
+                         'layer': layer,
+                     })
+        # IPNO 속성
+        blk.add_attdef(tag="IPNO", insert=(18, 44), height=3, text="0", dxfattribs={'layer': 'attr'})
+        # IA 속성
+        blk.add_attdef(tag="IA", insert=(14.25, 38.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        # R 속성
+        blk.add_attdef(tag="R", insert=(14.25, 31.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        # TL 속성
+        blk.add_attdef(tag="TL", insert=(14.25, 24.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        # CL 속성
+        blk.add_attdef(tag="CL", insert=(14.25, 17.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        # X 속성
+        blk.add_attdef(tag="X", insert=(14.25, 10.55), height=3, text="0", dxfattribs={'layer': 'attr'})
+        # Y 속성
+        blk.add_attdef(tag="Y", insert=(14.25, 3.5), height=3, text="0", dxfattribs={'layer': 'attr'})
     def _draw_chain(self, bvedata: BVERouteData):
         #chain불록 생성
         self._define_chain_blocks()
@@ -216,9 +295,9 @@ class DXFController:
             #chian 선
             self.msp.add_blockref("CHAIN_TICK25", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
             # 200m 작은 원
-            if sta % 200 == 0 and sta % 1000 != 0:
+            if sta % 200 == 0:
                 self.msp.add_blockref("CHAIN_CIRCLE200", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
-
+            if sta % 200 == 0 and sta % 1000 != 0:
                 self.msp.add_text(mtext,
                     dxfattribs={
                         'insert': (offset_coord[0], offset_coord[1]),
@@ -238,3 +317,36 @@ class DXFController:
                                       'layer': 'km문자',
                                       'rotation': angle
                                   })
+    def _draw_ip_table(self, iplist: list[IPdata]):
+        self._define_iptable_blocks()
+        for i, ip in enumerate(iplist):
+            if i != 0 and i != len(iplist) - 1:
+                iatext = degrees_to_dms(math.degrees(ip.ia))
+                cl_value = max(
+                    getattr(seg, "total_length", getattr(seg, "length", 0))
+                    for seg in ip.segment
+                )
+                radius = f'{ip.radius:.3f}'
+                tl = max(seg.tl for seg in ip.segment)
+                tl = f'{tl:.3f}'
+                cl = f'{cl_value:.3f}'
+                x = f'{ip.coord.y:.4f}'
+                y = f'{ip.coord.x:.4f}'
+                block_ref = self.msp.add_blockref(
+                    name="IPTABLE",
+                    insert=(ip.coord.x, ip.coord.y),
+                    dxfattribs={
+                        "layer": "IPTABLE"
+                    }
+                )
+                block_ref.add_auto_attribs(
+                    {
+                        "IPNO": f'IP. {ip.ipno}' if isinstance(ip.ipno, int) else ip.ipno,
+                        "IA": iatext,
+                        "R": radius,
+                        "TL": tl,
+                        "CL": cl,
+                        "X": x,
+                        "Y": y
+                    }
+                )
