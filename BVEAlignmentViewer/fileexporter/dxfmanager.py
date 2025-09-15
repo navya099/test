@@ -1,12 +1,10 @@
 import ezdxf
-from numpy.f2py.symbolic import normalize
-
-from core.calculator import Calculator
 from math_utils import angle_from_center, calculate_coordinates, degrees_to_dms
 from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment, BVERouteData
-from utils import try_parse_int
+from utils import try_parse_int, format_distance
 import math
 
+from vector2 import Vector2
 from vector3 import to2d
 
 
@@ -37,6 +35,9 @@ class DXFController:
         '''
         #ip제원표
         self._draw_ip_table(ipdata)
+
+        #곡선제원문자및 인출선
+        self._draw_curve_text_and_line(ipdata, bvedata)
 
         #chain선 및 chian불록
         self._draw_chain(bvedata)
@@ -129,8 +130,8 @@ class DXFController:
                             # 완화곡선 시작점 추가
                             points.append((seg.start_coord.x, seg.start_coord.y, 0))
                             #완화곡선구간 샘플링
-                            for i, coord in enumerate(bvedata.coords):
-                                sta = bvedata.firstblock + i * bvedata.block_interval
+                            for k, coord in enumerate(bvedata.coords):
+                                sta = bvedata.firstblock + k * bvedata.block_interval
                                 if seg.start_sta < sta < seg.end_sta:
                                     points.append((coord.x, coord.y, 0))
 
@@ -281,42 +282,56 @@ class DXFController:
         blk.add_attdef(tag="X", insert=(14.25, 10.55), height=3, text="0", dxfattribs={'layer': 'attr'})
         # Y 속성
         blk.add_attdef(tag="Y", insert=(14.25, 3.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+
+    def _define_curvespec_blocks(self):
+        blk = self.doc.blocks.new(name="곡선인출블럭")
+        layer = '곡선제원'
+        color = 1
+        height = 3
+        #인출선
+        blk.add_line((0, 0), (70, 0), dxfattribs={'color': color, 'layer': layer})
+        #인출텍스트
+        #곡선제원문자속성
+        blk.add_attdef(tag="type", insert=(30, 3.5), height=height, text="0", dxfattribs={'layer': 'attr'})
+        # 곡선위치속성
+        blk.add_attdef(tag="sta", insert=(40, 3.5), height=height, text="0", dxfattribs={'layer': 'attr'})
+
     def _draw_chain(self, bvedata: BVERouteData):
-        #chain불록 생성
-        self._define_chain_blocks()
-        #선형에 배치
-        for i, coord in enumerate(bvedata.coords):
-            sta = bvedata.firstblock + i * bvedata.block_interval
-            angle = to2d(bvedata.directions[i]).todegree() #선형진행각도
-            normalize_angle = angle - 90 #선형에 수직인 각도
-            offset_coord = calculate_coordinates(coord.x, coord.y, normalize_angle, 2)
-            kmtext = f"{sta // 1000}km"  # 몫만 사용
-            mtext = f"{int(sta % 1000):03d}"  # 3자리로 맞춤
-            #chian 선
-            self.msp.add_blockref("CHAIN_TICK25", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
-            # 200m 작은 원
-            if sta % 200 == 0:
-                self.msp.add_blockref("CHAIN_CIRCLE200", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
-            if sta % 200 == 0 and sta % 1000 != 0:
-                self.msp.add_text(mtext,
-                    dxfattribs={
-                        'insert': (offset_coord[0], offset_coord[1]),
-                        'height': 3,
-                        'color': 1,
-                        'layer': '200문자',
-                        'rotation': angle,
-                    })
-            #1km원
-            if sta % 1000 == 0:
-                self.msp.add_blockref("CHAIN_CIRCLE1000", insert=(coord.x, coord.y), dxfattribs={"rotation": angle})
-                self.msp.add_text(kmtext,
-                                  dxfattribs={
-                                      'insert': (offset_coord[0], offset_coord[1]),
-                                      'height': 3,
-                                      'color': 1,
-                                      'layer': 'km문자',
-                                      'rotation': angle
-                                  })
+            #chain불록 생성
+            self._define_chain_blocks()
+            #선형에 배치
+            for i, coord in enumerate(bvedata.coords):
+                sta = bvedata.firstblock + i * bvedata.block_interval
+                angle = to2d(bvedata.directions[i]).todegree() #선형진행각도
+                normalize_angle = angle - 90 #선형에 수직인 각도
+                offset_coord = calculate_coordinates(coord.x, coord.y, normalize_angle, 2)
+                kmtext = f"{sta // 1000}km"  # 몫만 사용
+                mtext = f"{int(sta % 1000):03d}"  # 3자리로 맞춤
+                #chian 선
+                self.msp.add_blockref("CHAIN_TICK25", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
+                # 200m 작은 원
+                if sta % 200 == 0:
+                    self.msp.add_blockref("CHAIN_CIRCLE200", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
+                if sta % 200 == 0 and sta % 1000 != 0:
+                    self.msp.add_text(mtext,
+                        dxfattribs={
+                            'insert': (offset_coord[0], offset_coord[1]),
+                            'height': 3,
+                            'color': 1,
+                            'layer': '200문자',
+                            'rotation': angle,
+                        })
+                #1km원
+                if sta % 1000 == 0:
+                    self.msp.add_blockref("CHAIN_CIRCLE1000", insert=(coord.x, coord.y), dxfattribs={"rotation": angle})
+                    self.msp.add_text(kmtext,
+                        dxfattribs={
+                            'insert': (offset_coord[0], offset_coord[1]),
+                            'height': 3,
+                            'color': 1,
+                            'layer': 'km문자',
+                            'rotation': angle,
+                        })
     def _draw_ip_table(self, iplist: list[IPdata]):
         self._define_iptable_blocks()
         for i, ip in enumerate(iplist):
@@ -339,8 +354,7 @@ class DXFController:
                         "layer": "IPTABLE"
                     }
                 )
-                block_ref.add_auto_attribs(
-                    {
+                block_ref.add_auto_attribs({
                         "IPNO": f'IP. {ip.ipno}' if isinstance(ip.ipno, int) else ip.ipno,
                         "IA": iatext,
                         "R": radius,
@@ -348,5 +362,42 @@ class DXFController:
                         "CL": cl,
                         "X": x,
                         "Y": y
-                    }
-                )
+                })
+
+    def _draw_curve_text_and_line(self, iplist: list[IPdata], bvedata: BVERouteData):
+        self._define_curvespec_blocks()
+        for i, ip in enumerate(iplist):
+            if i == 0:
+                self._add_curve_block(ip.coord, 'BP', bvedata.firstblock, CurveDirection.LEFT, to2d(bvedata.directions[0]).toradian())
+            elif i == len(iplist) - 1:
+                self._add_curve_block(ip.coord, 'EP', bvedata.lastblock, CurveDirection.LEFT, to2d(bvedata.directions[-1]).toradian())
+            else:
+                for seg in ip.segment:
+                    if isinstance(seg, SpiralSegment):
+                        self._add_curve_block(seg.start_coord, 'SP', seg.start_sta, ip.curve_direction, seg.start_azimuth)
+                        self._add_curve_block(seg.end_coord, 'PC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+                    elif ip.curvetype == CurveType.Simple:
+                        self._add_curve_block(seg.start_coord, 'BC', seg.start_sta, ip.curve_direction, seg.start_azimuth)
+                        self._add_curve_block(seg.end_coord, 'EC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+                    else:  # Complex
+                        self._add_curve_block(seg.start_coord, 'BC', seg.start_sta, ip.curve_direction, seg.start_azimuth)
+                        self._add_curve_block(seg.end_coord, 'EC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+
+    def _add_curve_block(self, coord: Vector2, curve_type: str, sta: float, direction: CurveDirection, angle: float):
+        xscale = 1 if direction == CurveDirection.RIGHT else -1
+        yscale = 1 if direction == CurveDirection.RIGHT else -1
+        angle = math.degrees(angle)
+        block_ref = self.msp.add_blockref(
+            name="곡선인출블럭",
+            insert=(coord.x, coord.y),
+            dxfattribs={
+                "layer": "곡선인출블럭",
+                "xscale": xscale,
+                "yscale": yscale,
+                "rotation":angle - 90
+            }
+        )
+        block_ref.add_auto_attribs({
+            "type": f'{curve_type}= ',
+            "sta": format_distance(sta)
+        })
