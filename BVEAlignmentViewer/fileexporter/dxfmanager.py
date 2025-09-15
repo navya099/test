@@ -372,17 +372,31 @@ class DXFController:
             elif i == len(iplist) - 1:
                 self._add_curve_block(ip.coord, 'EP', bvedata.lastblock, CurveDirection.LEFT, to2d(bvedata.directions[-1]).toradian())
             else:
-                for seg in ip.segment:
-                    if isinstance(seg, SpiralSegment):
-                        self._add_curve_block(seg.start_coord, 'SP', seg.start_sta, ip.curve_direction, seg.start_azimuth)
-                        self._add_curve_block(seg.end_coord, 'PC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
-                    elif ip.curvetype == CurveType.Simple:
-                        self._add_curve_block(seg.start_coord, 'BC', seg.start_sta, ip.curve_direction, seg.start_azimuth)
-                        self._add_curve_block(seg.end_coord, 'EC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
-                    else:  # Complex
-                        self._add_curve_block(seg.start_coord, 'BC', seg.start_sta, ip.curve_direction, seg.start_azimuth)
-                        self._add_curve_block(seg.end_coord, 'EC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+                if ip.curvetype == CurveType.Spiral:
+                    for seg in ip.segment:
+                        if isinstance(seg, SpiralSegment):
+                            if seg.isstarted:
+                                self._add_curve_block(seg.start_coord, 'SP', seg.start_sta, ip.curve_direction, seg.start_azimuth)
+                                self._add_curve_block(seg.end_coord, 'PC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+                            else:
+                                self._add_curve_block(seg.start_coord, 'CP', seg.start_sta, ip.curve_direction, seg.start_azimuth)
+                                self._add_curve_block(seg.end_coord, 'PS', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+                        else:
+                            pass
+                elif ip.curvetype == CurveType.Simple:
+                    seg = ip.segment[0]
+                    self._add_curve_block(seg.start_coord, 'BC', seg.start_sta, ip.curve_direction, seg.start_azimuth)
+                    self._add_curve_block(seg.end_coord, 'EC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+                else:  # Complex
+                    for j, seg in enumerate(ip.segment):
 
+                        if j == 0:
+                            self._add_curve_block(seg.start_coord, 'BC', seg.start_sta, ip.curve_direction,
+                                                  seg.start_azimuth)
+                            self._add_curve_block(seg.end_coord, 'PCC', seg.end_sta, ip.curve_direction, seg.end_azimuth)
+                        else:
+                            self._add_curve_block(seg.end_coord, 'EC', seg.end_sta, ip.curve_direction,
+                                                  seg.end_azimuth)
     def _add_curve_block(self, coord: Vector2, curve_type: str, sta: float, direction: CurveDirection, angle: float):
         xscale = 1 if direction == CurveDirection.RIGHT else -1
         yscale = 1 if direction == CurveDirection.RIGHT else -1
