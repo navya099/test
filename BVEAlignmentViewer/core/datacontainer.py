@@ -35,8 +35,8 @@ class BVERouteFactory:
             pitchs.append(Pitch(trackpos, pitch_values[idx]))
 
         # Station 생성
-        for pos, name in enumerate(station_names):
-            stations_list.append(Station(pos, name))
+        for pos, name in station_names:
+            stations_list.append(Station(station=pos, name=name))
 
         # BVERouteData 생성
         data = BVERouteData(
