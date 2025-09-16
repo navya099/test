@@ -43,10 +43,11 @@ class Station(BVETrack):
 
     Attributes:
         name (str): 정거장 이름
+        direction(flaot): 블록 방향각
     """
     name: str
     coord: Vector2 = field(default_factory=lambda: Vector2(0, 0))
-
+    direction: float = 0
 @dataclass
 class BVERouteData:
     """
