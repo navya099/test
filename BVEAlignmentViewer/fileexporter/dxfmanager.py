@@ -17,6 +17,10 @@ class DXFController:
         self.doc = ezdxf.new()
         self.msp = self.doc.modelspace()
 
+        # 1️⃣ 글꼴 스타일 생성 (굴림체)
+        if "Gulim" not in self.doc.styles:
+            self.doc.styles.new("Gulim", dxfattribs={'font': 'gulim.ttc'})
+
         # IP라인 그리기
         self._draw_ipline(ipdata)
 
@@ -41,6 +45,9 @@ class DXFController:
 
         #chain선 및 chian불록
         self._draw_chain(bvedata)
+        #정거장 위치
+        self._draw_station_marker(bvedata)
+
         #저장
         self.doc.saveas(filepath)
 
@@ -63,7 +70,8 @@ class DXFController:
                     'insert': (ip.coord.x, ip.coord.y),
                     'height': 5,
                     'color': 1,
-                    'layer': layer
+                    'layer': layer,
+                    'style': 'Gulim'
                 })
 
     def _draw_mtexts(self, ipdata_list: list[IPdata], layer: str, text_func):
@@ -81,7 +89,8 @@ class DXFController:
                     'insert': (ip.coord.x, ip.coord.y),
                     'char_height': 5,
                     'color': 1,
-                    'layer': layer
+                    'layer': layer,
+                    'style': 'Gulim'
                 })
     def _draw_fl(self, ipdata_list: list[IPdata], bvedata: BVERouteData):
         """
@@ -143,9 +152,6 @@ class DXFController:
                                     end_angle = angle_from_center(center_coord, next_curve.coord)
 
                                     bulge = calculate_bulge(start_angle, end_angle, curvedirection)
-                                    print(f"sta={sta}, start={math.degrees(start_angle):.2f}, "
-                                          f"end={math.degrees(end_angle):.2f}, bulge={bulge:.4f}")
-
                                     # bulge 값은 "다음 점으로 가는 구간"에 적용
                                     points.append((curve.coord.x, curve.coord.y, bulge))
                                     points.append((next_curve.coord.x, next_curve.coord.y, 0))  # 끝점은 항상 bulge=0
@@ -203,22 +209,25 @@ class DXFController:
                 )
 
     def _define_chain_blocks(self):
+        color = 1
         # 25m tick 블록 정의
         blk = self.doc.blocks.new(name="CHAIN_TICK25")
-        blk.add_line((-1.5, 0), (1.5, 0), dxfattribs={'color': 1, 'layer': 'byblock'})
+        blk.add_line((-1.5, 0), (1.5, 0), dxfattribs={'color': color, 'layer': 'byblock'})
 
         # 200m 작은 원 블록 정의
         blk = self.doc.blocks.new(name="CHAIN_CIRCLE200")
-        blk.add_circle(center=(0, 0), radius=1.5, dxfattribs={'color': 2})
+        blk.add_circle(center=(0, 0), radius=1.5, dxfattribs={'color': color})
 
         # 1000m 큰 원 블록 정의
         blk = self.doc.blocks.new(name="CHAIN_CIRCLE1000")
-        blk.add_circle(center=(0, 0), radius=2, dxfattribs={'color': 3})
+        blk.add_circle(center=(0, 0), radius=2, dxfattribs={'color': color})
+
     def _define_iptable_blocks(self):
         blk = self.doc.blocks.new(name="IPTABLE")
         layer = 'IPTABLE'
         color = 1
         height = 3
+        style = "Gulim"
         #테두리
         blk.add_line((0, 0), (51, 0), dxfattribs={'color': color, 'layer': layer}) #하단 테두리
         blk.add_line((51, 0), (51, 51), dxfattribs={'color': color, 'layer': layer})#우측 테두리
@@ -240,6 +249,7 @@ class DXFController:
                               'height': height,
                               'color': color,
                               'layer': layer,
+                              'style': style,
                           })
         blk.add_text('R',
                      dxfattribs={
@@ -247,6 +257,7 @@ class DXFController:
                          'height': height,
                          'color': color,
                          'layer': layer,
+                         'style': style
                      })
         blk.add_text('TL',
                      dxfattribs={
@@ -254,6 +265,7 @@ class DXFController:
                          'height': height,
                          'color': color,
                          'layer': layer,
+                         'style': style
                      })
         blk.add_text('CL',
                      dxfattribs={
@@ -261,6 +273,7 @@ class DXFController:
                          'height': height,
                          'color': color,
                          'layer': layer,
+                         'style': style
                      })
         blk.add_text('X',
                      dxfattribs={
@@ -268,6 +281,7 @@ class DXFController:
                          'height': height,
                          'color': color,
                          'layer': layer,
+                         'style': style
                      })
         blk.add_text('Y',
                      dxfattribs={
@@ -275,34 +289,66 @@ class DXFController:
                          'height': height,
                          'color': color,
                          'layer': layer,
+                         'style': style
                      })
         # IPNO 속성
-        blk.add_attdef(tag="IPNO", insert=(18, 44), height=3, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="IPNO", insert=(18, 44), height=3, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
         # IA 속성
-        blk.add_attdef(tag="IA", insert=(14.25, 38.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="IA", insert=(14.25, 38.5), height=3, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
         # R 속성
-        blk.add_attdef(tag="R", insert=(14.25, 31.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="R", insert=(14.25, 31.5), height=3, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
         # TL 속성
-        blk.add_attdef(tag="TL", insert=(14.25, 24.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="TL", insert=(14.25, 24.5), height=3, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
         # CL 속성
-        blk.add_attdef(tag="CL", insert=(14.25, 17.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="CL", insert=(14.25, 17.5), height=3, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
         # X 속성
-        blk.add_attdef(tag="X", insert=(14.25, 10.55), height=3, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="X", insert=(14.25, 10.55), height=3, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
         # Y 속성
-        blk.add_attdef(tag="Y", insert=(14.25, 3.5), height=3, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="Y", insert=(14.25, 3.5), height=3, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
 
     def _define_curvespec_blocks(self):
         blk = self.doc.blocks.new(name="곡선인출블럭")
         layer = '곡선제원'
         color = 1
         height = 3
+        style = "Gulim"
         #인출선
         blk.add_line((0, 0), (70, 0), dxfattribs={'color': color, 'layer': layer})
         #인출텍스트
         #곡선제원문자속성
-        blk.add_attdef(tag="type", insert=(30, 3.5), height=height, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="type", insert=(30, 0.5), height=height, text="0", dxfattribs={'layer': 'attr', 'color':color, 'style': style})
         # 곡선위치속성
-        blk.add_attdef(tag="sta", insert=(40, 3.5), height=height, text="0", dxfattribs={'layer': 'attr'})
+        blk.add_attdef(tag="sta", insert=(40, 0.5), height=height, text="0", dxfattribs={'layer': 'attr', 'color': color, 'style': style})
+
+    def _define_station_marker(self):
+        blk = self.doc.blocks.new(name="정거장중심표")
+        layer = '정거장중심표'
+        color = 1
+        height = 3
+
+
+        # 인출선
+        blk.add_line((0, 0), (70, 0), dxfattribs={'color': color, 'layer': layer})
+        #정거장원
+        # 아래반원 HATCH
+        hatch = blk.add_hatch(color=1)  # 빨강
+        path = hatch.paths.add_edge_path()
+        center = (15, 0)
+        radius = 2
+        # ARC: -90° ~ 90° (시계 반대 방향으로)
+        blk.add_arc(center=center, radius=radius, start_angle=0, end_angle=180, dxfattribs={'color': color})
+        # ARC: -90° ~ 90° (시계 반대 방향으로)
+        path.add_arc(center=center, radius=radius, start_angle=180, end_angle=360, ccw=True)
+
+        # 2️⃣ 직선: 오른쪽 끝점 → 왼쪽 끝점 (반원 닫기)
+        start_pt = (center[0] + radius, center[1])  # (17, 0)
+        end_pt = (center[0] - radius, center[1])  # (13, 0)
+        path.add_line(start_pt, end_pt)
+
+        #정거장명 속성
+        blk.add_attdef(tag="name", insert=(30, 0.5), height=height, text="0", dxfattribs={'layer': 'attr', 'style': 'Gulim', 'color' : color})
+        #km 속성
+        blk.add_attdef(tag="sta", insert=(30, -3.5), height=height, text="0", dxfattribs={'layer': 'attr', 'style': 'Gulim', 'color': color})
 
     def _draw_chain(self, bvedata: BVERouteData):
             #chain불록 생성
@@ -328,6 +374,7 @@ class DXFController:
                             'color': 1,
                             'layer': '200문자',
                             'rotation': angle,
+                            'style' : "Gulim"
                         })
                 #1km원
                 if sta % 1000 == 0:
@@ -339,6 +386,7 @@ class DXFController:
                             'color': 1,
                             'layer': 'km문자',
                             'rotation': angle,
+                            'style': "Gulim"
                         })
     def _draw_ip_table(self, iplist: list[IPdata]):
         self._define_iptable_blocks()
@@ -423,3 +471,21 @@ class DXFController:
             "type": f'{curve_type}= ',
             "sta": format_distance(sta)
         })
+
+    def _draw_station_marker(self, bvedata: BVERouteData):
+        self._define_station_marker()
+        for station in bvedata.stations:
+            angle = math.degrees(station.direction)
+            coord = station.coord
+            block_ref = self.msp.add_blockref(
+                name="정거장중심표",
+                insert=(coord.x, coord.y),
+                dxfattribs={
+                    "layer": "정거장중심표",
+                    "rotation": angle + 90
+                }
+            )
+            block_ref.add_auto_attribs({
+                "name": f'{station.name}정거장',
+                "sta": f'OO기(현){format_distance(station.station)}'
+            })
