@@ -1,5 +1,5 @@
 import ezdxf
-from math_utils import angle_from_center, calculate_coordinates, degrees_to_dms
+from math_utils import angle_from_center, calculate_coordinates, degrees_to_dms, calculate_bulge, calculate_curve_center
 from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment, BVERouteData
 from utils import try_parse_int, format_distance
 import math
@@ -108,14 +108,8 @@ class DXFController:
                         # Bulge 계산
                         start_angle = angle_from_center(seg.center_coord, seg.start_coord)
                         end_angle = angle_from_center(seg.center_coord, seg.end_coord)
-                        # LEFT: 반시계 +, RIGHT: 시계 -
-                        if ip.curve_direction == CurveDirection.LEFT:
-                            sweep = (end_angle - start_angle + 360) % 360
-                        else:
-                            sweep = (start_angle - end_angle + 360) % 360
-                            sweep = -sweep  # Bulge 정의상 음수
 
-                        bulge = math.tan(math.radians(sweep / 4))
+                        bulge = calculate_bulge(start_angle, end_angle, ip.curve_direction)
                         # 곡선 시작점 추가
                         points.append((seg.start_coord.x, seg.start_coord.y, bulge))
                         #곡선 끝점 추가
@@ -128,28 +122,42 @@ class DXFController:
                     for j, seg in enumerate(ip.segment):
                         if isinstance(seg, SpiralSegment):#완화곡선
                             # 완화곡선 시작점 추가
-                            points.append((seg.start_coord.x, seg.start_coord.y, 0))
+                            #points.append((seg.start_coord.x, seg.start_coord.y, 0))
                             #완화곡선구간 샘플링
-                            for k, coord in enumerate(bvedata.coords):
-                                sta = bvedata.firstblock + k * bvedata.block_interval
-                                if seg.start_sta < sta < seg.end_sta:
-                                    points.append((coord.x, coord.y, 0))
+                            # 곡선 샘플링 (station 기반)
+                            for k, curve in enumerate(bvedata.curves[:-1]):  # 마지막은 k+1 때문에 제외
+                                sta = curve.station
+                                if seg.start_sta <= sta < seg.end_sta:
+                                    radius = curve.radius
+                                    curvedirection = CurveDirection.RIGHT if radius > 0 else CurveDirection.LEFT
+                                    radius = abs(radius)
+                                    next_curve = bvedata.curves[k + 1]
+                                    center_coord = calculate_curve_center(
+                                        curve.coord,
+                                        next_curve.coord,
+                                        radius,
+                                        curvedirection
+                                    )
 
+                                    start_angle = angle_from_center(center_coord, curve.coord)
+                                    end_angle = angle_from_center(center_coord, next_curve.coord)
+
+                                    bulge = calculate_bulge(start_angle, end_angle, curvedirection)
+                                    print(f"sta={sta}, start={math.degrees(start_angle):.2f}, "
+                                          f"end={math.degrees(end_angle):.2f}, bulge={bulge:.4f}")
+
+                                    # bulge 값은 "다음 점으로 가는 구간"에 적용
+                                    points.append((curve.coord.x, curve.coord.y, bulge))
+                                    points.append((next_curve.coord.x, next_curve.coord.y, 0))  # 끝점은 항상 bulge=0
                             # 완화곡선 끝점 추가
-                            points.append((seg.end_coord.x, seg.end_coord.y, 0))
+                            #points.append((seg.end_coord.x, seg.end_coord.y, 0))
 
                         else:#원곡선
                             # Bulge 계산
                             start_angle = angle_from_center(seg.center_coord, seg.start_coord)
                             end_angle = angle_from_center(seg.center_coord, seg.end_coord)
-                            # LEFT: 반시계 +, RIGHT: 시계 -
-                            if ip.curve_direction == CurveDirection.LEFT:
-                                sweep = (end_angle - start_angle + 360) % 360
-                            else:
-                                sweep = (start_angle - end_angle + 360) % 360
-                                sweep = -sweep  # Bulge 정의상 음수
+                            bulge = calculate_bulge(start_angle, end_angle, ip.curve_direction)
 
-                            bulge = math.tan(math.radians(sweep / 4))
                             # 곡선 시작점 추가
                             points.append((seg.start_coord.x, seg.start_coord.y, bulge))
                             # 곡선 끝점 추가
@@ -179,8 +187,8 @@ class DXFController:
                 end = seg.end_coord
                 r = seg.radius
 
-                start_angle = angle_from_center(center, start)
-                end_angle = angle_from_center(center, end)
+                start_angle = math.degrees(angle_from_center(center, start))
+                end_angle = math.degrees(angle_from_center(center, end))
 
                 # 왼쪽/오른쪽 호 처리
                 if ip.curve_direction == CurveDirection.RIGHT:
@@ -303,9 +311,9 @@ class DXFController:
             for i, coord in enumerate(bvedata.coords):
                 sta = bvedata.firstblock + i * bvedata.block_interval
                 angle = to2d(bvedata.directions[i]).todegree() #선형진행각도
-                normalize_angle = angle - 90 #선형에 수직인 각도
-                offset_coord = calculate_coordinates(coord.x, coord.y, normalize_angle, 2)
-                kmtext = f"{sta // 1000}km"  # 몫만 사용
+                normalize_angle = angle + 90 #선형에 수직인 각도
+                offset_coord = calculate_coordinates(coord.x, coord.y, math.radians(normalize_angle), 2)
+                kmtext = f"{int(sta // 1000)}km"  # 몫만 사용
                 mtext = f"{int(sta % 1000):03d}"  # 3자리로 맞춤
                 #chian 선
                 self.msp.add_blockref("CHAIN_TICK25", insert=(coord.x, coord.y), dxfattribs={"rotation": normalize_angle})
