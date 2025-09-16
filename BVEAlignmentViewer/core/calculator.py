@@ -2,7 +2,9 @@ import math
 import statistics
 
 import numpy as np
-from math_utils import get_station_by_block_index, get_block_index, calculate_bearing, calculate_coordinates
+from numpy.ma.core import angle
+
+from math_utils import get_station_by_block_index, get_block_index, calculate_bearing, calculate_coordinates,calculate_distance
 from model.model import Curve, IPdata, CurveDirection, CurveSegment, BVERouteData, CurveType, EndPoint, SpiralSegment
 from vector2 import Vector2
 from vector3 import Vector3, to2d
@@ -691,39 +693,74 @@ class Calculator:
 
         return pc_index, cp_index
 
-    def sample_spiral(self, seg: SpiralSegment, step: float = 5.0) -> list[tuple[float, float]]:
+    def calculate_stationinfo(self):
+        bvedata = self.bvedata
+        curve_dict = {curve.station: curve for curve in bvedata.curves}
+        for station in bvedata.stations:
+            if station.station % bvedata.block_interval != 0:
+                # block_interval이 아닌경우 선형에서 좌표와 각돌을 찾아야함
+                curve = self.calculate_between_two_point(station.station)
+            else:
+                curve = curve_dict.get(station.station)
+            if curve:
+                station.coord = curve.coord
+                station.direction = curve.direction
+
+    def calculate_between_two_point(self, target_station):
+        curves = self.bvedata.curves
+        last_station = self.bvedata.stations[-1].station
+        last_coord = self.bvedata.stations[-1].coord
+
+        # 중간 곡선/직선 구간 처리
+        for j, curve in enumerate(curves):
+            next_curve = curves[j + 1] if j + 1 < len(curves) else None
+            if next_curve and curve.station <= target_station <= next_curve.station:
+                r = curve.radius
+                direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
+                if r != 0:
+                    return self.calculate_point_by_station_for_simplecurve(curve, next_curve, r, direction,
+                                                                           target_station)
+                else:
+                    return self.calculate_point_by_station_for_straight(curve, next_curve, curve.direction,
+                                                                        target_station)
+
+        # 마지막 곡선 이후 직선 구간 처리
+        if curves and target_station > curves[-1].station:
+            last_curve = curves[-1]
+            r = last_curve.radius
+            direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
+            if r != 0:  # 마지막 곡선 이후도 곡선일 경우
+                return self.calculate_point_by_station_for_simplecurve(
+                    last_curve,
+                    Curve(coord=last_coord, station=last_station, radius=0, cant=0, direction=last_curve.direction),
+                    r,
+                    direction,
+                    target_station
+                )
+            else:  # 마지막 직선 구간
+                return self.calculate_point_by_station_for_straight(
+                    last_curve,
+                    Curve(coord=last_coord, station=last_station, radius=0, cant=0, direction=last_curve.direction),
+                    last_curve.direction,
+                    target_station
+                )
+
+        return None
+
+    def calculate_point_by_station_for_straight(self, p1: Curve, p2: Curve, direction: float,
+                                                target_station: float) -> Curve:
         """
-        완화곡선 세그먼트를 일정 간격으로 샘플링한 좌표 목록 반환
-        step: 샘플링 간격 (m 단위)
+        target_station 위치의 직선 좌표와 방향 계산
+        Args:
+            p1(Curve): 시작 곡선
+            p2(Curve): 끝 곡선
+            direction(float): 방향각(라디안)
+            target_station(float): 찾을 측점
+        Returns:
+            Curve
         """
-        coords = []
-        length = seg.length
-        t = 0.0
-        while t <= length:
-            x, y = self._calc_spiral_point(seg, t)  # t 지점 좌표 계산
-            coords.append((x, y))
-            t += step
-
-        # 마지막 끝점 보정 (step으로 정확히 안 맞을 수 있으므로)
-        coords.append((seg.end_coord.x, seg.end_coord.y))
-        return coords
-
-    def _calc_spiral_point(self, seg: SpiralSegment, s: float) -> tuple[float, float]:
-        r = seg.w13
-        l = seg.length
-        a = math.sqrt(r * l)
-
-        # 클로소이드 근사식
-        x_local = s - (s ** 5) / (40 * a ** 4)
-        y_local = (s ** 3) / (6 * a ** 2) - (s ** 7) / (336 * a ** 6)
-
-        # 시작 방향 각도 (rad)
-        theta0 = seg.start_azimuth  # SpiralSegment에 방향 정보 필요
-
-        # 좌표 회전
-        x_rot = x_local * math.cos(theta0) - y_local * math.sin(theta0)
-        y_rot = x_local * math.sin(theta0) + y_local * math.cos(theta0)
-
-        # 절대 좌표
-        return seg.start_coord.x + x_rot, seg.start_coord.y + y_rot
-
+        total_len = calculate_distance(p1.coord, p2.coord)
+        ratio = (target_station - p1.station) / total_len
+        x = p1.coord.x + (p2.coord.x - p1.coord.x) * ratio
+        y = p1.coord.y + (p2.coord.y - p1.coord.y) * ratio
+        return Curve(coord=Vector2(x, y), direction=direction, station=target_station, radius=0,cant=0)
