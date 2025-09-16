@@ -184,3 +184,8 @@ def calculate_curve_geometry(radius, cl) -> tuple:
     sl = r * (1 / math.cos(ia / 2) - 1)  # 외거
 
     return r, ia, tl, m, sl
+
+def calculate_distance(p1: Vector2, p2: Vector2) -> float:
+    # Calculate the distance between two points in Cartesian coordinates
+    distance = math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
+    return distance
