@@ -3,25 +3,15 @@ from math_utils import calculate_bearing, calculate_coordinates,calculate_distan
 from model.bveroutedata import BVERouteData
 from model.bvetrack import Curve
 from curvetype import CurveType
-from model.ipdata import IPdata, EndPoint
-from model.segment import CurveSegment, SpiralSegment
 from vector2 import Vector2
-from vector3 import to2d
 from curvedirection import CurveDirection
 
-class Calculator:
+class AlignmentCalculator:
     """
-    선형 계산용 클래스
-    Attributes:
-        bvedata (BVERouteData): BVERouteData 객체
+    선형 계산용 stateless클래스
     """
-    def __init__(self):
-        self.bvedata = None
-
-    def init_bvedata(self, bvedata: BVERouteData):
-        self.bvedata = bvedata
-
-    def calculate_intersection_point(self, bc: Vector2, ec: Vector2, theta1: float, theta2: float) -> Vector2 | None:
+    @staticmethod
+    def calculate_intersection_point(bc: Vector2, ec: Vector2, theta1: float, theta2: float) -> Vector2 | None:
         """
         교점을 찾는 메소드 (방향 벡터 방식)
 
@@ -54,7 +44,8 @@ class Calculator:
 
         return Vector2(x, y)
 
-    def split_by_curve_sections(self, curves: list[Curve]) -> list[list[Curve]]:
+    @staticmethod
+    def split_by_curve_sections(curves: list[Curve]) -> list[list[Curve]]:
         """
         곡선 리스트를 분석해 구간을 나누는 새 구현.
         방식:
@@ -109,42 +100,8 @@ class Calculator:
 
         return sections
 
-    def build_ipdata_from_sections(self) -> list[IPdata]:
-        """
-        BVERouteData 속성으로 IPdata 리스트 생성.
-        BP -> 곡선 -> EP 순서 처리
-        """
-        ipdata_list = []
-        curvesection_ipdata_list = []
-        sections = self.split_by_curve_sections(self.bvedata.curves)
-
-        for i, section in enumerate(sections):
-            if i == 0:
-                # BP
-                ipdata_list.append(self._process_endpoint(bp=True))
-            else:  # 곡선구간 처리
-                curvesection_ipdata_list = self._process_curve_section(section, ipno=i)
-                ipdata_list.extend(curvesection_ipdata_list)
-
-        # EP 추가
-        ipdata_list.append(self._process_endpoint(bp=False))
-
-        return ipdata_list
-
-    # --------------------- Private methods ---------------------
-    def _process_endpoint(self, bp: bool) -> EndPoint:
-        """BP 또는 EP 처리"""
-        coord3d = self.bvedata.coords[0] if bp else self.bvedata.coords[-1]
-        dir3d = self.bvedata.directions[0] if bp else self.bvedata.directions[-1]
-        coord2d = to2d(coord3d)
-        azimuth = to2d(dir3d).toradian()
-
-        return EndPoint(
-            coord=coord2d,
-            direction=azimuth,
-        )
-
-    def define_iscurve(self, section: list[Curve]) -> CurveType:
+    @staticmethod
+    def define_iscurve(section: list[Curve]) -> CurveType:
         """
         단곡선(Simple) / 복심곡선(Compound) / 완화곡선(Spiral) 구분
 
@@ -175,7 +132,8 @@ class Calculator:
 
         return CurveType.NONE
 
-    def define_section_radius(self, section: list[Curve], curvetype: CurveType = None) -> tuple[float, float]:
+    @staticmethod
+    def define_section_radius(section: list[Curve], curvetype: CurveType = None) -> tuple[float, float]:
         """
         구간 내 곡선 반경(r1, r2) 찾기 (단곡선, 복곡선, 완화곡선 포함)
 
@@ -188,12 +146,6 @@ class Calculator:
         """
         radius = 0.0
         radius2 = 0.0
-
-        # ------------------------
-        # 곡선 타입 판별
-        # ------------------------
-        if curvetype is None:
-            curvetype = self.define_iscurve(section)
 
         # 단곡선: 반경 1개만 존재
         if curvetype == CurveType.Simple:
@@ -218,204 +170,6 @@ class Calculator:
 
         return radius, radius2
 
-    def _process_curve_section(self, section: list[Curve], ipno: int) -> list[IPdata]:
-        """곡선 구간 처리 메인"""
-        curvetype = self.define_iscurve(section)
-
-        if curvetype in (CurveType.Simple, CurveType.Reverse):
-            return self._process_simple_curve(section, ipno)
-        elif curvetype == CurveType.Compound:
-            return self._process_complex_curve(section, ipno)
-        elif curvetype == CurveType.Spiral:
-            return self._process_spiral_curve(section, ipno)
-        else:
-            raise ValueError(f"Unknown CurveType: {curvetype}")
-
-    # ---------------------
-    # 단곡선 처리
-    def _process_simple_curve(self, section: list[Curve], ipno: int | str) -> list[IPdata]:
-        bc_curve, ec_curve = section[0], section[-1]
-        bc_sta, ec_sta = bc_curve.station, ec_curve.station
-        cl = ec_sta - bc_sta
-        r, _ = self.define_section_radius(section, CurveType.Simple)
-
-        curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
-
-        r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
-
-        # ia가 180° 이상이면 분할메소드 처리
-        if ia > math.pi:
-            # 재귀호출
-            pcc_curve = self.split_simplecurve_section(bc_curve, ec_curve, r, curve_direction)
-            section1 = [bc_curve, pcc_curve]
-            section2 = [pcc_curve, ec_curve]
-            ipdata_list = []
-            ipdata_list.extend(self._process_simple_curve(section1, f"{ipno}-1"))
-            ipdata_list.extend(self._process_simple_curve(section2, f"{ipno}-2"))
-            return ipdata_list
-
-        bc_coord, ec_coord = bc_curve.coord, ec_curve.coord
-        bc_azimuth, ec_azimuth = bc_curve.direction, ec_curve.direction
-        center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
-        ip_coord = self._calculate_ip_coord(bc_coord, ec_coord, bc_azimuth, ec_azimuth)
-
-        curve_segment = self._create_curve_segment(r, bc_sta, ec_sta,
-                                                   bc_coord, ec_coord, center_coord,
-                                                   tl, cl, sl, m,
-                                                   bc_azimuth, ec_azimuth)
-        ipdata = IPdata(ipno=ipno,
-                        curvetype=CurveType.Simple,
-                        curve_direction=curve_direction,
-                        radius=r,
-                        ia=ia,
-                        coord=ip_coord,
-                        segment=[curve_segment])
-
-        return [ipdata]
-
-    # ---------------------
-    # 복심곡선 처리
-    def _process_complex_curve(self, section: list[Curve], ipno: int) -> list[IPdata]:
-        """
-        복심곡선 처리 메소드
-        Args:
-            section: 구간
-            ipno: ip번호
-
-        Returns:
-            IPdata
-        """
-        # BC,PCC,EC 언팩
-        bc_curve, pcc_curve, ec_curve = section[0], section[1], section[-1]
-        bc_sta, pcc_sta, ec_sta = bc_curve.station, pcc_curve.station, ec_curve.station
-        # 전체 cl
-        cl = ec_sta - bc_sta
-        # 개별 cl
-        cl1, cl2 = pcc_sta - bc_sta, ec_sta - pcc_sta
-        cl_list = cl1, cl2
-        radii = self.define_section_radius(section)
-        # 복심곡선 반경1, 반경2
-        r1, r2 = radii
-        curve_direction = CurveDirection.RIGHT if r1 > 0 else CurveDirection.LEFT
-        curve_segment_list = []
-
-        # ----- 1) total IA 빠른 계산 -----
-        ia_list = []
-        for r, cl in zip(radii, cl_list):
-            _, ia, _, _, _ = self._calculate_curve_geometry(r, cl)
-            ia_list.append(ia)
-
-        total_ia = sum(ia_list)
-
-        # ----- 2) IA > 180° 이면 즉시 분할 후 SimpleCurve로 위임 -----
-        if total_ia > math.pi:
-            ipdata_list = []
-            for (r, cl, bc_seg, ec_seg, ia) in [
-                (r1, cl1, bc_curve, pcc_curve, ia_list[0]),
-                (r2, cl2, pcc_curve, ec_curve, ia_list[1]),
-            ]:
-                # IA가 90° 넘는 반경만 분할
-                if ia > math.pi / 2:
-                    pcc_curve2 = self.split_simplecurve_section(bc_seg, ec_seg, r, curve_direction)
-                    section1 = [bc_seg, pcc_curve2]
-                    section2 = [pcc_curve2, ec_seg]
-                    for i, sec in enumerate([section1, section2], start=1):
-                        ipdata_list.extend(self._process_simple_curve(sec, f'{ipno}-{i + 1}'))
-                else:
-                    ipdata_list.extend(self._process_simple_curve([bc_seg, ec_seg], f'{ipno}-{1}'))
-            return ipdata_list
-
-        # 정상로직
-        ia_list = []
-        for i, (r, cl) in enumerate(zip(radii, cl_list)):
-            # 각 구간 BC, EC 설정
-            if i == 0:
-                bc_curve_seg, ec_curve_seg = bc_curve, pcc_curve
-            else:
-                bc_curve_seg, ec_curve_seg = pcc_curve, ec_curve
-            r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
-            ia_list.append(ia)
-            bc_coord, ec_coord = bc_curve_seg.coord, ec_curve_seg.coord
-            bc_azimuth, ec_azimuth = bc_curve_seg.direction, ec_curve_seg.direction
-            center_coord = self.calculate_curve_center(bc_coord, ec_coord, r, curve_direction)
-            curve_segment_list.append(
-                self._create_curve_segment(r, bc_sta, ec_sta,
-                                           bc_coord, ec_coord, center_coord,
-                                           tl, cl, sl, m,
-                                           bc_azimuth, ec_azimuth)
-            )
-        # 대표 IP제원 다시계산
-        ia = sum(ia_list)
-        ip_coord = self._calculate_ip_coord(bc_curve.coord, ec_curve.coord, bc_curve.direction, ec_curve.direction)
-        return [IPdata(ipno=ipno,
-                       curvetype=CurveType.Compound,
-                       curve_direction=curve_direction,
-                       radius=radii,
-                       ia=ia,
-                       coord=ip_coord,
-                       segment=curve_segment_list)]
-
-    # ---------------------
-    # 완화곡선 처리
-    def _process_spiral_curve(self, section: list[Curve], ipno: int) -> list[IPdata]:
-        #원곡선 반경
-        r, _ = self.define_section_radius(section)
-        curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
-
-        # 완화곡선 인덱스 찾기
-        pc_idx, cp_idx = self.define_spiral_spec(section, direction=curve_direction)
-        sp_curve, ps_curve = section[0], section[-1]
-        pc_curve, cp_curve = section[pc_idx], section[cp_idx]
-
-        #언팩
-        sp_sta, pc_sta, cp_sta, ps_sta = sp_curve.station, pc_curve.station, cp_curve.station, ps_curve.station
-        sp_coord, pc_coord, cp_coord, ps_coord = sp_curve.coord, pc_curve.coord, cp_curve.coord, ps_curve.coord
-        sp_direction, pc_direction, cp_direction, ps_direction = sp_curve.direction, pc_curve.direction, cp_curve.direction, ps_curve.direction
-
-        cl = ps_sta - sp_sta #전체 cl
-        l1 = pc_sta - sp_sta #시점 완화곡선 길이
-        l2 = ps_sta - cp_sta #종점 완화곡선 길이
-        lc = cp_sta - pc_sta #원곡선 길이
-        ia = ps_curve.direction - sp_curve.direction #교각
-        #ip좌표
-        ip_coord = self._calculate_ip_coord(sp_curve.coord, ps_curve.coord, sp_curve.direction, ps_curve.direction)
-
-        # 세그먼트 계산
-        segment_list = []
-        # 시점 완화곡선 여부
-        if l1 > 0:
-            spiral_parameter = self._calculate_spiralcurve_geometry(r, l1, ia)
-            segment_list.append(self._create_spiral_segment(spiral_parameter, sp_sta, pc_sta, l1, sp_curve,pc_curve, isstart=True)
-            )
-
-        # 중간 원곡선
-        if lc > 0:
-            r, ia2, tl, m, sl = self._calculate_curve_geometry(r, lc)
-            center_coord = self.calculate_curve_center(pc_coord, cp_coord, r, curve_direction)
-            segment_list.append(
-                self._create_curve_segment(
-                    r, pc_sta, cp_sta,
-                    pc_coord, cp_coord, center_coord,
-                    tl, lc, sl, m,
-                    pc_direction, cp_direction
-                )
-            )
-
-        # 종점 완화곡선 여부
-        if l2 > 0:
-            start = False
-            spiral_parameter = self._calculate_spiralcurve_geometry(r, l2, ia)
-            segment_list.append(self._create_spiral_segment(spiral_parameter, cp_sta, ps_sta, l2, cp_curve, ps_curve, isstart=False)
-                                )
-        return [IPdata(ipno=ipno,
-                      curvetype=CurveType.Spiral,
-                      curve_direction=curve_direction,
-                      radius=r,
-                      ia=ia,
-                      coord=ip_coord,
-                      segment=segment_list
-                      )]
-
     def split_simplecurve_section(self, bc_curve: Curve, ec_curve: Curve ,r: float, direction: CurveDirection) -> Curve:
         """
         단곡선을 복심곡선으로 분할하는 메소드
@@ -434,6 +188,9 @@ class Calculator:
         """
         단곡선내 측점(station)으로 좌표를 찾고 해당 구간 Curve객체 생성 후 반환
         Args:
+            station: 측점
+            r: 곡선반경
+            direction: CurveDirection
             bc_curve: bc Curve객체
             ec_curve: ec Curve객체
 
@@ -464,7 +221,8 @@ class Calculator:
         #7. Curve객체 생성
         return Curve(station=station, radius=r, direction=azimuth_tangent,cant=0,coord=Vector2(x=stationxy[0], y=stationxy[1]))
 
-    def calculate_curve_center(self, bc_xy: Vector2, ec_xy: Vector2,
+    @staticmethod
+    def calculate_curve_center(bc_xy: Vector2, ec_xy: Vector2,
                                radius: float, direction: CurveDirection) -> Vector2:
         """
         BC, EC와 반지름 R이 주어졌을 때 원의 중심을 계산.
@@ -515,7 +273,8 @@ class Calculator:
 
         return Vector2(x=chosen_x, y=chosen_y)
 
-    def _calculate_curve_geometry(self, radius, cl) -> tuple:
+    @staticmethod
+    def calculate_curve_geometry(radius, cl) -> tuple:
         """
         Private메소드 단곡선 제원 계산
         Args:
@@ -533,7 +292,8 @@ class Calculator:
 
         return r, ia, tl, m, sl
 
-    def _calculate_spiralcurve_geometry(self, radius, length, ia) -> tuple:
+    @staticmethod
+    def calculate_spiralcurve_geometry(radius, length, ia) -> tuple:
         """
         완화곡선 제원 산출용 프라이베이트 메소드
         Returns:
@@ -561,99 +321,8 @@ class Calculator:
 
         return x1, x2, w13, y1, w15,f, s, k, w, tl,lc, cl, sl, ia2,c, xb, b
 
-    def _calculate_ip_coord(self, bc_xy, ec_xy, bc_azimuth, ec_azimuth) -> Vector2:
-        """
-        Private 메소드: IP 좌표 계산 래퍼
-        Args:
-            bc_xy (Vector2): BC 좌표
-            ec_xy (Vector2): EC 좌표
-            bc_azimuth (float): BC 각도 라디안
-            ec_azimuth (float): EC 각도 라디안
-        Returns:
-            Vector2: IP 좌표
-        """
-        return  self.calculate_intersection_point(bc_xy, ec_xy, bc_azimuth, ec_azimuth)
-
-    def _create_curve_segment(self, r, bc_sta, ec_sta, bc_coord, ec_coord, center_coord,
-                              tl,cl,sl,m, bc_azimuth, ec_azimuth) -> CurveSegment:
-        """
-        Private 메소드: CurveSegment객체 생성
-        Args:
-            r (float): 곡선 반경
-            bc_sta (float): BC 측점
-            ec_sta (float): EC 측점
-            bc_coord (Vector2): BC 좌표
-            ec_coord (Vector2): EC 좌표
-            center_coord (Vector2): 곡선 중심 좌표
-            tl (float): 접선장
-            cl (float): 곡선장
-            sl (float): 외할장
-            m (float): 중앙종거
-            bc_azimuth (float): 시작 방위각 라디안
-            ec_azimuth (float): 종료 방위각 라디안
-        Returns:
-            CurveSegment
-        """
-        return CurveSegment(
-            radius=r,
-            start_sta=bc_sta,
-            end_sta=ec_sta,
-            start_coord=bc_coord,
-            end_coord=ec_coord,
-            center_coord=center_coord,
-            tl=tl,
-            length=cl,
-            sl=sl,
-            m=m,
-            start_azimuth=bc_azimuth,
-            end_azimuth=ec_azimuth,
-        )
-
-    def _create_spiral_segment(self, parameter: tuple, start_sta: float, end_sta: float, length: float, start: Curve, end: Curve, isstart=True) -> SpiralSegment:
-        """
-        Private 메소드: SpiralSegment객체 생성
-        Args:
-            parameter(tuple): 완화곡선 파라메터 튜플 create_curve_segment
-            start_sta(float): 시작 측점
-            end_sta(float): 끝 측점
-            length(float): 길이
-            start(Curve): 시작 Curve객체
-            end(Curve): 끝 Curve객체
-            isstart(bool): 시작 완화곡선 여부
-        Returns:
-            SpiralSegment
-        """
-
-        x1, x2, w13, y1, w15, f, s, k, w, tl, lc, cl, sl, ia2, c, xb, b = parameter
-        return SpiralSegment(
-            start_sta=start_sta,
-            end_sta=end_sta,
-            length=length,
-            start_coord=start.coord,
-            end_coord=end.coord,
-            start_azimuth=start.direction,
-            end_azimuth=end.direction,
-            x1=x1,
-            x2=x2,
-            w13=w13,
-            y1=y1,
-            w15=w15,
-            f=f,
-            s=s,
-            k=k,
-            w=w,
-            tl=tl,
-            lc=lc,
-            total_length=cl,
-            sl=sl,
-            ria=ia2,
-            c=c,
-            xb=xb,
-            b=b,
-            isstarted=isstart,
-        )
-
-    def define_spiral_spec(self, section: list[Curve], direction: CurveDirection) -> \
+    @staticmethod
+    def define_spiral_spec(section: list[Curve], direction: CurveDirection) -> \
             tuple[int, int]:
         """
         구간내에서 완화곡선 제원 인덱스 찾기
@@ -693,23 +362,22 @@ class Calculator:
 
         return pc_index, cp_index
 
-    def calculate_stationinfo(self):
-        bvedata = self.bvedata
+    def calculate_stationinfo(self, bvedata: BVERouteData):
         curve_dict = {curve.station: curve for curve in bvedata.curves}
         for station in bvedata.stations:
             if station.station % bvedata.block_interval != 0:
                 # block_interval이 아닌경우 선형에서 좌표와 각돌을 찾아야함
-                curve = self.calculate_between_two_point(station.station)
+                curve = self.calculate_between_two_point(bvedata, station.station)
             else:
                 curve = curve_dict.get(station.station)
             if curve:
                 station.coord = curve.coord
                 station.direction = curve.direction
 
-    def calculate_between_two_point(self, target_station):
-        curves = self.bvedata.curves
-        last_station = self.bvedata.stations[-1].station
-        last_coord = self.bvedata.stations[-1].coord
+    def calculate_between_two_point(self, bvedata: BVERouteData, target_station: float):
+        curves = bvedata.curves
+        last_station = bvedata.stations[-1].station
+        last_coord = bvedata.stations[-1].coord
 
         # 중간 곡선/직선 구간 처리
         for j, curve in enumerate(curves):
@@ -747,7 +415,8 @@ class Calculator:
 
         return None
 
-    def calculate_point_by_station_for_straight(self, p1: Curve, p2: Curve, direction: float,
+    @staticmethod
+    def calculate_point_by_station_for_straight(p1: Curve, p2: Curve, direction: float,
                                                 target_station: float) -> Curve:
         """
         target_station 위치의 직선 좌표와 방향 계산

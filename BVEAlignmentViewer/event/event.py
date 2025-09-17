@@ -1,5 +1,7 @@
 from tkinter import messagebox
 from controller.controller_base import AppController
+from core.alignment.alginmentcalculator import AlignmentCalculator
+from core.alignment.alignmentbuilder import AlignmentBuilder
 from core.processor import RouteProcessor
 
 
@@ -48,14 +50,14 @@ class EventHandler:
             # 전처리
             routeprocessor = RouteProcessor(bve_data)  # 인스턴스 생성
             routeprocessor.run()
-            # 인스턴스 초기화
-            self.app_controller.calculator.init_bvedata(bve_data)
             # 선형객체 빌드
-            alignments = self.app_controller.calculator.build_ipdata_from_sections()
+            alignments = AlignmentBuilder.build_ipdata_from_sections(bve_data)
             # 정거장 정보 계산
-            self.app_controller.calculator.calculate_stationinfo()
+            calculator = AlignmentCalculator()
+            calculator.calculate_stationinfo(bve_data)
+
             #종단 객체 빌드
-            profile =  self.app_controller.profilebuilder.build_profile()
+            #profile =  self.app_controller.profilebuilder.build_profile()
             # 선형객체 저장
             self.app_controller.alignments = alignments
             # PlotFrame에 데이터 설정

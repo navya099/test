@@ -1,10 +1,8 @@
 from tkinter import filedialog, messagebox
 
 from RouteManager2.CurrentRoute import CurrentRoute
-from core.calculator import Calculator
 from core.datacontainer import BVERouteFactory
 from core.parser import CSVRouteParser
-from core.profilebuilder import ProfileBuilder
 from fileexporter.dxfmanager import DXFController
 
 
@@ -19,8 +17,6 @@ class AppController:
         main_app (tk.Tk) TK 메인 인스턴스
         file_ctrl(FileController): 파일 열기/저장 및 경로 관리를 담당하는 컨트롤러
         parser (CSVRouteParser): CSVRouteParser 호출용 클래스
-        calculator (Calculator): 선형 계산용 클래스
-        profilebuilder(ProfileBuilder): 종단 객체 생성 클래스
     """
     def __init__(self, main_app, file_controller):
         self.current_route = None
@@ -31,8 +27,6 @@ class AppController:
         self.bvedata = None
         # 기능 전담 클래스 인스턴스 보관
         self.parser = CSVRouteParser()
-        self.calculator = Calculator()
-        self.profilebuilder = ProfileBuilder()
 
     def load_route(self, filepath: str):
         """
