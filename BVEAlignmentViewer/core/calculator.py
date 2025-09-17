@@ -1,14 +1,13 @@
 import math
-import statistics
-
-import numpy as np
-from numpy.ma.core import angle
-
-from math_utils import get_station_by_block_index, get_block_index, calculate_bearing, calculate_coordinates,calculate_distance
-from model.model import Curve, IPdata, CurveDirection, CurveSegment, BVERouteData, CurveType, EndPoint, SpiralSegment
+from math_utils import calculate_bearing, calculate_coordinates,calculate_distance
+from model.bveroutedata import BVERouteData
+from model.bvetrack import Curve
+from curvetype import CurveType
+from model.ipdata import IPdata, EndPoint
+from model.segment import CurveSegment, SpiralSegment
 from vector2 import Vector2
-from vector3 import Vector3, to2d
-
+from vector3 import to2d
+from curvedirection import CurveDirection
 
 class Calculator:
     """
@@ -92,7 +91,7 @@ class Calculator:
                         # 복심곡선 판단[166,300,0]
                         if first_radius * second_radius > 0:
                             # 복심곡선
-                            curve_type = CurveType.Complex
+                            curve_type = CurveType.Compound
                             sections.append(current_section)
                             current_section = []
                         elif first_radius * second_radius < 0:
@@ -163,7 +162,7 @@ class Calculator:
 
         # ✅ 복심곡선 (ex: [600, 500, 0] or [600, -500, 0])
         if len(section) == 3 and radii[-1] == 0:
-            return CurveType.Complex
+            return CurveType.Compound
 
         # ✅ 완화곡선
         if len(section) > 3 and radii[-1] == 0 and all(r != 0 for r in radii[:-1]):
@@ -201,7 +200,7 @@ class Calculator:
             radius = section[0].radius
 
         # 복곡선: 반경 2개 존재
-        elif curvetype == CurveType.Complex:
+        elif curvetype == CurveType.Compound:
             radius = section[0].radius
             radius2 = section[1].radius
 
@@ -225,7 +224,7 @@ class Calculator:
 
         if curvetype in (CurveType.Simple, CurveType.Reverse):
             return self._process_simple_curve(section, ipno)
-        elif curvetype == CurveType.Complex:
+        elif curvetype == CurveType.Compound:
             return self._process_complex_curve(section, ipno)
         elif curvetype == CurveType.Spiral:
             return self._process_spiral_curve(section, ipno)
@@ -239,6 +238,7 @@ class Calculator:
         bc_sta, ec_sta = bc_curve.station, ec_curve.station
         cl = ec_sta - bc_sta
         r, _ = self.define_section_radius(section, CurveType.Simple)
+
         curve_direction = CurveDirection.RIGHT if r > 0 else CurveDirection.LEFT
 
         r, ia, tl, m, sl = self._calculate_curve_geometry(r, cl)
@@ -348,7 +348,7 @@ class Calculator:
         ia = sum(ia_list)
         ip_coord = self._calculate_ip_coord(bc_curve.coord, ec_curve.coord, bc_curve.direction, ec_curve.direction)
         return [IPdata(ipno=ipno,
-                       curvetype=CurveType.Complex,
+                       curvetype=CurveType.Compound,
                        curve_direction=curve_direction,
                        radius=radii,
                        ia=ia,

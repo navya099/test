@@ -1,6 +1,11 @@
 import ezdxf
+
+from curvedirection import CurveDirection
+from curvetype import CurveType
 from math_utils import angle_from_center, calculate_coordinates, degrees_to_dms, calculate_bulge, calculate_curve_center
-from model.model import IPdata, CurveType, CurveDirection, CurveSegment, SpiralSegment, BVERouteData
+from model.bveroutedata import BVERouteData
+from model.ipdata import IPdata
+from model.segment import CurveSegment, SpiralSegment
 from utils import try_parse_int, format_distance
 import math
 
@@ -112,7 +117,7 @@ class DXFController:
             elif i == len(ipdata_list) - 1:
                 points.append((ip.coord.x, ip.coord.y, 0))
             else:
-                if ip.curvetype in (CurveType.Simple, CurveType.Complex):
+                if ip.curvetype in (CurveType.Simple, CurveType.Compound):
                     for j, seg in enumerate(ip.segment):
                         # Bulge 계산
                         start_angle = angle_from_center(seg.center_coord, seg.start_coord)
@@ -186,7 +191,7 @@ class DXFController:
         """
 
         #ip내부 호 객체 요소 추출
-        if ip.curvetype in (CurveType.Simple, CurveType.Complex):
+        if ip.curvetype in (CurveType.Simple, CurveType.Compound):
             for seg in ip.segment:
                 center = seg.center_coord
                 start = seg.start_coord

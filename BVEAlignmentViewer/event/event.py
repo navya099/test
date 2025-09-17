@@ -1,7 +1,4 @@
-import os
-from copy import deepcopy
 from tkinter import messagebox
-
 from controller.controller_base import AppController
 from core.processor import RouteProcessor
 
@@ -57,6 +54,8 @@ class EventHandler:
             alignments = self.app_controller.calculator.build_ipdata_from_sections()
             # 정거장 정보 계산
             self.app_controller.calculator.calculate_stationinfo()
+            #종단 객체 빌드
+            profile =  self.app_controller.profilebuilder.build_profile()
             # 선형객체 저장
             self.app_controller.alignments = alignments
             # PlotFrame에 데이터 설정

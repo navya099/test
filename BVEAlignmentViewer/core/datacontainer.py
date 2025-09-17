@@ -1,4 +1,5 @@
-from model.model import BVERouteData, Curve, Pitch, Station
+from model.bveroutedata import BVERouteData
+from model.bvetrack import Pitch, Curve, Station
 
 class BVERouteFactory:
     """
@@ -31,6 +32,7 @@ class BVERouteFactory:
 
         # Curve & Pitch 생성
         for idx, trackpos in enumerate(trackpositions):
+
             curves.append(Curve(trackpos, radiuss[idx], 0))
             pitchs.append(Pitch(trackpos, pitch_values[idx]))
 

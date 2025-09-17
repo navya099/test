@@ -1,6 +1,4 @@
-from copy import deepcopy
-
-from model.model import BVERouteData, Curve, Pitch
+from model.bveroutedata import BVERouteData
 from vector2 import Vector2
 
 class RouteProcessor:

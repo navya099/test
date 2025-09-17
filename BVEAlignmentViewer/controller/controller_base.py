@@ -4,8 +4,8 @@ from RouteManager2.CurrentRoute import CurrentRoute
 from core.calculator import Calculator
 from core.datacontainer import BVERouteFactory
 from core.parser import CSVRouteParser
+from core.profilebuilder import ProfileBuilder
 from fileexporter.dxfmanager import DXFController
-from model.model import BVERouteData
 
 
 
@@ -20,6 +20,7 @@ class AppController:
         file_ctrl(FileController): 파일 열기/저장 및 경로 관리를 담당하는 컨트롤러
         parser (CSVRouteParser): CSVRouteParser 호출용 클래스
         calculator (Calculator): 선형 계산용 클래스
+        profilebuilder(ProfileBuilder): 종단 객체 생성 클래스
     """
     def __init__(self, main_app, file_controller):
         self.current_route = None
@@ -31,6 +32,7 @@ class AppController:
         # 기능 전담 클래스 인스턴스 보관
         self.parser = CSVRouteParser()
         self.calculator = Calculator()
+        self.profilebuilder = ProfileBuilder()
 
     def load_route(self, filepath: str):
         """
@@ -115,4 +117,4 @@ class SettingsController:
         messagebox.showinfo("환경 설정", "환경 설정 창 열기")
 class HelpController:
     def show_help(self):
-        messagebox.showinfo(title='정보', message='개발자 : dger  빌드날짜 2025/09/15')
+        messagebox.showinfo(title='정보', message='개발자 : dger  빌드날짜 2025/09/17')

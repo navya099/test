@@ -4,11 +4,11 @@ from tkinter import messagebox
 from typing import Union
 
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-from model.model import BVERouteData, EndPoint, IPdata
+from model.bveroutedata import BVERouteData
+from model.ipdata import EndPoint, IPdata
 
 
 class ViewType(Enum):
