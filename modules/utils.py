@@ -1,3 +1,5 @@
+import uuid
+
 def remove_duplicate_radius(data: list[list[str]]) -> list[tuple[int, float, float]]:
     """
     radius 리스트에서 연속된 중복값을 제거하는 함수.
@@ -54,3 +56,6 @@ def format_distance(number):
 
     return formatted_distance
 
+def generate_entity_id() -> int:
+    """8자리 수준의 고유 ID 생성"""
+    return uuid.uuid4().int & 0xFFFFFFFF  # 하위 32비트만 사용
