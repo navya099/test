@@ -28,7 +28,7 @@ class BVERouteFactory:
         stations_list = []
 
         #리스트 언팩
-        trackpositions, radiuss, pitch_values, station_names, coords, directions = extracted_currentroute
+        trackpositions, radiuss, pitch_values, station_names, coords, directions, firstelevation = extracted_currentroute
 
         # Curve & Pitch 생성
         for idx, trackpos in enumerate(trackpositions):
@@ -47,6 +47,7 @@ class BVERouteFactory:
             pitchs=pitchs,
             stations=stations_list,
             coords=coords,
-            directions=directions
+            directions=directions,
+            first_elevation=firstelevation
             )
         return data

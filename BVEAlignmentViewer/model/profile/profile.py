@@ -1,35 +1,48 @@
+from model.profile.profileentity import ProfileEntity
+from model.profile.profileentitycollection import ProfileEntityCollection
 from model.profile.profilepvicollection import ProfilePVICollection
 
 
 class Profile:
     """
-    종단 정보 저장용 클래스.
+    A record of elevation against distance along a horizontal Alignment or other line. Profiles are used to visualize the terrain along a route of interest, such as a proposed road, or simply to show how the elevation changes across a particular region.
     """
     def __init__(self, name: str):
-        self.name = name
-        self.max_slope = max(pvi.elevation for pvi in self.pvis)
-        self.min_slope = 0.0
-        self.max_elevation = 0.0
-        self.min_elevation = 0.0
-        self.end_station = 0.0
-        self.start_station = 0.0
-        self.length = 0.0
+        self.name: str = name
         self.pvis: ProfilePVICollection = ProfilePVICollection()
+        self.entities: ProfileEntityCollection = ProfileEntityCollection()
 
-    # ✅ 예시 메서드들
-    def calculate_statistics(self):
-        """
-        PVI 목록 기반으로 최대/최소 경사 및 고도 계산
-        """
-        if not self.pvis:
-            return
-        self.max_slope = max(pvi.elevation for pvi in self.pvis)
-        self.min_slope = min(pvi.elevation for pvi in self.pvis)
-        self.max_elevation = max(pvi.elevation for pvi in self.pvis)
-        self.max_elevation = min(pvi.elevation for pvi in self.pvis)
-        self.start_station = self.pvis[0].station
-        self.end_station = self.pvis[-1].station
-        self.length = self.end_station - self.start_station
+    @property
+    def max_slope(self):
+        gradin = max((pvi.gradein for pvi in self.pvis), default=0.0)
+        gradeout = max((pvi.gradeout for pvi in self.pvis), default=0.0)
+        return max(gradin, gradeout)
+
+    @property
+    def min_slope(self):
+        gradin = min((pvi.gradein for pvi in self.pvis), default=0.0)
+        gradeout = min((pvi.gradeout for pvi in self.pvis), default=0.0)
+        return min(gradin, gradeout)
+
+    @property
+    def max_elevation(self):
+        return max((pvi.elevation for pvi in self.pvis), default=0.0)
+
+    @property
+    def min_elevation(self):
+        return min((pvi.elevation for pvi in self.pvis), default=0.0)
+
+    @property
+    def start_station(self):
+        return self.pvis[0].station if self.pvis else 0.0
+
+    @property
+    def end_station(self):
+        return self.pvis[-1].station if self.pvis else 0.0
+
+    @property
+    def length(self):
+        return self.end_station - self.start_station if self.pvis else 0.0
 
     def elevation_at_station(self, station: float) -> float:
         """
@@ -40,6 +53,9 @@ class Profile:
         Returns:
             elevation: float
         """
-        pass
+        for pvi in self.pvis:
+            if pvi.station == station:
+                return pvi.elevation
+        return 0.0
 
 

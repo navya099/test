@@ -1,4 +1,7 @@
+from dataclasses import dataclass
+
 from model.profile.profileentity import ProfileEntity
 
+@dataclass
 class ProfileTangent(ProfileEntity):
-    pass
+    grade: float = 0.0

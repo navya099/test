@@ -70,7 +70,9 @@ class CSVRouteParser:
             position = station.DefaultTrackPosition
             stations.append([position, name])
 
-        return [trackpositions, radiuss, pitchs, stations, coords, directions]
+        #초기표고
+        firstelevation = self.current_route.Atmosphere.InitialElevation
+        return [trackpositions, radiuss, pitchs, stations, coords, directions, firstelevation]
 
 
 

@@ -3,6 +3,7 @@ from controller.controller_base import AppController
 from core.alignment.alginmentcalculator import AlignmentCalculator
 from core.alignment.alignmentbuilder import AlignmentBuilder
 from core.processor import RouteProcessor
+from core.profile.profilebuilder import ProfileBuilder
 
 
 class EventHandler:
@@ -57,7 +58,7 @@ class EventHandler:
             calculator.calculate_stationinfo(bve_data)
 
             #종단 객체 빌드
-            #profile =  self.app_controller.profilebuilder.build_profile()
+            profile = ProfileBuilder.build_profile(bve_data)
             # 선형객체 저장
             self.app_controller.alignments = alignments
             # PlotFrame에 데이터 설정

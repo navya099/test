@@ -22,6 +22,7 @@ class BVERouteData:
         block_interval(float): 블록 간격 default 25
         firstindex(int): 처음 블록 인덱스
         lastindex(int): 마지막 블록 인덱스
+        first_elevation(float): 초기 표고
     """
     name: str
     curves: list[Curve] = None
@@ -34,6 +35,7 @@ class BVERouteData:
     block_interval: float = 25.0
     firstindex: int = 0
     lastindex: int = 0
+    first_elevation: float = 0.0
 
     def __post_init__(self):
         self.curves = self.curves or []
