@@ -1,6 +1,6 @@
 from core.profile.profilecalculator import ProfileCalculator
 from model.bveroutedata import BVERouteData
-from model.profile.profile import Profile
+from Profile.profile import Profile
 
 class ProfileProcessor:
     @staticmethod

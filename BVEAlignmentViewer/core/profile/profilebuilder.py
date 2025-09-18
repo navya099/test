@@ -1,6 +1,6 @@
 from core.profile.profileprocessor import ProfileProcessor
 from model.bveroutedata import BVERouteData
-from model.profile.profile import Profile
+from Profile.profile import Profile
 
 
 class ProfileBuilder:
