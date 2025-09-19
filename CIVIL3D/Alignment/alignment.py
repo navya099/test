@@ -1,4 +1,4 @@
-from Alignment.alignmententitycollection import AlignmentEntityCollection
+from Alignment.AlignmentEntity.alignmententitycollection import AlignmentEntityCollection
 from Alignment.alignmenttype import AlignmentType
 
 
