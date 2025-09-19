@@ -1,4 +1,6 @@
 import math
+
+from point2d import Point2d
 from vector2 import Vector2
 from curvedirection import CurveDirection
 
@@ -189,3 +191,31 @@ def calculate_distance(p1: Vector2, p2: Vector2) -> float:
     # Calculate the distance between two points in Cartesian coordinates
     distance = math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
     return distance
+
+def calculate_midpoint(p1: Point2d, p2: Point2d) -> Point2d:
+    """
+    두 점의 중점을 계산합니다.
+
+    Args:
+        p1 (Point2d): 첫 번째 점
+        p2 (Point2d): 두 번째 점
+
+    Returns:
+        Point2d: 중점 좌표
+    """
+    return Point2d(
+        (p1.x + p2.x) / 2.0,
+        (p1.y + p2.y) / 2.0,
+    )
+
+def calculate_pass_through_point(start: Point2d, end: Point2d, through_point: Point2d) -> Point2d:
+    """
+    두 점을 이루는 직선에서 임의의 통과점을 넣으면 통과점 2를 반환
+    Args:
+        start:
+        end:
+        through_point:
+
+    Returns:
+
+    """
