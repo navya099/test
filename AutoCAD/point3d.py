@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from point2d import Point2D
+from point2d import Point2d
 
 @dataclass
-class Point3D:
+class Point3d:
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
@@ -12,4 +12,4 @@ class Point3D:
         return self.x, self.y, self.z
 
     def convert_2d(self):
-        return Point2D(self.x, self.y)
+        return Point2d(self.x, self.y)
