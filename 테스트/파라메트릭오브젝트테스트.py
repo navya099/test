@@ -1,637 +1,78 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import os
 
-def B2_colum():
-    colum = """
-;Jeminie SketchUp to CSV
-CreateMeshBuilder,
-AddVertex, 1.907, -0.1, 1.4, -1.0, 0.0, 0.0,
-AddVertex, 1.907, 4.95, 0.0, -1.0, 0.0, 0.0,
-AddVertex, 1.907, -0.1, 0.0, -1.0, 0.0, 0.0,
-AddVertex, 1.907, 4.95, 1.4, -1.0, 0.0, 0.0,
-AddVertex, 2.407, -0.1, 1.4, 0.0, 0.0, 1.0,
-AddVertex, 1.907, 4.95, 1.4, 0.0, 0.0, 1.0,
-AddVertex, 1.907, -0.1, 1.4, 0.0, 0.0, 1.0,
-AddVertex, 2.407, 4.95, 1.4, 0.0, 0.0, 1.0,
-AddVertex, 1.907, -0.1, 1.4, 0.0, -1.0, 0.0,
-AddVertex, 2.407, -0.1, 0.0, 0.0, -1.0, 0.0,
-AddVertex, 2.407, -0.1, 1.4, 0.0, -1.0, 0.0,
-AddVertex, 1.907, -0.1, 0.0, 0.0, -1.0, 0.0,
-AddVertex, 1.907, 4.95, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 2.407, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 1.907, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 2.407, 4.95, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 1.907, 4.95, 0.0, 0.0, 1.0, 0.0,
-AddVertex, 2.407, 4.95, 1.4, 0.0, 1.0, 0.0,
-AddVertex, 2.407, 4.95, 0.0, 0.0, 1.0, 0.0,
-AddVertex, 1.907, 4.95, 1.4, 0.0, 1.0, 0.0,
-AddVertex, 2.407, 4.95, 1.4, 1.0, 0.0, 0.0,
-AddVertex, 2.407, -0.1, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 2.407, 4.95, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 2.407, -0.1, 1.4, 1.0, 0.0, 0.0,
-AddFace, 2, 0, 1,
-AddFace, 3, 1, 0,
-AddFace, 6, 4, 5,
-AddFace, 7, 5, 4,
-AddFace, 10, 8, 9,
-AddFace, 11, 9, 8,
-AddFace, 14, 12, 13,
-AddFace, 15, 13, 12,
-AddFace, 18, 16, 17,
-AddFace, 19, 17, 16,
-AddFace, 22, 20, 21,
-AddFace, 23, 21, 20,
-LoadTexture, Polished Concrete Old.jpg,
-SetColor, 255, 255, 255, 255,
-SetTextureCoordinates, 0, 1.531, 1.0,
-SetTextureCoordinates, 1, 0.0, -4.523,
-SetTextureCoordinates, 2, 0.0, 1.0,
-SetTextureCoordinates, 3, 1.531, -4.523,
-SetTextureCoordinates, 4, 0.0, 1.0,
-SetTextureCoordinates, 5, -0.547, -4.523,
-SetTextureCoordinates, 6, -0.547, 1.0,
-SetTextureCoordinates, 7, 0.0, -4.523,
-SetTextureCoordinates, 8, -0.547, -0.531,
-SetTextureCoordinates, 9, 0.0, 1.0,
-SetTextureCoordinates, 10, 0.0, -0.531,
-SetTextureCoordinates, 11, -0.547, 1.0,
-SetTextureCoordinates, 12, 0.547, -4.523,
-SetTextureCoordinates, 13, 0.0, 1.0,
-SetTextureCoordinates, 14, 0.547, 1.0,
-SetTextureCoordinates, 15, 0.0, -4.523,
-SetTextureCoordinates, 16, 0.547, 1.0,
-SetTextureCoordinates, 17, 0.0, -0.531,
-SetTextureCoordinates, 18, 0.0, 1.0,
-SetTextureCoordinates, 19, 0.547, -0.531,
-SetTextureCoordinates, 20, -1.531, -4.523,
-SetTextureCoordinates, 21, 0.0, 1.0,
-SetTextureCoordinates, 22, 0.0, -4.523,
-SetTextureCoordinates, 23, -1.531, 1.0,
-"""
-    return colum
+class Translater:
+    @staticmethod
+    def translate(x=0,y=0,z=0):
+        return f'Translate, {x}, {y}, {z}\n'
+    @staticmethod
+    def translateall(x=0,y=0,z=0):
+        return f'TranslateAll, {x}, {y}, {z}\n'
+    @staticmethod
+    def mirror(x=0,y=0,z=0):
+        return f'Mirror, {x}, {y}, {z}\n'
+    @staticmethod
+    def mirrorall(x=0,y=0,z=0):
+        return f'MirrorAll, {x}, {y}, {z}\n'
 
-def B2_endpoint_wall(line_distance):
-    wall = """
-;Jeminie SketchUp to CSV
-CreateMeshBuilder,
-AddVertex, -5.3, -0.1, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -5.3, -0.7, 1.0, -1.0, 0.0, 0.0,
-AddVertex, -5.3, -0.7, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -5.3, -0.1, 1.0, -1.0, 0.0, 0.0,
-AddVertex, -5.3, 5.25, 0.0, -0.707, 0.707, 0.0,
-AddVertex, -5.7, 4.85, 1.0, -0.707, 0.707, 0.0,
-AddVertex, -5.7, 4.85, 0.0, -0.707, 0.707, 0.0,
-AddVertex, -5.3, 5.25, 1.0, -0.707, 0.707, 0.0,
-AddVertex, -5.7, 4.85, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -5.7, -0.1, 1.0, -1.0, 0.0, 0.0,
-AddVertex, -5.7, -0.1, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -5.7, 4.85, 1.0, -1.0, 0.0, 0.0,
-AddVertex, -5.7, 4.85, 1.0, 0.0, 0.0, 1.0,
-AddVertex, -5.3, -0.1, 1.0, 0.0, 0.0, 1.0,
-AddVertex, -5.7, -0.1, 1.0, 0.0, 0.0, 1.0,
-AddVertex, -2.1, -0.7, 1.0, 0.0, 0.0, 1.0,
-AddVertex, -5.3, -0.7, 1.0, 0.0, 0.0, 1.0,
-AddVertex, -2.1, 5.25, 1.0, 0.0, 0.0, 1.0,
-AddVertex, -5.3, 5.25, 1.0, 0.0, 0.0, 1.0,
-AddVertex, -2.1, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -5.3, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -5.3, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -2.1, 5.25, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -5.7, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -5.7, 4.85, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -5.3, 5.25, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -5.3, -0.1, 1.0, 0.0, -1.0, 0.0,
-AddVertex, -5.7, -0.1, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -5.7, -0.1, 1.0, 0.0, -1.0, 0.0,
-AddVertex, -5.3, -0.1, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -2.1, -0.7, 1.0, 0.0, -1.0, 0.0,
-AddVertex, -5.3, -0.7, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -5.3, -0.7, 1.0, 0.0, -1.0, 0.0,
-AddVertex, -2.1, -0.7, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -2.1, -0.7, 1.0, 1.0, 0.0, 0.0,
-AddVertex, -2.1, 5.25, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -2.1, -0.7, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -2.1, 5.25, 1.0, 1.0, 0.0, 0.0,
-AddVertex, -2.1, 5.25, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -5.3, 5.25, 1.0, 0.0, 1.0, 0.0,
-AddVertex, -5.3, 5.25, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -2.1, 5.25, 1.0, 0.0, 1.0, 0.0,
-AddFace, 0, 2, 1,
-AddFace, 1, 3, 0,
-AddFace, 4, 6, 5,
-AddFace, 5, 7, 4,
-AddFace, 8, 10, 9,
-AddFace, 9, 11, 8,
-AddFace, 12, 14, 13,
-AddFace, 13, 16, 15,
-AddFace, 15, 17, 13,
-AddFace, 17, 12, 13,
-AddFace, 17, 18, 12,
-AddFace, 19, 21, 20,
-AddFace, 20, 22, 19,
-AddFace, 20, 23, 22,
-AddFace, 23, 24, 22,
-AddFace, 24, 25, 22,
-AddFace, 26, 28, 27,
-AddFace, 27, 29, 26,
-AddFace, 30, 32, 31,
-AddFace, 31, 33, 30,
-AddFace, 34, 36, 35,
-AddFace, 35, 37, 34,
-AddFace, 38, 40, 39,
-AddFace, 39, 41, 38,
-LoadTexture, Polished Concrete Old.jpg,
-SetColor, 255, 255, 255, 255,
-SetTextureCoordinates, 0, 0.0, 1.109,
-SetTextureCoordinates, 1, -1.094, 1.766,
-SetTextureCoordinates, 2, 0.0, 1.766,
-SetTextureCoordinates, 3, -1.094, 1.109,
-SetTextureCoordinates, 4, 0.0, 1.039,
-SetTextureCoordinates, 5, -1.094, 1.657,
-SetTextureCoordinates, 6, 0.0, 1.657,
-SetTextureCoordinates, 7, -1.094, 1.039,
-SetTextureCoordinates, 8, 0.0, -4.304,
-SetTextureCoordinates, 9, -1.094, 1.109,
-SetTextureCoordinates, 10, 0.0, 1.109,
-SetTextureCoordinates, 11, -1.094, -4.304,
-SetTextureCoordinates, 12, 6.234, -4.304,
-SetTextureCoordinates, 13, 5.796, 1.109,
-SetTextureCoordinates, 14, 6.234, 1.109,
-SetTextureCoordinates, 15, 2.297, 1.766,
-SetTextureCoordinates, 16, 5.796, 1.766,
-SetTextureCoordinates, 17, 2.297, -4.741,
-SetTextureCoordinates, 18, 5.796, -4.741,
-SetTextureCoordinates, 19, -2.297, 1.766,
-SetTextureCoordinates, 20, -5.796, 1.109,
-SetTextureCoordinates, 21, -5.796, 1.766,
-SetTextureCoordinates, 22, -2.297, -4.741,
-SetTextureCoordinates, 23, -6.234, 1.109,
-SetTextureCoordinates, 24, -6.234, -4.304,
-SetTextureCoordinates, 25, -5.796, -4.741,
-SetTextureCoordinates, 26, 5.796, -0.094,
-SetTextureCoordinates, 27, 6.234, 1.0,
-SetTextureCoordinates, 28, 6.234, -0.094,
-SetTextureCoordinates, 29, 5.796, 1.0,
-SetTextureCoordinates, 30, 2.297, -0.094,
-SetTextureCoordinates, 31, 5.796, 1.0,
-SetTextureCoordinates, 32, 5.796, -0.094,
-SetTextureCoordinates, 33, 2.297, 1.0,
-SetTextureCoordinates, 34, 1.094, 1.766,
-SetTextureCoordinates, 35, 0.0, -4.741,
-SetTextureCoordinates, 36, 0.0, 1.766,
-SetTextureCoordinates, 37, 1.094, -4.741,
-SetTextureCoordinates, 38, -2.297, 1.0,
-SetTextureCoordinates, 39, -5.796, -0.094,
-SetTextureCoordinates, 40, -5.796, 1.0,
-SetTextureCoordinates, 41, -2.297, -0.094,
-"""
-    return wall
+class Constructor:
+    def __init__(self, app):
+        self.app = app
+        self.platformlines = []
+        self.walllines = []
 
-def bottum_hunch():
-    lines = """
-    
-;Jeminie SketchUp to CSV
-CreateMeshBuilder,
-AddVertex, -0.528, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -0.528, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -0.528, -0.7, 5.0, 0.0, -1.0, 0.0,
-AddVertex, 0.0, -0.7, 0.0, 0.0, -1.0, 0.0,
-AddVertex, 0.0, -0.7, 5.0, 0.0, -1.0, 0.0,
-AddVertex, -0.528, -0.7, 0.0, 0.0, -1.0, 0.0,
-AddVertex, 0.0, -0.1, 5.0, 0.0, 0.0, 1.0,
-AddVertex, -0.528, -0.7, 5.0, 0.0, 0.0, 1.0,
-AddVertex, 0.0, -0.7, 5.0, 0.0, 0.0, 1.0,
-AddVertex, -0.528, -0.1, 5.0, 0.0, 0.0, 1.0,
-AddVertex, -0.528, -0.7, 5.0, -1.0, 0.0, 0.0,
-AddVertex, -0.528, -0.1, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -0.528, -0.7, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -0.528, -0.1, 5.0, -1.0, 0.0, 0.0,
-AddVertex, 0.0, -0.1, 5.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, -0.7, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, -0.1, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, -0.7, 5.0, 1.0, 0.0, 0.0,
-AddVertex, -0.528, -0.1, 0.0, 0.0, 1.0, 0.0,
-AddVertex, 0.0, -0.1, 5.0, 0.0, 1.0, 0.0,
-AddVertex, 0.0, -0.1, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -0.528, -0.1, 5.0, 0.0, 1.0, 0.0,
-AddFace, 2, 0, 1,
-AddFace, 3, 1, 0,
-AddFace, 6, 4, 5,
-AddFace, 7, 5, 4,
-AddFace, 10, 8, 9,
-AddFace, 11, 9, 8,
-AddFace, 14, 12, 13,
-AddFace, 15, 13, 12,
-AddFace, 18, 16, 17,
-AddFace, 19, 17, 16,
-AddFace, 22, 20, 21,
-AddFace, 23, 21, 20,
-LoadTexture, Polished Concrete Old.jpg,
-SetColor, 255, 255, 255, 255,
-SetTextureCoordinates, 0, 1.203, -0.531,
-SetTextureCoordinates, 1, 0.625, 0.125,
-SetTextureCoordinates, 2, 1.203, 0.125,
-SetTextureCoordinates, 3, 0.625, -0.531,
-SetTextureCoordinates, 4, -1.203, -4.468,
-SetTextureCoordinates, 5, -0.625, 1.0,
-SetTextureCoordinates, 6, -0.625, -4.468,
-SetTextureCoordinates, 7, -1.203, 1.0,
-SetTextureCoordinates, 8, -0.625, -0.531,
-SetTextureCoordinates, 9, -1.203, 0.125,
-SetTextureCoordinates, 10, -0.625, 0.125,
-SetTextureCoordinates, 11, -1.203, -0.531,
-SetTextureCoordinates, 12, 5.468, 0.125,
-SetTextureCoordinates, 13, 0.0, -0.531,
-SetTextureCoordinates, 14, 0.0, 0.125,
-SetTextureCoordinates, 15, 5.468, -0.531,
-SetTextureCoordinates, 16, -5.468, -0.531,
-SetTextureCoordinates, 17, 0.0, 0.125,
-SetTextureCoordinates, 18, 0.0, -0.531,
-SetTextureCoordinates, 19, -5.468, 0.125,
-SetTextureCoordinates, 20, 1.203, 1.0,
-SetTextureCoordinates, 21, 0.625, -4.468,
-SetTextureCoordinates, 22, 0.625, 1.0,
-SetTextureCoordinates, 23, 1.203, -4.468,
+    def get_files(self):
+        #승강장 불러오기
+        self.platformlines = self.app.get_file_contents('승강장.csv')
+        #벽체
+        self.walllines = self.app.get_file_contents('벽체.csv')
 
-    """
-    return lines
+    def construct_platform(self):
+        for i, line in enumerate(self.platformlines):
+            if '{linedistance}' in line:
+                line = line.replace('{linedistance}', str(self.app.width.get()))
+            if '{length}' in line:
+                line = line.replace('{length}', str(self.app.length.get()))
+            self.platformlines[i] = line
+        self.app.lines += "".join(self.platformlines) +"\n"
 
-def platform(linedistance,  length):
-    lines = f"""
-;승강장
-;Jeminie SketchUp to CSV
-CreateMeshBuilder,
-AddVertex, -{linedistance}, 1.05, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -1.3, 0.85, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{linedistance}, 0.85, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -0.7, 0.85, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, 0.85, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, 1.05, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -1.1, 0.65, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -0.9, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -1.1, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -0.9, 0.65, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, 1.05, {length}, 0.0, 0.0, 1.0,
-AddVertex, -0.7, 0.85, {length}, 0.0, 0.0, 1.0,
-AddVertex, 0.0, 0.85, {length}, 0.0, 0.0, 1.0,
-AddVertex, -1.3, 0.85, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{linedistance}, 0.85, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{linedistance}, 1.05, {length}, 0.0, 0.0, 1.0,
-AddVertex, -0.9, 0.65, {length}, 0.0, 0.0, 1.0,
-AddVertex, -1.1, -0.7, {length}, 0.0, 0.0, 1.0,
-AddVertex, -0.9, -0.7, {length}, 0.0, 0.0, 1.0,
-AddVertex, -1.1, 0.65, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{linedistance}, 0.85, {length}, 0.0, -1.0, 0.0,
-AddVertex, -1.3, 0.85, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -1.3, 0.85, {length}, 0.0, -1.0, 0.0,
-AddVertex, -{linedistance}, 0.85, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -1.3, 0.85, {length}, -0.707, -0.707, 0.0,
-AddVertex, -1.1, 0.65, 0.0, -0.707, -0.707, 0.0,
-AddVertex, -1.1, 0.65, {length}, -0.707, -0.707, 0.0,
-AddVertex, -1.3, 0.85, 0.0, -0.707, -0.707, 0.0,
-AddVertex, -1.1, -0.7, {length}, -1.0, 0.0, 0.0,
-AddVertex, -1.1, 0.65, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -1.1, -0.7, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -1.1, 0.65, {length}, -1.0, 0.0, 0.0,
-AddVertex, -1.1, -0.7, {length}, 0.0, -1.0, 0.0,
-AddVertex, -0.9, -0.7, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -0.9, -0.7, {length}, 0.0, -1.0, 0.0,
-AddVertex, -1.1, -0.7, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -0.9, 0.65, {length}, 1.0, 0.0, 0.0,
-AddVertex, -0.9, -0.7, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -0.9, 0.65, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -0.9, -0.7, {length}, 1.0, 0.0, 0.0,
-AddVertex, -0.9, 0.65, {length}, 0.707, -0.707, 0.0,
-AddVertex, -0.7, 0.85, 0.0, 0.707, -0.707, 0.0,
-AddVertex, -0.7, 0.85, {length}, 0.707, -0.707, 0.0,
-AddVertex, -0.9, 0.65, 0.0, 0.707, -0.707, 0.0,
-AddVertex, 0.0, 0.85, {length}, 0.0, -1.0, 0.0,
-AddVertex, -0.7, 0.85, 0.0, 0.0, -1.0, 0.0,
-AddVertex, 0.0, 0.85, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -0.7, 0.85, {length}, 0.0, -1.0, 0.0,
-AddVertex, 0.0, 1.05, {length}, 1.0, 0.0, 0.0,
-AddVertex, 0.0, 0.85, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, 1.05, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, 0.85, {length}, 1.0, 0.0, 0.0,
-AddVertex, -{linedistance}, 1.05, 0.0, 0.0, 1.0, 0.0,
-AddVertex, 0.0, 1.05, {length}, 0.0, 1.0, 0.0,
-AddVertex, 0.0, 1.05, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -{linedistance}, 1.05, {length}, 0.0, 1.0, 0.0,
-AddVertex, -{linedistance}, 0.85, {length}, -1.0, 0.0, 0.0,
-AddVertex, -{linedistance}, 1.05, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -{linedistance}, 0.85, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -{linedistance}, 1.05, {length}, -1.0, 0.0, 0.0,
-AddFace, 2, 0, 1,
-AddFace, 3, 1, 0,
-AddFace, 4, 3, 0,
-AddFace, 5, 4, 0,
-AddFace, 8, 6, 7,
-AddFace, 9, 7, 6,
-AddFace, 1, 9, 6,
-AddFace, 3, 9, 1,
-AddFace, 12, 10, 11,
-AddFace, 13, 11, 10,
-AddFace, 14, 13, 10,
-AddFace, 15, 14, 10,
-AddFace, 18, 16, 17,
-AddFace, 19, 17, 16,
-AddFace, 11, 19, 16,
-AddFace, 13, 19, 11,
-AddFace, 22, 20, 21,
-AddFace, 23, 21, 20,
-AddFace, 26, 24, 25,
-AddFace, 27, 25, 24,
-AddFace, 30, 28, 29,
-AddFace, 31, 29, 28,
-AddFace, 34, 32, 33,
-AddFace, 35, 33, 32,
-AddFace, 38, 36, 37,
-AddFace, 39, 37, 36,
-AddFace, 42, 40, 41,
-AddFace, 43, 41, 40,
-AddFace, 46, 44, 45,
-AddFace, 47, 45, 44,
-AddFace, 50, 48, 49,
-AddFace, 51, 49, 48,
-AddFace, 54, 52, 53,
-AddFace, 55, 53, 52,
-AddFace, 58, 56, 57,
-AddFace, 59, 57, 56,
-LoadTexture, Polished Concrete Old.jpg,
-SetColor, 255, 255, 255, 255,
-SetTextureCoordinates, 0, 4.374, -0.914,
-SetTextureCoordinates, 1, 1.422, -0.695,
-SetTextureCoordinates, 2, 4.374, -0.695,
-SetTextureCoordinates, 3, 0.766, -0.695,
-SetTextureCoordinates, 4, 0.0, -0.695,
-SetTextureCoordinates, 5, 0.0, -0.914,
-SetTextureCoordinates, 6, 1.203, -0.476,
-SetTextureCoordinates, 7, 0.984, 1.0,
-SetTextureCoordinates, 8, 1.203, 1.0,
-SetTextureCoordinates, 9, 0.984, -0.476,
-SetTextureCoordinates, 10, 0.0, -0.914,
-SetTextureCoordinates, 11, -0.766, -0.695,
-SetTextureCoordinates, 12, 0.0, -0.695,
-SetTextureCoordinates, 13, -1.422, -0.695,
-SetTextureCoordinates, 14, -4.374, -0.695,
-SetTextureCoordinates, 15, -4.374, -0.914,
-SetTextureCoordinates, 16, -0.984, -0.476,
-SetTextureCoordinates, 17, -1.203, 1.0,
-SetTextureCoordinates, 18, -0.984, 1.0,
-SetTextureCoordinates, 19, -1.203, -0.476,
-SetTextureCoordinates, 20, -4.374, -4.468,
-SetTextureCoordinates, 21, -1.422, 1.0,
-SetTextureCoordinates, 22, -1.422, -4.468,
-SetTextureCoordinates, 23, -4.374, 1.0,
-SetTextureCoordinates, 24, 5.468, -1.204,
-SetTextureCoordinates, 25, 0.0, -0.895,
-SetTextureCoordinates, 26, 5.468, -0.895,
-SetTextureCoordinates, 27, 0.0, -1.204,
-SetTextureCoordinates, 28, 5.468, 1.0,
-SetTextureCoordinates, 29, 0.0, -0.476,
-SetTextureCoordinates, 30, 0.0, 1.0,
-SetTextureCoordinates, 31, 5.468, -0.476,
-SetTextureCoordinates, 32, -1.203, -4.468,
-SetTextureCoordinates, 33, -0.984, 1.0,
-SetTextureCoordinates, 34, -0.984, -4.468,
-SetTextureCoordinates, 35, -1.203, 1.0,
-SetTextureCoordinates, 36, -5.468, -0.476,
-SetTextureCoordinates, 37, 0.0, 1.0,
-SetTextureCoordinates, 38, 0.0, -0.476,
-SetTextureCoordinates, 39, -5.468, 1.0,
-SetTextureCoordinates, 40, -5.468, 0.652,
-SetTextureCoordinates, 41, 0.0, 0.343,
-SetTextureCoordinates, 42, -5.468, 0.343,
-SetTextureCoordinates, 43, 0.0, 0.652,
-SetTextureCoordinates, 44, 0.0, -4.468,
-SetTextureCoordinates, 45, -0.766, 1.0,
-SetTextureCoordinates, 46, 0.0, 1.0,
-SetTextureCoordinates, 47, -0.766, -4.468,
-SetTextureCoordinates, 48, -5.468, -0.914,
-SetTextureCoordinates, 49, 0.0, -0.695,
-SetTextureCoordinates, 50, 0.0, -0.914,
-SetTextureCoordinates, 51, -5.468, -0.695,
-SetTextureCoordinates, 52, 4.374, 1.0,
-SetTextureCoordinates, 53, 0.0, -4.468,
-SetTextureCoordinates, 54, 0.0, 1.0,
-SetTextureCoordinates, 55, 4.374, -4.468,
-SetTextureCoordinates, 56, 5.468, -0.695,
-SetTextureCoordinates, 57, 0.0, -0.914,
-SetTextureCoordinates, 58, 0.0, -0.695,
-SetTextureCoordinates, 59, 5.468, -0.914,
-"""
-    return lines
-
-def wall(d, length, formwidth, formtoraildistance):
-    #벽체두께
-    wallwidth = 0.7
-    #내부벽체 좌표
-    sp = d / 2 + formwidth + formtoraildistance #7.9
-    #공동구 좌표 7.5
-    tray = sp - 0.4
-    #외부벽체 좌표 8.6
-    wallout = sp + wallwidth
-    #상부헌치 좌표 -7.4
-    tophunch = tray - 0.1
-    lines = f"""
-;벽체
-
-;Jeminie SketchUp to CSV
-CreateMeshBuilder,
-AddVertex, -{tray}, -0.7, {length}, 1.0, 0.0, 0.0,
-AddVertex, -{tray}, -0.1, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -{tray}, -0.7, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -{tray}, -0.1, {length}, 1.0, 0.0, 0.0,
-AddVertex, -{wallout}, 5.65, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -{wallout}, -1.5, {length}, -1.0, 0.0, 0.0,
-AddVertex, -{wallout}, -1.5, 0.0, -1.0, 0.0, 0.0,
-AddVertex, -{wallout}, 5.65, {length}, -1.0, 0.0, 0.0,
-AddVertex, -{sp}, -0.1, {length}, 1.0, 0.0, 0.0,
-AddVertex, -{sp}, 4.85, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -{sp}, -0.1, 0.0, 1.0, 0.0, 0.0,
-AddVertex, -{sp}, 4.85, {length}, 1.0, 0.0, 0.0,
-AddVertex, -{tray}, -0.1, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -{sp}, -0.1, {length}, 0.0, 1.0, 0.0,
-AddVertex, -{sp}, -0.1, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -{tray}, -0.1, {length}, 0.0, 1.0, 0.0,
-AddVertex, 0.0, -1.5, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, -0.7, {length}, 1.0, 0.0, 0.0,
-AddVertex, 0.0, -0.7, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, -1.5, {length}, 1.0, 0.0, 0.0,
-AddVertex, 0.0, 5.25, {length}, 1.0, 0.0, 0.0,
-AddVertex, 0.0, 5.65, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, 5.25, 0.0, 1.0, 0.0, 0.0,
-AddVertex, 0.0, 5.65, {length}, 1.0, 0.0, 0.0,
-AddVertex, -{tophunch}, 5.25, {length}, 0.625, -0.781, 0.0,
-AddVertex, -{sp}, 4.85, 0.0, 0.625, -0.781, 0.0,
-AddVertex, -{sp}, 4.85, {length}, 0.625, -0.781, 0.0,
-AddVertex, -{tophunch}, 5.25, 0.0, 0.625, -0.781, 0.0,
-AddVertex, 0.0, 5.65, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -{wallout}, 5.65, {length}, 0.0, 1.0, 0.0,
-AddVertex, -{wallout}, 5.65, 0.0, 0.0, 1.0, 0.0,
-AddVertex, 0.0, 5.65, {length}, 0.0, 1.0, 0.0,
-AddVertex, 0.0, -1.5, {length}, 0.0, -1.0, 0.0,
-AddVertex, -{wallout}, -1.5, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -{wallout}, -1.5, {length}, 0.0, -1.0, 0.0,
-AddVertex, 0.0, -1.5, 0.0, 0.0, -1.0, 0.0,
-AddVertex, 0.0, 5.25, {length}, 0.0, -1.0, 0.0,
-AddVertex, -{tophunch}, 5.25, 0.0, 0.0, -1.0, 0.0,
-AddVertex, -{tophunch}, 5.25, {length}, 0.0, -1.0, 0.0,
-AddVertex, 0.0, 5.25, 0.0, 0.0, -1.0, 0.0,
-AddVertex, 0.0, 5.65, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{tophunch}, 5.25, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, 5.25, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{wallout}, -1.5, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{sp}, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{wallout}, 5.65, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{tray}, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, -1.5, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, -0.7, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{tray}, -0.1, 0.0, 0.0, 0.0, -1.0,
-AddVertex, -{sp}, 4.85, 0.0, 0.0, 0.0, -1.0,
-AddVertex, 0.0, -0.7, 0.0, 0.0, 1.0, 0.0,
-AddVertex, -{tray}, -0.7, {length}, 0.0, 1.0, 0.0,
-AddVertex, -{tray}, -0.7, 0.0, 0.0, 1.0, 0.0,
-AddVertex, 0.0, -0.7, {length}, 0.0, 1.0, 0.0,
-AddVertex, -{wallout}, -1.5, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{tray}, -0.7, {length}, 0.0, 0.0, 1.0,
-AddVertex, 0.0, -1.5, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{sp}, -0.1, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{wallout}, 5.65, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{sp}, 4.85, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{tophunch}, 5.25, {length}, 0.0, 0.0, 1.0,
-AddVertex, 0.0, 5.25, {length}, 0.0, 0.0, 1.0,
-AddVertex, 0.0, 5.65, {length}, 0.0, 0.0, 1.0,
-AddVertex, -{tray}, -0.1, {length}, 0.0, 0.0, 1.0,
-AddVertex, 0.0, -0.7, {length}, 0.0, 0.0, 1.0,
-AddFace, 0, 2, 1,
-AddFace, 1, 3, 0,
-AddFace, 4, 6, 5,
-AddFace, 5, 7, 4,
-AddFace, 8, 10, 9,
-AddFace, 9, 11, 8,
-AddFace, 12, 14, 13,
-AddFace, 13, 15, 12,
-AddFace, 16, 18, 17,
-AddFace, 17, 19, 16,
-AddFace, 20, 22, 21,
-AddFace, 21, 23, 20,
-AddFace, 24, 26, 25,
-AddFace, 25, 27, 24,
-AddFace, 28, 30, 29,
-AddFace, 29, 31, 28,
-AddFace, 32, 34, 33,
-AddFace, 33, 35, 32,
-AddFace, 36, 38, 37,
-AddFace, 37, 39, 36,
-AddFace, 40, 42, 41,
-AddFace, 43, 45, 44,
-AddFace, 44, 46, 43,
-AddFace, 46, 47, 43,
-AddFace, 46, 48, 47,
-AddFace, 44, 49, 46,
-AddFace, 45, 50, 44,
-AddFace, 45, 41, 50,
-AddFace, 45, 40, 41,
-AddFace, 51, 53, 52,
-AddFace, 52, 54, 51,
-AddFace, 55, 57, 56,
-AddFace, 56, 58, 55,
-AddFace, 58, 59, 55,
-AddFace, 58, 60, 59,
-AddFace, 60, 61, 59,
-AddFace, 61, 62, 59,
-AddFace, 62, 63, 59,
-AddFace, 64, 58, 56,
-AddFace, 65, 56, 57,
-LoadTexture, Polished Concrete Old.jpg,
-SetColor, 255, 255, 255, 255,
-SetTextureCoordinates, 0, 5.468, 0.125,
-SetTextureCoordinates, 1, 0.0, -0.531,
-SetTextureCoordinates, 2, 0.0, 0.125,
-SetTextureCoordinates, 3, 5.468, -0.531,
-SetTextureCoordinates, 4, 0.0, -6.819,
-SetTextureCoordinates, 5, -5.468, 1.0,
-SetTextureCoordinates, 6, 0.0, 1.0,
-SetTextureCoordinates, 7, -5.468, -6.819,
-SetTextureCoordinates, 8, 5.468, -0.531,
-SetTextureCoordinates, 9, 0.0, -5.944,
-SetTextureCoordinates, 10, 0.0, -0.531,
-SetTextureCoordinates, 11, 5.468, -5.944,
-SetTextureCoordinates, 12, 3.609, 1.0,
-SetTextureCoordinates, 13, 3.171, -4.468,
-SetTextureCoordinates, 14, 3.171, 1.0,
-SetTextureCoordinates, 15, 3.609, -4.468,
-SetTextureCoordinates, 16, 0.0, 1.0,
-SetTextureCoordinates, 17, 5.468, 0.125,
-SetTextureCoordinates, 18, 0.0, 0.125,
-SetTextureCoordinates, 19, 5.468, 1.0,
-SetTextureCoordinates, 20, 5.468, -6.382,
-SetTextureCoordinates, 21, 0.0, -6.819,
-SetTextureCoordinates, 22, 0.0, -6.382,
-SetTextureCoordinates, 23, 5.468, -6.819,
-SetTextureCoordinates, 24, 5.468, -6.515,
-SetTextureCoordinates, 25, 0.0, -5.815,
-SetTextureCoordinates, 26, 5.468, -5.815,
-SetTextureCoordinates, 27, 0.0, -6.515,
-SetTextureCoordinates, 28, 11.811, 1.0,
-SetTextureCoordinates, 29, 2.406, -4.468,
-SetTextureCoordinates, 30, 2.406, 1.0,
-SetTextureCoordinates, 31, 11.811, -4.468,
-SetTextureCoordinates, 32, -11.811, -4.468,
-SetTextureCoordinates, 33, -2.406, 1.0,
-SetTextureCoordinates, 34, -2.406, -4.468,
-SetTextureCoordinates, 35, -11.811, 1.0,
-SetTextureCoordinates, 36, -11.811, -4.468,
-SetTextureCoordinates, 37, -3.718, 1.0,
-SetTextureCoordinates, 38, -3.718, -4.468,
-SetTextureCoordinates, 39, -11.811, 1.0,
-SetTextureCoordinates, 40, 11.811, -6.819,
-SetTextureCoordinates, 41, 3.718, -6.382,
-SetTextureCoordinates, 42, 11.811, -6.382,
-SetTextureCoordinates, 43, 2.406, 1.0,
-SetTextureCoordinates, 44, 3.171, -0.531,
-SetTextureCoordinates, 45, 2.406, -6.819,
-SetTextureCoordinates, 46, 3.609, 0.125,
-SetTextureCoordinates, 47, 11.811, 1.0,
-SetTextureCoordinates, 48, 11.811, 0.125,
-SetTextureCoordinates, 49, 3.609, -0.531,
-SetTextureCoordinates, 50, 3.171, -5.944,
-SetTextureCoordinates, 51, 11.811, 1.0,
-SetTextureCoordinates, 52, 3.609, -4.468,
-SetTextureCoordinates, 53, 3.609, 1.0,
-SetTextureCoordinates, 54, 11.811, -4.468,
-SetTextureCoordinates, 55, -2.406, 1.0,
-SetTextureCoordinates, 56, -3.609, 0.125,
-SetTextureCoordinates, 57, -11.811, 1.0,
-SetTextureCoordinates, 58, -3.171, -0.531,
-SetTextureCoordinates, 59, -2.406, -6.819,
-SetTextureCoordinates, 60, -3.171, -5.944,
-SetTextureCoordinates, 61, -3.718, -6.382,
-SetTextureCoordinates, 62, -11.811, -6.382,
-SetTextureCoordinates, 63, -11.811, -6.819,
-SetTextureCoordinates, 64, -3.609, -0.531,
-SetTextureCoordinates, 65, -11.811, 0.125,
-
-"""
-    return lines
-def translate(x=0,y=0,z=0):
-    return f'Translate, {x}, {y}, {z}\n'
-
-def translateall(x=0,y=0,z=0):
-    return f'TranslateAll, {x}, {y}, {z}\n'
-
-def export(filename,path,lines):
-    fullname = path + filename
-    with open(fullname, 'w', encoding='utf-8') as f:
-        f.write(lines)
-        f.close()
+    def construct_wall(self):
+        """
+        벽체 작성
+        linedistance: 선로중심간격
+        length: 구조물 연장
+        width:승강장 폭
+        formtoraildistance: 승강장 연단거리
+        """
+        # 벽체두께
+        wallwidth = 0.7
+        # 내부벽체 좌표
+        sp = self.app.linedistance.get() / 2 + self.app.width.get() + self.app.formtoraildistance.get()  # 7.9
+        # 공동구 좌표 7.5
+        tray = sp - 0.4
+        # 외부벽체 좌표 8.6
+        wallout = sp + wallwidth
+        # 상부헌치 좌표 -7.4
+        tophunch = tray - 0.1
+        for i, line in enumerate(self.walllines):
+            if '{tray}' in line:
+                line = line.replace('{tray}', str(tray))
+            if '{length}' in line:
+                line = line.replace('{length}', str(self.app.length.get()))
+            if '{tophunch}' in line:
+                line = line.replace('{tophunch}', str(tophunch))
+            if '{wallout}' in line:
+                line = line.replace('{wallout}', str(wallout))
+            if '{sp}' in line:
+                line = line.replace('{sp}', str(sp))
+            self.walllines[i] = line
+        self.app.lines += "".join(self.walllines) + '\n'
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.lines = ''
         self.title("BVE 플랫폼 생성기")
         self.geometry("500x400")
 
@@ -641,6 +82,8 @@ class App(tk.Tk):
         self.width = tk.DoubleVar(value=3.0)
         self.formtoraildistance = tk.DoubleVar(value=1.7)
 
+        #현재 파이선 파일이 실행되는 경로 가져오기
+        self.workdirectory = os.getcwd()
         # UI 생성
         self.create_widgets()
 
@@ -655,7 +98,7 @@ class App(tk.Tk):
         # formtoraildistance
         frm = ttk.Frame(self)
         frm.pack(pady=10, fill="x")
-        ttk.Label(frm, text="Form to Rail Distance (m):").pack(side="left", padx=5)
+        ttk.Label(frm, text="승강장 연단거리 (m):").pack(side="left", padx=5)
         ttk.Entry(frm, textvariable=self.formtoraildistance, width=10).pack(side="left")
 
         # 실행 버튼
@@ -673,23 +116,53 @@ class App(tk.Tk):
         entry = ttk.Entry(frame, textvariable=variable, width=8)
         entry.pack(side="right", padx=5)
 
+    def get_file_contents(self, filename):
+
+        filepath = os.path.join(self.workdirectory, filename)
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return f.readlines()
+
+    def export(self,filename):
+        filepath = os.path.join(self.workdirectory, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(self.lines)
+            f.close()
+
     def generate(self):
-        linedistance = self.linedistance.get()
-        length = self.length.get()
-        width = self.width.get()
-        formtoraildistance = self.formtoraildistance.get()
 
-        tranlatex = linedistance / 2
-        lines = ""
-        lines += platform(width, length)
-        lines += translate(x=-(formtoraildistance + tranlatex), y=0, z=0)
-        lines += wall(linedistance, length, width, formtoraildistance)
-        lines += translateall(x=tranlatex, y=0, z=0)
+        tranlatex = self.linedistance.get() / 2 #선로중심간격 /2
 
-        export_dir = "D:/BVE/루트/Railway/Object/abcdefg/"
-        filename = "test.csv"
-        export(filename, export_dir, lines)
-        messagebox.showinfo('생성 및 저장 완료',f'{export_dir}에 성공적으로 저장되었습니다.')
+        #줄 초기화
+        self.lines = ""
+
+        #가공 시작
+        constructor = Constructor(self)
+        constructor.get_files() #필수파일 수집
+
+        #하선승강장
+        constructor.construct_platform()
+        #트랜스레이트 적용
+        self.lines += Translater.translate(x=-(self.formtoraildistance.get() + tranlatex), y=0, z=0)
+
+        #상선 승강장
+        constructor.construct_platform()
+        self.lines += Translater.mirror(x=1, y=0, z=0)
+        self.lines += Translater.translate(x=(self.formtoraildistance.get() + tranlatex), y=0, z=0)
+
+        #벽체생성
+        #하선
+        constructor.construct_wall()
+        #상선
+        constructor.construct_wall()
+        #미러
+        self.lines += Translater.mirror(x=1, y=0, z=0)
+        #전체객체 선로중심간격 이동
+        self.lines += Translater.translateall(x=tranlatex, y=0, z=0)
+
+        #추출
+        self.export("test.csv")
+
+        messagebox.showinfo('생성 및 저장 완료',f'{self.workdirectory}에 성공적으로 저장되었습니다.')
 
 if __name__ == "__main__":
     app = App()
