@@ -1,6 +1,4 @@
 from tkinter import filedialog, messagebox
-
-from RouteManager2.CurrentRoute import CurrentRoute
 from core.datacontainer import BVERouteFactory
 from core.parser import CSVRouteParser
 from fileexporter.dxfmanager import DXFController
