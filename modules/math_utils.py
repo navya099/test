@@ -1,8 +1,13 @@
 import math
-
-from AutoCAD.point2d import Point2d
-from modules.vector2 import Vector2
-from modules.curvedirection import CurveDirection
+import os
+import sys
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+cad_DIR = os.path.join(os.path.dirname(BASE_DIR), 'AutoCAD')
+if cad_DIR not in sys.path:
+    sys.path.insert(0, cad_DIR)
+from point2d import Point2d
+from vector2 import Vector2
+from curvedirection import CurveDirection
 
 def get_block_index(number, interval):
     return int(math.floor(number / interval + 0.001))
