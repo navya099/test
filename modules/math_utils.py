@@ -1,8 +1,8 @@
 import math
 
-from point2d import Point2d
-from vector2 import Vector2
-from curvedirection import CurveDirection
+from AutoCAD.point2d import Point2d
+from modules.vector2 import Vector2
+from modules.curvedirection import CurveDirection
 
 def get_block_index(number, interval):
     return int(math.floor(number / interval + 0.001))
@@ -219,3 +219,13 @@ def calculate_pass_through_point(start: Point2d, end: Point2d, through_point: Po
     Returns:
 
     """
+    pass
+
+#offset 좌표 반환
+def calculate_offset_point(vector, point_a, offset_distance):
+    if offset_distance > 0:#우측 오프셋
+        vector -= 90
+    else:
+        vector += 90 #좌측 오프셋
+    offset_a_xy = calculate_coordinates(point_a[0], point_a[1], vector, abs(offset_distance))
+    return offset_a_xy
