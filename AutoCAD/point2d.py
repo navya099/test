@@ -1,4 +1,4 @@
-from AutoCAD.geometry import GeoMetry
+from geometry import GeoMetry
 import math
 
 class Point2d(GeoMetry):

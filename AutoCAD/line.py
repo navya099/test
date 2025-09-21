@@ -1,7 +1,7 @@
 from abc import ABC
 import math
-from AutoCAD.point2d import Point2d
-from AutoCAD.geometry import GeoMetry  # 기존 추상 클래스
+from point2d import Point2d
+from geometry import GeoMetry  # 기존 추상 클래스
 
 class Line2d(GeoMetry):
     """

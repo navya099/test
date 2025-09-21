@@ -1,7 +1,7 @@
-from AutoCAD.geometry import GeoMetry
-from AutoCAD.line import Line2d
-from AutoCAD.point2d import Point2d
-from AutoCAD.arc import Arc
+from geometry import GeoMetry
+from line import Line2d
+from point2d import Point2d
+from arc import Arc
 
 class Polyline(GeoMetry):
     """
