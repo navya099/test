@@ -285,23 +285,30 @@ def load_structure_data(filepath):
     df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
     df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
 
-    # 교량 구간과 터널 구간 정보
+    def snap_station(raw_sta: float, interval: int = 25, offset: int = 0) -> float:
+        """원래 station을 interval 단위로 내림 후 offset 적용"""
+        import math
+        base_sta = math.floor(raw_sta / interval) * interval
+        return base_sta + offset
+
+    # 교량 구간
     for _, row in df_bridge.iterrows():
         bridge_list.append(
             Bridge(
-            name=row['br_NAME'],
-            start_station = row['br_START_STA'],
-            end_station=row['br_END_STA'],
-            length=row['br_LENGTH']
+                name=row['br_NAME'],
+                start_station=snap_station(row['br_START_STA']),
+                end_station=snap_station(row['br_END_STA']),
+                length=row['br_LENGTH']
             )
         )
 
+    # 터널 구간
     for _, row in df_tunnel.iterrows():
         tunnel_list.append(
             Tunnel(
                 name=row['tn_NAME'],
-                start_station=row['tn_START_STA'],
-                end_station=row['tn_END_STA'],
+                start_station=snap_station(row['tn_START_STA']),
+                end_station=snap_station(row['tn_END_STA']),
                 length=row['tn_LENGTH']
             )
         )
@@ -396,7 +403,7 @@ class MainProcessingApp(tk.Tk):
                     source_directory=self.source_directory,
                     work_directory=self.work_directory
                 )
-                index_dic[index] = (br.name, br.start_station)
+                index_dic[index] = (br.name, br.start_station - 2)
                 index += 1
             for tunnel in tunnels:
                 process_dxf_image(self.source_directory, self.work_directory, tunnel.name, tunnel.length)
@@ -408,7 +415,7 @@ class MainProcessingApp(tk.Tk):
                     work_directory=self.work_directory
                 )
 
-                index_dic[index] = (tunnel.name , tunnel.start_station)
+                index_dic[index] = (tunnel.name , tunnel.start_station - 13)
                 index += 1
             # 최종 텍스트 생성
             if bridges and tunnels:
