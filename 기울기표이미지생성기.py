@@ -678,7 +678,7 @@ def apply_brokenchain_to_structure(structure_list, brokenchain):
 
     return updated_structure
 
-def find_pitch_section(filepath):
+def find_pitch_section(filepath, brokenchain=0.0):
     df = pd.read_excel(filepath,  header=0)
 
     ip_list = []
@@ -695,6 +695,8 @@ def find_pitch_section(filepath):
         vradius = row['원곡선 반지름'] if pd.notna(row['원곡선 반지름']) else 0.0
         isverticalvurve = True if seg == '볼록형' or seg == '오목형' else False
 
+        #파정 적용
+        vipsta += brokenchain
         if current_ip:  # 이전 IP 저장
             ip_list.append(current_ip)
         current_ip = VIPdata(VIPNO=ip_counter)
@@ -1099,7 +1101,7 @@ class PitchProcessingApp(tk.Tk):
                     self.log('bve txt타입 감지됨')
                     flag = 'BVE'
                 elif ext == ".xlsx":
-                    data = find_pitch_section(file_path)  # xlsx읽기 시도
+                    data = find_pitch_section(file_path, self.brokenchain)  # xlsx읽기 시도
                     self.log('civil3d xlsx 타입 감지됨')
                     flag = 'CIVIL3D'
                 else:
