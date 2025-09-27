@@ -69,13 +69,16 @@ def read_file():
     
     return lines
 
-def find_last_block(data):
-    last_block = None  # None으로 초기화하여 값이 없을 때 오류 방지
-    for line in data:
-        parts = line.split(',')
-        last_block = float(parts[0])
-    
-    return int(last_block)  # 마지막 블록 값 반환
+
+def find_block(data, start=True):
+    block = None  # None으로 초기화하여 값이 없을 때 오류 방지
+    if start:
+        index = 0
+    else:
+        index = -1
+    block = float(data[index].strip().split(',')[0])
+
+    return block  # 마지막 블록 값 반환
 
 
 def create_km_image(text, bg_color, filename, text_color, work_directory, image_size=(500, 300), font_size=40):
@@ -450,15 +453,16 @@ def process_dxf_image(img_text1: str, img_text2: str, img_f_name: str, source_di
     if output_paths:
         converter.trim_and_resize_image(output_paths[0], final_output_image, target_size)
 
-def create_km_object(last_block: int, structure_list: dict, interval: int, alignmenttype: str, source_directory: str, work_directory: str, target_directory: str):
-    last_block = (last_block // interval)
+def create_km_object(start_block: int, last_block: int, structure_list: dict, interval: int, alignmenttype: str, source_directory: str, work_directory: str, target_directory: str):
+    start_block = start_block // interval
+    last_block = last_block // interval
     index_datas=[]
     post_datas= []
     structure_comment=[]
     first_index = 4025
     
     print('-----이미지 생성중-----\n')
-    for i in range(last_block):
+    for i in range(start_block, last_block):
         current_sta = i * interval
         current_structure = isbridge_tunnel(current_sta, structure_list)
         post_type = ''
@@ -480,7 +484,7 @@ def create_km_object(last_block: int, structure_list: dict, interval: int, align
 
         openfile_name = f'{post_type}_{current_structure}용'
 
-        if alignmenttype == '도시철도' or '일반철도':
+        if alignmenttype in ['도시철도', '일반철도']:
             process_dxf_image(img_text1, img_text2, img_f_name, source_directory, work_directory, post_type, alignmenttype)
 
         else:
@@ -583,9 +587,34 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
 
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
+def apply_brokenchain_to_structure(structure_list, brokenchain):
+    """
+    structure_list의 각 구간(start, end)에 brokenchain 값을 더해서
+    같은 구조로 반환하는 함수.
+
+    :param structure_list: {'bridge': [(start, end), ...], 'tunnel': [(start, end), ...]}
+    :param brokenchain: float, 오프셋 값 (예: 0.0 또는 양수/음수)
+    :return: 수정된 structure_list (같은 구조, 값은 offset 적용)
+    """
+    if brokenchain == 0.0:
+        # 오프셋이 없으면 원본 그대로 반환
+        return structure_list
+
+    updated_structure = {'bridge': [], 'tunnel': []}
+
+    for key in ['bridge', 'tunnel']:
+        for start, end in structure_list.get(key, []):
+            new_start = start + brokenchain
+            new_end = end + brokenchain
+            updated_structure[key].append((new_start, new_end))
+
+    return updated_structure
+
 class KmObjectApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.brokenchain = 0.0
+        self.isbrokenchain = False
         self.title("KM Object 생성기")
         self.geometry("600x400")
 
@@ -637,6 +666,26 @@ class KmObjectApp(tk.Tk):
         top.grab_set()  # 모달처럼 동작
         top.wait_window()
 
+    def process_proken_chain(self):
+        # Y/N 메시지박스
+        result = messagebox.askyesno("파정 확인", "노선에 거리파정이 존재하나요?")
+        if not result:
+            return False
+
+        # float 값 입력 받기
+        while True:
+            value = simpledialog.askstring("파정 입력", "거리파정 값을 입력하세요 (예: 12.34):")
+            if value is None:  # 사용자가 취소를 눌렀을 때
+                return False
+            try:
+                self.isbrokenchain = True if float(value) else False
+                self.brokenchain = float(value)
+                break
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
+
+        self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
+
     def run_main(self):
         try:
             # 디렉토리 설정
@@ -659,12 +708,17 @@ class KmObjectApp(tk.Tk):
             self.source_directory = os.path.join(self.base_source_directory, self.alignment_type) + '/'
             self.log(f"소스 경로: {self.source_directory}")
 
+            # ㅊ파정확인
+            self.process_proken_chain()
+
             data = read_file()
             if not data:
                 self.log("데이터가 비어 있습니다.")
                 return
 
-            last_block = find_last_block(data)
+            start_blcok = int(find_block(data, start=True) + self.brokenchain)
+            last_block = int(find_block(data, start=False) + self.brokenchain)
+            self.log(f"시작 측점 = {start_blcok}")
             self.log(f"마지막 측점 = {last_block}")
 
             if not self.structure_excel_path:
@@ -674,6 +728,9 @@ class KmObjectApp(tk.Tk):
 
             self.log("구조물 정보 불러오는 중...")
             structure_list = find_structure_section(self.structure_excel_path)
+            # 구조물 측점 파정처리
+            structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
+
             if structure_list:
                 self.log("구조물 정보가 성공적으로 로드되었습니다.")
             else:
@@ -681,7 +738,7 @@ class KmObjectApp(tk.Tk):
 
             intervel = 100 if self.alignment_type == '도시철도' else 200
             self.log("KM Object 생성 중...")
-            index_datas, post_datas = create_km_object(last_block, structure_list, intervel, self.alignment_type, self.source_directory, self.work_directory, self.target_directory)
+            index_datas, post_datas = create_km_object(start_blcok, last_block, structure_list, intervel, self.alignment_type, self.source_directory, self.work_directory, self.target_directory)
 
             index_file = os.path.join(self.work_directory, 'km_index.txt')
             post_file = os.path.join(self.work_directory, 'km_post.txt')
