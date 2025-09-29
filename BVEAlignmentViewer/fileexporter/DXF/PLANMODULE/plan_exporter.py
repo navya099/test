@@ -24,7 +24,7 @@ class DXFPlanExporter:
         self.iptable_drawer = IPTableDrawer(msp)
         self.station_drawer = StationDrawer(msp)
 
-    def export_plandrawing(self, ipdata: list[IPdata], bvedata: BVERouteData ,profile: Profile, filepath: str):
+    def export_plandrawing(self, ipdata: list[IPdata], bvedata: BVERouteData ,profile: Profile):
 
         # IP라인 그리기
         self.ipline_drawer.draw_ipline(ipdata)

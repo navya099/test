@@ -72,6 +72,11 @@ class PlotFrame(tk.Frame):
         self.title = self.current_view
         self.redraw()
 
+    def switch_view(self, view_type: ViewType):
+        """뷰 전환 + redraw"""
+        self.current_view = view_type
+        self.redraw()
+
     def redraw(self):
         """현재 alignments 기준으로 현재 뷰 redraw"""
         if self.current_view == ViewType.PLAN:

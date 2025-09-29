@@ -3,7 +3,6 @@ from core.datacontainer import BVERouteFactory
 from core.parser import CSVRouteParser
 from fileexporter.DXF.PLANMODULE.plan_exporter import DXFPlanExporter
 from fileexporter.DXF.dxfmanager import DXFManager
-from fileexporter.dxfmanager import DXFController
 from fileexporter.DXF.blockmanager import BlockManager
 from plot.plot import ViewType
 
@@ -86,7 +85,7 @@ class AppController:
 
         if current_view == ViewType.PLAN:
             planexporter = DXFPlanExporter(dxfmanager.doc, dxfmanager.msp)
-            planexporter.export_plandrawing(self.alignments, self.bvedata,self.profile, ViewType.PLAN.value)
+            planexporter.export_plandrawing(self.alignments, self.bvedata,self.profile)
         elif current_view == ViewType.PROFILE:
             raise NotImplementedError
             #profileexporter = DXFProfileExporter(self.alignments, self.bvedata,self.profile, ViewType.PROFILE.value)
