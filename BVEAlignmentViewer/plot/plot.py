@@ -90,6 +90,7 @@ class PlotFrame(tk.Frame):
         y_data = [alignment.coord.y for alignment in self.alignments]
         if x_data and y_data:
             line, = self.ax.plot(x_data, y_data, color='gray', label='IP라인')
+            self.set_fixed_view(x_data, y_data)
         #IP제원
         for i, alignment in enumerate(self.alignments):
             if i== 0:
@@ -107,11 +108,10 @@ class PlotFrame(tk.Frame):
         self.ax.legend()
         self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.draw()
-        messagebox.showinfo("플롯 완료", f"플롯 완료")
 
     def plot_profile_view(self, title):
         self.ax.clear()
-        self.apply_decoration(title, "X(거리)", "Y(표고)")
+        self.apply_decoration(title, "X(거리)", "Y(표고)",set_aspect='auto')
 
         #종단 선
         #VIP라인 그리기
@@ -119,14 +119,26 @@ class PlotFrame(tk.Frame):
         y_data = [pvi.elevation for pvi in self.profile.pvis]
         if x_data and y_data:
             line, = self.ax.plot(x_data, y_data, color='red', label='FL')
+            self.ax.set_xlim(min(x_data), max(x_data))
+            self.ax.set_ylim(min(y_data), max(y_data))
 
         self.ax.legend()
-        self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.toolbar.update()
         self.canvas.draw()
 
-    def plot_section_view(self, alignments, viewtype):
-        pass
-    def apply_decoration(self, title, xlabel, ylabel, show_grid=True):
+    def plot_section_view(self, title):
+        """횡단면도: 추후 구현 예정"""
+        self.ax.clear()
+        self.apply_decoration(title, "X", "Y")
+        self.ax.text(
+            0.5, 0.5,
+            "SECTION VIEW (미구현)",
+            ha="center", va="center", transform=self.ax.transAxes,
+            fontsize=12, color="red"
+        )
+        self.canvas.draw()
+
+    def apply_decoration(self, title, xlabel, ylabel, show_grid=True, set_aspect="equal"):
         """그래프 기본 스타일 적용"""
         self.ax.set_title(title)
         self.ax.set_xlabel(xlabel)
@@ -134,6 +146,40 @@ class PlotFrame(tk.Frame):
         if show_grid:
             self.ax.grid(True)
         self.ax.axis('on')
-        self.ax.set_aspect('equal')
-        self.ax.set_xlim(left=-100000, right=100000)
-        self.ax.set_ylim(bottom=-100000, top=100000)
+        self.ax.set_aspect(set_aspect)
+
+    def set_fixed_view(self, x_data, y_data, box_size=1000):
+        """
+        데이터 중심 기준으로 항상 고정된 박스를 설정하고,
+        데이터 범위에 따라 축척을 유동적으로 조정
+        """
+        if not x_data or not y_data:
+            return
+
+        # 데이터 중심 계산
+        x_center = (max(x_data) + min(x_data)) / 2
+        y_center = (max(y_data) + min(y_data)) / 2
+
+        # 데이터 크기
+        data_width = max(x_data) - min(x_data)
+        data_height = max(y_data) - min(y_data)
+
+        # 초기 박스 크기 절반
+        half_box = box_size / 2
+
+        # 데이터 크기에 맞춰 스케일 조정
+        scale_x = data_width / box_size if data_width > box_size else 1
+        scale_y = data_height / box_size if data_height > box_size else 1
+        scale = max(scale_x, scale_y)
+
+        half_width = half_box * scale
+        half_height = half_box * scale
+
+        # x, y 범위 설정
+        self.ax.set_xlim(x_center - half_width, x_center + half_width)
+        self.ax.set_ylim(y_center - half_height, y_center + half_height)
+
+        # 화면 비율 유지
+        self.ax.set_aspect("equal")
+
+

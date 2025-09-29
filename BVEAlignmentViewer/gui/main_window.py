@@ -40,7 +40,7 @@ class MainApp(tk.Tk):
         self.bind("<F5>", self.on_refresh)
         self.bind("<F6>", lambda e: self.plot_frame.plot_plan_view('평면도'))
         self.bind("<F7>", lambda e: self.plot_frame.plot_profile_view("종단면도"))
-        self.bind("<F8>", lambda e: self.plot_frame.plot_section_view(None,"횡단면도"))
+        self.bind("<F8>", lambda e: self.plot_frame.plot_section_view("횡단면도"))
 
     def on_refresh(self, event=None):
         # 새로고침 기능 구현
