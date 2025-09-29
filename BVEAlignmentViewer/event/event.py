@@ -42,6 +42,11 @@ class EventHandler:
         if filepath:
             self._process_and_plot(filepath)
 
+    def reload(self):
+        filepath = self.file_controller.filepath
+        if filepath:
+            self._process_and_plot(filepath)
+
     def _process_and_plot(self, filepath):
         extracted_list = self.app_controller.load_route(filepath)  # ✅ 공식 인터페이스 호출
         if extracted_list:

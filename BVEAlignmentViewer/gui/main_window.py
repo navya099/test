@@ -35,3 +35,14 @@ class MainApp(tk.Tk):
 
         self.plot_frame = PlotFrame(main_frame)
         self.plot_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 키 바인딩
+        self.bind("<F5>", self.on_refresh)
+        self.bind("<F6>", lambda e: self.plot_frame.plot_plan_view('평면도'))
+        self.bind("<F7>", lambda e: self.plot_frame.plot_profile_view("종단면도"))
+        self.bind("<F8>", lambda e: self.plot_frame.plot_section_view(None,"횡단면도"))
+
+    def on_refresh(self, event=None):
+        # 새로고침 기능 구현
+        # 예: 파일 다시 열기, 그래프 다시 그리기 등 원하는 동작 수행
+        self.event_handler.reload()
