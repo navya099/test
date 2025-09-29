@@ -79,7 +79,7 @@ class PlotFrame(tk.Frame):
         elif self.current_view == ViewType.PROFILE:
             self.plot_profile_view(ViewType.PROFILE.value)
         elif self.current_view == ViewType.SECTION:
-            self.plot_section_view(self.alignments, ViewType.SECTION.value)
+            self.plot_section_view(ViewType.SECTION.value)
 
     def plot_plan_view(self, title):
         self.ax.clear()

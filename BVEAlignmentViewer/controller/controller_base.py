@@ -1,8 +1,11 @@
 from tkinter import filedialog, messagebox
 from core.datacontainer import BVERouteFactory
 from core.parser import CSVRouteParser
+from fileexporter.DXF.PLANMODULE.plan_exporter import DXFPlanExporter
+from fileexporter.DXF.dxfmanager import DXFManager
 from fileexporter.dxfmanager import DXFController
-
+from fileexporter.DXF.blockmanager import BlockManager
+from plot.plot import ViewType
 
 
 # 기능 클래스(모든 기능을 넣을 예정)
@@ -61,14 +64,37 @@ class AppController:
 
     def export_dxf(self, filename: str):
         """
-        DXF 파일로 alignments 저장.
+        현재 뷰를 기반으로 DXF 파일로 alignments 저장.
         """
+        current_view = self.main_app.plot_frame.current_view
         if not self.alignments:
             raise ValueError("저장할 alignments 데이터가 없습니다. 먼저 노선을 로드하세요.")
         if not self.bvedata:
             raise ValueError("저장할 bvedata 데이터가 없습니다. 먼저 노선을 로드하세요.")
-        dxfmanager = DXFController()
-        dxfmanager.export_dxf(self.alignments, self.bvedata, filename)  # alignments 전달
+        if not self.profile:
+            raise ValueError("저장할 종단 데이터가 없습니다. 먼저 노선을 로드하세요.")
+
+        dxfmanager = DXFManager()
+        dxfmanager.create()
+        dxfmanager.create_style('Gulim','gulim.ttc')
+
+        #평면용 블록 정의
+        block_manager = BlockManager(dxfmanager.doc)
+        block_manager.define_iptable_blocks()
+        block_manager.define_curvespec_blocks()
+        block_manager.define_station_marker()
+
+        if current_view == ViewType.PLAN:
+            planexporter = DXFPlanExporter(dxfmanager.doc, dxfmanager.msp)
+            planexporter.export_plandrawing(self.alignments, self.bvedata,self.profile, ViewType.PLAN.value)
+        elif current_view == ViewType.PROFILE:
+            raise NotImplementedError
+            #profileexporter = DXFProfileExporter(self.alignments, self.bvedata,self.profile, ViewType.PROFILE.value)
+            #profileexporter.export_profile()
+
+        # 공통 저장
+        dxfmanager.save(filename)
+
         return True
 
 class FileController:
