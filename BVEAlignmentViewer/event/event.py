@@ -59,10 +59,11 @@ class EventHandler:
 
             #종단 객체 빌드
             profile = ProfileBuilder.build_profile(bve_data)
+            self.app_controller.profile = profile
             # 선형객체 저장
             self.app_controller.alignments = alignments
             # PlotFrame에 데이터 설정
-            self.main_app.plot_frame.set_data(alignments, bve_data)
+            self.main_app.plot_frame.set_data(alignments, bve_data, profile)
 
     def on_file_save(self):
         self.file_controller.save_file()

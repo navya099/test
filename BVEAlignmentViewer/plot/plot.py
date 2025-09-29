@@ -7,6 +7,8 @@ from matplotlib.figure import Figure
 import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
+from Profile.profile import Profile
+from core.profile.profileprocessor import ProfileProcessor
 from model.bveroutedata import BVERouteData
 from model.ipdata import EndPoint, IPdata
 
@@ -62,10 +64,11 @@ class PlotFrame(tk.Frame):
             self.toolbar.pack_forget()
         self.canvas.draw()
 
-    def set_data(self, alignments: list[Union[EndPoint, IPdata]], bvedata:BVERouteData):
+    def set_data(self, alignments: list[Union[EndPoint, IPdata]], bvedata:BVERouteData, profile: Profile):
         """새 데이터 설정"""
         self.alignments = alignments
         self.bvedata = bvedata
+        self.profile = profile
         self.title = self.current_view
         self.redraw()
 
@@ -74,7 +77,7 @@ class PlotFrame(tk.Frame):
         if self.current_view == ViewType.PLAN:
             self.plot_plan_view(ViewType.PLAN.value)
         elif self.current_view == ViewType.PROFILE:
-            self.plot_profile_view(self.alignments, ViewType.PROFILE.value)
+            self.plot_profile_view(ViewType.PROFILE.value)
         elif self.current_view == ViewType.SECTION:
             self.plot_section_view(self.alignments, ViewType.SECTION.value)
 
@@ -106,8 +109,21 @@ class PlotFrame(tk.Frame):
         self.canvas.draw()
         messagebox.showinfo("플롯 완료", f"플롯 완료")
 
-    def plot_profile_view(self, alignments, viewtype):
-        pass
+    def plot_profile_view(self, title):
+        self.ax.clear()
+        self.apply_decoration(title, "X(거리)", "Y(표고)")
+
+        #종단 선
+        #VIP라인 그리기
+        x_data = [pvi.station for pvi in self.profile.pvis]
+        y_data = [pvi.elevation for pvi in self.profile.pvis]
+        if x_data and y_data:
+            line, = self.ax.plot(x_data, y_data, color='red', label='FL')
+
+        self.ax.legend()
+        self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.canvas.draw()
+
     def plot_section_view(self, alignments, viewtype):
         pass
     def apply_decoration(self, title, xlabel, ylabel, show_grid=True):

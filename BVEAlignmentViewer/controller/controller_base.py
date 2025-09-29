@@ -23,6 +23,8 @@ class AppController:
         # Alignment 데이터 컨테이너
         self.alignments = None
         self.bvedata = None
+        self.profile = None
+
         # 기능 전담 클래스 인스턴스 보관
         self.parser = CSVRouteParser()
 
