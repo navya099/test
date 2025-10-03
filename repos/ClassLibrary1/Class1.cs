@@ -163,6 +163,7 @@ namespace ClassLibrary1
                     File.WriteAllLines(Path.Combine(folderPath, $"{targetAlignment.Name}.csv"),
                         new[] { "BaseStation,BaseElevation,TargetStation,TargetElevation,OffsetX,OffsetZ" }.Concat(result.CSVLines));
                     File.WriteAllLines(Path.Combine(folderPath, $"{targetAlignment.Name}.txt"), result.BVELines);
+                    File.WriteAllLines(Path.Combine(folderPath, $"{targetAlignment.Name}FREEOBJ.txt"), result.FreeObjLines);
                 }
 
                 RailIndex++;
@@ -198,11 +199,25 @@ namespace ClassLibrary1
                 double offsetY = 0.0;
                 double targetSta = 0.0;
                 double currentElev = BaseProfile?.ElevationAt(sta) ?? 0.0;
+                double NextElev = (sta + Interval <= endStation) ? BaseProfile?.ElevationAt(sta + Interval) ?? currentElev: currentElev;
                 double targetElev = 0.0;
-
+                double StationAtNorthing = 0.0; double StationAtEasting = 0.0; double StationAtBearing = 0.0; 
+                double targetEasting = 0.0; double targetBearing = 0.0; double targetNorthing = 0.0; 
+                double yaw = 0.0; double pitch = 0.0; double roll = 0.0;
+                double deltaZ = 0.0;
                 try
                 {
                     BaseAlignment.DistanceToAlignment(sta, targetAlignment, ref offsetX, ref targetSta);
+
+                    //현재 측점의 좌표와 방향각 반환
+                    BaseAlignment.PointLocation(sta, 0.0, 0.001, ref StationAtEasting, ref StationAtNorthing, ref StationAtBearing); 
+                    //타겟 선형의 좌표와 방향각 반환
+                    targetAlignment.PointLocation(targetSta, 0.0, 0.001, ref targetEasting, ref targetNorthing, ref targetBearing);
+                    //yaw, pitch , roll 계산
+                    yaw = StationAtBearing - targetBearing;
+                    deltaZ = NextElev - currentElev;
+                    pitch = Math.Atan2(deltaZ, Interval) * (180.0 / Math.PI); // 세로 방향 각도(다음 좌표에서 현재 좌표
+                    
 
                     if (targetProfile != null)
                     {
@@ -210,9 +225,7 @@ namespace ClassLibrary1
                         offsetY = currentElev - targetElev;
                     }
 
-                    string csvLine = $"{sta:F0},{currentElev:F3},{targetSta:F3},{targetElev:F3},{-offsetX:F3},{-offsetY:F3}";
-                    result.CSVLines.Add(csvLine);
-                    result.Offsets.Add((sta, -offsetX, -offsetY));
+                    result.Offsets.Add((targetAlignment.Name, sta, currentElev , targetSta , targetElev , offsetX, offsetY, yaw, pitch, roll));
                 }
                 catch
                 {
@@ -222,6 +235,9 @@ namespace ClassLibrary1
 
             // BVE Rail/Freeobj 문법 생성
             result.GenerateBVELines(ref RailIndex, RailObjIndex, FreeObjIndex, Interval);
+            //csv파일 생성
+
+            result.GenerateCSVLines();
             return result;
         }
     }
@@ -234,39 +250,44 @@ namespace ClassLibrary1
         public List<string> CSVLines { get; } = new List<string>();
         public List<string> BVELines { get; } = new List<string>();
         public List<string> FreeObjLines { get; } = new List<string>();
-        public List<(double Sta, double X, double Z)> Offsets { get; } = new List<(double, double, double)>();
+        public List<(string Name, double Sta, double Z, double TargetSTA, double TargetZ, double OffsetX, double OffsetZ, double Yaw, double Pitch, double Roll)> Offsets { get; } = new List<(string, double, double, double, double, double, double, double, double, double)>();
+
 
         public void GenerateBVELines(ref int railIndex, int railObjIndex, int freeObjIndex, double interval)
         {
-            double yaw = 0.0;
-            double pitch = 0.0;
-            double roll = 0.0;
-
             for (int i = 0; i < Offsets.Count; i++)
             {
-                var (sta, x, z) = Offsets[i];
-
-                if (i < Offsets.Count - 1)
-                {
-                    var (nextSta, x2, z2) = Offsets[i + 1];
-                    double deltaX = x2 - x;
-                    double deltaZ = z2 - z;
-                    yaw = Math.Atan2(deltaX, interval) * (180.0 / Math.PI);
-                    pitch = Math.Atan2(deltaZ, interval) * (180.0 / Math.PI);
+                var (name , sta, currentElev, targetSta, targetElev, offsetX, offsetY, yaw, pitch, roll) = Offsets[i];
+                if (i == 0)
+                { 
+                    BVELines.Add($"{name}");
+                    FreeObjLines.Add($"{name}");
                 }
-
                 if (i == Offsets.Count - 1)
                 {
-                    BVELines.Add($"{sta:F0},.RailEnd {railIndex};{x:F3};{z:F3};{railObjIndex};");
+                    BVELines.Add($"{sta:F0},.RailEnd {railIndex};{-offsetX:F3};{-offsetY:F3};{railObjIndex};");
                 }
                 else
                 {
                     if ((int)sta % 25 == 0)
-                        BVELines.Add($"{sta:F0},.Rail {railIndex};{x:F3};{z:F3};{railObjIndex};");
+                        BVELines.Add($"{sta:F0},.Rail {railIndex};{-offsetX:F3};{-offsetY:F3};{railObjIndex};");
                     if ((int)sta % 5 == 0)
-                        FreeObjLines.Add($"{sta:F0},.Freeobj 0;{freeObjIndex};{x:F3};{z:F3};{yaw};{pitch};{roll};");
+                        FreeObjLines.Add($"{sta:F0},.Freeobj 0;{freeObjIndex};{-offsetX:F3};{-offsetY:F3};{yaw};{pitch};{roll};");
                 }
             }
+        }
+        public void GenerateCSVLines()
+        {
+            for (int i = 0; i < Offsets.Count; i++)
+            {
+                var (name, sta, currentElev, targetSta, targetElev, offsetX, offsetY, yaw, pitch, roll) = Offsets[i];
+                if (i == 0)
+                {
+                    CSVLines.Add($"{name}");
+                }
+                
+                CSVLines.Add($"{sta:F0},{currentElev:F3},{targetSta:F3},{targetElev:F3},{-offsetX:F3},{-offsetY:F3}");
+                }
         }
     }
     #endregion
