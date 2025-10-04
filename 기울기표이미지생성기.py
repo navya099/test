@@ -583,7 +583,7 @@ class GradePost:
         arrow_draw.polygon(arrow_points, fill=text_color, outline=text_color)
         return arrow_image
     
-def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str, source_diretory: str, work_directory: str):
+def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str, source_diretory: str, work_directory: str, offset=0.0):
     # Define the input and output file paths
     open_file = source_diretory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
@@ -602,7 +602,8 @@ def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str
                 line = line.replace(f'LoadTexture, {curvetype}_기울기표.png,', f'LoadTexture, {output_filename}_기울기표.png,')
             # Append the modified line to the new_lines list
             new_lines.append(line)
-    
+    new_lines.append(f'\nTranslateAll, {offset}, 0, 0\n')
+
     # Open the output file for writing the modified lines
     with open(output_file, 'w', encoding='utf-8') as file:
         # Write the modified lines to the output file
@@ -904,7 +905,7 @@ def get_vcurve_lines(vip: VIPdata) -> list[list]:
     else:
         return [['VIP', vip.VIP_STA]]
 
-def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str, al_type: str):
+def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str, al_type: str, offset= 0.0):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
     #이미지 저장
     object_index = 3025
@@ -931,7 +932,7 @@ def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory
             process_verticulcurve(vip, key, value, current_structure, source_directory, work_directory)
             img_f_name = f'VIP{vip.VIPNO}_{key}'
             openfile_name = f'{key}_{current_structure}용'
-            copy_and_export_csv(openfile_name, img_f_name, key, source_directory, work_directory)
+            copy_and_export_csv(openfile_name, img_f_name, key, source_directory, work_directory, offset)
 
             objects.append(ObjectDATA(
                 VIPNO=vip.VIPNO,
@@ -1015,6 +1016,7 @@ class PitchProcessingApp(tk.Tk):
         self.target_directory = ''
         self.isbrokenchain: bool = False
         self.brokenchain: float = 0.0
+        self.offset: float = 0.0
         self.create_widgets()
 
     def create_widgets(self):
@@ -1065,6 +1067,19 @@ class PitchProcessingApp(tk.Tk):
                 messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
 
         self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
+    def process_offset(self):
+        # float 값 입력 받기
+        while True:
+            value = simpledialog.askstring("오프셋 입력", "오프셋 값을 입력하세요 (예: 12.34):")
+            if value is None:  # 사용자가 취소를 눌렀을 때
+                return False
+            try:
+                self.offset = float(value)
+                break
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
+
+        self.log(f"오프셋 값: {self.offset}")
 
     def run_main(self):
         try:
@@ -1090,6 +1105,9 @@ class PitchProcessingApp(tk.Tk):
 
             # ㅊ파정확인
             self.process_proken_chain()
+
+            #오프셋 적용
+            self.process_offset()
 
             # 파일 읽기
             data = None
@@ -1122,7 +1140,7 @@ class PitchProcessingApp(tk.Tk):
             self.log(f"{flag}용 처리 시작...")
             vipdatas = process_and_save_sections(data, self.brokenchain, flag, data)
 
-            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory, self.alignment_type)
+            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory, self.alignment_type, offset=self.offset)
 
             # 최종 텍스트 생성
             if objectdatas:
