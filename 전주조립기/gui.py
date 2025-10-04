@@ -1,12 +1,14 @@
 import os
-import shutil
 from tkinter import ttk, messagebox, filedialog
 import tkinter as tk
-
+from filemanager import FileManager
 from library import LibraryManager
 
 
 class PoleAssemblerApp:
+    """
+    메인 앱
+    """
     def __init__(self, root):
         self.root = root
         self.root.title("전주 조립기")
@@ -34,7 +36,6 @@ class PoleAssemblerApp:
         self.pole_var = tk.StringVar()
         self.pole_combo = ttk.Combobox(root, textvariable=self.pole_var, values= [], state="readonly")
         self.pole_combo.grid(row=1, column=1, padx=5, pady=5)
-        self.pole_combo.bind("<<ComboboxSelected>>", self.update_options)
 
         # 브래킷
         ttk.Label(root, text="브래킷 종류:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
@@ -54,12 +55,23 @@ class PoleAssemblerApp:
         self.fpw_combo = ttk.Combobox(root, textvariable=self.fpw_var, state="disabled")
         self.fpw_combo.grid(row=4, column=1, padx=5, pady=5)
 
+        #건식게이지
+        ttk.Label(root, text="건식게이지:").grid(row=5, column=0, padx=5, pady=5, sticky="w")
+        self.gauge_var = tk.DoubleVar()
+        self.gauge_combo = ttk.Combobox(root, textvariable=self.gauge_var)
+        self.gauge_combo.grid(row=5, column=1, padx=5, pady=5)
+
         # CSV 저장 버튼
         self.export_button = ttk.Button(root, text="CSV 내보내기", command=self.export_csv, state="disabled")
-        self.export_button.grid(row=5, column=0, columnspan=2, pady=10)
+        self.export_button.grid(row=6, column=0, columnspan=2, pady=10)
 
     # 전주 선택 시 옵션 업데이트
     def update_options(self, event):
+        """
+        콤보상자 옵션 업데이트 메소드
+        :param event:
+        :return:
+        """
         rail_type = self.railtype_var.get()
 
         # rail_type -> LibraryManager 그룹 매핑
@@ -94,9 +106,18 @@ class PoleAssemblerApp:
 
     def export_csv(self):
         """조립된 전주를 CSV로 저장하고 텍스처 파일도 복사"""
-        combine_lines, texturefiles = self.combine_file()
+        selections = {
+            "기둥": self.pole_var.get(),
+            "브래킷": self.bracket_var.get(),
+            "급전선설비": self.feeder_var.get(),
+            "금구류": self.fpw_var.get()
+        }
+        gauge = self.gauge_var.get()
 
-        # CSV 저장
+        filemanager = FileManager(self.lib_manager)
+        combine_lines, texturefiles = filemanager.combine_file(selections, gauge)
+
+        # CSV 저장 위치
         export_path = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV 파일", "*.csv")],
@@ -105,75 +126,13 @@ class PoleAssemblerApp:
         if not export_path:
             return
 
-        with open(export_path, 'w', encoding='utf-8') as f:
-            for line in combine_lines:
-                f.write(line)
-
+        # CSV 저장
+        filemanager.save_csv(export_path, combine_lines)
         messagebox.showinfo('정보', f'CSV 저장 완료:\n{export_path}')
 
         # 텍스처 복사
-        self.copy_textures(texturefiles, os.path.dirname(export_path))
+        filemanager.copy_textures(texturefiles, os.path.dirname(export_path))
         messagebox.showinfo('정보', f'텍스처 파일 복사 완료:\n{os.path.dirname(export_path)}')
 
-    def copy_textures(self, texturefiles: list[str], dest_dir: str):
-        """텍스처 파일을 지정 폴더로 복사"""
-        os.makedirs(dest_dir, exist_ok=True)
-        for src in texturefiles:
-            if os.path.exists(src):
-                shutil.copy(src, dest_dir)
-
-    def combine_file(self):
-        combine_lines = []
-        texturefiles = []
-        selections = {
-            "기둥": self.pole_var.get(),
-            "브래킷": self.bracket_var.get(),
-            "급전선설비": self.feeder_var.get(),
-            "금구류": self.fpw_var.get()
-        }
-
-        for category, filename in selections.items():
-            if not filename:
-                continue
-
-            # 브래킷만 그룹별 탐색, 나머지는 공통(base)
-            if category == "브래킷":
-                group = "고속철도" if filename in self.lib_manager.highspeedrail.get(category, []) else \
-                    "일반철도" if filename in self.lib_manager.normalspeedrail.get(category, []) else \
-                        "cako250"  # 필요시 준고속도 포함
-            else:
-                group = "공통"
-
-            # 실제 파일 경로 생성
-            file_path = os.path.join(self.lib_manager.base_dir, group, category, filename)
-
-            # 주석 추가
-            combine_lines.append(f',;{file_path}\n')
-
-            # 파일 내용 읽어서 추가
-            lines = self.readfile(file_path)
-            combine_lines.extend(lines)
-
-            # 텍스처 검사
-            for line in lines:
-                texturename = self.search_texture_name(line)
-                if texturename and texturename in self.lib_manager.textures:
-                    texturefiles.append(self.lib_manager.textures[texturename])
-
-        return combine_lines, texturefiles
-
-    def readfile(self, filename):
-        with open(filename, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        return lines
-
-    def search_texture_name(self, line: str) -> str:
-        """LoadTexture 구문에서 텍스처 이름 추출"""
-        line = line.strip()
-        if line.startswith('LoadTexture'):
-            parts = line.split(',')
-            if len(parts) > 1:
-                return parts[1].strip()
-        return ''
 
 

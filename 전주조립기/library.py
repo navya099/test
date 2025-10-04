@@ -65,6 +65,7 @@ class LibraryManager:
     def list_files_in_category(self, category: str, group: str = None) -> list[str]:
         """
         특정 카테고리 내 파일명 조회
+        category: 카테고리
         group: 'base', 'highspeedrail', 'normalspeedrail', 'subhighspeedrail'
         """
         libs = {
@@ -110,7 +111,9 @@ class LibraryManager:
         return result
 
     def list_all_files(self, group: str = None) -> list[str]:
-        """전체 라이브러리 혹은 특정 그룹의 모든 파일 반환"""
+        """전체 라이브러리 혹은 특정 그룹의 모든 파일 반환
+        :arg group: 'base', 'highspeedrail', 'normalspeedrail', 'subhighspeedrail'
+        """
         libs = {"base": self.base,
                 "highspeedrail": self.highspeedrail,
                 "normalspeedrail": self.normalspeedrail,
@@ -121,3 +124,35 @@ class LibraryManager:
             for files in lib.values():
                 all_files.extend(files)
         return all_files
+    #API메서드
+    def resolve_group(self, category: str, filename: str) -> str:
+        """
+        파일이 속한 그룹(공통, 고속철도, 일반철도, 준고속철도)을 반환 API
+        :arg category: 카테고리명
+        :arg filename: 파일명
+        :return group_name: 그룹명(공통, 고속철도, 일반철도, 준고속철도)
+        """
+        group_map = {
+            "공통": self.base,
+            "고속철도": self.highspeedrail,
+            "일반철도": self.normalspeedrail,
+            "cako250": self.subhighspeedrail,
+        }
+
+        # 그룹별 탐색
+        for group_name, group_dict in group_map.items():
+            if filename in group_dict.get(category, []):
+                return group_name
+
+        # 못 찾으면 공통
+        return "공통"
+
+    # API메서드
+    def get_texture_file(self, texture_name: str) -> str | None:
+        """
+        텍스쳐이름으로 전체 경로 반환 API
+        :param texture_name: 텍스쳐이름
+        :return: 전체 텍스쳐경로
+        """
+
+        return self.textures.get(texture_name)
