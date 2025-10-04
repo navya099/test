@@ -246,7 +246,7 @@ def annotate_sections(sections ,brokenchain):
 
     return ipdatas
     
-def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP', source_directory='', work_directory=''):
+def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP', source_directory='', work_directory='', offset =0.0):
     # Define the input and output file paths
     open_file = source_directory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
@@ -266,7 +266,8 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
      
             # Append the modified line to the new_lines list
             new_lines.append(line)
-    
+    new_lines.append(f'\nTranslateAll, {offset}, 0, 0\n')
+
     # Open the output file for writing the modified lines
     with open(output_file, 'w', encoding='utf-8') as file:
         # Write the modified lines to the output file
@@ -893,7 +894,7 @@ def cal_speed(radius: float) -> float:
     return (radius * 160 / 11.8) ** 0.5
 
 #핵심 로직2 (클래스화 구조변경)
-def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory, altype: str):
+def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory, altype: str, offset =0.0):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
 
     object_path = ''
@@ -922,7 +923,7 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
                 citylineprocess(key, ip.radius, ip.cant, tcl, img_f_name, source_directory, work_directory)
 
                 output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory,
-                                    work_directory)  # csv 원본복사 후 추출함수
+                                    work_directory, offset)  # csv 원본복사 후 추출함수
                 if speed < 120 and key in ['BC', 'PC']:
                     insert_speedlimt_syntax(output_file, structure, source_directory, work_directory) #속도제한표 추가
                     modify_r_text_in_file(output_file, img_f_name, str(int(ip.radius)))
@@ -931,7 +932,7 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
 
                 if isSPPS:
                     process_dxf_image(img_f_name, structure, ip.radius, source_directory, work_directory)
-                output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory) # csv 원본복사 후 추출함수
+                output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory, offset) # csv 원본복사 후 추출함수
             #print(object_path)
             #print(f'{img_f_name}-{openfile_name}-{key}:{img_text}-{objec_index}')
             #클래스에ㅐ 속성 추가
@@ -1015,7 +1016,7 @@ def apply_brokenchain_to_structure(structure_list, brokenchain):
     return updated_structure
 
 
-def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain, altype: str, flag: str):
+def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain, altype: str, flag: str, offset = 0.0):
     """곡선 데이터 처리 (파일 저장 및 이미지 & CSV 생성)"""
     if not data:
         print("curve_info가 비어 있습니다.")
@@ -1026,7 +1027,7 @@ def process_curve_data(source_directory, work_directory, target_directory, data,
     else:
         ipdatas = data
     # 이미지 및 CSV 생성
-    objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory, altype)
+    objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory, altype, offset)
 
     return objectdatas
 
@@ -1104,6 +1105,7 @@ class CurveProcessingApp(tk.Tk):
     def __init__(self):
         super().__init__()
 
+        self.offset = 0.0
         self.alignment_type = ''
         self.base_source_directory = 'c:/temp/curve/소스/'
         self.log_box = None
@@ -1166,6 +1168,20 @@ class CurveProcessingApp(tk.Tk):
         top.grab_set()  # 모달처럼 동작
         top.wait_window()
 
+    def process_offset(self):
+        # float 값 입력 받기
+        while True:
+            value = simpledialog.askstring("오프셋 입력", "오프셋 값을 입력하세요 (예: 12.34):")
+            if value is None:  # 사용자가 취소를 눌렀을 때
+                return False
+            try:
+                self.offset = float(value)
+                break
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
+
+        self.log(f"오프셋 값: {self.offset}")
+
     def run_main(self):
         try:
             # 디렉토리 설정
@@ -1190,6 +1206,9 @@ class CurveProcessingApp(tk.Tk):
 
             #ㅊ파정확인
             self.process_proken_chain()
+
+            # 오프셋 적용
+            self.process_offset()
 
             # 곡선 정보 파일 읽기
             self.log("곡선 정보 파일 읽는 중...")
@@ -1219,7 +1238,7 @@ class CurveProcessingApp(tk.Tk):
             structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
             # 곡선 데이터 처리
             self.log("곡선 데이터 처리 중...")
-            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain, self.alignment_type, flag)
+            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain, self.alignment_type, flag, self.offset)
 
             # 최종 텍스트 생성
             if objectdatas:
