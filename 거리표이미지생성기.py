@@ -174,7 +174,7 @@ def create_m_image(text, text2, bg_color, filename, text_color, work_directory, 
     final_dir = work_directory + filename
     img.save(final_dir)
 
-def copy_and_export_csv(open_filename='km표-토공용', output_filename='13460', ptype = 'km표' ,source_directory='', work_directory=''):
+def copy_and_export_csv(open_filename='km표-토공용', output_filename='13460', ptype = 'km표' ,source_directory='', work_directory='', offset=0.0):
     # Define the input and output file paths
     open_file = source_directory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
@@ -192,7 +192,8 @@ def copy_and_export_csv(open_filename='km표-토공용', output_filename='13460'
 
             # Append the modified line to the new_lines list
             new_lines.append(line)
-    
+    new_lines.append(f'\nTranslateAll, {offset}, 0, 0\n')
+
     # Open the output file for writing the modified lines
     with open(output_file, 'w', encoding='utf-8') as file:
         # Write the modified lines to the output file
@@ -453,7 +454,7 @@ def process_dxf_image(img_text1: str, img_text2: str, img_f_name: str, source_di
     if output_paths:
         converter.trim_and_resize_image(output_paths[0], final_output_image, target_size)
 
-def create_km_object(start_block: int, last_block: int, structure_list: dict, interval: int, alignmenttype: str, source_directory: str, work_directory: str, target_directory: str):
+def create_km_object(start_block: int, last_block: int, structure_list: dict, interval: int, alignmenttype: str, source_directory: str, work_directory: str, target_directory: str, offset=0.0):
     start_block = start_block // interval
     last_block = last_block // interval
     index_datas=[]
@@ -499,7 +500,7 @@ def create_km_object(start_block: int, last_block: int, structure_list: dict, in
                     create_m_image(img_text1, img_text2, img_bg_color, img_f_name, text_color, work_directory, image_size=(250, 400), font_size=144, font_size2=192 )
 
         #텍스쳐와 오브젝트 csv생성
-        copy_and_export_csv(openfile_name, img_f_name, post_type, source_directory, work_directory)
+        copy_and_export_csv(openfile_name, img_f_name, post_type, source_directory, work_directory ,offset)
         
         index = first_index + i
 
@@ -624,6 +625,7 @@ class KmObjectApp(tk.Tk):
         self.target_directory = ''
         self.structure_excel_path = ''
         self.alignment_type = ''
+        self.offset: float = 0.0
         self.create_widgets()
 
     def create_widgets(self):
@@ -686,6 +688,20 @@ class KmObjectApp(tk.Tk):
 
         self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
 
+    def process_offset(self):
+        # float 값 입력 받기
+        while True:
+            value = simpledialog.askstring("오프셋 입력", "오프셋 값을 입력하세요 (예: 12.34):")
+            if value is None:  # 사용자가 취소를 눌렀을 때
+                return False
+            try:
+                self.offset = float(value)
+                break
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
+
+        self.log(f"오프셋 값: {self.offset}")
+
     def run_main(self):
         try:
             # 디렉토리 설정
@@ -710,6 +726,9 @@ class KmObjectApp(tk.Tk):
 
             # ㅊ파정확인
             self.process_proken_chain()
+
+            # 오프셋 적용
+            self.process_offset()
 
             data = read_file()
             if not data:
@@ -738,7 +757,7 @@ class KmObjectApp(tk.Tk):
 
             intervel = 100 if self.alignment_type == '도시철도' else 200
             self.log("KM Object 생성 중...")
-            index_datas, post_datas = create_km_object(start_blcok, last_block, structure_list, intervel, self.alignment_type, self.source_directory, self.work_directory, self.target_directory)
+            index_datas, post_datas = create_km_object(start_blcok, last_block, structure_list, intervel, self.alignment_type, self.source_directory, self.work_directory, self.target_directory, self.offset)
 
             index_file = os.path.join(self.work_directory, 'km_index.txt')
             post_file = os.path.join(self.work_directory, 'km_post.txt')
