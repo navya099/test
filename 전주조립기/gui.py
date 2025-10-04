@@ -65,6 +65,8 @@ class PoleAssemblerApp:
         self.export_button = ttk.Button(root, text="CSV 내보내기", command=self.export_csv, state="disabled")
         self.export_button.grid(row=6, column=0, columnspan=2, pady=10)
 
+
+
     # 전주 선택 시 옵션 업데이트
     def update_options(self, event):
         """
@@ -73,16 +75,7 @@ class PoleAssemblerApp:
         :return:
         """
         rail_type = self.railtype_var.get()
-
-        # rail_type -> LibraryManager 그룹 매핑
-        if rail_type == '고속철도':
-            group = 'highspeedrail'
-        elif rail_type == '일반철도':
-            group = 'normalspeedrail'
-        elif rail_type == '준고속철도':
-            group = 'subhighspeedrail'
-        else:  # 도시철도
-            group = 'base'
+        group = self.lib_manager.define_group(rail_type)
 
         # 전주 목록 조회
         poles = self.lib_manager.list_files_in_category('기둥', group='base')

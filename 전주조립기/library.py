@@ -156,3 +156,15 @@ class LibraryManager:
         """
 
         return self.textures.get(texture_name)
+
+    def define_group(self, rail_type: str):
+        # rail_type -> LibraryManager 그룹 매핑
+        if rail_type == '고속철도':
+            group = 'highspeedrail'
+        elif rail_type == '일반철도':
+            group = 'normalspeedrail'
+        elif rail_type == '준고속철도':
+            group = 'subhighspeedrail'
+        else:  # 도시철도
+            group = 'base'
+        return group
