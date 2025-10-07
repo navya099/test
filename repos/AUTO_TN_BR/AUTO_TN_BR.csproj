@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="GdalConfiguration.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="accoremgd">
       <HintPath>F:\Program Files\Autodesk\AutoCAD 2026\accoremgd.dll</HintPath>
     </Reference>

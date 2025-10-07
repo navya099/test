@@ -1,9 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
+﻿using Autodesk.Aec.DatabaseServices;
+using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
+using Autodesk.AutoCAD.Runtime;
+using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using CoreApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using Exception = Autodesk.AutoCAD.Runtime.Exception;
+using ObjectId = Autodesk.AutoCAD.DatabaseServices.ObjectId;
 
 namespace AUTO_TN_BR
 {
@@ -185,17 +194,17 @@ namespace AUTO_TN_BR
                 using (StreamWriter writer = new StreamWriter(path, false, System.Text.Encoding.UTF8))
                 {
                     if (IncludeHeader)
-                        writer.WriteLine(include3D ? "Easting\tNorthing\tElevation" : "Easting\tNorthing");
+                        //writer.WriteLine(include3D ? "Easting\tNorthing\tElevation" : "Easting\tNorthing");
 
                     if (include3D)
                     {
                         foreach (var pt in Coordinates3D)
-                            writer.WriteLine($"{pt.X:F3}\t{pt.Y:F3}\t{pt.Z:F3}");
+                            writer.WriteLine($"{pt.X:F3},{pt.Y:F3}\t{pt.Z:F3}");
                     }
                     else
                     {
                         foreach (var pt in Coordinates)
-                            writer.WriteLine($"{pt.X:F3}\t{pt.Y:F3}");
+                            writer.WriteLine($"{pt.X:F3},{pt.Y:F3}");
                     }
                 }
 
@@ -234,7 +243,7 @@ namespace AUTO_TN_BR
             SetMessage(LastMessage);
         }
 
-        private void SetMessage(string msg)
+        public void SetMessage(string msg)
         {
             LastMessage = msg;
             LogMessages.Add(msg);                  // 로그 누적
@@ -255,5 +264,6 @@ namespace AUTO_TN_BR
             }
         }
 
+        
     }
 }
