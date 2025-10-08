@@ -38,11 +38,12 @@ namespace AUTO_TN_BR
                     Console.WriteLine(error);
                 }
 
+                Logger.Instance.SetMessage(@"Python 실행 성공");
                 return proc.ExitCode == 0;  // 0이면 정상 종료
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Python 실행 중 예외 발생: " + ex.Message);
+                Logger.Instance.SetMessage($"Python 실행 중 예외 발생: " + ex.Message);
                 return false;
             }
         }

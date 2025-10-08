@@ -4,7 +4,8 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using CoreApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
-using CivSurface = Autodesk.Civil.DatabaseServices.Surface;
+
+
 
 namespace AUTO_TN_BR
 {
@@ -18,59 +19,111 @@ namespace AUTO_TN_BR
         public void AUTOTNBR()
         {
 
-            Editor ed = CoreApp.DocumentManager.MdiActiveDocument.Editor;
+            
             CivilDocument doc = CivilApplication.ActiveDocument;
             Database db = CoreApp.DocumentManager.MdiActiveDocument.Database;
+            Editor ed = CoreApp.DocumentManager.MdiActiveDocument.Editor;
 
             ObjectId baseAlignmentId = PromptSelectAlignment(ed);
-            
-            if (baseAlignmentId.IsNull) return;
+            Logger.Instance.SetMessage($"baseAlignmentId : {baseAlignmentId}");
+            if (baseAlignmentId.IsNull)
+            {
+                Logger.Instance.SetMessage(@"baseAlignmentId가 null임 :코드실행 종료");
+                return;
+                 }
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
-                ObjectIdCollection SurfaceIds = doc.GetSurfaceIds();
+                try
+                {
+                    ObjectIdCollection SurfaceIds = doc.GetSurfaceIds();
 
-                Alignment baseAlignment = tr.GetObject(baseAlignmentId, OpenMode.ForRead) as Alignment;
-                if (baseAlignment == null) return;
-
-                Profile baseProfile = GetProfile(baseAlignment, tr);
-
-                var demProcessor = new DEMProcessor();
-
-                //autodem 생성
-                var autodem = new AUTODEM();
-
-                autodem.BaseAlignment = baseAlignment;
-                autodem.Step = 40;
-                autodem.Editor = ed;
-                autodem.ExtractStations();
-                autodem.ExtractCoordinates2D();
-                autodem.ExportTXT();
-
-                bool result = demProcessor.RunPythonScript();
-
-                if (result) {
-                    autodem.ReadElevationsTXT();
-                    List<double> elevations = autodem.Elevations;
-
-                    // 종단 생성
-                    //생성전 이름 체크
-                    bool profileExists = IsDuplicateProfile(baseAlignment, "지반선", tr);
-                    if (profileExists) { RemoveProfile(baseAlignment, "지반선", tr); }
-                    Profile newProfile = CreateSurfaceProfile(baseAlignmentId, baseAlignment, "지반선", SurfaceIds[0], doc, tr);
-
-                    // PVI 생성 (Stations + Elevations)
-                    foreach (var pair in autodem.Stations.Zip(elevations, (station, elev) => (station, elev)))
+                    Alignment baseAlignment = tr.GetObject(baseAlignmentId, OpenMode.ForRead) as Alignment;
+                    Logger.Instance.SetMessage($"baseAlignment객체를 가져옴 ID :{baseAlignmentId}");
+                    if (baseAlignment == null)
                     {
-                        newProfile.PVIs.AddPVI(pair.station, pair.elev);
+                        Logger.Instance.SetMessage(@"baseAlignment가 null임 :코드실행 종료");
+                        return;
                     }
-                }
-                else {
-                    autodem.SetMessage("파이선 스크립트 실행이 실패했습니다.");
-                }
 
-                tr.Commit();
+                    
+                   
+                    var demProcessor = new DEMProcessor();
+                    Logger.Instance.SetMessage(@"DEMProcessor 생성 성공");
+                    //autodem 생성
+                    var autodem = new AUTODEM();
+                    Logger.Instance.SetMessage(@"AUTODEM 생성 성공");
+
+                    autodem.BaseAlignment = baseAlignment;
+                    autodem.Step = 40;
+
+                    autodem.ExtractStations();
+                    autodem.ExtractCoordinates2D();
+                    autodem.ExportTXT();
+
+                    bool result = demProcessor.RunPythonScript();
+
+                    if (result)
+                    {
+                        autodem.ReadElevationsTXT();
+                        List<double> elevations = autodem.Elevations;
+
+                        // 종단 생성
+                        //종단 서비스 생성
+                        var profileprovider = new ProfileService();
+                        //생성전 이름 체크
+                        string profilename = "지반선";
+                        bool profileExists = profileprovider.IsDuplicateProfile(baseAlignment, profilename, tr);
+                        if (profileExists) { profileprovider.RemoveProfile(baseAlignment, profilename, tr); }
+                        //지표면 서비스 생성
+                        var surfaceprovider = new SurfaceService();
+                        //지표면 존재여부 확인
+                        string surfacename = "Surface1";
+                        ObjectId surfaceid = ObjectId.Null;
+                        bool surfaceExist = surfaceprovider.HasAnyTinSurface(doc);
+                        if (surfaceExist)//존재여부 확인
+                        {
+                            bool isduplicate = surfaceprovider.IsDuplicateTinSurface(surfacename, doc, tr);
+                            if (isduplicate)//중복체크
+                            {
+                                //삭제 후 다시 새 지표면 생성
+                                surfaceprovider.RemoveTinSurface(surfacename, doc, tr);
+                                surfaceprovider.CreateTinSurface(surfacename, doc, ref surfaceid);
+                            }
+
+                        }
+                        else {
+                            //없으면 새로 생성
+                            surfaceprovider.CreateTinSurface(surfacename, doc, ref surfaceid);
+                        }
+                        //지표면종단 생성
+                        Profile newProfile = profileprovider.CreateSurfaceProfile(baseAlignmentId, baseAlignment, profilename, surfaceid, doc, tr);
+
+                        // PVI 추가 (Stations + Elevations)
+                        foreach (var pair in autodem.Stations.Zip(elevations, (station, elev) => (station, elev)))
+                        {
+                            newProfile.PVIs.AddPVI(pair.station, pair.elev);
+                        }
+                        Logger.Instance.SetMessage(@"지표면 종단 생성 성공");
+                        Logger.Instance.SaveLogToTXT();
+                    }
+                    else
+                    {
+                        Logger.Instance.SetMessage(@"파이썬 스크립트 실행에 실패했습니다. 조건을 확인하세요");
+                    }
+
+                    tr.Commit();
+                }
+                catch (System.Exception ex)
+                {
+                    Logger.Instance.SetMessage($"코드 실행중 예외 발생 !: {ex.Message}");
+                    Logger.Instance.SetMessage(ex.StackTrace);
+                    tr.Abort();
+                }
             }
         }
+        /// <summary>
+        /// 명령창에서 객체 선택 후 id를 반환하는 메소드
+        /// </summary>
         private ObjectId PromptSelectAlignment(Editor ed)
         {
             var peo = new PromptEntityOptions("\n기준 Alignment 객체를 선택하세요:");
@@ -81,79 +134,8 @@ namespace AUTO_TN_BR
             return per.Status == PromptStatus.OK ? per.ObjectId : ObjectId.Null;
         }
 
-        private Profile GetProfile(Alignment alignment, Transaction tr)
-        {
-            foreach (ObjectId profileId in alignment.GetProfileIds())
-            {
-                var profile = tr.GetObject(profileId, OpenMode.ForRead) as Profile;
-                if (profile != null && profile.ProfileType == ProfileType.FG)
-                    return profile;
-            }
-            return null;
-        }
-
-        internal Profile CreateLayoutProfile(ObjectId alignmentId, Alignment alignment, string profileName, CivilDocument civildoc, Transaction tr)
-        {
-            // 1️ 스타일 가져오기
-            ObjectId profileStyleId = civildoc.Styles.ProfileStyles[0];
-            ObjectId profileLabelSetId = civildoc.Styles.LabelSetStyles.ProfileLabelSetStyles[0];
-
-            // 2️ Profile 생성 -> ObjectId 반환
-            ObjectId profileId = Profile.CreateByLayout(profileName, alignmentId, alignment.LayerId, profileStyleId, profileLabelSetId);
-
-            // 3️ Transaction 내에서 Profile 객체 가져오기
-            Profile profile = tr.GetObject(profileId, OpenMode.ForWrite) as Profile;
-
-            // 4️⃣ 반환
-            return profile;
-        }
-        internal Profile CreateSurfaceProfile(ObjectId alignmentId, Alignment alignment, string profileName, ObjectId surfaceid, CivilDocument civildoc, Transaction tr)
         
-        {
-            // 1️ 스타일 가져오기
-            ObjectId profileStyleId = civildoc.Styles.ProfileStyles[0];
-            ObjectId profileLabelSetId = civildoc.Styles.LabelSetStyles.ProfileLabelSetStyles[0];
-
-            // 2️ Profile 생성 -> ObjectId 반환
-            ObjectId profileId = Profile.CreateFromSurface(profileName, alignmentId, surfaceid,  alignment.LayerId, profileStyleId, profileLabelSetId);
-
-            // 3️ Transaction 내에서 Profile 객체 가져오기
-            Profile profile = tr.GetObject(profileId, OpenMode.ForWrite) as Profile;
-
-            // 4️⃣ 반환
-            return profile;
-        }
-
-        internal void RemoveProfile(Alignment baseAlignment, string profilename, Transaction tr)
-        {
-            // Alignment의 모든 Profile 중 이름이 같은 것 찾기
-            foreach (ObjectId profileId in baseAlignment.GetProfileIds())
-            {
-                Profile profile = tr.GetObject(profileId, OpenMode.ForWrite) as Profile;
-                if (profile != null && profile.Name == "지반선")
-                {
-                    profile.Erase();  // 트랜잭션 내에서 삭제
-                    profile = null;
-                    break;
-                }
-            }
-        }
-        internal bool IsDuplicateProfile(Alignment baseAlignment, string profilename, Transaction tr)
-        {
-            bool result = false;
-            // Alignment의 모든 Profile 중 이름이 같은 것 찾기
-            foreach (ObjectId profileId in baseAlignment.GetProfileIds())
-            {
-                Profile profile = tr.GetObject(profileId, OpenMode.ForRead) as Profile;
-                if (profile != null && profile.Name == "지반선")
-                {
-                    result = true;
-                    break;
-                }
-            }
-            return result;
-        }
-
+        
 
     }
 }

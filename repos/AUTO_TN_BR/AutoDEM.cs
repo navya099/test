@@ -10,7 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using CoreApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+
 using Exception = Autodesk.AutoCAD.Runtime.Exception;
 using ObjectId = Autodesk.AutoCAD.DatabaseServices.ObjectId;
 
@@ -33,12 +33,10 @@ namespace AUTO_TN_BR
         public string CSVFilePath { get; set; } = @"C:\temp\Coordinates.csv";
         public string ElevationFilePath { get; set; } = @"C:\temp\elevation.txt";
         public bool IncludeHeader { get; set; } = true;      // CSV 헤더 포함 여부
-        public string LastMessage { get; private set; }      // 처리 상태 메시지
-
-        public List<string> LogMessages { get; private set; }  // 메시지 로그
+        
 
 
-        public Editor Editor { get; set; }  // AutoCAD 명령창 출력용
+        
 
         // -----------------------------
         // 2️⃣ 생성자
@@ -49,7 +47,7 @@ namespace AUTO_TN_BR
             Coordinates = new List<Point2d>();
             Coordinates3D = new List<Point3d>();
             Elevations = new List<double>();
-            LogMessages = new List<string>();
+            
         }
 
         // -----------------------------
@@ -59,8 +57,7 @@ namespace AUTO_TN_BR
         {
             if (BaseAlignment == null)
             {
-                LastMessage = "BaseAlignment가 설정되지 않았습니다.";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage(@"BaseAlignment가 Null입니다. 다시 선택해주세요");
                 return;
             }
 
@@ -74,8 +71,8 @@ namespace AUTO_TN_BR
             if (Stations.Count > 0 && Stations[Stations.Count - 1] < endStation)
                 Stations.Add(endStation);
 
-            LastMessage = $"총 {Stations.Count}개의 측점 생성 완료";
-            SetMessage(LastMessage);
+            Logger.Instance.SetMessage($"Stations 추출 성공 {Stations.Count}");
+            
         }
 
         // -----------------------------
@@ -85,8 +82,8 @@ namespace AUTO_TN_BR
         {
             if (BaseAlignment == null || Stations.Count == 0)
             {
-                LastMessage = "BaseAlignment 또는 Stations가 없습니다.";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage(@"BaseAlignment또는 Stations가 없습니다. 먼저 ExtractStations()을 실행해주세요");
+                
                 return;
             }
 
@@ -106,8 +103,8 @@ namespace AUTO_TN_BR
                 }
             }
 
-            LastMessage = $"총 {Coordinates.Count}개의 평면 좌표 추출 완료";
-            SetMessage(LastMessage);
+            Logger.Instance.SetMessage($"좌표 추출 성공 {Coordinates.Count}"); ;
+            
         }
 
         // -----------------------------
@@ -117,8 +114,8 @@ namespace AUTO_TN_BR
         {
             if (Coordinates.Count == 0)
             {
-                LastMessage = "2D Coordinates가 없습니다. 먼저 ExtractCoordinates2D() 호출 필요";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage(@"2D Coordinates가 없습니다. 먼저 ExtractCoordinates2D() 호출 필요");
+                
                 return;
             }
 
@@ -140,8 +137,8 @@ namespace AUTO_TN_BR
                 }
             }
 
-            LastMessage = $"총 {Coordinates3D.Count}개의 3D 좌표 생성 완료";
-            SetMessage(LastMessage);
+            Logger.Instance.SetMessage($"총 {Coordinates3D.Count}개의 3D 좌표 생성 완료");
+            
         }
 
         // -----------------------------
@@ -170,13 +167,13 @@ namespace AUTO_TN_BR
                     }
                 }
 
-                LastMessage = $"CSV 파일 저장 완료: {CSVFilePath}";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage($"CSV 파일 저장 완료: {CSVFilePath}");
+                
             }
             catch (Exception ex)
             {
-                LastMessage = $"CSV 저장 실패: {ex.Message}";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage($"CSV 저장 실패: {ex.Message}");
+                
             }
         }
 
@@ -208,13 +205,13 @@ namespace AUTO_TN_BR
                     }
                 }
 
-                LastMessage = $"TXT 파일 저장 완료: {path}";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage($"TXT 파일 저장 완료: {path}");
+                
             }
             catch (Exception ex)
             {
-                LastMessage = $"TXT 저장 실패: {ex.Message}";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage($"TXT 저장 실패: {ex.Message}");
+                
             }
         }
 
@@ -228,8 +225,8 @@ namespace AUTO_TN_BR
 
             if (!File.Exists(ElevationFilePath))
             {
-                LastMessage = $"파일이 존재하지 않습니다: {ElevationFilePath}";
-                SetMessage(LastMessage);
+                Logger.Instance.SetMessage($"파일이 존재하지 않습니다: {ElevationFilePath}");
+                
                 return;
             }
 
@@ -239,31 +236,9 @@ namespace AUTO_TN_BR
                     Elevations.Add(elev);
             }
 
-            LastMessage = $"총 {Elevations.Count}개의 표고값 읽기 완료";
-            SetMessage(LastMessage);
+            Logger.Instance.SetMessage($"총 {Elevations.Count}개의 표고값 읽기 완료");
+           
         }
-
-        public void SetMessage(string msg)
-        {
-            LastMessage = msg;
-            LogMessages.Add(msg);                  // 로그 누적
-            Editor?.WriteMessage("\n" + msg); // Editor가 null이 아니면 출력
-        }
-
-        public void SaveLogToTXT(string logFilePath = @"C:\temp\AUTODEM_Log.txt")
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(logFilePath));
-                File.WriteAllLines(logFilePath, LogMessages);
-                SetMessage($"로그 파일 저장 완료: {logFilePath}");
-            }
-            catch (Exception ex)
-            {
-                SetMessage($"로그 저장 실패: {ex.Message}");
-            }
-        }
-
-        
+  
     }
 }
