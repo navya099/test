@@ -7,16 +7,19 @@ import glob
 import time
 
 def read_coordinates(input_txt):
-    with open(input_txt, encoding="utf-8") as f:
-        lines = f.readlines()
     coords = []
-    for line in lines:
-        try:
-            x, y = map(float, line.strip().split(','))
-            coords.append((x, y))
-        except (IndexError, ValueError):
-            continue
+    with open(input_txt, encoding="utf-8-sig") as f:  # BOM 자동 제거
+        for i, line in enumerate(f, 1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                x, y = map(float, stripped.split(','))
+                coords.append((x, y))
+            except ValueError:
+                print(f"{i}번째 줄 좌표 변환 실패: '{stripped}'")
     return coords
+
 
 def tm2wgs(coords_array):
     transformed = []
@@ -65,6 +68,7 @@ start_time = datetime.datetime.now()
 print(f"작업 시작 시간: {start_time}")
 
 coords_tm = read_coordinates(input_txt)
+print(len(coords_tm))
 coords = tm2wgs(coords_tm)
 
 # 최소 범위 계산
