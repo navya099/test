@@ -1,4 +1,5 @@
 import base64
+import os
 from dataclasses import field, dataclass
 import io
 import folium
@@ -6,12 +7,17 @@ import json
 import numpy as np
 import math
 import random
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import pandas as pd
 import pyproj
 from shapely.geometry.linestring import LineString
 from shapely.geometry.point import Point
 from srtm30 import SrtmDEM30
+from tqdm import tqdm  # pip install tqdm
 
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
 
 # ===== Alignment 객체 =====
 @dataclass
@@ -33,7 +39,6 @@ class Alignment:
     @property
     def bridge_count(self):
         return len(self.bridges)
-
     @property
     def tunnel_count(self):
         return len(self.tunnels)
@@ -47,19 +52,15 @@ class Alignment:
     def total_tunnel_length(self):
         return sum([sum(haversine(self.coords[i], self.coords[i + 1]) for i in range(s, e))
                     for s, e in self.tunnels.values()])
-
     @property
     def radius_count(self):
         return len(self.radius)
-
     @property
     def grades_count(self):
-        return len(self.grades)
-
+        return len(self.fls)
     @property
     def max_grade(self):
         return max(self.grades)
-
     @property
     def min_radius(self):
         return min(self.radius)
@@ -71,7 +72,6 @@ def sample_elevations(route_coords):
     dem = SrtmDEM30(lonlat_list)
     return dem.get_elevations()
 
-
 # ===== 유틸 =====
 def haversine(a, b):
     R = 6371000
@@ -79,20 +79,17 @@ def haversine(a, b):
     lat2, lon2 = math.radians(b[0]), math.radians(b[1])
     dlat = lat2 - lat1
     dlon = lon2 - lon1
-    c = 2 * math.asin(math.sqrt(math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2))
+    c = 2 * math.asin(math.sqrt(math.sin(dlat / 2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon / 2)**2))
     return R * c
 
-
 def route_length(coords):
-    return sum(haversine(coords[i], coords[i + 1]) for i in range(len(coords) - 1))
+    return sum(haversine(coords[i], coords[i+1]) for i in range(len(coords)-1))
 
-
-# start region 신설구간
+#start region 신설구간
 def calculate_angle(p1, p2):
     dx = p2.x - p1.x
     dy = p2.y - p1.y
     return math.atan2(dy, dx)
-
 
 def calculate_bearing(x1, y1, x2, y2):
     # Calculate the bearing (direction) between two points in Cartesian coordinates
@@ -101,14 +98,12 @@ def calculate_bearing(x1, y1, x2, y2):
     bearing = math.degrees(math.atan2(dy, dx))
     return bearing
 
-
 def calculate_distance(x1, y1, x2, y2):
     # Calculate the distance between two points in Cartesian coordinates
-    distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     distance_x = abs(x2 - x1)
     distance_y = abs(y2 - y1)
     return distance
-
 
 def calculate_destination_coordinates(x1, y1, bearing, distance):
     # Calculate the destination coordinates given a starting point, bearing, and distance in Cartesian coordinates
@@ -116,7 +111,6 @@ def calculate_destination_coordinates(x1, y1, bearing, distance):
     x2 = x1 + distance * math.cos(angle)
     y2 = y1 + distance * math.sin(angle)
     return x2, y2
-
 
 def find_direction(start_point, end_point, center_point):
     """
@@ -155,11 +149,12 @@ def find_direction(start_point, end_point, center_point):
 
     # cross 부호로 회전방향 결정
     if cross < 0:
-        return 1  # 시계방향
+        return 1   # 시계방향
     elif cross > 0:
         return -1  # 반시계방향
     else:
-        return 0  # 일직선
+        return 0   # 일직선
+
 
 
 def calculate_O_PC_angle(v10, x10, direction):
@@ -181,20 +176,17 @@ def calculate_O_PC_angle(v10, x10, direction):
             result = v10 - x10 + 90
     return result
 
-
 class RandomLineStringCreator:
     """
     랜덤 LineString객체 생성 클래스
     Attributes:
         linestring: LineString
     """
-
     def __init__(self):
         self.linestring = None
 
-    def generate_random_linestring(self, start: Point, end: Point, num_max_point: int = 100,
-                                   min_distance: float = 3000, max_distance: float = 5000,
-                                   min_end_distance: float = 2000):
+    def generate_random_linestring(self, start: Point, end: Point, num_max_point: int= 100,
+                                   min_distance: float= 3000, max_distance: float =5000,min_end_distance: float=2000):
         """
         랜덤 LineString객체 생성 메소드
         Arguments:
@@ -207,12 +199,12 @@ class RandomLineStringCreator:
         """
         points = [start]
         while True:
-            if len(points) >= num_max_point:  # 최댓수를 넘으면 종료
+            if len(points) >= num_max_point:#최댓수를 넘으면 종료
                 break
             new_point = self._generate_random_point_near(points[-1], end, min_distance, max_distance)
-            if new_point.distance(points[-1]) <= max_distance:  # 점과 마지막점의 거리가 점 사이의 최대 거리보다 작은경우
+            if new_point.distance(points[-1]) <= max_distance: #점과 마지막점의 거리가 점 사이의 최대 거리보다 작은경우
                 points.append(new_point)
-            if new_point.distance(end) <= min_end_distance:  # 점과 끝점의 거리가 끝점과 마지막점의 최소거리보다 작은경우
+            if new_point.distance(end) <= min_end_distance: #점과 끝점의 거리가 끝점과 마지막점의 최소거리보다 작은경우
                 break
         points.append(end)
         self.linestring = LineString(points)
@@ -232,7 +224,7 @@ class RandomLineStringCreator:
         Returns:
             Point
         """
-        # 끝점 각도 계산
+        #끝점 각도 계산
         angle_to_end = calculate_angle(point, end)
         while True:
             angle = random.uniform(angle_to_end - math.radians(90), angle_to_end + math.radians(90))
@@ -246,7 +238,6 @@ class RandomLineStringCreator:
             if new_point.distance(end) < point.distance(end):
                 return new_point
 
-
 class LineStringProcessor:
     """
     LineString객체 처리용 클래스
@@ -254,7 +245,6 @@ class LineStringProcessor:
         linestring: LineString
         angles: LineString 내부 각도 리스트
     """
-
     def __init__(self, linestring: LineString):
         self.linestring = linestring
         self.angles: list[float] = []
@@ -267,7 +257,6 @@ class LineStringProcessor:
         self._calculate_angles()
         self._adjust_linestring()
         self._calculate_angles()
-
     def _adjust_linestring(self, tolerance: float = 60):
         """
         private 메소드
@@ -277,7 +266,7 @@ class LineStringProcessor:
         """
         new_points = [self.linestring.coords[0]]  # Start with the first point
         for i in range(1, len(self.linestring.coords) - 1):
-            if self.angles[i - 1] <= tolerance:  # tolerance 임계값보다 작으면
+            if self.angles[i - 1] <= tolerance: #tolerance 임계값보다 작으면
                 new_points.append(self.linestring.coords[i])
         new_points.append(self.linestring.coords[-1])  # End with the last point
         self.linestring = LineString(new_points)
@@ -305,10 +294,10 @@ class LineStringProcessor:
         self.angles = angles.tolist()
 
     def create_joined_line_and_arc_linestirng(self,
-                                              start_points: list[Point],
-                                              end_points: list[Point],
-                                              center_points: list[Point],
-                                              direction_list: list[int]):
+                                 start_points: list[Point],
+                                 end_points: list[Point],
+                                 center_points: list[Point],
+                                 direction_list: list[int]):
         """
         public 메소드
         선과 호를 이어서 새로운 linestring생성
@@ -333,6 +322,36 @@ class LineStringProcessor:
 
         self.linestring = new_linestring
 
+    def resample_linestring(self, interval: float = 40):
+        """
+        linestring을 일정 간격으로 재생성
+        Args:
+            interval: 재샘플링 간격
+        Returns:
+            새로운 LineString
+        """
+        if self.linestring is None or len(self.linestring.coords) < 2:
+            return
+
+        new_points = [Point(self.linestring.coords[0])]
+        total_length = 0
+
+        for i in range(1, len(self.linestring.coords)):
+            p0 = Point(self.linestring.coords[i-1])
+            p1 = Point(self.linestring.coords[i])
+            segment_length = p0.distance(p1)
+            direction = ((p1.x - p0.x) / segment_length, (p1.y - p0.y) / segment_length)
+
+            d = interval - total_length
+            while d < segment_length:
+                new_x = p0.x + direction[0] * d
+                new_y = p0.y + direction[1] * d
+                new_points.append(Point(new_x, new_y))
+                d += interval
+            total_length = segment_length + total_length - interval * int((segment_length + total_length) / interval)
+
+        new_points.append(Point(self.linestring.coords[-1]))
+        self.linestring = LineString(new_points)
 
 @dataclass
 class CurveSegment:
@@ -344,20 +363,17 @@ class CurveSegment:
     ec_sta: float
     cl: float
     tl: float
-
-
 class CurveAdjuster:
     """
     LineString 기반 곡선(IP, BC, EC, EP) 반경 조정 및 배치 관리 클래스
     """
-
     def __init__(self, linestring, angles: list[float], radius_list: list[float]):
         self.linestring = linestring
         self.angles = angles
         self.radius_list = radius_list
         self.segments: list[CurveSegment] = []
 
-    def main_loop(self, min_arc_to_arc_distance: float = 2000, max_iterations: int = 200, min_radius: float = 600):
+    def main_loop(self, min_arc_to_arc_distance: float=2000, max_iterations: int = 200, min_radius: float = 600):
         """
         곡선 반경 반복 조정
         """
@@ -368,10 +384,11 @@ class CurveAdjuster:
             overlaps = self._check_overlaps(min_arc_to_arc_distance, ep_sta, min_radius)
 
             if not any(overlaps):
-                print(f'루프 {j}회차 종료: 곡선 조정 완료')
+                #print(f'루프 {j}회차 종료: 곡선 조정 완료')
                 break
         else:
-            print(f'루프 {max_iterations}회차 종료: 곡선반경 조정 실패')
+            pass
+            #print(f'루프 {max_iterations}회차 종료: 곡선반경 조정 실패')
 
     def _calculate_segments(self) -> list[CurveSegment]:
         """
@@ -423,7 +440,7 @@ class CurveAdjuster:
         """
         last_segment = self.segments[-1]
         ep_coord = self.linestring.coords[-1]
-        ec_ep_dist = calculate_distance(last_segment.ec_coord.x, last_segment.ec_coord.y, *ep_coord)
+        ec_ep_dist = calculate_distance(last_segment.ec_coord.x,last_segment.ec_coord.y, *ep_coord)
         return last_segment.ec_sta + ec_ep_dist
 
     def _check_overlaps(self, min_distance: float, ep_sta: float, min_radius: float) -> list[bool]:
@@ -453,10 +470,8 @@ class CurveAdjuster:
 
         # 마지막 IP-EP 체크
         if not is_approximately_equal(
-                calculate_bearing(self.segments[-1].ec_coord.x, self.segments[-1].ec_coord.y,
-                                  *self.linestring.coords[-1]),
-                calculate_bearing(self.segments[-1].ec_coord.x, self.segments[-1].ec_coord.y,
-                                  *self.linestring.coords[-1])
+            calculate_bearing(self.segments[-1].ec_coord.x,self.segments[-1].ec_coord.y, *self.linestring.coords[-1]),
+            calculate_bearing(self.segments[-1].ec_coord.x,self.segments[-1].ec_coord.y, *self.linestring.coords[-1])
         ):
             self.radius_list[-1] = self.adjust_radius(-1, min_radius=min_radius)
             overlaps[-1] = True
@@ -535,6 +550,7 @@ class CurveAdjuster:
         return Point(chosen_x, chosen_y)
 
 
+
 def is_approximately_equal(a, b, tolerance=1e-5):
     return abs(a - b) < tolerance
 
@@ -545,7 +561,6 @@ def draw_arc(direction: int, start_point, end_point, center_point, num_points=10
     direction: 1=시계, 0=반시계
     start_point, end_point, center_point: shapely Point 또는 (x, y)
     """
-
     def unpack_point(pt):
         if hasattr(pt, "coords"):
             return pt.coords[0]
@@ -592,6 +607,7 @@ def draw_arc(direction: int, start_point, end_point, center_point, num_points=10
     return x_arc, y_arc
 
 
+
 def calc_pl2xy(longlat):
     (long, lat) = longlat
     p1_type = pyproj.CRS.from_epsg(4326)
@@ -600,7 +616,6 @@ def calc_pl2xy(longlat):
     x, y = transformer.transform(long, lat)
 
     return x, y  # [m]
-
 
 def calc_pl2xy_array(coords_array):
     transformed_coords = []
@@ -623,7 +638,6 @@ def calc_pl2xy_array(coords_array):
         # Append transformed coordinates to the result array
         transformed_coords.append((x, y))
     return transformed_coords  # [m]
-
 
 def adjust_radius_by_angle(ia, min_radius: int = 3100, max_radius: int = 20000):
     # 교각이 작을수록 반경을 크게, 교각이 클수록 반경을 작게 설정
@@ -653,17 +667,15 @@ def get_random_radius(min_radius, max_radius):
     # 랜덤하게 선택
     return random.choice(multiples_of_1000)
 
-
-# end region
+#end region
 
 def generate_longitudinal(num_points=100, min_distance=600, gl=None, chain=40):
     if gl is None:
         gl = []
     profile = generate_random_profile(num_points, min_distance, gl, chain)
     fixed_profile = check_and_adjust_elevation(profile)
-    elevations = generate_station_elv(fixed_profile, gl)
+    elevations = generate_station_elv(fixed_profile , gl)
     return [elevation for station, elevation in elevations], fixed_profile
-
 
 def generate_station_elv(fl, gl):
     """
@@ -683,7 +695,6 @@ def generate_station_elv(fl, gl):
         station_elv.append([sta, current_fl])
 
     return station_elv
-
 
 def generate_random_profile(num_points, min_distance, gl, chain=40):
     """
@@ -720,7 +731,6 @@ def generate_random_profile(num_points, min_distance, gl, chain=40):
     points.append([end_station, end_elevation + 10])
     return points
 
-
 def check_and_adjust_elevation(profile):
     adjusted_profile = []
     for i, (station, elevation) in enumerate(profile):
@@ -734,20 +744,19 @@ def check_and_adjust_elevation(profile):
 
     return adjusted_profile
 
-
 # ===== 종단 + 구조물 + 비용 평가 =====
 def evaluate_longitudinal(coords, elevs, ground):
     dz = np.array(elevs) - np.array(ground)
-    ds = np.array([haversine(coords[i], coords[i + 1]) for i in range(len(coords) - 1)])
-    slope = np.abs(dz[:-1] / (ds + 1e-9))
+    ds = np.array([haversine(coords[i], coords[i+1]) for i in range(len(coords)-1)])
+    slope = np.abs(dz[:-1]/(ds + 1e-9))
     mean_slope = np.mean(slope)
 
     bridges, tunnels = {}, {}
     start_idx = 0
-    while start_idx < len(dz) - 1:
+    while start_idx < len(dz)-1:
         current_sign = np.sign(dz[start_idx])
         end_idx = start_idx
-        while end_idx < len(dz) - 1 and np.sign(dz[end_idx]) == current_sign:
+        while end_idx < len(dz)-1 and np.sign(dz[end_idx]) == current_sign:
             end_idx += 1
         segment_len = ds[start_idx:end_idx].sum()
         segment_height = np.max(np.abs(dz[start_idx:end_idx]))
@@ -761,90 +770,98 @@ def evaluate_longitudinal(coords, elevs, ground):
     total_bridge_length = sum([sum(ds[s:e]) for s, e in bridges.values()])
     total_tunnel_length = sum([sum(ds[s:e]) for s, e in tunnels.values()])
 
-    cutfill_cost = np.sum(np.abs(dz) * 20.0)
-    cost = route_length(
-        coords) + 200 * mean_slope + 500 * total_tunnel_length + 300 * total_bridge_length + 0.01 * cutfill_cost
+    cutfill_cost = np.sum(np.abs(dz)*20.0)
+    cost = route_length(coords) + 200*mean_slope + 500*total_tunnel_length + 300*total_bridge_length + 0.01*cutfill_cost
 
-    return cost, bridges, tunnels
+    return cost, bridges, tunnels, slope
 
+def generate_candidate(idx, start, end, chain):
+    #print(f"현재 회차: {idx+1}")
 
-# ===== 후보 생성 및 평가 =====
-def generate_and_rank(start, end, n_candidates=30, chain=40):
+    start_tm = calc_pl2xy((start[1], start[0]))
+    end_tm = calc_pl2xy((end[1], end[0]))
+
+    random_linestring_creator = RandomLineStringCreator()
+    random_linestring_creator.generate_random_linestring(Point(start_tm), Point(end_tm))
+
+    linestring = random_linestring_creator.linestring
+    linestringprocessor = LineStringProcessor(linestring)
+    linestringprocessor.process_linestring()
+    linestring = linestringprocessor.linestring
+
+    angles = linestringprocessor.angles
+    radius_list = [adjust_radius_by_angle(angle, 3100, 20000) for angle in angles]
+
+    curveadjustor = CurveAdjuster(linestring, angles, radius_list)
+    curveadjustor.main_loop()
+    curvelist = curveadjustor.segments
+
+    start_points = [curve.bc_coord for curve in curvelist]
+    end_points = [curve.ec_coord for curve in curvelist]
+    center_points = [curve.center_coord for curve in curvelist]
+    direction_list = [curve.direction for curve in curvelist]
+
+    linestringprocessor.create_joined_line_and_arc_linestirng(
+        start_points=start_points,
+        end_points=end_points,
+        center_points=center_points,
+        direction_list=direction_list
+    )
+    linestringprocessor.resample_linestring(chain)
+    coords = list(linestringprocessor.linestring.coords)
+    coords = calc_pl2xy_array(coords)
+    coords = [(y,x) for x,y in coords]
+
+    ground_elevs = sample_elevations(coords)
+
+    distances = [0]
+    for i in range(1, len(coords)):
+        distances.append(distances[-1] + haversine(coords[i - 1], coords[i]) / 1000)  # km
+
+    gl = [(sta * 1000, ele) for sta, ele in zip(distances , ground_elevs)]
+    min_distance = 1000
+    max_vip = int(gl[-1][0] / min_distance)
+    design_elevs, profile = generate_longitudinal(
+        num_points=max_vip,
+        min_distance=min_distance,
+        gl=gl,
+        chain=chain
+    )
+
+    cost, bridges, tunnels , slopes = evaluate_longitudinal(coords, design_elevs, ground_elevs)
+
+    return Alignment(
+        coords=coords,
+        elevations=design_elevs,
+        grounds=ground_elevs,
+        bridges=bridges,
+        tunnels=tunnels,
+        cost=cost,
+        fls=profile,
+        grades=slopes,
+        radius=radius_list
+    )
+
+def generate_and_rank_parallel(start, end, n_candidates=30, chain=40):
     alignments = []
 
-    for i in range(n_candidates):
-        print(f"현재 회차: {i + 1}")
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(generate_candidate, i, start, end, chain): i for i in range(n_candidates)}
+        for future in tqdm(as_completed(futures), total=n_candidates, desc="Generating candidates"):
+            try:
+                alignments.append(future.result())
+            except Exception as e:
+                idx = futures[future]
+                print(f"Candidate {idx} failed: {e}")
 
-        start_tm = calc_pl2xy((start[1], start[0]))
-        end_tm = calc_pl2xy((end[1], end[0]))
-
-        random_linestring_creator = RandomLineStringCreator()
-        random_linestring_creator.generate_random_linestring(Point(start_tm), Point(end_tm))
-
-        linestring = random_linestring_creator.linestring
-        linestringprocessor = LineStringProcessor(linestring)
-        linestringprocessor.process_linestring()
-        linestring = linestringprocessor.linestring
-
-        angles = linestringprocessor.angles
-        radius_list = [adjust_radius_by_angle(angle, 3100, 20000) for angle in angles]
-
-        curveadjustor = CurveAdjuster(linestring, angles, radius_list)
-        curveadjustor.main_loop()
-        curvelist = curveadjustor.segments
-
-        start_points = [curve.bc_coord for curve in curvelist]
-        end_points = [curve.ec_coord for curve in curvelist]
-        center_points = [curve.center_coord for curve in curvelist]
-        direction_list = [curve.direction for curve in curvelist]
-
-        linestringprocessor.create_joined_line_and_arc_linestirng(
-            start_points=start_points,
-            end_points=end_points,
-            center_points=center_points,
-            direction_list=direction_list
-        )
-        coords = list(linestringprocessor.linestring.coords)
-        coords = calc_pl2xy_array(coords)
-        coords = [(y, x) for x, y in coords]
-        ground_elevs = sample_elevations(coords)
-
-        # 누적 거리(km) 계산
-        distances = [0]
-        for i in range(1, len(coords)):
-            distances.append(distances[-1] + haversine(coords[i - 1], coords[i]) / 1000)  # km 단위
-
-        gl = [(sta, ele) for sta, ele in zip(distances, ground_elevs)]
-        min_distance = 1000
-        max_vip = int(gl[-1][0] / min_distance)
-        design_elevs, profile = generate_longitudinal(
-            num_points=max_vip,
-            min_distance=min_distance,
-            gl=gl,
-            chain=chain)
-
-        cost, bridges, tunnels = evaluate_longitudinal(coords, design_elevs, ground_elevs)
-
-        alignment = Alignment(
-            coords=coords,
-            elevations=design_elevs,
-            grounds=ground_elevs,
-            bridges=bridges,
-            tunnels=tunnels,
-            cost=cost,
-            fls=profile
-        )
-        alignments.append(alignment)
     # 비용 기준 정렬
     alignments.sort(key=lambda x: x.cost)
-    print("종료")
     return alignments
 
-
 def visualize_routes_with_button(alignments, start, end, top_n=5, map_file="candidate_routes.html"):
-    center = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]
+    center = [(start[0]+end[0])/2, (start[1]+end[1])/2]
     m = folium.Map(location=center, zoom_start=7)
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'darkred', 'cadetblue']
+    colors = ['red','blue','green','orange','purple','darkred','cadetblue']
 
     # Chart.js용 canvas
     chart_div = """
@@ -858,9 +875,9 @@ function showProfile(planElevs, groundElevs, distances){
     var canvas = document.getElementById('profile_canvas');
     canvas.width = canvas.offsetWidth * window.devicePixelRatio;
     canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-
+    
     var ctx = canvas.getContext('2d');
-
+    
     if(window.profileChart) window.profileChart.destroy();
 
     var planData = planElevs.map(([sta, elev]) => ({ x: sta, y: elev }));
@@ -935,11 +952,10 @@ function showProfile(planElevs, groundElevs, distances){
     m.save(map_file)
     print(f"지도 시각화 파일({map_file})이 생성되었습니다.")
 
-
 # 종단 그래프를 base64 이미지로 변환
-def plot_profile_to_base64(elevs, gound):
+def plot_profile_to_base64(elevs ,gound):
     from matplotlib import pyplot as plt
-    fig, ax = plt.subplots(figsize=(6, 2))
+    fig, ax = plt.subplots(figsize=(6,2))
     ax.plot(elevs, color='red')
     ax.set_xlabel("Distance")
     ax.set_ylabel("Elevation")
@@ -952,15 +968,31 @@ def plot_profile_to_base64(elevs, gound):
     img_base64 = base64.b64encode(buf.read()).decode('utf-8')
     return img_base64
 
-
 # ===== 실행 예시 =====
 if __name__ == "__main__":
     start = (37.594240, 127.130699)
     end = (37.264456, 127.442329)
-    alignments = generate_and_rank(start, end, n_candidates=30)
+    alignments = generate_and_rank_parallel(start, end, n_candidates=30)
 
+    # DataFrame 생성
+    data = []
     for i, a in enumerate(alignments[:10]):
-        print(
-            f"ID:{i} Length:{a.length:.1f} Cost:{a.cost:.1f} Bridge:{a.total_bridge_length:.1f} Tunnel:{a.total_tunnel_length:.1f}")
+        data.append({
+            "ID": i,
+            "노선연장": round(a.length, 1),
+            "공사비": round(a.cost, 1),
+            "교량갯수": a.bridge_count,
+            "터널갯수": a.tunnel_count,
+            "곡선갯수":a.radius_count,
+            "기울기갯수":a.grades_count,
+            "최급기울기":a.max_grade,
+            "최소곡선반경":a.min_radius
+        })
+
+    df = pd.DataFrame(data)
+
+    # Excel로 저장
+    df.to_excel("top10_alignments.xlsx", index=False)
+    print("Excel 파일(top10_alignments.xlsx) 저장 완료!")
 
     visualize_routes_with_button(alignments, start, end, top_n=10)
