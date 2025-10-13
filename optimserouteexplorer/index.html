@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="">
+<head>
+    <meta charset="utf-8">
+    <title>최적 노선 시각화</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        #map { height: 600px; width: 100%; }
+        #computeBtn { font-size:16px; padding:10px; background-color:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:10px;}
+        #profile_canvas { width:100%; height:300px; }
+    </style>
+</head>
+<body>
+    <h2>최적 노선 시각화</h2>
+    <div id="map"></div>
+    <button id="computeBtn">계산 실행</button>
+    <canvas id="profile_canvas"></canvas>
+
+<script>
+let map = L.map('map').setView([37.5665, 126.9780], 7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+}).addTo(map);
+
+let start = null;
+let end = null;
+let startMarker = null;
+let endMarker = null;
+let polylines = [];
+let profileChart = null;
+let alignmentData = []; // 전역 저장
+
+// 클릭으로 시작점/끝점 지정
+map.on('click', function(e){
+    if (!start) {
+        start = [e.latlng.lat, e.latlng.lng];
+        startMarker = L.marker(start, {draggable:true, icon:L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/green-dot.png'}), zIndexOffset:1000})
+            .addTo(map).bindPopup('시작점');
+        startMarker.on('dragend', function(ev){ start = [ev.target.getLatLng().lat, ev.target.getLatLng().lng]; });
+    } else if (!end) {
+        end = [e.latlng.lat, e.latlng.lng];
+        endMarker = L.marker(end, {draggable:true, icon:L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/red-dot.png'}), zIndexOffset:1000})
+            .addTo(map).bindPopup('끝점');
+        endMarker.on('dragend', function(ev){ end = [ev.target.getLatLng().lat, ev.target.getLatLng().lng]; });
+    }
+});
+
+// Chart.js 프로필 표시
+function showProfile(planElevs, groundElevs){
+    const canvas = document.getElementById('profile_canvas');
+    if(profileChart) profileChart.destroy();
+
+    let planData = planElevs.map(([sta, elev]) => ({ x: sta, y: elev }));
+    let groundData = groundElevs.map((e,i)=>({x: distances[i], y: e}));
+
+    profileChart = new Chart(canvas.getContext('2d'), {
+        type:'line',
+        data:{
+            datasets:[
+                {label:'Plan', data:planData, borderColor:'red', fill:false},
+                {label:'Ground', data:groundData, borderColor:'blue', fill:false}
+            ]
+        },
+        options:{
+            responsive:false,
+            maintainAspectRatio:false,
+            plugins:{legend:{display:true}},
+            scales:{
+                x:{ type:'linear', position:'bottom', title:{display:true, text:'Distance (km)'} },
+                y:{ title:{display:true, text:'Elevation (m)'} }
+            }
+        }
+    });
+}
+
+// 안전한 View Profile 버튼
+function showProfileByIndex(idx){
+    const a = alignmentData[idx];
+    showProfile(a.fls, a.grounds);
+}
+
+// 계산 실행 버튼 클릭
+document.getElementById('computeBtn').addEventListener('click', async function(){
+    if(!start || !end){
+        alert('시작점과 끝점을 모두 지정하세요!');
+        return;
+    }
+
+    // 기존 Polyline 제거
+    polylines.forEach(line => map.removeLayer(line));
+    polylines = [];
+    alignmentData = [];
+    if(profileChart) profileChart.destroy();
+
+    // 서버 요청
+    const response = await fetch('http://127.0.0.1:5000/compute', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ start, end })
+    });
+    const data = await response.json();
+
+    const colors = ['red','blue','green','orange','purple','darkred','cadetblue'];
+    data.forEach((a, idx)=>{
+        alignmentData[idx] = a; // 전역 저장
+
+        const color = colors[idx % colors.length];
+        const poly = L.polyline(a.coords, { color: color, weight:5, opacity:0.7 })
+            .addTo(map)
+            .bindPopup(`
+                ID: ${a.ID} <br>
+                Length: ${a.노선연장} <br>
+                Cost: ${a.공사비} <br>
+                <button onclick='showProfileByIndex(${idx})'>View Profile</button>
+            `);
+        polylines.push(poly);
+    });
+});
+</script>
+</body>
+</html>
