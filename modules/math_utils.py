@@ -1,12 +1,5 @@
 import math
-import os
-import sys
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-cad_DIR = os.path.join(os.path.dirname(BASE_DIR), 'AutoCAD')
-if cad_DIR not in sys.path:
-    sys.path.insert(0, cad_DIR)
-from point2d import Point2d
-from vector2 import Vector2
+import numpy as np
 from curvedirection import CurveDirection
 
 def get_block_index(number, interval):
@@ -15,68 +8,80 @@ def get_block_index(number, interval):
 def get_station_by_block_index(index, interval):
     return index * interval
 
-def calculate_coordinates(x1,y1,bearing,distance):
+def _to_xy(p):
+    """완전 private: 다양한 타입을 (x, y) 튜플로 변환"""
+    # AutoCAD Point2d
+    if hasattr(p, "x") and hasattr(p, "y"):
+        return p.X, p.Y
+
+    # tuple/list/np.array
+    if isinstance(p, (tuple, list, np.ndarray)) and len(p) >= 2:
+        return p[0], p[1]
+
+    raise TypeError(f"Unsupported type {type(p)}")
+
+def calculate_offset_coordinates(*args, bearing: float, distance: float):
     """
-    1점에서 각도로 거리만큼 이동한 점의 좌표 계산
+    점에서 각도와 거리로 이동한 좌표 반환
     Args:
-        x1:
-        y1:
-        bearing:
-        distance:
+        *args: 점 list,tuple,point
+        bearing: 각도(라디안)
+        distance: 거리
 
     Returns:
-        x2,y2
+        tuple[float, float]
     """
+    if len(args) == 1:
+        x1, y1 = _to_xy(args[0])
+    elif len(args) == 2:
+        x1, y1 = float(args[0]), float(args[1])
+    else:
+        raise TypeError(f"Invalid arguments: {args}")
+
     x2 = x1 + distance * math.cos(bearing)
     y2 = y1 + distance * math.sin(bearing)
-    return x2,y2
+    return x2, y2
 
-def calculate_bearing(x1, y1, x2, y2):
+def calculate_angle_between_points(*args):
     """
-    두 점의 각도 계산
+    두 점으로 각도 계산
     Args:
-        x1:
-        y1:
-        x2:
-        y2:
+        *args: list,tuple,point ,...
 
     Returns:
-        bearing
+        float
     """
-    dx = x2 - x1
-    dy = y2 - y1
-    bearing = math.atan2(dy, dx)
-    return bearing
+    if len(args) == 2:
+        p1, p2 = _to_xy(args[0]), _to_xy(args[1])
+    elif len(args) == 4:
+        p1 = (args[0], args[1])
+        p2 = (args[2], args[3])
+    else:
+        raise TypeError(f"Invalid arguments: {args}")
 
-def calculate_bearing_civil_coord(x1, y1, x2, y2):
-    """
-    두 점의 각도계산(토목좌표)
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    return math.atan2(dy, dx)
+
+def calculate_angle_from_arc_center_to_point(center, point):
+    """호 중심 기준 각도 계산 (0° = x축, 반시계 방향)
     Args:
-        x1:
-        y1:
-        x2:
-        y2:
-
+        center: 중심점
+        point: 구하는 점
     Returns:
-        bearing
+        float
     """
-    dx = x2 - x1
-    dy = y2 - y1
-    bearing = math.degrees(math.atan2(dx, dy))
-    if bearing < 0:
-        bearing = 360 + bearing
-    return bearing
-
-def angle_from_center(center: Vector2, point: Vector2):
-    """호 중심 기준 각도 계산 (0° = x축, 반시계 방향)"""
     twopi = 2 * math.pi
-    dx = point.x - center.x
-    dy = point.y - center.y
+    c = _to_xy(center)
+    p = _to_xy(point)
+
+    dx = p[0] - c[0]
+    dy = p[1] - c[1]
     angle = math.atan2(dy, dx) % twopi
     return angle
 
 
-def degrees_to_dms(degrees):
+def degrees_to_dms(degrees: float):
     """
     Converts decimal degrees to degrees, minutes, seconds.
 
@@ -123,14 +128,23 @@ def calculate_bulge(start_angle: float, end_angle: float, direction: CurveDirect
     bulge = math.tan(sweep / 4)
     return bulge
 
-def calculate_curve_center(bc_xy: Vector2, ec_xy: Vector2,
-                           radius: float, direction: CurveDirection) -> Vector2:
+def calculate_curve_center(bc_xy: any, ec_xy: any,
+                           radius: float, direction: CurveDirection) -> tuple[float, float]:
     """
     BC, EC와 반지름 R이 주어졌을 때 원의 중심을 계산.
     (즉, BC와 EC에서 거리 R인 점들(두 교점) 중 direction에 맞는 쪽을 선택)
+    bc_xy: 호 시작점
+    ec_xy: 호 끝점
+    radius: 반지름
+    direction: 곡선 방향 CurveDirection
+    return:
+        tuple[float, float]
     """
-    dx = ec_xy.x - bc_xy.x
-    dy = ec_xy.y - bc_xy.y
+    bc_xy = _to_xy(bc_xy)
+    ec_xy = _to_xy(ec_xy)
+
+    dx = ec_xy[0] - bc_xy[0]
+    dy = ec_xy[1] - bc_xy[1]
     d = math.hypot(dx, dy)
 
     if d == 0:
@@ -140,8 +154,8 @@ def calculate_curve_center(bc_xy: Vector2, ec_xy: Vector2,
         raise ValueError("No circle with given radius passes through both BC and EC")
 
     # 중점
-    mx = (bc_xy.x + ec_xy.x) / 2.0
-    my = (bc_xy.y + ec_xy.y) / 2.0
+    mx = (bc_xy[0] + ec_xy[0]) / 2.0
+    my = (bc_xy[1] + ec_xy[1]) / 2.0
 
     # 반(현) 길이와 높이(h)
     a = d / 2.0
@@ -172,9 +186,9 @@ def calculate_curve_center(bc_xy: Vector2, ec_xy: Vector2,
     else:  # LEFT
         chosen_x, chosen_y = (c1x, c1y) if d1 > 0 else (c2x, c2y)
 
-    return Vector2(x=chosen_x, y=chosen_y)
+    return chosen_x, chosen_y
 
-def calculate_curve_geometry(radius, cl) -> tuple:
+def calculate_simple_curve_geometry(radius: float, cl: float) -> tuple:
     """
     R과 CL로 단곡선 제원 계산
     Args:
@@ -192,45 +206,127 @@ def calculate_curve_geometry(radius, cl) -> tuple:
 
     return r, ia, tl, m, sl
 
-def calculate_distance(p1: Vector2, p2: Vector2) -> float:
-    # Calculate the distance between two points in Cartesian coordinates
-    distance = math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
-    return distance
+def calculate_distance(*args) -> float:
+    """
+    두 점 사이 거리 계산.
+    지원 타입:
+        - tuple/list/np.array: (x, y)
+        - Shapely Point: .x, .y
+        - Vector2: .x, .y
+        - 두 개 float: x1, y1, x2, y2
+    """
+    if len(args) == 2:
+        p1, p2 = _to_xy(args[0]), _to_xy(args[1])
+    elif len(args) == 4:
+        p1, p2 = (args[0], args[1]), (args[2], args[3])
+    else:
+        raise TypeError(f"Invalid arguments {args}")
 
-def calculate_midpoint(p1: Point2d, p2: Point2d) -> Point2d:
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    return math.hypot(dx, dy)
+
+
+def calculate_midpoint(p1, p2) -> tuple[float, float]:
     """
     두 점의 중점을 계산합니다.
 
     Args:
-        p1 (Point2d): 첫 번째 점
-        p2 (Point2d): 두 번째 점
+        p1 : 첫 번째 점
+        p2 : 두 번째 점
 
     Returns:
-        Point2d: 중점 좌표
+        tuple[float, float]
     """
-    return Point2d(
-        (p1.x + p2.x) / 2.0,
-        (p1.y + p2.y) / 2.0,
-    )
+    p1 = _to_xy(p1)
+    p2 = _to_xy(p2)
 
-def calculate_pass_through_point(start: Point2d, end: Point2d, through_point: Point2d) -> Point2d:
-    """
-    두 점을 이루는 직선에서 임의의 통과점을 넣으면 통과점 2를 반환
-    Args:
-        start:
-        end:
-        through_point:
+    return (p1[0] + p2[0]) / 2.0,(p1[1] + p2[1]) / 2.0
 
-    Returns:
-
-    """
-    pass
 
 #offset 좌표 반환
-def calculate_offset_point(vector, point_a, offset_distance):
+def calculate_offset_point_by_direction(direction: float, point_a, offset_distance: float):
+    """
+    점에서 오프셋한 점 반환
+    Args:
+        direction: 방향각도 rad
+        point_a: 점
+        offset_distance: 오프셋 거리
+
+    Returns:
+        tuple[float, float]
+    """
+
     if offset_distance > 0:#우측 오프셋
-        vector -= 90
+        direction -= math.pi /2
     else:
-        vector += 90 #좌측 오프셋
-    offset_a_xy = calculate_coordinates(point_a[0], point_a[1], vector, abs(offset_distance))
+        direction += math.pi / 2 #좌측 오프셋
+    offset_a_xy = calculate_offset_coordinates(point_a, bearing=direction, distance=offset_distance)
     return offset_a_xy
+
+
+def find_curve_direction(start_point, end_point, center_point) -> CurveDirection:
+    """
+    세 점(시작점, 끝점, 원의 중심점)으로 방향(시계/반시계)을 판정
+    Args:
+        start_point: 시작점
+        end_point: 끝점
+        center_point: 원 중심점
+    Returns:
+        CurveDirection
+    """
+    #내부호출
+    start_point = _to_xy(start_point)
+    end_point = _to_xy(end_point)
+    center_point = _to_xy(center_point)
+
+    # 벡터 계산 (중심 → 시작, 중심 → 끝)
+    v1x = start_point[0] - center_point[0]
+    v1y = start_point[1] - center_point[1]
+    v2x = end_point[0] - center_point[0]
+    v2y = end_point[1] - center_point[1]
+
+    # 외적 계산
+    cross = v1x * v2y - v1y * v2x
+
+    # 내적 (혹시 필요 시)
+    dot = v1x * v2x + v1y * v2y
+
+    # 반경이 거의 0이거나 동일점일 때 안전처리
+    if abs(v1x) < 1e-9 and abs(v1y) < 1e-9:
+        return CurveDirection.NULL
+    if abs(v2x) < 1e-9 and abs(v2y) < 1e-9:
+        return CurveDirection.NULL
+
+    # cross 부호로 회전방향 결정
+    if cross < 0:
+        return CurveDirection.RIGHT   # 시계방향
+    elif cross > 0:
+        return CurveDirection.LEFT  # 반시계방향
+    else:
+        return CurveDirection.NULL   # 일직선
+
+def generate_arc_points(direction: CurveDirection, start_point, end_point, center_point, num_points=100):
+    """중심점과 시작/끝점, 방향에 따라 작은 원호 좌표 생성"""
+    x_start, y_start = _to_xy(start_point)
+    x_end, y_end = _to_xy(end_point)
+    x_center, y_center = _to_xy(center_point)
+
+    start_angle = math.atan2(y_start - y_center, x_start - x_center)
+    end_angle = math.atan2(y_end - y_center, x_end - x_center)
+
+    # 방향 판정 (벡터 외적)
+    cross = (x_start - x_center) * (y_end - y_center) - (y_start - y_center) * (x_end - x_center)
+
+    if direction == CurveDirection.RIGHT and cross > 0:
+        end_angle -= 2 * math.pi
+    elif direction == CurveDirection.LEFT and cross < 0:
+        end_angle += 2 * math.pi
+
+    angles = np.linspace(start_angle, end_angle, num_points)
+    radius = math.hypot(x_start - x_center, y_start - y_center)
+
+    x_arc = x_center + radius * np.cos(angles)
+    y_arc = y_center + radius * np.sin(angles)
+
+    return list(zip(x_arc, y_arc))
