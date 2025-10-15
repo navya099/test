@@ -1,7 +1,9 @@
 from shapely.geometry import Point, LineString
-from optimserouteexplorer.util import calculate_angle
 import random
 import math
+
+from math_utils import calculate_bearing
+
 
 class RandomLineStringCreator:
     """
@@ -54,7 +56,7 @@ class RandomLineStringCreator:
         """
         #끝점 각도 계산
 
-        angle_to_end = calculate_angle(point, end)
+        angle_to_end = calculate_bearing(point, end)
         while True:
 
 

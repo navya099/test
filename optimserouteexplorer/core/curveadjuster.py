@@ -1,8 +1,10 @@
-from optimserouteexplorer.curvesegment import CurveSegment
+from geometry.curvesegment import CurveSegment
 import math
-from optimserouteexplorer.util import calculate_bearing, calculate_destination_coordinates, find_direction, \
-    calculate_distance, is_approximately_equal
+from core.util import is_approximately_equal
 from shapely.geometry import Point
+
+from math_utils import calculate_bearing, calculate_distance, calculate_destination_coordinates, find_curve_direction
+
 
 class CurveAdjuster:
     """
@@ -47,21 +49,21 @@ class CurveAdjuster:
             tl_list.append(tl)
             cl_list.append(cl)
 
-            bp_coord = self.linestring.coords[i]
-            ip_coord = self.linestring.coords[i + 1]
-            ep_coord = self.linestring.coords[i + 2]
+            bp_coord = Point(self.linestring.coords[i])
+            ip_coord = Point(self.linestring.coords[i + 1])
+            ep_coord = Point(self.linestring.coords[i + 2])
 
 
-            bp_ip_bearing = calculate_bearing(*bp_coord, *ip_coord)
-            ip_ep_bearing = calculate_bearing(*ip_coord, *ep_coord)
-            bp_ip_distance = calculate_distance(*bp_coord, *ip_coord)
+            bp_ip_bearing = calculate_bearing(bp_coord, ip_coord)
+            ip_ep_bearing = calculate_bearing(ip_coord, ep_coord)
+            bp_ip_distance = calculate_distance(bp_coord, ip_coord)
 
             # IP_STA 계산
             ip_sta = bp_ip_distance if i == 0 else segments[i - 1].ec_sta + bp_ip_distance - tl_list[i - 1]
 
-            bc_coord = calculate_destination_coordinates(*ip_coord, bp_ip_bearing, -tl)
-            ec_coord = calculate_destination_coordinates(*ip_coord, ip_ep_bearing, tl)
-            direction = find_direction(bp_coord, ip_coord, ep_coord)
+            bc_coord = calculate_destination_coordinates(ip_coord, bearing=bp_ip_bearing, distance=-tl)
+            ec_coord = calculate_destination_coordinates(ip_coord, bearing=ip_ep_bearing, distance=tl)
+            direction = find_curve_direction(Point(bp_coord), Point(ip_coord), Point(ep_coord))
 
 
             center_coord = self.calculate_curve_center(Point(bc_coord), Point(ec_coord), self.radius_list[i], direction)

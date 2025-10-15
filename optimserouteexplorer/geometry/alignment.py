@@ -1,9 +1,13 @@
 from dataclasses import dataclass, field
-from optimserouteexplorer.util import route_length, haversine
+
+from shapely import LineString
+
+from core.util import route_length, haversine
 
 
 @dataclass
 class Alignment:
+    linestring: LineString = LineString()
     coords: list = field(default_factory=list)
     elevations: list = field(default_factory=list)
     grounds: list = field(default_factory=list)
@@ -13,11 +17,12 @@ class Alignment:
     cost: float = 0.0
     radius: list = field(default_factory=list)
     grades: list = field(default_factory=list)
+    score: float = 0.0
+    fitness: float = 0.0
 
     @property
     def length(self):
-
-        return route_length(self.coords)
+        return self.linestring.length
 
     @property
     def bridge_count(self):

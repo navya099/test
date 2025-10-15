@@ -95,7 +95,7 @@ document.getElementById('computeBtn').addEventListener('click', async function()
     if(profileChart) profileChart.destroy();
 
     // 서버 요청
-    const response = await fetch('http://127.0.0.1:5000/compute', {
+    const response = await fetch('http://127.0.0.1:5000/api/compute', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ start, end })

@@ -1,6 +1,8 @@
 from shapely.geometry import LineString, Point
 import numpy as np
-from optimserouteexplorer.util import draw_arc
+
+from math_utils import draw_arc
+
 
 class LineStringProcessor:
     """
@@ -10,6 +12,7 @@ class LineStringProcessor:
         angles: LineString 내부 각도 리스트
     """
     def __init__(self, linestring: LineString):
+        self.stations = []
         self.linestring = linestring
         self.angles: list[float] = []
 
@@ -99,22 +102,17 @@ class LineStringProcessor:
         if self.linestring is None or len(self.linestring.coords) < 2:
             return
 
-        new_points = [Point(self.linestring.coords[0])]
-        total_length = 0
+        total_length = self.linestring.length
+        num_points = int(total_length // interval)
 
-        for i in range(1, len(self.linestring.coords)):
-            p0 = Point(self.linestring.coords[i-1])
-            p1 = Point(self.linestring.coords[i])
-            segment_length = p0.distance(p1)
-            direction = ((p1.x - p0.x) / segment_length, (p1.y - p0.y) / segment_length)
+        # 각 점의 위치 비율 계산
+        distances = [i * interval for i in range(num_points + 1)]
+        distances.append(total_length)  # 마지막 점 포함
 
-            d = interval - total_length
-            while d < segment_length:
-                new_x = p0.x + direction[0] * d
-                new_y = p0.y + direction[1] * d
-                new_points.append(Point(new_x, new_y))
-                d += interval
-            total_length = segment_length + total_length - interval * int((segment_length + total_length) / interval)
-
-        new_points.append(Point(self.linestring.coords[-1]))
+        new_points = [self.linestring.interpolate(d) for d in distances]
         self.linestring = LineString(new_points)
+        self.stations = distances
+
+
+
+

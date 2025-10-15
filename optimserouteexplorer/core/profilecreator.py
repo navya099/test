@@ -33,7 +33,7 @@ class ProfileCreator:
             current_fl = np.interp(sta, fl_stations, fl_elevations)
             station_elv.append([sta, current_fl])
 
-        self.els = station_elv
+        self.els = [current_fl for sta , current_fl in station_elv]
 
     def generate_random_profile(self, num_points, min_distance,chain=40):
         """
@@ -84,3 +84,25 @@ class ProfileCreator:
             adjusted_profile.append([station, elevation])
 
         self.profile = adjusted_profile
+
+    # ✅ 추가: slopes property
+    @property
+    def slopes(self) -> list[float]:
+        """
+        인접 지점 간의 경사(‰) 리스트를 반환합니다.
+        slope = Δh / Δx * 1000
+        """
+        if not self.profile or len(self.profile) < 2:
+            return []
+
+        slopes = []
+        for i in range(1, len(self.profile)):
+            s0, h0 = self.profile[i - 1]
+            s1, h1 = self.profile[i]
+            delta_s = s1 - s0
+            delta_h = h1 - h0
+            if delta_s != 0:
+                slopes.append(delta_h / delta_s)  # 단위: ‰
+            else:
+                slopes.append(0.0)
+        return slopes
