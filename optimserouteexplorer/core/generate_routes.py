@@ -96,8 +96,9 @@ class GenerateRoutes:
         return {
             "ground_elevs": ground_elevs,
             "design_elevs": pc.els,
-            "profile": pc.profile,
-            "slopes": pc.slopes
+            "fg_profile": pc.profile,
+            "slopes": pc.slopes,
+            "eg_profile": pc.gl
         }
 
     # ========== 3단계: 평가 ==========
@@ -125,8 +126,9 @@ class GenerateRoutes:
         profile = {
             "ground_elevs": ground_elevs,
             "design_elevs": pc.els,
-            "profile": pc.profile,
-            "slopes": pc.slopes
+            "fg_profile": pc.profile,
+            "slopes": pc.slopes,
+            "eg_profile": pc.gl
         }
         result = {
             'bridges': bridges,
@@ -144,16 +146,17 @@ class GenerateRoutes:
         evaluate_result = self.evaluate_alignment(
             plan, profile, chain
         )
-
+        wgs_coords = plan['wgs_coords']
+        wgs_coords = [[y, x] for x, y in wgs_coords]
         return Alignment(
             linestring=plan['linestring'],
-            coords=plan['tmcoords'],
-            elevations=profile["design_elevs"],
-            grounds=profile["ground_elevs"],
+            coords=wgs_coords,
+            elevations=profile["fg_profile"],
+            grounds=profile["eg_profile"],
             bridges=evaluate_result['bridges'],
             tunnels=evaluate_result['tunnels'],
             cost=evaluate_result['total_cost'],
-            fls=profile["profile"],
+            fls=profile["fg_profile"],
             grades=profile['slopes'],
             radius=plan['radius_list'],
             score=evaluate_result['total_score'],  # ✅ 점수 추가

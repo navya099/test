@@ -53,7 +53,7 @@ function showProfile(planElevs, groundElevs){
     if(profileChart) profileChart.destroy();
 
     let planData = planElevs.map(([sta, elev]) => ({ x: sta, y: elev }));
-    let groundData = groundElevs.map((e,i)=>({x: distances[i], y: e}));
+    let groundData = groundElevs.map(([sta, elev]) => ({ x: sta, y: elev }));
 
     profileChart = new Chart(canvas.getContext('2d'), {
         type:'line',
@@ -65,7 +65,7 @@ function showProfile(planElevs, groundElevs){
         },
         options:{
             responsive:false,
-            maintainAspectRatio:false,
+            maintainAspectRatio:true,
             plugins:{legend:{display:true}},
             scales:{
                 x:{ type:'linear', position:'bottom', title:{display:true, text:'Distance (km)'} },
