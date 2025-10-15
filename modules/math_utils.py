@@ -12,7 +12,7 @@ def _to_xy(p):
     """완전 private: 다양한 타입을 (x, y) 튜플로 변환"""
     # AutoCAD Point2d
     if hasattr(p, "x") and hasattr(p, "y"):
-        return p.X, p.Y
+        return p.x, p.y
 
     # tuple/list/np.array
     if isinstance(p, (tuple, list, np.ndarray)) and len(p) >= 2:
@@ -20,7 +20,7 @@ def _to_xy(p):
 
     raise TypeError(f"Unsupported type {type(p)}")
 
-def calculate_offset_coordinates(*args, bearing: float, distance: float):
+def calculate_destination_coordinates(*args, bearing: float, distance: float):
     """
     점에서 각도와 거리로 이동한 좌표 반환
     Args:
@@ -42,7 +42,7 @@ def calculate_offset_coordinates(*args, bearing: float, distance: float):
     y2 = y1 + distance * math.sin(bearing)
     return x2, y2
 
-def calculate_angle_between_points(*args):
+def calculate_bearing(*args):
     """
     두 점으로 각도 계산
     Args:
@@ -63,7 +63,7 @@ def calculate_angle_between_points(*args):
     dy = p2[1] - p1[1]
     return math.atan2(dy, dx)
 
-def calculate_angle_from_arc_center_to_point(center, point):
+def calculate_angle(center, point):
     """호 중심 기준 각도 계산 (0° = x축, 반시계 방향)
     Args:
         center: 중심점
@@ -306,7 +306,7 @@ def find_curve_direction(start_point, end_point, center_point) -> CurveDirection
     else:
         return CurveDirection.NULL   # 일직선
 
-def generate_arc_points(direction: CurveDirection, start_point, end_point, center_point, num_points=100):
+def draw_arc(direction: CurveDirection, start_point, end_point, center_point, num_points=100):
     """중심점과 시작/끝점, 방향에 따라 작은 원호 좌표 생성"""
     x_start, y_start = _to_xy(start_point)
     x_end, y_end = _to_xy(end_point)
@@ -329,4 +329,4 @@ def generate_arc_points(direction: CurveDirection, start_point, end_point, cente
     x_arc = x_center + radius * np.cos(angles)
     y_arc = y_center + radius * np.sin(angles)
 
-    return list(zip(x_arc, y_arc))
+    return x_arc, y_arc
