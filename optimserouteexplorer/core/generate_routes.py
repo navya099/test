@@ -166,14 +166,15 @@ class GenerateRoutes:
     def generate_and_rank_parallel(self, start, end, n_candidates=30, chain=40):
         alignments = []
         with ProcessPoolExecutor() as executor:
-            futures = {executor.submit(self.generate_candidate, i, start, end, chain): i for i in range(n_candidates)}
-            for future in tqdm(as_completed(futures), total=n_candidates, desc="Generating candidates"):
+            futures = [executor.submit(self.generate_candidate, i, start, end, chain) for i in range(n_candidates)]
+            for i, future in enumerate(futures):
                 try:
                     alignments.append(future.result())
                 except Exception as e:
-                    print(f"Candidate {futures[future]} failed: {e}")
+                    print(f"[ERROR] Candidate {i} 실패: {e}")
 
-        alignments.sort(key=lambda x: x.cost)
+        # fitness 또는 cost 기준 정렬
+        alignments.sort(key=lambda x: getattr(x, "cost", 0))
         return alignments
 
     def generate_and_rank(self, start, end, n_candidates=30, chain=40, max_attempts=None):
