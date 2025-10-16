@@ -1,3 +1,4 @@
+from curvedirection import CurveDirection
 from geometry.curvesegment import CurveSegment
 import math
 from core.util import is_approximately_equal
@@ -145,53 +146,33 @@ class CurveAdjuster:
         max_idx = max(idx_list, key=lambda idx: self.radius_list[idx])
         return max_idx
 
-    def calculate_curve_center(self, bc_xy: Point, ec_xy: Point,
-                               radius: float, direction) -> Point:
+    def calculate_curve_center(self, bc: Point, ec: Point, radius: float, direction: CurveDirection) -> Point:
         """
-        BC, EC와 반지름 R이 주어졌을 때 원의 중심을 계산.
-        (즉, BC와 EC에서 거리 R인 점들(두 교점) 중 direction에 맞는 쪽을 선택)
+        두 점(BC, EC)과 반지름, 방향(1=RIGHT, 0=LEFT)으로 원의 중심 좌표 계산.
         """
-        dx = ec_xy.x - bc_xy.x
-        dy = ec_xy.y - bc_xy.y
+        dx = ec.x - bc.x
+        dy = ec.y - bc.y
         d = math.hypot(dx, dy)
 
-        if d == 0:
-            raise ValueError("BC and EC are identical points")
-        # 두 점 사이 거리가 2R보다 크면 반지름 R로 두 점을 지나는 원이 없음
-        if d > 2.0 * radius + 1e-9:
-            raise ValueError("No circle with given radius passes through both BC and EC")
+        if d == 0 or d > 2 * radius:
+            raise ValueError("Invalid BC/EC distance for given radius")
 
         # 중점
-        mx = (bc_xy.x + ec_xy.x) / 2.0
-        my = (bc_xy.y + ec_xy.y) / 2.0
+        mx = (bc.x + ec.x) / 2
+        my = (bc.y + ec.y) / 2
 
-        # 반(현) 길이와 높이(h)
-        a = d / 2.0
-        h = math.sqrt(max(0.0, radius * radius - a * a))
+        # chord의 수직거리 h
+        h = math.sqrt(radius ** 2 - (d / 2) ** 2)
 
-        # chord의 단위 수직벡터 (두 교점은 중점 ± h * (ux,uy))
+        # 단위 수직벡터
         ux = -dy / d
         uy = dx / d
 
-        c1x = mx + ux * h
-        c1y = my + uy * h
-        c2x = mx - ux * h
-        c2y = my - uy * h
+        # 방향 선택 (1=RIGHT, 0=LEFT)
+        sign = -1 if direction == CurveDirection.RIGHT else 1
 
-        # 각 후보에 대해 BC→EC의 중심각(끝-시작)을 계산하여 부호로 좌/우 판별
-        def signed_delta_theta(cx, cy):
-            phi0 = math.atan2(bc_xy.y - cy, bc_xy.x - cx)
-            phi1 = math.atan2(ec_xy.y - cy, ec_xy.x - cx)
-            # 정상화된 중심각 (-pi..pi)
-            return math.atan2(math.sin(phi1 - phi0), math.cos(phi1 - phi0))
+        # 중심 좌표 계산
+        cx = mx + sign * ux * h
+        cy = my + sign * uy * h
 
-        d1 = signed_delta_theta(c1x, c1y)
-        d2 = signed_delta_theta(c2x, c2y)
-
-        # 방향에 맞게 선택: RIGHT -> 중심각이 음수(시계, 우회전)인 후보 선택
-        if direction == 1:
-            chosen_x, chosen_y = (c1x, c1y) if d1 < 0 else (c2x, c2y)
-        else:  # LEFT
-            chosen_x, chosen_y = (c1x, c1y) if d1 > 0 else (c2x, c2y)
-
-        return Point(chosen_x, chosen_y)
+        return Point(cx, cy)
