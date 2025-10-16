@@ -128,65 +128,39 @@ def calculate_bulge(start_angle: float, end_angle: float, direction: CurveDirect
     bulge = math.tan(sweep / 4)
     return bulge
 
-def calculate_curve_center(bc_xy: any, ec_xy: any,
-                           radius: float, direction: CurveDirection) -> tuple[float, float]:
-    """
-    BC, EC와 반지름 R이 주어졌을 때 원의 중심을 계산.
-    (즉, BC와 EC에서 거리 R인 점들(두 교점) 중 direction에 맞는 쪽을 선택)
-    bc_xy: 호 시작점
-    ec_xy: 호 끝점
-    radius: 반지름
-    direction: 곡선 방향 CurveDirection
-    return:
-        tuple[float, float]
-    """
-    bc_xy = _to_xy(bc_xy)
-    ec_xy = _to_xy(ec_xy)
 
-    dx = ec_xy[0] - bc_xy[0]
-    dy = ec_xy[1] - bc_xy[1]
+def calculate_curve_center(bc, ec, radius: float, direction: CurveDirection) -> tuple[float, float]:
+    """
+    두 점(BC, EC)과 반지름, 방향(1=RIGHT, 0=LEFT)으로 원의 중심 좌표 계산.
+    """
+    bc = _to_xy(bc)
+    ec = _to_xy(ec)
+    dx = ec[0] - bc[0]
+    dy = ec[1] - bc[1]
     d = math.hypot(dx, dy)
 
-    if d == 0:
-        raise ValueError("BC and EC are identical points")
-    # 두 점 사이 거리가 2R보다 크면 반지름 R로 두 점을 지나는 원이 없음
-    if d > 2.0 * radius + 1e-9:
-        raise ValueError("No circle with given radius passes through both BC and EC")
+    if d == 0 or d > 2 * radius:
+        raise ValueError("Invalid BC/EC distance for given radius")
 
     # 중점
-    mx = (bc_xy[0] + ec_xy[0]) / 2.0
-    my = (bc_xy[1] + ec_xy[1]) / 2.0
+    mx = (bc[0] + ec[0]) / 2
+    my = (bc[1] + ec[1]) / 2
 
-    # 반(현) 길이와 높이(h)
-    a = d / 2.0
-    h = math.sqrt(max(0.0, radius * radius - a * a))
+    # chord의 수직거리 h
+    h = math.sqrt(radius ** 2 - (d / 2) ** 2)
 
-    # chord의 단위 수직벡터 (두 교점은 중점 ± h * (ux,uy))
+    # 단위 수직벡터
     ux = -dy / d
     uy = dx / d
 
-    c1x = mx + ux * h
-    c1y = my + uy * h
-    c2x = mx - ux * h
-    c2y = my - uy * h
+    # 방향 선택 (1=RIGHT, 0=LEFT)
+    sign = -1 if direction == CurveDirection.RIGHT else 1
 
-    # 각 후보에 대해 BC→EC의 중심각(끝-시작)을 계산하여 부호로 좌/우 판별
-    def signed_delta_theta(cx, cy):
-        phi0 = math.atan2(bc_xy.y - cy, bc_xy.x - cx)
-        phi1 = math.atan2(ec_xy.y - cy, ec_xy.x - cx)
-        # 정상화된 중심각 (-pi..pi)
-        return math.atan2(math.sin(phi1 - phi0), math.cos(phi1 - phi0))
+    # 중심 좌표 계산
+    cx = mx + sign * ux * h
+    cy = my + sign * uy * h
 
-    d1 = signed_delta_theta(c1x, c1y)
-    d2 = signed_delta_theta(c2x, c2y)
-
-    # 방향에 맞게 선택: RIGHT -> 중심각이 음수(시계, 우회전)인 후보 선택
-    if direction == CurveDirection.RIGHT:
-        chosen_x, chosen_y = (c1x, c1y) if d1 < 0 else (c2x, c2y)
-    else:  # LEFT
-        chosen_x, chosen_y = (c1x, c1y) if d1 > 0 else (c2x, c2y)
-
-    return chosen_x, chosen_y
+    return cx, cy
 
 def calculate_simple_curve_geometry(radius: float, cl: float) -> tuple:
     """
@@ -245,7 +219,7 @@ def calculate_midpoint(p1, p2) -> tuple[float, float]:
 
 
 #offset 좌표 반환
-def calculate_offset_point_by_direction(direction: float, point_a, offset_distance: float):
+def calculate_offset_point(direction: float, point_a, offset_distance: float):
     """
     점에서 오프셋한 점 반환
     Args:
@@ -261,50 +235,33 @@ def calculate_offset_point_by_direction(direction: float, point_a, offset_distan
         direction -= math.pi /2
     else:
         direction += math.pi / 2 #좌측 오프셋
-    offset_a_xy = calculate_offset_coordinates(point_a, bearing=direction, distance=offset_distance)
+    offset_a_xy = calculate_destination_coordinates(point_a, bearing=direction, distance=offset_distance)
     return offset_a_xy
 
 
-def find_curve_direction(start_point, end_point, center_point) -> CurveDirection:
+def find_curve_direction(bp, ip, ep) -> CurveDirection:
     """
-    세 점(시작점, 끝점, 원의 중심점)으로 방향(시계/반시계)을 판정
-    Args:
-        start_point: 시작점
-        end_point: 끝점
-        center_point: 원 중심점
-    Returns:
-        CurveDirection
+    세 점 (BP, IP, EP)으로 방향(좌/우)을 판별
+    - 좌표계 종류(데카르트, TM, 경위도 등)에 무관
     """
-    #내부호출
-    start_point = _to_xy(start_point)
-    end_point = _to_xy(end_point)
-    center_point = _to_xy(center_point)
+    ax, ay = _to_xy(bp)
+    bx, by = _to_xy(ip)
+    cx, cy = _to_xy(ep)
 
-    # 벡터 계산 (중심 → 시작, 중심 → 끝)
-    v1x = start_point[0] - center_point[0]
-    v1y = start_point[1] - center_point[1]
-    v2x = end_point[0] - center_point[0]
-    v2y = end_point[1] - center_point[1]
+    # 벡터 AB, BC
+    abx, aby = bx - ax, by - ay
+    bcx, bcy = cx - bx, cy - by
 
-    # 외적 계산
-    cross = v1x * v2y - v1y * v2x
+    # 외적
+    cross = abx * bcy - aby * bcx
 
-    # 내적 (혹시 필요 시)
-    dot = v1x * v2x + v1y * v2y
-
-    # 반경이 거의 0이거나 동일점일 때 안전처리
-    if abs(v1x) < 1e-9 and abs(v1y) < 1e-9:
+    # 판정
+    if abs(cross) < 1e-9:
         return CurveDirection.NULL
-    if abs(v2x) < 1e-9 and abs(v2y) < 1e-9:
-        return CurveDirection.NULL
-
-    # cross 부호로 회전방향 결정
-    if cross < 0:
-        return CurveDirection.RIGHT   # 시계방향
     elif cross > 0:
-        return CurveDirection.LEFT  # 반시계방향
+        return CurveDirection.LEFT   # 반시계
     else:
-        return CurveDirection.NULL   # 일직선
+        return CurveDirection.RIGHT  # 시계
 
 def draw_arc(direction: CurveDirection, start_point, end_point, center_point, num_points=100):
     """중심점과 시작/끝점, 방향에 따라 작은 원호 좌표 생성"""
