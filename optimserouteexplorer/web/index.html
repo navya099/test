@@ -36,13 +36,29 @@ let alignmentData = []; // 전역 저장
 map.on('click', function(e){
     if (!start) {
         start = [e.latlng.lat, e.latlng.lng];
-        startMarker = L.marker(start, {draggable:true, icon:L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/green-dot.png'}), zIndexOffset:1000})
-            .addTo(map).bindPopup('시작점');
+        startMarker = L.marker(start, {
+            draggable:true,
+            icon: L.icon({
+                iconUrl: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+                iconSize: [32, 32],        // 아이콘 크기
+                iconAnchor: [16, 32]       // 좌표 기준점 (가로 중심, 아래쪽 끝)
+            }),
+            zIndexOffset: 1000
+        }).addTo(map);  // <= 여기 필수
+        startMarker.bindPopup('시작점<br>' + start.toString());
         startMarker.on('dragend', function(ev){ start = [ev.target.getLatLng().lat, ev.target.getLatLng().lng]; });
     } else if (!end) {
         end = [e.latlng.lat, e.latlng.lng];
-        endMarker = L.marker(end, {draggable:true, icon:L.icon({iconUrl:'https://maps.google.com/mapfiles/ms/icons/red-dot.png'}), zIndexOffset:1000})
-            .addTo(map).bindPopup('끝점');
+        endMarker = L.marker(end, {
+            draggable:true,
+            icon:L.icon({
+                iconUrl:'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+                iconSize: [32, 32],        // 아이콘 크기
+                iconAnchor: [16, 32]       // 좌표 기준점 (가로 중심, 아래쪽 끝)
+                }),
+                zIndexOffset:1000
+        }).addTo(map);  // <= 여기 필수
+        endMarker.bindPopup('끝점<br>' + end.toString());
         endMarker.on('dragend', function(ev){ end = [ev.target.getLatLng().lat, ev.target.getLatLng().lng]; });
     }
 });
