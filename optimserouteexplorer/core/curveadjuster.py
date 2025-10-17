@@ -42,8 +42,12 @@ class CurveAdjuster:
         segments: list[CurveSegment] = []
         tl_list, cl_list = [], []
 
-        for i in range(len(self.linestring.coords) - 2):
+        if not self.linestring or len(self.linestring.coords) < 3:
+            return []
 
+        n = min(len(self.angles), len(self.radius_list), len(self.linestring.coords) - 2)
+
+        for i in range(n):
             ia = math.radians(self.angles[i])
             cl = self.radius_list[i] * ia
             tl = self.radius_list[i] * math.tan(ia / 2)
@@ -54,25 +58,22 @@ class CurveAdjuster:
             ip_coord = Point(self.linestring.coords[i + 1])
             ep_coord = Point(self.linestring.coords[i + 2])
 
-
             bp_ip_bearing = calculate_bearing(bp_coord, ip_coord)
             ip_ep_bearing = calculate_bearing(ip_coord, ep_coord)
             bp_ip_distance = calculate_distance(bp_coord, ip_coord)
 
-            # IP_STA 계산
             ip_sta = bp_ip_distance if i == 0 else segments[i - 1].ec_sta + bp_ip_distance - tl_list[i - 1]
 
-            bc_coord = calculate_destination_coordinates(ip_coord, bearing=bp_ip_bearing, distance=-tl)
-            ec_coord = calculate_destination_coordinates(ip_coord, bearing=ip_ep_bearing, distance=tl)
-            direction = find_curve_direction(Point(bp_coord), Point(ip_coord), Point(ep_coord))
+            bc_coord = Point(calculate_destination_coordinates(ip_coord, bearing=bp_ip_bearing, distance=-tl))
+            ec_coord = Point(calculate_destination_coordinates(ip_coord, bearing=ip_ep_bearing, distance=tl))
+            direction = find_curve_direction(bp_coord, ip_coord, ep_coord)
 
-
-            center_coord = self.calculate_curve_center(Point(bc_coord), Point(ec_coord), self.radius_list[i], direction)
+            center_coord = Point(self.calculate_curve_center(bc_coord, ec_coord, self.radius_list[i], direction))
 
             segments.append(CurveSegment(
-                bc_coord=Point(bc_coord),
-                ec_coord=Point(ec_coord),
-                center_coord=Point(center_coord),
+                bc_coord=bc_coord,
+                ec_coord=ec_coord,
+                center_coord=center_coord,
                 direction=direction,
                 bc_sta=ip_sta - tl,
                 ec_sta=ip_sta - tl + cl,
@@ -86,6 +87,8 @@ class CurveAdjuster:
         """
         마지막 EP_STA 계산
         """
+        if not self.segments or len(self.linestring.coords) < 2:
+            return 0
         last_segment = self.segments[-1]
         ep_coord = self.linestring.coords[-1]
         ec_ep_dist = calculate_distance(last_segment.ec_coord.x,last_segment.ec_coord.y, *ep_coord)
@@ -97,6 +100,9 @@ class CurveAdjuster:
         """
         overlaps = []
         n = len(self.segments)
+
+        if not self.segments or len(self.linestring.coords) < 2:
+            return [False]
 
         for i, seg in enumerate(self.segments):
             # 다음 BC까지 거리 계산
