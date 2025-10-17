@@ -264,7 +264,7 @@ def find_curve_direction(bp, ip, ep) -> CurveDirection:
         return CurveDirection.RIGHT  # 시계
 
 def draw_arc(direction: CurveDirection, start_point, end_point, center_point, num_points=100):
-    """중심점과 시작/끝점, 방향에 따라 작은 원호 좌표 생성"""
+    """중심점과 시작/끝점, 방향에 따라 항상 '작은 원호'를 생성"""
     x_start, y_start = _to_xy(start_point)
     x_end, y_end = _to_xy(end_point)
     x_center, y_center = _to_xy(center_point)
@@ -272,17 +272,26 @@ def draw_arc(direction: CurveDirection, start_point, end_point, center_point, nu
     start_angle = math.atan2(y_start - y_center, x_start - x_center)
     end_angle = math.atan2(y_end - y_center, x_end - x_center)
 
-    # 방향 판정 (벡터 외적)
-    cross = (x_start - x_center) * (y_end - y_center) - (y_start - y_center) * (x_end - x_center)
+    # 기본 각도차
+    delta = end_angle - start_angle
 
-    if direction == CurveDirection.RIGHT and cross > 0:
-        end_angle -= 2 * math.pi
-    elif direction == CurveDirection.LEFT and cross < 0:
-        end_angle += 2 * math.pi
+    # ① 방향에 따라 올바른 회전 방향 조정
+    if direction == CurveDirection.RIGHT and delta > 0:
+        delta -= 2 * math.pi
+    elif direction == CurveDirection.LEFT and delta < 0:
+        delta += 2 * math.pi
 
+    # ② 항상 작은 원호만 되도록 각도 범위 보정
+    if delta > math.pi:
+        delta -= 2 * math.pi
+    elif delta < -math.pi:
+        delta += 2 * math.pi
+
+    end_angle = start_angle + delta
+
+    # ③ 좌표 생성
     angles = np.linspace(start_angle, end_angle, num_points)
     radius = math.hypot(x_start - x_center, y_start - y_center)
-
     x_arc = x_center + radius * np.cos(angles)
     y_arc = y_center + radius * np.sin(angles)
 
