@@ -2,6 +2,8 @@ import random
 from copy import deepcopy
 from core.generate_routes import GenerateRoutes
 from core.evaluate import Evaluator
+from core.plan_creator import PlanCreator
+
 
 class GeneticAlgorithm:
     def __init__(self, start, end, n_candidates=30, n_generations=20, chain=40,
@@ -40,10 +42,10 @@ class GeneticAlgorithm:
     def evaluate_candidate(self, candidate):
         gr = GenerateRoutes()
         evl = Evaluator()
-
-        radius_list = gr.calculate_radius_list(candidate['ia'])
+        ac = PlanCreator(self.start, self.end, self.chain)
+        radius_list = ac.calculate_radius_list(candidate['ia'])
         # IP 좌표 → 전체 평면(LineString + 곡선) 재구성
-        plan_full = gr.reconstruct_full_plan(candidate['ip_list'], candidate['ia'], radius_list, self.chain)
+        plan_full = ac.reconstruct_full_plan(candidate['ip_list'], candidate['ia'], radius_list, self.chain)
 
         # 종단(profile) 생성
         profile = gr.generate_profile_candidate(
