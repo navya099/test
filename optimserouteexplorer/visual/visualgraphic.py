@@ -1,8 +1,7 @@
-from folium import folium
+import folium
 import json
-from core.util import haversine
 
-def visualize_routes_with_button(alignments, start, end, top_n=5, map_file="candidate_routes.html"):
+def visualize_routes_with_button(alignments, start, end, top_n=5, map_file=''):
     center = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]
 
     m = folium.Map(location=center, zoom_start=7)
@@ -15,7 +14,7 @@ def visualize_routes_with_button(alignments, start, end, top_n=5, map_file="cand
 <script>
 window.profileChart = null;
 
-function showProfile(planElevs, groundElevs, distances){
+function showProfile(planElevs, groundElevs){
     // canvas와 실제 픽셀 크기 조정
     var canvas = document.getElementById('profile_canvas');
     canvas.width = canvas.offsetWidth * window.devicePixelRatio;
@@ -26,7 +25,7 @@ function showProfile(planElevs, groundElevs, distances){
     if(window.profileChart) window.profileChart.destroy();
 
     var planData = planElevs.map(([sta, elev]) => ({ x: sta, y: elev }));
-    var groundData = groundElevs.map((e,i)=>({x: distances[i], y: e}));
+    var groundData = groundElevs.map(([sta, elev]) => ({ x: sta, y: elev }));
 
     window.profileChart = new Chart(ctx,{
         type:'line',
@@ -61,30 +60,24 @@ function showProfile(planElevs, groundElevs, distances){
         color = colors[idx % len(colors)]
 
         # elevations
-        plan_elevs = [(sta / 1000, fl) for sta, fl in alignment.fls]
-        ground_elevs = alignment.grounds
+        plan_elevs = alignment['fls']
 
-        # 누적 거리(km) 계산
-        distances = [0]
-        for i in range(1, len(alignment.coords)):
-            distances.append(distances[-1] + haversine(alignment.coords[i - 1], alignment.coords[i]) / 1000)  # km 단위
-
+        ground_elevs = alignment['grounds']
 
         plan_json = json.dumps(plan_elevs)
         ground_json = json.dumps(ground_elevs)
-        dist_json = json.dumps(distances)
 
-        # 팝업 HTML
+        #팝업 html
         popup_html = f"""
-        ID: {idx} <br>
-        Length:{alignment.length:.2f}
-        Cost: {alignment.cost:.1f} <br>
-        Bridge: {alignment.total_bridge_length:.1f}m <br>
-        Tunnel: {alignment.total_tunnel_length:.1f}m <br>
-        <button onclick='showProfile({plan_json}, {ground_json}, {dist_json})'>View Profile</button>
+        ID: {alignment['ID']} <br>
+        Length: {alignment['노선연장']:.2f} km<br>
+        Cost: {alignment['공사비']:.1f} <br>
+        Bridge Count: {alignment['교량갯수']}<br>
+        Tunnel Count: {alignment['터널갯수']}<br>
+        <button onclick='showProfile({plan_json}, {ground_json})'>View Profile</button>
         """
         polyline = folium.PolyLine(
-            locations=alignment.coords,
+            locations=alignment['coords'],
             color=color,
             weight=5,
             opacity=0.7,
