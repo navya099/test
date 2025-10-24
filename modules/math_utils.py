@@ -63,7 +63,7 @@ def calculate_bearing(*args):
     dy = p2[1] - p1[1]
     return math.atan2(dy, dx)
 
-def calculate_angle(center, point):
+def angle_from_center(center, point):
     """호 중심 기준 각도 계산 (0° = x축, 반시계 방향)
     Args:
         center: 중심점
@@ -296,3 +296,62 @@ def draw_arc(direction: CurveDirection, start_point, end_point, center_point, nu
     y_arc = y_center + radius * np.sin(angles)
 
     return x_arc, y_arc
+
+def intersection_of_two_lines(p1: any, angle1: float, p2: any, angle2: float) -> tuple[float,float]:
+    """두 점과 각도로 정의된 직선의 교점 계산
+    Args:
+        p1: 시작 좌표
+        angle1: 시작 각도
+        p2: 끝 좌표
+        angle2: 끝 각도
+    """
+    p1 = _to_xy(p1)
+    p2 = _to_xy(p2)
+
+    m1 = math.tan(angle1)
+    b1 = p1[1] - m1 * p1[0]
+
+    m2 = math.tan(angle2)
+    b2 = p2[1] - m2 * p2[0]
+
+    if math.isclose(m1, m2):
+        return None  # 평행이면 교점 없음
+
+    x = (b2 - b1) / (m1 - m2)
+    y = m1 * x + b1
+    return x, y
+
+def is_invalid_arc(bp: any, ip: any, ep: any, radius: float) -> tuple[bool, str]:
+    """
+    주어진 BP, IP, EP, 반경 값이 단곡선으로 유효하지 않은 경우 True와 메시지 반환.
+    비정상적인 경우:
+    - 세 점이 동일하거나 거의 일직선인 경우
+    - 반경이 0 이하이거나 너무 작은 경우
+    """
+    bp = _to_xy(bp)
+    ip = _to_xy(ip)
+    ep = _to_xy(ep)
+
+    # 좌표 중복
+    if bp == ip or ip == ep or bp == ep:
+        return True, "좌표 중복"
+
+    # 반경 유효성
+    if radius <= 0 or math.isnan(radius) or math.isinf(radius):
+        return True, "R값이 유효하지 않음"
+
+    # 세 점의 내적 기반으로 거의 일직선 판정
+    v1x, v1y = ip[0] - bp[0], ip[1] - bp[1]
+    v2x, v2y = ep[0] - ip[0], ep[1] - ip[1]
+    dot = v1x * v2x + v1y * v2y
+    norm1 = math.hypot(v1x, v1y)
+    norm2 = math.hypot(v2x, v2y)
+    if norm1 == 0 or norm2 == 0:
+        return True, "선형이 일직선"
+
+    cos_angle = dot / (norm1 * norm2)
+    # 각도가 너무 작거나 거의 180°인 경우 (일직선)
+    if abs(cos_angle) > 0.9999:
+        return True, "IA 해결 불가"
+
+    return False,"에러 없음"
