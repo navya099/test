@@ -21,58 +21,59 @@ class SegmentCollection:
         self.segment_list: list[Segment] = []
 
     def create_by_pi_coords(self, coord_list, radius_list):
-        """PI 좌표와 반경 리스트로 전체 선형(T–C–T–C–T) 생성"""
         self.coord_list = coord_list
         self.radius_list = radius_list
         self.groups.clear()
         self.segment_list.clear()
 
         n = len(coord_list)
-
         for i in range(n - 1):
-            bp = coord_list[i]
-            ep = coord_list[i + 1]
+            self._process_segment_at_index(i)
 
-            # 이전 PI가 존재하면 곡선 추가
-            if 0 < i < n - 1:
-                bp_prev = coord_list[i - 1]
-                ip = coord_list[i]
-                ep_next = coord_list[i + 1]
-                r = radius_list[i - 1] if i - 1 < len(radius_list) else 0
+        self._update_prev_next_entity_id()
+        self._update_stations()
 
-                group = SegmentGroup.create_from_pi(i, bp_prev, ip, ep_next, r, isspiral=False)
-                if group is None:
-                    print("해결할 수 있는 솔루션이 없습니다.")
-                    self.groups.clear()
-                    self.segment_list.clear()
-                    return None
-                self.groups.append(group)
+    def _process_segment_at_index(self, i):
+        bp = self.coord_list[i]
+        ep = self.coord_list[i + 1]
 
-                # ── ① 직전 직선의 끝점을 곡선 시작점으로 보정 ──
-                if len(self.segment_list) > 0:
-                    last_straight = self.segment_list[-1]
-                    if isinstance(last_straight, StraightSegment):
-                        last_straight.end_coord = group.segments[0].start_coord  # curve.start_coord
+        # 곡선 처리
+        if 0 < i < len(self.coord_list) - 1:
+            group = self._create_curve_group(i)
+            if group is None:
+                print("해결할 수 있는 솔루션이 없습니다.")
+                self.groups.clear()
+                self.segment_list.clear()
+                return
 
-                # ── ② 곡선 추가 ──
-                self.segment_list.extend(group.segments)
-
-                # ── ③ 다음 직선의 시작점을 곡선 끝점으로 보정 ──
-                #   단, 다음 점(ep)이 존재하는 경우
-                if i + 1 < n - 1:
-                    next_bp = group.segments[-1].end_coord
-                    next_ep = coord_list[i + 1]
-                    straight = StraightSegment(start_coord=next_bp, end_coord=next_ep)
-                    self.segment_list.append(straight)
-                    continue  # 다음 루프는 이 직선에서 이어짐
-
-            # ── ④ 첫 번째 직선 또는 마지막 직선 처리 ──
+            self.groups.append(group)
+            self._adjust_previous_straight(group)
+            self.segment_list.extend(group.segments)
+            self._append_next_straight(group, i)
+        else:
+            # 첫/마지막 직선
             straight = StraightSegment(start_coord=bp, end_coord=ep)
             self.segment_list.append(straight)
 
-        # 인덱스 및 station 갱신
-        self._update_prev_next_entity_id()
-        self._update_stations()
+    def _create_curve_group(self, i) -> SegmentGroup | None:
+        bp_prev = self.coord_list[i - 1]
+        ip = self.coord_list[i]
+        ep_next = self.coord_list[i + 1]
+        r = self.radius_list[i - 1] if i - 1 < len(self.radius_list) else 0
+        return SegmentGroup.create_from_pi(i, bp_prev, ip, ep_next, r, isspiral=False)
+
+    def _adjust_previous_straight(self, group: SegmentGroup):
+        if len(self.segment_list) > 0:
+            last_straight = self.segment_list[-1]
+            if isinstance(last_straight, StraightSegment):
+                last_straight.end_coord = group.segments[0].start_coord
+
+    def _append_next_straight(self, group: SegmentGroup, i):
+        if i + 1 < len(self.coord_list):
+            next_bp = group.segments[-1].end_coord
+            next_ep = self.coord_list[i + 1]
+            straight = StraightSegment(start_coord=next_bp, end_coord=next_ep)
+            self.segment_list.append(straight)
 
     def _update_prev_next_entity_id(self):
         """전체 세그먼트 인덱스 연결"""
