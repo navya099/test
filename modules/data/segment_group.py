@@ -61,24 +61,32 @@ class SegmentGroup:
             group.segments.extend([spiral1, curve, spiral2])
         return group
 
-    def update_by_pi(self, ip_coordinate: Point2d):
+    def update_by_pi(self, bp_coordinate: Point2d = None, ip_coordinate: Point2d = None,
+                         ep_coordinate: Point2d = None):
         """
-        기존 세그먼트를 재활용하면서 IP 좌표 변경에 따른 속성 갱신
-        - 객체 재생성 없이 내부 속성만 업데이트
+        그룹 내 BP, IP, EP 좌표를 필요에 따라 갱신하고, 세그먼트 속성 재계산
         """
-        # 좌표만 교체
-        self.ip_coordinate = ip_coordinate
+        if bp_coordinate is not None:
+            self.bp_coordinate = bp_coordinate
+        if ip_coordinate is not None:
+            self.ip_coordinate = ip_coordinate
+        if ep_coordinate is not None:
+            self.ep_coordinate = ep_coordinate
 
+        # 세그먼트 갱신
         for seg in self.segments:
             if isinstance(seg, CurveSegment):
-                seg.start_azimuth = self.bp_azimuth
-                seg.end_azimuth = self.ep_azimuth
-                seg.ip_coordinate = self.ip_coordinate
-                seg.internal_angle = self.internal_angle
-
+                self._process_simple_curve(seg)
             elif isinstance(seg, CubicSegment):
-                # 완화곡선의 경우 spline control point만 재조정 (예시)
-               raise NotImplementedError
+                self._process_spiral(seg)
+
+    def remove_pi(self, ip_coordinate: Point2d):
+        """그룹 제거
+        Args:
+            ip_coordinate: IP좌표
+        """
+        #1 구룹
+        pass
 
     @property
     def bp_azimuth(self) -> float:
@@ -102,7 +110,7 @@ class SegmentGroup:
 
     @property
     def total_length(self):
-        """그룹 전채 길이"""
+        """그룹 전체 길이"""
         return sum(seg.length for seg in self.segments)
 
     @property
@@ -117,7 +125,11 @@ class SegmentGroup:
             ia += 2 * math.pi
         return ia
 
-    def _process_simple_curve(self):
-        pass
-    def _process_spiral(self):
+    def _process_simple_curve(self, segment: Segment):
+        segment.start_azimuth = self.bp_azimuth
+        segment.end_azimuth = self.ep_azimuth
+        segment.ip_coordinate = self.ip_coordinate
+        segment.internal_angle = self.internal_angle
+
+    def _process_spiral(self, segment: Segment):
         pass
