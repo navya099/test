@@ -28,7 +28,7 @@ class CurveSegment(Segment):
 
     @property
     def start_coord(self) -> Point2d:
-        x, y =calculate_destination_coordinates(self.ip_coordinate, bearing=-self.start_azimuth, distance=-self.tangent_length)
+        x, y =calculate_destination_coordinates(self.ip_coordinate, bearing=self.start_azimuth + math.pi, distance=self.tangent_length)
         return Point2d(x, y)
 
     @property
