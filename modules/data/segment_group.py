@@ -80,13 +80,12 @@ class SegmentGroup:
             elif isinstance(seg, CubicSegment):
                 self._process_spiral(seg)
 
-    def remove_pi(self, ip_coordinate: Point2d):
-        """그룹 제거
-        Args:
-            ip_coordinate: IP좌표
-        """
-        #1 구룹
-        pass
+    def update_by_radius(self, radius: float):
+        """그룹 내 곡선반경 변경"""
+        if radius > 0:
+            self.radius = radius
+            # 세그먼트 갱신
+            self._refresh_segment()
 
     @property
     def bp_azimuth(self) -> float:
@@ -133,3 +132,10 @@ class SegmentGroup:
 
     def _process_spiral(self, segment: Segment):
         pass
+    
+    def _refresh_segment(self):
+        for seg in self.segments:
+            if isinstance(seg, CurveSegment):
+                self._process_simple_curve(seg)
+            elif isinstance(seg, CubicSegment):
+                self._process_spiral(seg)
