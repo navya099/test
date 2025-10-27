@@ -104,27 +104,46 @@ class SegmentCollection:
         # 좌표 갱신
         self.coord_list[index] = pipoint
 
-        # 변경 대상 그룹
+        # 변경 대상 그룹 찾기
         if 0 < index < len(self.coord_list) - 1:
+            prev_group = self.groups[index - 2] if index - 2 >= 0 else None
             target_group = self.groups[index - 1]
-            bp = self.coord_list[index - 1]
-            ip = self.coord_list[index]
-            ep = self.coord_list[index + 1]
-            r = self.radius_list[index - 1] if index - 1 < len(self.radius_list) else 0
-            target_group.update_by_pi(ip)
+            next_group = self.groups[index] if index < len(self.groups) else None
 
-        # 인접 그룹 (다음 그룹의 BP가 바뀌었으므로 재계산)
-        if index < len(self.groups):
-            next_group = self.groups[index]
-            bp = self.coord_list[index]
-            ip = self.coord_list[index + 1]
-            ep = self.coord_list[index + 2] if index + 2 < len(self.coord_list) else None
-            if ep is not None:
-                r = self.radius_list[index] if index < len(self.radius_list) else 0
-                next_group.update_by_pi(ip)
+
+            ip = self.coord_list[index] #컬렉션 내 ip변경
+
+            # 타겟 그룹의 ip변경
+            target_group.update_by_pi(ip_coordinate=ip)
+            # 이전 그룹이 있으면 EP 변경
+            if prev_group is not None:
+                prev_group.update_by_pi(ep_coordinate=ip)
+
+            # 다음 그룹이 있으면 BP 변경
+            if next_group is not None:
+                next_group.update_by_pi(bp_coordinate=ip)
+
+            # 6️⃣ 직선 세그먼트 조정
+            self._adjust_adjacent_straights(target_group)
 
         # 인덱스 및 station 갱신
         self._update_prev_next_entity_id()
         self._update_stations()
 
+    def _adjust_adjacent_straights(self, group: SegmentGroup):
+        """
+        target_group 앞/뒤 직선 세그먼트의 start_coord, end_coord 조정
+        """
+        # 이전 직선
+        prev_idx = group.segments[0].prev_index
+        if prev_idx is not None:
+            prev_seg = self.segment_list[prev_idx]
+            if isinstance(prev_seg, StraightSegment):
+                prev_seg.end_coord = group.segments[0].start_coord
 
+        # 다음 직선
+        next_idx = group.segments[-1].next_index
+        if next_idx is not None:
+            next_seg = self.segment_list[next_idx]
+            if isinstance(next_seg, StraightSegment):
+                next_seg.start_coord = group.segments[-1].end_coord
