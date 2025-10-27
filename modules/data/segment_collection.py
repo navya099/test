@@ -9,7 +9,7 @@ class SegmentCollection:
     """SegmentGroup 관리"""
     """
     Attributes:
-        groups: 커브그룹
+        groups: 커브그룹 리스트
         coord_list: PI좌표 리스트
         radius_list: 곡선반경 리스트
         segment_list: 세그먼트 리스트(그룹 포함)
@@ -21,6 +21,7 @@ class SegmentCollection:
         self.segment_list: list[Segment] = []
 
     def create_by_pi_coords(self, coord_list, radius_list):
+        """공개api pi와 radius 리스트로 컬렉션 생성"""
         self.coord_list = coord_list
         self.radius_list = radius_list
         self.groups.clear()
@@ -32,6 +33,19 @@ class SegmentCollection:
 
         self._update_prev_next_entity_id()
         self._update_stations()
+
+    # 기존 메서드들은 내부 호출만 하도록 변경
+    def update_pi_by_index(self, pipoint, index):
+        """공개API 주어진 PI로 업데이트"""
+        self._update_group_internal(index, pipoint=pipoint)
+
+    def update_radius_by_index(self, radius, index):
+        """공개API 주어진 radius로 업데이트"""
+        self._update_group_internal(index, radius=radius)
+
+    def update_pi_and_radius_by_index(self, pipoint, radius, index):
+        """공개API 주어진 PI와 radius로 업데이트"""
+        self._update_group_internal(index, pipoint=pipoint, radius=radius)
 
     def _process_segment_at_index(self, i):
         bp = self.coord_list[i]
@@ -96,40 +110,6 @@ class SegmentCollection:
             seg.end_sta = current_sta + seg.length
             current_sta = seg.end_sta
 
-    # === SegmentCollection.py ===
-    def update_by_index(self, pipoint, index):
-        """
-        특정 PI 좌표 변경 시 그룹 및 인접 그룹 재계산
-        """
-        # 좌표 갱신
-        self.coord_list[index] = pipoint
-
-        # 변경 대상 그룹 찾기
-        if 0 < index < len(self.coord_list) - 1:
-            prev_group = self.groups[index - 2] if index - 2 >= 0 else None
-            target_group = self.groups[index - 1]
-            next_group = self.groups[index] if index < len(self.groups) else None
-
-
-            ip = self.coord_list[index] #컬렉션 내 ip변경
-
-            # 타겟 그룹의 ip변경
-            target_group.update_by_pi(ip_coordinate=ip)
-            # 이전 그룹이 있으면 EP 변경
-            if prev_group is not None:
-                prev_group.update_by_pi(ep_coordinate=ip)
-
-            # 다음 그룹이 있으면 BP 변경
-            if next_group is not None:
-                next_group.update_by_pi(bp_coordinate=ip)
-
-            # 6️⃣ 직선 세그먼트 조정
-            self._adjust_adjacent_straights(target_group)
-
-        # 인덱스 및 station 갱신
-        self._update_prev_next_entity_id()
-        self._update_stations()
-
     def _adjust_adjacent_straights(self, group: SegmentGroup):
         """
         target_group 앞/뒤 직선 세그먼트의 start_coord, end_coord 조정
@@ -147,3 +127,41 @@ class SegmentCollection:
             next_seg = self.segment_list[next_idx]
             if isinstance(next_seg, StraightSegment):
                 next_seg.start_coord = group.segments[-1].end_coord
+
+    # SegmentCollection.py
+    def _update_group_internal(self, index, pipoint=None, radius=None):
+        """
+        내부 공용 메서드
+        - index: 변경 대상 PI 인덱스
+        - pipoint: 변경할 PI 좌표 (없으면 PI 변경 안함)
+        - radius: 변경할 곡선 반경 (없으면 반경 변경 안함)
+        """
+        # 좌표/반경 갱신
+        if pipoint is not None:
+            self.coord_list[index] = pipoint
+        if radius is not None:
+            self.radius_list[index] = radius
+
+        if 0 < index < len(self.coord_list) - 1:
+            prev_group = self.groups[index - 2] if index - 2 >= 0 else None
+            target_group = self.groups[index - 1]
+            next_group = self.groups[index] if index < len(self.groups) else None
+
+            # PI 변경
+            if pipoint is not None:
+                target_group.update_by_pi(ip_coordinate=pipoint)
+                if prev_group is not None:
+                    prev_group.update_by_pi(ep_coordinate=pipoint)
+                if next_group is not None:
+                    next_group.update_by_pi(bp_coordinate=pipoint)
+
+            # 반경 변경
+            if radius is not None:
+                target_group.update_by_radius(radius)
+
+            # 직선 세그먼트 조정 (한 번만 수행)
+            self._adjust_adjacent_straights(target_group)
+
+        # 인덱스 및 station 갱신
+        self._update_prev_next_entity_id()
+        self._update_stations()
