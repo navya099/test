@@ -129,6 +129,7 @@ class SegmentGroup:
         segment.end_azimuth = self.ep_azimuth
         segment.ip_coordinate = self.ip_coordinate
         segment.internal_angle = self.internal_angle
+        segment.radius = self.radius
 
     def _process_spiral(self, segment: Segment):
         pass
