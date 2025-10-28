@@ -47,6 +47,69 @@ class SegmentCollection:
         """공개API 주어진 PI와 radius로 업데이트"""
         self._update_group_internal(index, pipoint=pipoint, radius=radius)
 
+    def remove_pi_at_index(self, index):
+        if index <= 0 or index >= len(self.coord_list) - 1:
+            raise ValueError("첫 번째 또는 마지막 PI는 삭제할 수 없습니다.")
+        # 1️⃣ PI 삭제
+        self.coord_list.pop(index)
+
+        # 2️⃣ 관련 그룹 및 내부 세그먼트 삭제
+        target_group_idx = index - 1
+        if 0 <= target_group_idx < len(self.groups):
+            prev_group = self.groups[index - 2] if index - 2 >= 0 else None
+            target_group = self.groups[index - 1]
+            next_group = self.groups[index] if index < len(self.groups) else None
+
+            # 이전/다음 그룹 PI 좌표 갱신
+            if prev_group:
+                #이전 그룹 bp, ip, ep 수정
+                prev_group.update_by_pi(ep_coordinate=next_group.ip_coordinate)
+            if next_group:
+                #다음 그룹 bp,ip,ep 수정
+                if prev_group is not None:
+                    next_group.update_by_pi(bp_coordinate=prev_group.ip_coordinate)
+                else:
+                    next_group.update_by_pi(bp_coordinate=self.coord_list[0])
+
+            #이전 , 다음 직선 인덱스 찾기
+            prev_seg_index = target_group.segments[0].prev_index
+            next_seg_index = target_group.segments[-1].next_index
+
+            #직선 세그먼트 가져오기
+            if 0 <= prev_seg_index < len(self.segment_list):
+                prev_seg = self.segment_list[prev_seg_index]
+            else:
+                prev_seg = None
+
+            if 0 <= next_seg_index < len(self.segment_list):
+                next_seg = self.segment_list[next_seg_index]
+
+            else:
+                next_seg = None
+
+            # 그룹 내부 세그먼트 제거
+            if hasattr(target_group, "segments"):
+                for seg in target_group.segments:
+                    if seg in self.segment_list:
+                        self.segment_list.remove(seg)
+            # 그룹 제거
+            del self.groups[target_group_idx]
+            # 다음 직선 삭제 (존재할 경우)
+            if next_seg in self.segment_list:
+                self.segment_list.remove(next_seg)
+            # 삭제 후 직선 재조정
+            #  ✅ segment_list 상태 반영: 인덱스 갱신
+            self._update_prev_next_entity_id()
+            self._update_group_index()  # 필요 시
+
+            if next_group:
+                self._adjust_adjacent_straights(next_group)
+
+        # 4️⃣ station 및 인덱스 갱신
+        self._update_prev_next_entity_id()
+        self._update_stations()
+        self._update_group_index()
+
     def _process_segment_at_index(self, i):
         bp = self.coord_list[i]
         ep = self.coord_list[i + 1]
@@ -165,3 +228,14 @@ class SegmentCollection:
         # 인덱스 및 station 갱신
         self._update_prev_next_entity_id()
         self._update_stations()
+
+    def _update_group_index(self):
+        """
+        groups 리스트에 있는 각 SegmentGroup의 인덱스를 0부터 순서대로 갱신
+        """
+        for idx, group in enumerate(self.groups):
+            group.group_index = idx
+            # 필요하면 내부 세그먼트의 prev/next group index도 갱신
+            if hasattr(group, "segments"):
+                for seg in group.segments:
+                    seg.group_index = idx
