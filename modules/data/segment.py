@@ -1,12 +1,14 @@
+from abc import abstractmethod, ABC
 from dataclasses import dataclass, field
+from typing import Self
 
 from AutoCAD.point2d import Point2d
 from curvetype import CurveType
 
 @dataclass
-class Segment:
+class Segment(ABC):
     """
-    공통 세그멘트 객체
+    공통 추상 세그멘트 객체
     Attributes:
         prev_index(int): 이전 세그먼트 인덱스
         current_index(int): 현재 세그먼트 인덱스
@@ -22,6 +24,37 @@ class Segment:
     end_sta: float = 0.0
     type: CurveType = CurveType.NONE
 
+    @abstractmethod
+    def distance_to_point(self, point: Point2d) -> float:
+        """추상메서드 세그먼트와 점의 거리 계산"""
+        pass
 
+    @abstractmethod
+    def point_at_station(self, station: float, offset: float) -> tuple[Point2d, float]:
+        """추상메서드 지정한 측점의 좌표와 방위각 반환"""
+        pass
 
+    @abstractmethod
+    def station_at_point(self, coord: Point2d) -> tuple[float, float]:
+        """추상메서드 지정한 좌표의 측점 및 거리 반환"""
+        pass
 
+    @abstractmethod
+    def is_contains_station(self, station: float) -> bool:
+        """추상메서드 지정한 측점이 세그먼트에 포함되는지 여부"""
+        pass
+
+    @abstractmethod
+    def is_contains_point(self, point: Point2d) -> bool:
+        """추상메서드 지정한 점이 세그먼트에 포함되는지 여부"""
+        pass
+
+    @abstractmethod
+    def reverse(self):
+        """추상메서드 세그먼트 뒤집기"""
+        pass
+
+    @abstractmethod
+    def create_offset(self, offset_distance: float) -> Self:
+        """세그먼트 객체의 평행(오프셋) 복제본을 생성"""
+        pass
