@@ -122,7 +122,7 @@ class SegmentGroup:
             ia -= 2 * math.pi
         elif ia < -math.pi:
             ia += 2 * math.pi
-        return ia
+        return abs(ia)
 
     def _process_simple_curve(self, segment: Segment):
         segment.start_azimuth = self.bp_azimuth
