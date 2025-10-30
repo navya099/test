@@ -1,9 +1,8 @@
+
 from AutoCAD.point2d import Point2d
 from data.segment import Segment
 from data.segment_group import SegmentGroup
 from data.straight_segment import StraightSegment
-from math_utils import calculate_bearing
-
 
 class SegmentCollection:
     """SegmentGroup 관리"""
@@ -56,6 +55,53 @@ class SegmentCollection:
             self._process_remove_one_only()
         else:
             self._process_remove_pi(index)
+
+    def add_pi_by_coord(self, coord: Point2d):
+        """공개 API 좌표 기준으로 PI 자동 삽입"""
+        nearest_seg = self._find_nearest_segment(coord)
+        self._insert_pi_in_segment(coord)
+
+    def _insert_pi_in_segment(self, coord):
+        """
+        주어진 좌표 근처의 세그먼트 중간에 PI를 삽입.
+        :param coord: (x, y)
+        :return: (삽입된 PI 인덱스)
+        """
+        if not self.segment_list:
+            raise ValueError("세그먼트가 비어 있습니다.")
+
+        # 1️⃣ 가장 가까운 세그먼트 탐색
+        nearest_seg, _ = self._find_nearest_segment(coord)
+        if nearest_seg is None:
+            raise ValueError("적절한 세그먼트를 찾을 수 없습니다.")
+
+        # 2️⃣ 삽입 위치(해당 세그먼트의 인덱스) 찾기
+        seg_index = self.segment_list.index(nearest_seg)
+
+        # 3️⃣ 새 PI 좌표를 삽입 (기존 coord_list 기준)
+        insert_index = seg_index + 1
+        self.coord_list.insert(insert_index, coord)
+
+        # 4️⃣ 반경 리스트에도 대응되는 기본값 추가
+        if hasattr(self, "radius_list"):
+            default_radius = self.radius_list[seg_index] if self.radius_list else 0
+            self.radius_list.insert(insert_index, default_radius)
+
+        # 5️⃣ 세그먼트 재생성 (PI 좌표 기반)
+        self.create_by_pi_coords(self.coord_list, self.radius_list)
+
+        return insert_index
+
+    def _find_nearest_segment(self, coord: Point2d):
+        """세그먼트 리스트에서 점에 가장 가까운 세그먼트 탐색"""
+        if not self.segment_list:
+            raise ValueError("세그먼트 목록이 비어 있습니다.")
+
+        nearest_seg = min(
+            self.segment_list,
+            key=lambda seg: seg.distance_to_point(coord)
+        )
+        return nearest_seg
 
     def _process_segment_at_index(self, i):
         bp = self.coord_list[i]
