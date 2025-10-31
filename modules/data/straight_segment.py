@@ -52,6 +52,7 @@ class StraightSegment(Segment):
 
         return math.hypot(px - proj_x, py - proj_y)
 
+    #추상메서드
     def point_at_station(self, station: float, offset: float) -> tuple[Point2d, float]:
         """지정한 측점의 좌표와 방위각 반환"""
         pass
@@ -75,3 +76,13 @@ class StraightSegment(Segment):
     def create_offset(self, offset_distance: float):
         """세그먼트 객체의 평행(오프셋) 복제본을 생성"""
         pass
+
+    def split_to_segment(self, coord: Point2d):
+        """지정한 점으로 세그먼트 객체 분할"""
+        #다음 세그먼트 생성
+        new_seg = StraightSegment(
+            start_coord=coord,
+            end_coord=self.end_coord,
+        )
+        self.end_coord = coord
+        return new_seg
