@@ -56,5 +56,10 @@ class Segment(ABC):
 
     @abstractmethod
     def create_offset(self, offset_distance: float) -> Self:
-        """세그먼트 객체의 평행(오프셋) 복제본을 생성"""
+        """추상메서드 세그먼트 객체의 평행(오프셋) 복제본을 생성"""
+        pass
+
+    @abstractmethod
+    def split_to_segment(self, coord: Point2d) -> Self:
+        """추상메서드 지점한 점으로 세그먼트 객체 분할"""
         pass
