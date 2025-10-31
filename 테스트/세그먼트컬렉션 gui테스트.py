@@ -5,11 +5,13 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk, FigureCanvasTkAgg
 
 from data.curve_segment import CurveSegment
-from data.segment_collection import SegmentCollection
 from data.straight_segment import StraightSegment
-from point2d import Point2d
-from 테스트 import test_current_collection
+from 세그먼트컬렉션_cui테스트 import test_current_collection
+from data.segment_collection import SegmentCollection
+from AutoCAD.point2d import Point2d
 
+plt.rcParams['font.family'] ='Malgun Gothic'
+plt.rcParams['axes.unicode_minus'] =False
 
 class SegmentVisualizer(tk.Tk):
     """SegmentCollection 시각적 테스트용 GUI + DRAG 가능 PI"""
@@ -20,7 +22,7 @@ class SegmentVisualizer(tk.Tk):
         self.geometry("1000x700")
 
         # --- 데이터 ---
-        import copy
+
         self.original_collection = copy.deepcopy(segment_collection)
         self.collection = copy.deepcopy(segment_collection)
 
@@ -42,6 +44,11 @@ class SegmentVisualizer(tk.Tk):
         ttk.Button(control, text="PI 삭제 후 보기", command=self.plot_after).pack(side=tk.LEFT, padx=5)
         ttk.Button(control, text="초기상태로 되돌리기", command=self.reset_to_initial).pack(side=tk.LEFT, padx=5)
 
+        # ✅ ADD_PI 모드 버튼 추가
+        self.add_pi_mode = False
+        self.add_pi_button = ttk.Button(control, text="PI 추가 모드: OFF", command=self.toggle_add_pi_mode)
+        self.add_pi_button.pack(side=tk.LEFT, padx=10)
+
         # --- drag 관련 상태 ---
         self.dragging_index = None
 
@@ -49,9 +56,40 @@ class SegmentVisualizer(tk.Tk):
         self.canvas.mpl_connect('pick_event', self.on_pick)
         self.canvas.mpl_connect('motion_notify_event', self.on_drag)
         self.canvas.mpl_connect('button_release_event', self.on_release)
+        # ✅ 마우스 클릭으로 PI 추가
+        self.canvas.mpl_connect('button_press_event', self.on_click)
 
         # 초기 그림 표시
         self.plot_before()
+
+    # ✅ ADD_PI 모드 토글
+    def toggle_add_pi_mode(self):
+        self.add_pi_mode = not self.add_pi_mode
+        if self.add_pi_mode:
+            self.add_pi_button.config(text="PI 추가 모드: ON", style="Accent.TButton")
+            messagebox.showinfo("PI 추가 모드", "화면을 클릭하면 해당 위치에 PI가 추가됩니다.")
+        else:
+            self.add_pi_button.config(text="PI 추가 모드: OFF")
+            messagebox.showinfo("PI 추가 모드 종료", "PI 추가 모드가 비활성화되었습니다.")
+
+    # ✅ 클릭 시 ADD_PI 실행
+    def on_click(self, event):
+        if not self.add_pi_mode:
+            return  # 모드가 꺼져 있으면 무시
+        if event.xdata is None or event.ydata is None:
+            return
+
+        coord = Point2d(event.xdata, event.ydata)
+        try:
+            idx = self.collection.add_pi_by_coord(coord)
+            self.plot_before()
+            self.json_export()
+            messagebox.showinfo("PI 추가 완료", f"새로운 PI가 인덱스 {idx} 위치에 추가되었습니다.")
+        except Exception as e:
+            messagebox.showerror("PI 추가 오류", str(e))
+
+        # 한 번 추가 후 모드 자동 종료 (원하면 유지도 가능)
+        self.toggle_add_pi_mode()
 
     # --- 버튼 동작 ---
     def plot_before(self):
@@ -59,6 +97,10 @@ class SegmentVisualizer(tk.Tk):
         self.ax = self.fig.add_subplot(111)
         self.ax.set_title("Before: 기존 선형")
         self._draw_segments()
+
+        # ✅ 이벤트 다시 연결 (새로 그릴 때마다 scatter가 바뀌므로)
+        self.canvas.mpl_connect('pick_event', self.on_pick)
+
         try:
             self.toolbar.update()
         except Exception:
@@ -76,6 +118,9 @@ class SegmentVisualizer(tk.Tk):
         self.ax = self.fig.add_subplot(111)
         self.ax.set_title(f"After: PI({idx}) 제거 후 선형")
         self._draw_segments()
+        # ✅ 동일하게 이벤트 재연결
+        self.canvas.mpl_connect('pick_event', self.on_pick)
+
         self.json_export()
         try:
             self.toolbar.update()
@@ -146,8 +191,7 @@ class SegmentVisualizer(tk.Tk):
         self.dragging_index = None
 
 if __name__ == "__main__":
-    from data.segment_collection import SegmentCollection
-    from AutoCAD.point2d import Point2d
+
 
     coord_list = [Point2d(0,0), Point2d(100,0), Point2d(150,50), Point2d(200,50)]
     radius_list = [50, 30, 40]
