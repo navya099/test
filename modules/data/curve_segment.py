@@ -137,3 +137,7 @@ class CurveSegment(Segment):
     def create_offset(self, offset_distance: float):
         """세그먼트 객체의 평행(오프셋) 복제본을 생성"""
         pass
+
+    def split_to_segment(self, coord: Point2d):
+        """"""
+        pass
