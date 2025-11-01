@@ -60,20 +60,27 @@ class SegmentCollection:
     # 기존 메서드들은 내부 호출만 하도록 변경
     def update_pi_by_index(self, pipoint, index):
         """공개API 주어진 PI로 업데이트"""
+        if index <= 0 or index >= len(self.coord_list) - 1:
+            raise NoUpdatePIError(index)
         self._update_group_internal(index, pipoint=pipoint)
 
     def update_radius_by_index(self, radius, index):
         """공개API 주어진 radius로 업데이트"""
+        if index <= 0 or index >= len(self.coord_list) - 1:
+            raise NoUpdatePIError(index)
         self._update_group_internal(index, radius=radius)
 
     def update_pi_and_radius_by_index(self, pipoint, radius, index):
         """공개API 주어진 PI와 radius로 업데이트"""
+        if index <= 0 or index >= len(self.coord_list) - 1:
+            raise NoUpdatePIError(index)
         self._update_group_internal(index, pipoint=pipoint, radius=radius)
 
     def remove_pi_at_index(self, index):
         """공개API 주어진 인덱스로 PI 삭제"""
         if index <= 0 or index >= len(self.coord_list) - 1:
-            raise ValueError("첫 번째 또는 마지막 PI는 삭제할 수 없습니다.")
+            raise NoDeletePIError(index)
+
         # PI가 하나뿐인 경우 — 전체를 시점–종점 직선으로 복원
         if len(self.groups) <= 1:
             self._process_remove_one_only()
