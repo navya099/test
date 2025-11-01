@@ -157,25 +157,35 @@ class SegmentCollection:
         )
         return nearest_seg
 
-    def _process_segment_at_index(self, i):
-        bp = self.coord_list[i]
-        ep = self.coord_list[i + 1]
+    def _process_segment_at_index(self, i: int):
+        """내부: index 기준 세그먼트(직선/곡선) 생성"""
+        n = len(self.coord_list)
+        if n < 2:
+            raise NotEnoughPIPointError()
 
-        # 곡선 처리
-        if 0 < i < len(self.coord_list) - 1:
-            group = self._create_curve_group(i)
+        # === 곡선이 가능한 구간 ===
+        if 0 < i < n - 1:
+            bp = self.coord_list[i - 1]
+            ip = self.coord_list[i]
+            ep = self.coord_list[i + 1]
+            r = self.radius_list[i - 1]
+            isspiral = False  # 나중에 조건으로 확장 가능
+
+            group = self._group_manager.create_curve_group(i, bp, ip, ep, r, isspiral)
             if group is None:
-                print("해결할 수 있는 솔루션이 없습니다.")
                 self.groups.clear()
                 self.segment_list.clear()
-                return
+                raise InvalidGeometryError("곡선 그룹 생성 실패")
 
             self.groups.append(group)
             self._adjust_previous_straight(group)
             self.segment_list.extend(group.segments)
             self._append_next_straight(group, i)
+
+        # === 첫/마지막 PI ===
         else:
-            # 첫/마지막 직선
+            bp = self.coord_list[i]
+            ep = self.coord_list[i + 1]
             straight = StraightSegment(start_coord=bp, end_coord=ep)
             self.segment_list.append(straight)
 
