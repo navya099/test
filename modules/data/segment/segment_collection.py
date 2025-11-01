@@ -189,13 +189,6 @@ class SegmentCollection:
             straight = StraightSegment(start_coord=bp, end_coord=ep)
             self.segment_list.append(straight)
 
-    def _create_curve_group(self, i) -> SegmentGroup | None:
-        bp_prev = self.coord_list[i - 1]
-        ip = self.coord_list[i]
-        ep_next = self.coord_list[i + 1]
-        r = self.radius_list[i - 1] if i - 1 < len(self.radius_list) else 0
-        return SegmentGroup.create_from_pi(i, bp_prev, ip, ep_next, r, isspiral=False)
-
     def _adjust_previous_straight(self, group: SegmentGroup):
         if len(self.segment_list) > 0:
             last_straight = self.segment_list[-1]
@@ -256,11 +249,13 @@ class SegmentCollection:
         - pipoint: 변경할 PI 좌표 (없으면 PI 변경 안함)
         - radius: 변경할 곡선 반경 (없으면 반경 변경 안함)
         """
+        if radius == 0:
+            raise RadiusError(radius)
         # 좌표/반경 갱신
         if pipoint is not None:
             self.coord_list[index] = pipoint
         if radius is not None:
-            self.radius_list[index] = radius
+            self.radius_list[index - 1] = radius
 
         if 0 < index < len(self.coord_list) - 1:
             prev_group = self.groups[index - 2] if index - 2 >= 0 else None
@@ -270,21 +265,26 @@ class SegmentCollection:
             # PI 변경
             if pipoint is not None:
                 target_group.update_by_pi(ip_coordinate=pipoint)
+                self._adjust_adjacent_straights(target_group)
                 if prev_group is not None:
                     prev_group.update_by_pi(ep_coordinate=pipoint)
+                    # 직선 세그먼트 조정 (한 번만 수행)
+                    self._adjust_adjacent_straights(prev_group)
                 if next_group is not None:
                     next_group.update_by_pi(bp_coordinate=pipoint)
+                    # 직선 세그먼트 조정 (한 번만 수행)
+                    self._adjust_adjacent_straights(next_group)
 
             # 반경 변경
             if radius is not None:
                 target_group.update_by_radius(radius)
-
-            # 직선 세그먼트 조정 (한 번만 수행)
-            self._adjust_adjacent_straights(target_group)
+                # 직선 세그먼트 조정 (한 번만 수행)
+                self._adjust_adjacent_straights(target_group)
 
         # 인덱스 및 station 갱신
         self._update_prev_next_entity_id()
         self._update_stations()
+        self._update_group_index()
 
     def _update_group_index(self):
         """
