@@ -1,9 +1,10 @@
 
 import json
 import math
+
+from data.segment.curve_segment import CurveSegment
+from data.segment.segment_collection import SegmentCollection
 from point2d import Point2d
-from data.curve_segment import CurveSegment
-from data.segment_collection import SegmentCollection
 from math_utils import degrees_to_dms
 
 

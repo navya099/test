@@ -4,10 +4,14 @@ import copy
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk, FigureCanvasTkAgg
 
-from data.curve_segment import CurveSegment
-from data.straight_segment import StraightSegment
+from data.alignment.alignment import Alignment
+from data.alignment.exception.alignment_error import AlignmentError
+from data.segment.curve_segment import CurveSegment
+from data.segment.straight_segment import StraightSegment
+from math_utils import draw_arc
+from transaction import Transaction
 from 세그먼트컬렉션_cui테스트 import test_current_collection
-from data.segment_collection import SegmentCollection
+from data.segment.segment_collection import SegmentCollection
 from AutoCAD.point2d import Point2d
 
 plt.rcParams['font.family'] ='Malgun Gothic'
@@ -16,15 +20,15 @@ plt.rcParams['axes.unicode_minus'] =False
 class SegmentVisualizer(tk.Tk):
     """SegmentCollection 시각적 테스트용 GUI + DRAG 가능 PI"""
 
-    def __init__(self, segment_collection: SegmentCollection):
+    def __init__(self, alignment):
         super().__init__()
         self.title("SegmentCollection 시각화 테스트")
         self.geometry("1000x700")
 
         # --- 데이터 ---
 
-        self.original_collection = copy.deepcopy(segment_collection)
-        self.collection = copy.deepcopy(segment_collection)
+        self.original_collection = alignment.collection
+        self.collection = copy.deepcopy(alignment.collection)
 
         # --- matplotlib figure ---
         self.fig, self.ax = plt.subplots(figsize=(8, 6))
@@ -162,9 +166,12 @@ class SegmentVisualizer(tk.Tk):
         self.ax.grid(True, lw=0.3, alpha=0.5)
 
     def _segment_to_xy(self, seg):
-        if isinstance(seg, (StraightSegment, CurveSegment)):
+        if isinstance(seg, StraightSegment):
             return [(seg.start_coord.x, seg.start_coord.y),
                     (seg.end_coord.x, seg.end_coord.y)]
+        if isinstance(seg, CurveSegment):
+            x_arc, y_arc = draw_arc(seg.direction, seg.start_coord, seg.end_coord, seg.center_coord)
+            return list(zip(x_arc, y_arc))
         return None
 
     def json_export(self):
@@ -177,27 +184,35 @@ class SegmentVisualizer(tk.Tk):
         self.dragging_index = event.ind[0]  # 선택된 PI 인덱스
 
     def on_drag(self, event):
-        if self.dragging_index is not None:
-            if event.xdata is None or event.ydata is None:
-                return
-            idx = self.dragging_index
-            new_point = Point2d(event.xdata, event.ydata)
-            # 기존 radius 유지
-            radius = self.collection.radius_list[idx] if idx < len(self.collection.radius_list) else 50
-            self.collection.update_pi_and_radius_by_index(new_point, radius, idx)
+        if self.dragging_index is None:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+
+        idx = self.dragging_index
+        new_point = Point2d(event.xdata, event.ydata)
+        radius = self.collection.radius_list[idx-1]
+        try:
+            with Transaction(self.collection):
+                self.collection.update_pi_and_radius_by_index(new_point, radius, idx)
+        except AlignmentError as e:
+            messagebox.showerror('업데이트 실패', str(e))
+            return  # 롤백 후 종료
+        else:
             self.plot_before()  # 실시간 갱신
             self.json_export()
+
     def on_release(self, event):
         self.dragging_index = None
 
 if __name__ == "__main__":
 
-
+    al = Alignment(name='test')
     coord_list = [Point2d(0,0), Point2d(100,0), Point2d(150,50), Point2d(200,50)]
-    radius_list = [50, 30, 40]
-
-    collection = SegmentCollection()
-    collection.create_by_pi_coords(coord_list, radius_list)
-
-    app = SegmentVisualizer(collection)
+    radius_list = [50, 30]
+    try:
+        al.create(coord_list, radius_list)
+    except AlignmentError as e:
+        messagebox.showerror('에러', f'{e}')
+    app = SegmentVisualizer(al)
     app.mainloop()
