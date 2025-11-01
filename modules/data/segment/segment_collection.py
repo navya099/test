@@ -42,17 +42,20 @@ class SegmentCollection:
 
     def create_by_pi_coords(self, coord_list, radius_list):
         """공개api pi와 radius 리스트로 컬렉션 생성"""
-        self.coord_list = coord_list
-        self.radius_list = radius_list
-        self.groups.clear()
-        self.segment_list.clear()
 
+        self._pi_manager.coord_list = coord_list
+        self._pi_manager.radius_list = radius_list
+        self._group_manager.groups.clear()
+        self._segment_manager.segment_list.clear()
+
+        # 내부 빌드 호출
         n = len(coord_list)
         for i in range(n - 1):
             self._process_segment_at_index(i)
 
         self._update_prev_next_entity_id()
         self._update_stations()
+        self._update_group_index()
 
     # 기존 메서드들은 내부 호출만 하도록 변경
     def update_pi_by_index(self, pipoint, index):
