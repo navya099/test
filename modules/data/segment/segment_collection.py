@@ -89,6 +89,18 @@ class SegmentCollection:
 
     def add_pi_by_coord(self, coord: Point2d):
         """공개 API PI 삽입"""
+        # 예외탐지
+        if not self.segment_list:
+            raise ValueError("세그먼트가 비어 있습니다.")
+
+        # 1️⃣ 가장 가까운 세그먼트 탐색
+        nearest_seg = self._segment_manager.find_nearest_segment(coord)
+        if nearest_seg is None:
+            raise ValueError("적절한 세그먼트를 찾을 수 없습니다.")
+        if isinstance(nearest_seg, CurveSegment):
+            raise ValueError('곡선 세그먼트에 pi를 추가할 수 없습니다.')
+
+        # 예외 없으면 실행
         self._insert_pi_in_segment(coord)
 
     def _insert_pi_in_segment(self, coord):
