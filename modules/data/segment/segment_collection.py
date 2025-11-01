@@ -1,9 +1,13 @@
-
 from AutoCAD.point2d import Point2d
-from data.curve_segment import CurveSegment
-from data.segment import Segment
-from data.segment_group import SegmentGroup
-from data.straight_segment import StraightSegment
+from data.alignment.exception.alignment_error import NotEnoughPIPointError, InvalidGeometryError, PIOutOfRangeError, \
+    NoUpdatePIError, NoDeletePIError, RadiusError, GroupNullError
+from data.segment.curve_segment import CurveSegment
+from data.segment.group_manager import GroupManager
+from data.pi_manager import PIManager
+from data.segment.segment import Segment
+from data.segment.segment_group import SegmentGroup
+from data.segment.segment_manager import SegmentManager
+from data.segment.straight_segment import StraightSegment
 
 class SegmentCollection:
     """SegmentGroup 관리"""
@@ -15,10 +19,26 @@ class SegmentCollection:
         segment_list: 세그먼트 리스트(그룹 포함)
     """
     def __init__(self):
-        self.groups: list[SegmentGroup] = []
-        self.coord_list: list[Point2d] = []
-        self.radius_list: list[float] = []
-        self.segment_list: list[Segment] = []
+        self._pi_manager = PIManager()
+        self._segment_manager = SegmentManager()
+        self._group_manager = GroupManager()
+
+    # 외부 참조용 property
+    @property
+    def coord_list(self) -> list[Point2d]:
+        return self._pi_manager.coord_list
+
+    @property
+    def radius_list(self) -> list[float]:
+        return self._pi_manager.radius_list
+
+    @property
+    def segment_list(self) -> list[Segment]:
+        return self._segment_manager.segment_list
+
+    @property
+    def groups(self) -> list[SegmentGroup]:
+        return self._group_manager.groups
 
     def create_by_pi_coords(self, coord_list, radius_list):
         """공개api pi와 radius 리스트로 컬렉션 생성"""
