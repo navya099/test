@@ -1,9 +1,10 @@
 from CIVIL3D.Profile.profile import Profile
-from CIVIL3D.Profile.profileentitytype import ProfileEntityType
-from CIVIL3D.Profile.profiletype import ProfileType
+from Profile.profiletype import ProfileType
 from Structure.structurecollection import StructureCollection
-from data.segment_collection import SegmentCollection
+from data.alignment.exception.alignment_error import AlignmentError
+from data.segment.segment_collection import SegmentCollection
 from datetime import datetime
+
 
 class Alignment:
     """하나의 노선을 나타내는 고수준 객체"""
@@ -23,8 +24,11 @@ class Alignment:
 
     # ---- Proxy (컬렉션 기능 연결) ----
     def create(self, coord_list, radius_list):
-        """PI/반경으로 노선 생성"""
-        self.collection.create_by_pi_coords(coord_list, radius_list)
+        try:
+            self.collection.create_by_pi_coords(coord_list, radius_list)
+        except AlignmentError as e:
+            # 로깅 or 변환 (예: GUI가 읽기 쉬운 메시지로)
+            print(e)
 
     def update_pi(self, pipoint, index):
         """PI업데이트"""
