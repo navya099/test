@@ -1,12 +1,10 @@
 from dataclasses import dataclass, field
 import math
 
-from PIL.ImageCms import Direction
-
 from AutoCAD.point2d import Point2d
 from curvedirection import CurveDirection
-from data.segment import Segment
-from math_utils import calculate_bearing, calculate_destination_coordinates, find_curve_direction
+from data.segment.segment import Segment
+from math_utils import calculate_destination_coordinates, find_curve_direction
 
 
 @dataclass

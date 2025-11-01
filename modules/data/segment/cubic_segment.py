@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from data.segment import Segment
+from data.segment.segment import Segment
 
 
 @dataclass
