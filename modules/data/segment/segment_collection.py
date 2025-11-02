@@ -354,68 +354,25 @@ class SegmentCollection:
         self._update_group_index()
         self._update_stations()
 
+    def _process_remove_pi_with_group(self, prev_group, target_group, next_group, deleted_pi_coord):
+        #그룹 조정
+        self._update_group_after_delete(prev_group, target_group, next_group, deleted_pi_coord)
 
-    def _find_adjacent_groups(self, index: int):
-        """이전/현재/다음 그룹 반환"""
-        target_group_idx = index - 1
-        if 0 <= target_group_idx < len(self.groups):
-            prev_group = self.groups[index - 2] if index - 2 >= 0 else None
-            target_group = self.groups[index - 1]
-            next_group = self.groups[index] if index < len(self.groups) else None
-            return prev_group, target_group, next_group
-        else:
-            return None, None, None
-
-    def _remove_group_and_segments(self, target_group, target_group_idx: int):
-        """타깃 그룹과 그 내부 세그먼트 제거 후, 이전·다음 세그먼트 인덱스 반환"""
-        prev_seg_index = target_group.segments[0].prev_index
-        next_seg_index = target_group.segments[-1].next_index
-
-        # 직선 세그먼트 탐색
-        prev_seg = self.segment_list[prev_seg_index] if 0 <= prev_seg_index < len(self.segment_list) else None
-        next_seg = self.segment_list[next_seg_index] if 0 <= next_seg_index < len(self.segment_list) else None
-
-        # 그룹 세그먼트 제거
-        for seg in list(target_group.segments):
-            if seg in self.segment_list:
-                self.segment_list.remove(seg)
-
-        # 그룹 자체 제거
-        if 0 <= target_group_idx < len(self.groups):
-            del self.groups[target_group_idx]
-
-        return prev_seg, next_seg
-
-    def _cleanup_segments(self, prev_group, next_group, prev_seg, next_seg):
-        """삭제 후 불필요한 직선 제거 및 연결 보정"""
-        # 필요없는 직선 제거
-        if next_group is None:
-            if prev_seg in self.segment_list:
-                self.segment_list.remove(prev_seg)
-        else:
-            if next_seg in self.segment_list:
-                self.segment_list.remove(next_seg)
+        #그룹 내부 세그먼트 제거 후 이전 세그 다음 세그 반환
+        prev_seg, next_seg = self._segment_manager.remove_segments(target_group)
+        #그룹 삭제
+        self._group_manager.delete_group(target_group)
+        #세그먼트 삭제후 신설
+        self._segment_manager.delete_segment_in_list(prev_seg)
+        self._segment_manager.delete_segment_in_list(next_seg)
 
         # 인덱스 갱신
         self._update_prev_next_entity_id()
-        self._update_group_index()
 
-        # 인접 직선 보정
-        if next_group:
-            self._segment_manager.adjust_adjacent_straights(next_group)
-        elif prev_group:
-            self._segment_manager.adjust_adjacent_straights(prev_group)
+        #신설
+        new_seg = StraightSegment(start_coord=prev_seg.start_coord, end_coord=next_seg.end_coord)
+        # 리스트에 추가
+        self._segment_manager.segment_list.insert(prev_seg.current_index, new_seg)
 
-    def _finalize_update(self, prev_group, next_group):
-        """삭제 후 전체 메타데이터 갱신"""
-        # 그룹 PI 좌표 갱신
-        if prev_group and next_group:
-            prev_group.update_by_pi(ep_coordinate=next_group.ip_coordinate)
-            next_group.update_by_pi(bp_coordinate=prev_group.ip_coordinate)
-        elif prev_group:
-            prev_group.update_by_pi(ep_coordinate=self.coord_list[-1])
-        elif next_group:
-            next_group.update_by_pi(bp_coordinate=self.coord_list[0])
-
-        # station 갱신
-        self._update_stations()
+        # 인덱스 갱신
+        self._update_prev_next_entity_id()
