@@ -89,14 +89,14 @@ class SegmentCollection:
 
     def add_pi_by_coord(self, coord: Point2d):
         """공개 API PI 삽입"""
-        # 예외탐지
+        #예외탐지
         if not self.segment_list:
             raise SegmentListNullError()
 
         # 1️⃣ 가장 가까운 세그먼트 탐색
         nearest_seg = self._segment_manager.find_nearest_segment(coord)
 
-        # 예외 없으면 실행
+        #예외 없으면 실행
         self._insert_pi_in_segment(coord, nearest_seg)
 
     def _insert_pi_in_segment(self, coord, nearest_seg):
@@ -109,15 +109,15 @@ class SegmentCollection:
         # 2️⃣ 삽입 위치(해당 세그먼트의 인덱스) 찾기
         seg_index = nearest_seg.current_index
 
-        # 세그먼트 분활
+        #세그먼트 분활
         new_seg = nearest_seg.split_to_segment(coord)
 
-        # 세그먼트 리스트에 추가
+        #세그먼트 리스트에 추가
         self._segment_manager.segment_list.insert(seg_index + 1, new_seg)
-        # 인덱스 갱신
+        #인덱스 갱신
         self._update_prev_next_entity_id()
 
-        # pi인덱스 찾기
+        #pi인덱스 찾기
         prev_pi_index, next_pi_index = self._pi_manager.find_pi_interval(coord)
         self._pi_manager.coord_list.insert(next_pi_index, coord)
         prev_pi_index, next_pi_index = self._pi_manager.find_pi_interval(coord)
@@ -135,7 +135,7 @@ class SegmentCollection:
             next_group.update_by_pi(bp_coordinate=coord)
             self._segment_manager.adjust_adjacent_straights(next_group)
 
-        # 인덱스 및 그룹 및 station 갱신
+        #인덱스 및 그룹 및 station 갱신
         self._update_prev_next_entity_id()
         self._update_group_index()
         self._update_stations()
@@ -328,7 +328,7 @@ class SegmentCollection:
 
         prev_group, target_group, next_group = self._find_adjacent_groups(index)
         if target_group is None:
-            return
+            raise GroupNullError('NULL')
         self._finalize_update(prev_group, next_group)
 
         prev_seg, next_seg = self._remove_group_and_segments(target_group, target_group_idx=index - 1)
