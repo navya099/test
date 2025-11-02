@@ -57,4 +57,30 @@ class SegmentManager:
                 seg.start_coord = new_coord
 
 
+    def remove_segments(self, target_group):
+        """타깃 그룹과 그 내부 세그먼트 제거 후, 이전·다음 세그먼트 인덱스 반환"""
+        prev_seg_index = target_group.segments[0].prev_index
+        next_seg_index = target_group.segments[-1].next_index
+
+        # 직선 세그먼트 탐색
+        prev_seg = self.segment_list[prev_seg_index] if 0 <= prev_seg_index < len(self.segment_list) else None
+        next_seg = self.segment_list[next_seg_index] if 0 <= next_seg_index < len(self.segment_list) else None
+
+        # 그룹 세그먼트 제거
+        for seg in list(target_group.segments):
+            if seg in self.segment_list:
+                self.segment_list.remove(seg)
+
+        return prev_seg, next_seg
+
+    def delete_segment_in_list(self, seg):
+        self.segment_list.remove(seg)
+
+    def find_straight_by_coord(self, coord):
+        segs = []
+        for seg in self.segment_list:
+            if isinstance(seg, StraightSegment) and (seg.start_coord == coord or seg.end_coord == coord):
+                segs.append(seg)
+        return segs
+
 
