@@ -323,24 +323,37 @@ class SegmentCollection:
         self._update_stations()
 
     def _process_remove_pi(self, index: int):
-        """지정된 PI 삭제 (복수 PI 존재 시 전용 루틴)"""
-        self._remove_pi_coord(index)
+        """지정된 PI 삭제"""
+        deleted_pi = self.coord_list[index]
 
-        prev_group, target_group, next_group = self._find_adjacent_groups(index)
-        if target_group is None:
-            raise GroupNullError('NULL')
-        self._finalize_update(prev_group, next_group)
+        # 삭제 전 PI 주변 그룹 및 직선 참조
+        prev_group = self._group_manager.find_group_near_coord(self.coord_list[index - 1]) if index > 0 else None
+        target_group = self._group_manager.find_group_near_coord(deleted_pi)
+        next_group = self._group_manager.find_group_near_coord(self.coord_list[index + 1]) if index + 1 < len(
+            self.coord_list) else None
 
-        prev_seg, next_seg = self._remove_group_and_segments(target_group, target_group_idx=index - 1)
+        # 2️⃣ 그룹 확인
+        if target_group:
+            self._process_remove_pi_with_group(prev_group, target_group, next_group, deleted_pi)
+        else:
+            self._process_remove_pi_without_group(deleted_pi)
 
-        self._cleanup_segments(prev_group, next_group, prev_seg, next_seg)
+        # 인접 직선 보정
+        if next_group:
+            next_group.update_by_pi(bp_coordinate=self.coord_list[index - 1])
+            self._segment_manager.adjust_adjacent_straights(next_group)
+        if prev_group:
+            prev_group.update_by_pi(ep_coordinate=self.coord_list[index + 1])
+            self._segment_manager.adjust_adjacent_straights(prev_group)
 
+        # 1️⃣ PI 삭제
+        self._pi_manager.coord_list.pop(index)
 
-    # ================== 하위 메소드 ==================
+        # 4️⃣ 인덱스/그룹/스테이션 갱신
+        self._update_prev_next_entity_id()
+        self._update_group_index()
+        self._update_stations()
 
-    def _remove_pi_coord(self, index: int):
-        """coord_list에서 PI 삭제"""
-        self.coord_list.pop(index)
 
     def _find_adjacent_groups(self, index: int):
         """이전/현재/다음 그룹 반환"""
