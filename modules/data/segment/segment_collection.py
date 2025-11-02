@@ -91,69 +91,51 @@ class SegmentCollection:
         """공개 API PI 삽입"""
         # 예외탐지
         if not self.segment_list:
-            raise ValueError("세그먼트가 비어 있습니다.")
+            raise SegmentListNullError()
 
         # 1️⃣ 가장 가까운 세그먼트 탐색
         nearest_seg = self._segment_manager.find_nearest_segment(coord)
-        if nearest_seg is None:
-            raise ValueError("적절한 세그먼트를 찾을 수 없습니다.")
-        if isinstance(nearest_seg, CurveSegment):
-            raise ValueError('곡선 세그먼트에 pi를 추가할 수 없습니다.')
 
         # 예외 없으면 실행
-        self._insert_pi_in_segment(coord)
+        self._insert_pi_in_segment(coord, nearest_seg)
 
-    def _insert_pi_in_segment(self, coord):
+    def _insert_pi_in_segment(self, coord, nearest_seg):
         """
         주어진 좌표 근처의 세그먼트에 PI를 삽입.
         :param coord: (x, y)
         :return: (삽입된 PI 인덱스)
         """
-        if not self.segment_list:
-            raise ValueError("세그먼트가 비어 있습니다.")
-
-        # 1️⃣ 가장 가까운 세그먼트 탐색
-        nearest_seg = self._find_nearest_segment(coord)
-        if nearest_seg is None:
-            raise ValueError("적절한 세그먼트를 찾을 수 없습니다.")
-        if isinstance(nearest_seg, CurveSegment):
-            raise ValueError('곡선 세그먼트에 pi를 추가할 수 없습니다.')
 
         # 2️⃣ 삽입 위치(해당 세그먼트의 인덱스) 찾기
         seg_index = nearest_seg.current_index
 
-        #세그먼트 분활
+        # 세그먼트 분활
         new_seg = nearest_seg.split_to_segment(coord)
 
-        #세그먼트 리스트에 추가
-        self.segment_list.insert(seg_index + 1, new_seg)
-        #인덱스 갱신
+        # 세그먼트 리스트에 추가
+        self._segment_manager.segment_list.insert(seg_index + 1, new_seg)
+        # 인덱스 갱신
         self._update_prev_next_entity_id()
 
-        #pi인덱스 찾기
-        prev_pi_index, next_pi_index = self._find_pi_interval(coord)
-        self.coord_list.insert(next_pi_index, coord)
+        # pi인덱스 찾기
+        prev_pi_index, next_pi_index = self._pi_manager.find_pi_interval(coord)
+        self._pi_manager.coord_list.insert(next_pi_index, coord)
+        prev_pi_index, next_pi_index = self._pi_manager.find_pi_interval(coord)
 
-        #그룹 재조정
-        group_index = 0
-        for group in self.groups:
-            for seg in  group.segments:
-                if seg.current_index == nearest_seg.prev_index:
-                    group_index = group.group_id - 1
-                    break
+        # 3️⃣ PI 주변 그룹 찾기
+        prev_group = self._group_manager.find_group_near_coord(self.coord_list[next_pi_index - 1])
+        next_group = self._group_manager.find_group_near_coord(self.coord_list[next_pi_index + 1]) \
+            if next_pi_index + 1 < len(self.coord_list) else None
 
-        # 각각 그룹 갱신
-        prev_group = self.groups[group_index]
-        next_group = self.groups[group_index + 1]
+        # 4️⃣ 그룹 갱신 (곡선 존재할 때만)
+        if prev_group:
+            prev_group.update_by_pi(ep_coordinate=coord)
+            self._segment_manager.adjust_adjacent_straights(prev_group)
+        if next_group:
+            next_group.update_by_pi(bp_coordinate=coord)
+            self._segment_manager.adjust_adjacent_straights(next_group)
 
-        prev_group.update_by_pi(ep_coordinate=coord)
-        next_group.update_by_pi(bp_coordinate=coord)
-
-        #직선 세그먼트 갱신
-        self._adjust_adjacent_straights(prev_group)
-        self._adjust_adjacent_straights(next_group)
-
-        #인덱스 및 그룹 및 station 갱신
+        # 인덱스 및 그룹 및 station 갱신
         self._update_prev_next_entity_id()
         self._update_group_index()
         self._update_stations()
