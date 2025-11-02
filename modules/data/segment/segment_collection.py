@@ -352,6 +352,7 @@ class SegmentCollection:
             return prev_group, target_group, next_group
         else:
             return None, None, None
+
     def _remove_group_and_segments(self, target_group, target_group_idx: int):
         """타깃 그룹과 그 내부 세그먼트 제거 후, 이전·다음 세그먼트 인덱스 반환"""
         prev_seg_index = target_group.segments[0].prev_index
@@ -388,9 +389,9 @@ class SegmentCollection:
 
         # 인접 직선 보정
         if next_group:
-            self._adjust_adjacent_straights(next_group)
+            self._segment_manager.adjust_adjacent_straights(next_group)
         elif prev_group:
-            self._adjust_adjacent_straights(prev_group)
+            self._segment_manager.adjust_adjacent_straights(prev_group)
 
     def _finalize_update(self, prev_group, next_group):
         """삭제 후 전체 메타데이터 갱신"""
@@ -405,24 +406,3 @@ class SegmentCollection:
 
         # station 갱신
         self._update_stations()
-
-    def _find_pi_interval(self, coord: Point2d) -> tuple[int, int]:
-        """
-        주어진 좌표(coord)가 어느 두 PI 사이에 속하는지 반환.
-        (예: (1,2) → coord_list[1]과 coord_list[2] 사이)
-        """
-        if len(self.coord_list) < 2:
-            raise ValueError("PI가 2개 이상 필요합니다.")
-
-        min_dist = float('inf')
-        nearest_index = None
-
-        for i in range(len(self.coord_list) - 1):
-            p1, p2 = self.coord_list[i], self.coord_list[i + 1]
-            seg = StraightSegment(start_coord=p1, end_coord=p2)
-            dist = seg.distance_to_point(coord)
-            if dist < min_dist:
-                min_dist = dist
-                nearest_index = i
-
-        return nearest_index, nearest_index + 1
