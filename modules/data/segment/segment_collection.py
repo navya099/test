@@ -82,7 +82,7 @@ class SegmentCollection:
             raise NoDeletePIError(index)
 
         # PI가 하나뿐인 경우 — 전체를 시점–종점 직선으로 복원
-        if len(self.groups) <= 1:
+        if len(self.coord_list) == 3:
             self._process_remove_one_only()
         else:
             self._process_remove_pi(index)
@@ -298,24 +298,24 @@ class SegmentCollection:
 
     def _process_remove_one_only(self):
         # PI 삭제
-        self.coord_list.pop(1)
+        self._pi_manager.coord_list.pop(1)
 
         target_group = self.groups[0]
         # 그룹 내부 세그먼트 제거
         if hasattr(target_group, "segments"):
             for seg in target_group.segments:
                 if seg in self.segment_list:
-                    self.segment_list.remove(seg)
+                    self._segment_manager.segment_list.remove(seg)
 
         # 모든 곡선 그룹 제거
-        self.groups.clear()
+        self._group_manager.groups.clear()
 
         # 직선 세그먼트 갱신
         # 시작 세그먼트만 남기고 남은 세그먼트 제거
-        self.segment_list.pop(-1)
+        self._segment_manager.segment_list.pop(-1)
 
         # 남은 세그먼트 끝점 변경
-        self.segment_list[0].end_coord = self.coord_list[-1]
+        self._segment_manager.segment_list[0].end_coord = self.coord_list[-1]
 
         # 메타데이터 갱신
         self._update_prev_next_entity_id()
