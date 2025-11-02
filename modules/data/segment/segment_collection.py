@@ -376,3 +376,33 @@ class SegmentCollection:
 
         # 인덱스 갱신
         self._update_prev_next_entity_id()
+
+    def _process_remove_pi_without_group(self, deleted_pi):
+        """
+        그룹이 없는 PI 삭제 시 — 직선 2개를 제거하고 1개의 새 직선으로 연결
+        """
+        # 1️⃣ 삭제 대상 PI의 인덱스 찾기
+        pi_index = self.coord_list.index(deleted_pi)
+
+        # 삭제 전후의 PI 좌표 (직선 2개를 잇기 위한)
+        prev_pi = self.coord_list[pi_index - 1] if pi_index > 0 else None
+        next_pi = self.coord_list[pi_index + 1] if pi_index + 1 < len(self.coord_list) else None
+
+        if not (prev_pi and next_pi):
+            # 양쪽 PI가 모두 있어야 새 직선을 생성 가능
+            return
+
+        # 2️⃣ 삭제 대상 PI를 기준으로 직선 세그먼트 탐색
+        prev_seg, next_seg = self._segment_manager.find_straight_by_coord(deleted_pi)
+
+        # 3️⃣ 두 직선 삭제
+        if prev_seg:
+            self._segment_manager.delete_segment_in_list(prev_seg)
+        if next_seg:
+            self._segment_manager.delete_segment_in_list(next_seg)
+
+        # 4️⃣ 새 직선 생성
+        new_seg = StraightSegment(start_coord=prev_pi, end_coord=next_pi)
+        insert_index = prev_seg.current_index if prev_seg else 0
+        self._segment_manager.segment_list.insert(insert_index, new_seg)
+        self._update_prev_next_entity_id()
