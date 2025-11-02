@@ -250,51 +250,40 @@ class SegmentCollection:
         self._update_prev_next_entity_id()
         self._update_stations()
         self._update_group_index()
-        
+
     # SegmentCollection.py
-    def _update_group_internal(self, index, pipoint=None, radius=None):
+    def _update_group_internal(self, prev_group, target_group, next_group, old_pi_coord, pipoint, radius):
         """
-        내부 공용 메서드
-        - index: 변경 대상 PI 인덱스
+        내부 그룹 갱신 메서드
+        - prev_group: 이전 그룹
+        target_group: 대상 그룹
+        next_group: 다음 그룹
         - pipoint: 변경할 PI 좌표 (없으면 PI 변경 안함)
         - radius: 변경할 곡선 반경 (없으면 반경 변경 안함)
         """
-        if radius == 0:
-            raise RadiusError(radius)
-        # 좌표/반경 갱신
+
+        # --- 그룹별 갱신 ---
         if pipoint is not None:
-            self.coord_list[index] = pipoint
-        if radius is not None:
-            self.radius_list[index - 1] = radius
-
-        if 0 < index < len(self.coord_list) - 1:
-            prev_group = self.groups[index - 2] if index - 2 >= 0 else None
-            target_group = self.groups[index - 1]
-            next_group = self.groups[index] if index < len(self.groups) else None
-
-            # PI 변경
-            if pipoint is not None:
+            if target_group:
                 target_group.update_by_pi(ip_coordinate=pipoint)
-                self._adjust_adjacent_straights(target_group)
-                if prev_group is not None:
-                    prev_group.update_by_pi(ep_coordinate=pipoint)
-                    # 직선 세그먼트 조정 (한 번만 수행)
-                    self._adjust_adjacent_straights(prev_group)
-                if next_group is not None:
-                    next_group.update_by_pi(bp_coordinate=pipoint)
-                    # 직선 세그먼트 조정 (한 번만 수행)
-                    self._adjust_adjacent_straights(next_group)
+                self._segment_manager.adjust_adjacent_straights(target_group)
+            else:
+                self._segment_manager.adjust_adjacent_straights_without_group(old_pi_coord, pipoint)
+            if prev_group:
+                prev_group.update_by_pi(ep_coordinate=pipoint)
+                self._segment_manager.adjust_adjacent_straights(prev_group)
+            else:
+                self._segment_manager.adjust_adjacent_straights_without_group(old_pi_coord, pipoint)
+            if next_group:
+                next_group.update_by_pi(bp_coordinate=pipoint)
+                self._segment_manager.adjust_adjacent_straights(next_group)
+            else:
+                self._segment_manager.adjust_adjacent_straights_without_group(old_pi_coord, pipoint)
 
-            # 반경 변경
-            if radius is not None:
+        if radius is not None:
+            if target_group:
                 target_group.update_by_radius(radius)
-                # 직선 세그먼트 조정 (한 번만 수행)
-                self._adjust_adjacent_straights(target_group)
-
-        # 인덱스 및 station 갱신
-        self._update_prev_next_entity_id()
-        self._update_stations()
-        self._update_group_index()
+                self._segment_manager.adjust_adjacent_straights(target_group)
 
     def _update_group_index(self):
         """
