@@ -1,7 +1,7 @@
 from AutoCAD.point2d import Point2d
 from data.alignment.exception.alignment_error import NotEnoughPIPointError, InvalidGeometryError, PIOutOfRangeError, \
     NoUpdatePIError, NoDeletePIError, RadiusError, GroupNullError
-from data.segment.curve_segment import CurveSegment
+from data.segment.exception.segment_exception import SegmentListNullError
 from data.segment.group_manager import GroupManager
 from data.pi_manager import PIManager
 from data.segment.segment import Segment
@@ -62,19 +62,19 @@ class SegmentCollection:
         """공개API 주어진 PI로 업데이트"""
         if index <= 0 or index >= len(self.coord_list) - 1:
             raise NoUpdatePIError(index)
-        self._update_group_internal(index, pipoint=pipoint)
+        self._update_pi(index, pipoint=pipoint)
 
     def update_radius_by_index(self, radius, index):
         """공개API 주어진 radius로 업데이트"""
         if index <= 0 or index >= len(self.coord_list) - 1:
             raise NoUpdatePIError(index)
-        self._update_group_internal(index, radius=radius)
+        self._update_pi(index, radius=radius)
 
     def update_pi_and_radius_by_index(self, pipoint, radius, index):
         """공개API 주어진 PI와 radius로 업데이트"""
         if index <= 0 or index >= len(self.coord_list) - 1:
             raise NoUpdatePIError(index)
-        self._update_group_internal(index, pipoint=pipoint, radius=radius)
+        self._update_pi(index, pipoint=pipoint, radius=radius)
 
     def remove_pi_at_index(self, index):
         """공개API 주어진 인덱스로 PI 삭제"""
