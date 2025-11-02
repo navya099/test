@@ -140,17 +140,6 @@ class SegmentCollection:
         self._update_group_index()
         self._update_stations()
 
-    def _find_nearest_segment(self, coord: Point2d):
-        """세그먼트 리스트에서 점에 가장 가까운 세그먼트 탐색"""
-        if not self.segment_list:
-            raise ValueError("세그먼트 목록이 비어 있습니다.")
-
-        nearest_seg = min(
-            self.segment_list,
-            key=lambda seg: seg.distance_to_point(coord)
-        )
-        return nearest_seg
-
     def _process_segment_at_index(self, i: int):
         """내부: index 기준 세그먼트(직선/곡선) 생성"""
         n = len(self.coord_list)
@@ -217,24 +206,51 @@ class SegmentCollection:
             seg.end_sta = current_sta + seg.length
             current_sta = seg.end_sta
 
-    def _adjust_adjacent_straights(self, group: SegmentGroup):
+    def _update_pi(self, index, pipoint=None, radius=None):
         """
-        target_group 앞/뒤 직선 세그먼트의 start_coord, end_coord 조정
+        내부 공용 메서드
+        - index: 변경 대상 PI 인덱스
+        - pipoint: 변경할 PI 좌표 (없으면 PI 변경 안함)
+        - radius: 변경할 곡선 반경 (없으면 반경 변경 안함)
         """
-        # 이전 직선
-        prev_idx = group.segments[0].prev_index
-        if prev_idx is not None:
-            prev_seg = self.segment_list[prev_idx]
-            if isinstance(prev_seg, StraightSegment):
-                prev_seg.end_coord = group.segments[0].start_coord
+        if radius == 0:
+            raise RadiusError(radius)
 
-        # 다음 직선
-        next_idx = group.segments[-1].next_index
-        if next_idx is not None:
-            next_seg = self.segment_list[next_idx]
-            if isinstance(next_seg, StraightSegment):
-                next_seg.start_coord = group.segments[-1].end_coord
+        # --- 기존 PI 좌표 백업 ---
+        old_pi_coord = self.coord_list[index]
+        prev_pi_coord = self.coord_list[index - 1] if index > 0 else None
+        next_pi_coord = self.coord_list[index + 1] if index + 1 < len(self.coord_list) else None
 
+        # PI 좌표 / 반경 리스트 갱신
+        if pipoint is not None:
+            self._pi_manager.coord_list[index] = pipoint
+        if radius is not None and index - 1 < len(self.radius_list):
+            self._pi_manager.radius_list[index - 1] = radius
+
+        # --- 그룹 탐색은 기존 좌표 기준 ---
+        prev_group = self._group_manager.find_group_near_coord(prev_pi_coord) if prev_pi_coord else None
+        target_group = self._group_manager.find_group_near_coord(old_pi_coord)
+        next_group = self._group_manager.find_group_near_coord(next_pi_coord) if next_pi_coord else None
+
+        # 일치하는 그룹이 없으면 (직선 PI) → 그룹 갱신 스킵
+        if prev_group is None and target_group is None and next_group is None:
+            # pi 변경시 직선을 조정
+            if pipoint:
+                self._segment_manager.adjust_adjacent_straights_without_group(old_pi_coord, pipoint)
+            self._update_prev_next_entity_id()
+            self._update_stations()
+            self._update_group_index()
+            return
+
+        #그룹이 하나라도 있으면 그룹갱신
+        if prev_group or target_group or next_group:
+            self._update_group_internal(prev_group, target_group, next_group, old_pi_coord, pipoint, radius)
+
+        # 인덱스 및 station 갱신
+        self._update_prev_next_entity_id()
+        self._update_stations()
+        self._update_group_index()
+        
     # SegmentCollection.py
     def _update_group_internal(self, index, pipoint=None, radius=None):
         """
