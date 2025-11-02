@@ -406,3 +406,35 @@ class SegmentCollection:
         insert_index = prev_seg.current_index if prev_seg else 0
         self._segment_manager.segment_list.insert(insert_index, new_seg)
         self._update_prev_next_entity_id()
+
+    def _update_group_after_delete(self, prev_group, target_group, next_group, deleted_pi_coord: Point2d):
+        """
+        삭제된 PI 기준으로 주변 그룹/직선 갱신
+        """
+        #이전 그룹와 다음 그룹이 모두 존재할경우
+        if prev_group and next_group:
+            prev_group.update_by_pi(ep_coordinate=next_group.ip_coordinate)
+            next_group.update_by_pi(bp_coordinate=prev_group.ip_coordinate)
+            self._segment_manager.adjust_adjacent_straights(prev_group)
+            self._segment_manager.adjust_adjacent_straights(next_group)
+        #다음 그룹만 존재
+        elif prev_group is None and next_group:
+            #이전 그룹 대신 이전 pi를 얻어서 갱신
+            prev_pi_index = self.coord_list.index(deleted_pi_coord)  - 1
+            prev_pi = self.coord_list[prev_pi_index]
+            next_group.update_by_pi(bp_coordinate=prev_pi)
+            self._segment_manager.adjust_adjacent_straights(next_group)
+        #이전 그룹만 존재
+        elif next_group is None and prev_group:
+            # 다음 그룹 대신 다음 pi를 얻어서 갱신
+            next_pi_index = self.coord_list.index(deleted_pi_coord) + 1
+            next_pi = self.coord_list[next_pi_index]
+            prev_group.update_by_pi(ep_coordinate=next_pi)
+            self._segment_manager.adjust_adjacent_straights(prev_group)
+        #모두 NONE
+        elif next_group is None and prev_group is None:
+            # 이전 그룹 및 다음 그룹 대신 이전 다음 pi를 얻어서 갱신
+            prev_pi_index = self.coord_list.index(deleted_pi_coord) - 1
+            prev_pi = self.coord_list[prev_pi_index]
+            next_pi_index = self.coord_list.index(deleted_pi_coord) + 1
+            next_pi = self.coord_list[next_pi_index]
