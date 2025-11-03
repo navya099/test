@@ -3,10 +3,10 @@ import math
 from AutoCAD.point2d import Point2d
 from CIVIL3D.Alignment.alignmententitytype import AlignmentEntityType
 from curvetype import CurveType
-from data.cubic_segment import CubicSegment
-from data.segment import Segment
+from data.segment.cubic_segment import CubicSegment
+from data.segment.segment import Segment
 from math_utils import calculate_bearing, is_invalid_arc
-from data.curve_segment import CurveSegment
+from data.segment.curve_segment import CurveSegment
 
 @dataclass
 class SegmentGroup:

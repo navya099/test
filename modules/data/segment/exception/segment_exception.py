@@ -27,8 +27,8 @@ class SegmentOverlapError(SegmentException):
 
 class SegmentNotFoundError(SegmentException):
     """찾으려는 세그먼트가 존재하지 않을 때"""
-    def __init__(self, seg_id):
-        super().__init__(f"세그먼트를 찾을 수 없습니다: {seg_id}", code=SEGErrorCode.SEGMENT_NOT_FOUND)
+    def __init__(self):
+        super().__init__(f"세그먼트를 찾을 수 없습니다:", code=SEGErrorCode.SEGMENT_NOT_FOUND)
 
 class InvalidRadiusError(SegmentException):
     """세그먼트 내부 곡선 반경이 잘못된 경우"""
