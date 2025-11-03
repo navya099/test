@@ -1,3 +1,5 @@
+from data.alignment.exception.alignment_error import NotEnoughPIPointError
+from data.segment.straight_segment import StraightSegment
 from point2d import Point2d
 
 
@@ -52,3 +54,24 @@ class PIManager:
         self._update_prev_next_entity_id()
         self._update_group_index()
         self._update_stations()
+
+    def find_pi_interval(self, coord: Point2d) -> tuple[int, int]:
+        """
+        주어진 좌표(coord)가 어느 두 PI 사이에 속하는지 반환.
+        (예: (1,2) → coord_list[1]과 coord_list[2] 사이)
+        """
+        if len(self.coord_list) < 2:
+            raise NotEnoughPIPointError()
+
+        min_dist = float('inf')
+        nearest_index = None
+
+        for i in range(len(self.coord_list) - 1):
+            p1, p2 = self.coord_list[i], self.coord_list[i + 1]
+            seg = StraightSegment(start_coord=p1, end_coord=p2)
+            dist = seg.distance_to_point(coord)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_index = i
+
+        return nearest_index, nearest_index + 1
