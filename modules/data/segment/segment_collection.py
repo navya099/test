@@ -99,6 +99,49 @@ class SegmentCollection:
         #예외 없으면 실행
         self._insert_pi_in_segment(coord, nearest_seg)
 
+    def remove_curve_at_pi_by_index(self, index: int):
+        """주어진 PI의 커브만 제거 (PI는 남김)"""
+        if not (0 <= index < len(self.coord_list)):
+            raise PIOutOfRangeError(index)
+
+        target_pi = self.coord_list[index]
+
+        # 인접 그룹 탐색
+        prev_group = self._group_manager.find_group_near_coord(self.coord_list[index - 1]) if index > 0 else None
+        target_group = self._group_manager.find_group_near_coord(target_pi)
+        next_group = self._group_manager.find_group_near_coord(self.coord_list[index + 1]) if index + 1 < len(
+            self.coord_list) else None
+
+        # 커브가 없으면 종료
+        if not target_group:
+            raise GroupNullError()
+
+        # 🧩 1. 그룹 내부 세그먼트 제거
+        prev_seg, next_seg = self._segment_manager.remove_segments(target_group)
+
+        # 🧩 2. 그룹 삭제
+        self._group_manager.delete_group(target_group)
+
+        # 🧩 3. 삭제된 양끝 직선 재연결
+        if prev_seg and next_seg:
+            # 기존 커브 구간을 하나의 직선으로 대체
+            prev_seg.end_coord=target_pi
+            next_seg.start_coord=target_pi
+        self._update_prev_next_entity_id()
+
+        # 🧩 4. 인접 세그먼트 보정
+        if prev_group:
+            prev_group.update_by_pi(ep_coordinate=target_pi)
+            self._segment_manager.adjust_adjacent_straights(prev_group)
+        if next_group:
+            next_group.update_by_pi(bp_coordinate=target_pi)
+            self._segment_manager.adjust_adjacent_straights(next_group)
+
+        # 🧩 5. 인덱스 및 참조 갱신
+        self._update_prev_next_entity_id()
+        self._update_group_index()
+        self._update_stations()
+
     def _insert_pi_in_segment(self, coord, nearest_seg):
         """
         주어진 좌표 근처의 세그먼트에 PI를 삽입.
