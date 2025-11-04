@@ -53,6 +53,10 @@ class SegmentVisualizer(tk.Tk):
         self.add_pi_button = ttk.Button(control, text="PI 추가 모드: OFF", command=self.toggle_add_pi_mode)
         self.add_pi_button.pack(side=tk.LEFT, padx=10)
 
+        # ✅ 커브만 삭제 모드 체크박스
+        self.remove_curve_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(control, text="곡선만 삭제", variable=self.remove_curve_var).pack(side=tk.LEFT, padx=10)
+
         # --- drag 관련 상태 ---
         self.dragging_index = None
 
@@ -114,7 +118,11 @@ class SegmentVisualizer(tk.Tk):
     def plot_after(self):
         idx = self.pi_index_var.get()
         try:
-            self.collection.remove_pi_at_index(idx)
+            if self.remove_curve_var.get():
+                print(f"PI {idx} 의 커브만 제거")
+                self.collection.remove_curve_at_pi_by_index(idx)
+            else:
+                self.collection.remove_pi_at_index(idx)
         except Exception as e:
             messagebox.showerror("오류", str(e))
             return
@@ -191,10 +199,9 @@ class SegmentVisualizer(tk.Tk):
 
         idx = self.dragging_index
         new_point = Point2d(event.xdata, event.ydata)
-        radius = self.collection.radius_list[idx-1]
         try:
             with Transaction(self.collection):
-                self.collection.update_pi_and_radius_by_index(new_point, radius, idx)
+                self.collection.update_pi_by_index(new_point, idx)
         except AlignmentError as e:
             messagebox.showerror('업데이트 실패', str(e))
             return  # 롤백 후 종료
