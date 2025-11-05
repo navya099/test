@@ -1,11 +1,11 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import copy
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk, FigureCanvasTkAgg
 
 from data.alignment.alignment import Alignment
-from data.alignment.exception.alignment_error import AlignmentError
+from data.alignment.exception.alignment_error import AlignmentError, AlreadyHasCurveError
 from data.segment.curve_segment import CurveSegment
 from data.segment.straight_segment import StraightSegment
 from math_utils import draw_arc
@@ -41,11 +41,11 @@ class SegmentVisualizer(tk.Tk):
         # --- control frame ---
         control = ttk.Frame(self)
         control.pack(fill=tk.X, pady=5)
-        ttk.Label(control, text="삭제할 PI 인덱스:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(control, text="대상 PI 인덱스:").pack(side=tk.LEFT, padx=5)
         self.pi_index_var = tk.IntVar(value=1)
         ttk.Entry(control, textvariable=self.pi_index_var, width=5).pack(side=tk.LEFT)
-        ttk.Button(control, text="Before 보기", command=self.plot_before).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control, text="PI 삭제 후 보기", command=self.plot_after).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(control, text="PI 삭제", command=self.remove_pi).pack(side=tk.LEFT, padx=5)
         ttk.Button(control, text="초기상태로 되돌리기", command=self.reset_to_initial).pack(side=tk.LEFT, padx=5)
 
         # ✅ ADD_PI 모드 버튼 추가
@@ -57,6 +57,10 @@ class SegmentVisualizer(tk.Tk):
         self.remove_curve_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(control, text="곡선만 삭제", variable=self.remove_curve_var).pack(side=tk.LEFT, padx=10)
 
+        #곡선 추가 대화상자
+        self.add_curve_button = ttk.Button(control, text="곡선 추가", command=self.add_curve_ui)
+        self.add_curve_button.pack(side=tk.LEFT, padx=10)
+
         # --- drag 관련 상태 ---
         self.dragging_index = None
 
@@ -65,10 +69,10 @@ class SegmentVisualizer(tk.Tk):
         self.canvas.mpl_connect('motion_notify_event', self.on_drag)
         self.canvas.mpl_connect('button_release_event', self.on_release)
         # ✅ 마우스 클릭으로 PI 추가
-        self.canvas.mpl_connect('button_press_event', self.on_click)
+        self.canvas.mpl_connect('button_press_event', self.add_pi)
 
         # 초기 그림 표시
-        self.plot_before()
+        self.update_plot()
 
     # ✅ ADD_PI 모드 토글
     def toggle_add_pi_mode(self):
@@ -80,8 +84,38 @@ class SegmentVisualizer(tk.Tk):
             self.add_pi_button.config(text="PI 추가 모드: OFF")
             messagebox.showinfo("PI 추가 모드 종료", "PI 추가 모드가 비활성화되었습니다.")
 
+    def add_curve_ui(self):
+        """PI 클릭 후 반경 입력받아 곡선 추가"""
+        try:
+            idx = self.pi_index_var.get()
+
+            # --- 반경 입력 대화상자 ---
+            radius_str = simpledialog.askstring("곡선 추가", "곡선 반경 (R)을 입력하세요:", parent=self)
+            if not radius_str:
+                return  # 사용자가 취소 누름
+            try:
+                radius = float(radius_str)
+                if radius <= 0:
+                    raise ValueError("반경은 양수여야 합니다.")
+            except ValueError:
+                messagebox.showerror("입력 오류", "유효한 숫자를 입력하세요.")
+                return
+
+            # --- 곡선 추가 로직 ---
+            self.collection.add_curve_at_simple_curve(idx, radius)
+
+            # --- 시각화 갱신 ---
+            self.update_plot()
+            self.json_export()
+            messagebox.showinfo("완료", f"PI {idx}에 반경 {radius:.2f}m 곡선을 추가했습니다.")
+
+        except AlignmentError as e:
+            messagebox.showerror("에러", f"{e}")
+        except Exception as e:
+            messagebox.showerror("예외 발생", f"처리 중 오류: {e}")
+
     # ✅ 클릭 시 ADD_PI 실행
-    def on_click(self, event):
+    def add_pi(self, event):
         if not self.add_pi_mode:
             return  # 모드가 꺼져 있으면 무시
         if event.xdata is None or event.ydata is None:
@@ -90,7 +124,7 @@ class SegmentVisualizer(tk.Tk):
         coord = Point2d(event.xdata, event.ydata)
         try:
             idx = self.collection.add_pi_by_coord(coord)
-            self.plot_before()
+            self.update_plot()
             self.json_export()
             messagebox.showinfo("PI 추가 완료", f"새로운 PI가 인덱스 {idx} 위치에 추가되었습니다.")
         except Exception as e:
@@ -99,23 +133,7 @@ class SegmentVisualizer(tk.Tk):
         # 한 번 추가 후 모드 자동 종료 (원하면 유지도 가능)
         self.toggle_add_pi_mode()
 
-    # --- 버튼 동작 ---
-    def plot_before(self):
-        self.fig.clf()
-        self.ax = self.fig.add_subplot(111)
-        self.ax.set_title("Before: 기존 선형")
-        self._draw_segments()
-
-        # ✅ 이벤트 다시 연결 (새로 그릴 때마다 scatter가 바뀌므로)
-        self.canvas.mpl_connect('pick_event', self.on_pick)
-
-        try:
-            self.toolbar.update()
-        except Exception:
-            pass
-        self.canvas.draw_idle()
-
-    def plot_after(self):
+    def remove_pi(self):
         idx = self.pi_index_var.get()
         try:
             if self.remove_curve_var.get():
@@ -126,33 +144,34 @@ class SegmentVisualizer(tk.Tk):
         except Exception as e:
             messagebox.showerror("오류", str(e))
             return
+        self.update_plot(f"After: PI({idx}) 제거 후 선형")
+        self.json_export()
+
+    def update_plot(self, title="SegmentCollection"):
+        """SegmentCollection 전체를 다시 그림"""
         self.fig.clf()
         self.ax = self.fig.add_subplot(111)
-        self.ax.set_title(f"After: PI({idx}) 제거 후 선형")
-        self._draw_segments()
-        # ✅ 동일하게 이벤트 재연결
-        self.canvas.mpl_connect('pick_event', self.on_pick)
+        self.ax.set_title(title)
 
-        self.json_export()
+        # --- 세그먼트 다시 그림 ---
+        self._draw_segments()
+
+        # --- 이벤트 재등록 (scatter 다시 생성되므로) ---
+        self.canvas.mpl_disconnect(getattr(self, "_pick_cid", None) or 0)
+        self._pick_cid = self.canvas.mpl_connect('pick_event', self.on_pick)
+
+        # --- UI 갱신 ---
         try:
             self.toolbar.update()
         except Exception:
             pass
         self.canvas.draw_idle()
+
 
     def reset_to_initial(self):
 
         self.collection = copy.deepcopy(self.original_collection)
-        self.fig.clf()
-        self.ax = self.fig.add_subplot(111)
-        self._draw_segments()
-        try:
-            self.toolbar.update()
-        except Exception:
-            pass
-        self.canvas.draw_idle()
-        self.json_export()
-        messagebox.showinfo("초기화 완료", "SegmentCollection이 초기 상태로 복원되었습니다.")
+        self.update_plot('초기화 선형')
 
     # --- 내부 도식 ---
     def _draw_segments(self):
@@ -206,7 +225,7 @@ class SegmentVisualizer(tk.Tk):
             messagebox.showerror('업데이트 실패', str(e))
             return  # 롤백 후 종료
         else:
-            self.plot_before()  # 실시간 갱신
+            self.update_plot()  # 실시간 갱신
             self.json_export()
 
     def on_release(self, event):
