@@ -1,6 +1,6 @@
 from AutoCAD.point2d import Point2d
 from data.alignment.exception.alignment_error import NotEnoughPIPointError, InvalidGeometryError, PIOutOfRangeError, \
-    NoUpdatePIError, NoDeletePIError, RadiusError, GroupNullError
+    NoUpdatePIError, NoDeletePIError, RadiusError, GroupNullError, AlreadyHasCurveError
 from data.segment.exception.segment_exception import SegmentListNullError
 from data.segment.group_manager import GroupManager
 from data.pi_manager import PIManager
@@ -56,6 +56,42 @@ class SegmentCollection:
         self._update_prev_next_entity_id()
         self._update_stations()
         self._update_group_index()
+
+    def add_curve_at_simple_curve(self, index: int, radius: float):
+        """
+        주어진 PI에 단순 원곡선 추가
+        - index: 커브를 추가할 PI 인덱스
+        - radius: 커브 반경 (R)
+        """
+        if not (0 < index < len(self.coord_list) - 1):
+            raise PIOutOfRangeError(index)
+
+        # 이미 커브가 존재하면 중복 방지
+        existing_group = self._group_manager.find_group_near_coord(self.coord_list[index])
+        if existing_group:
+            raise AlreadyHasCurveError(index)
+
+        #radius 리스트에 추가
+        self._pi_manager.radius_list.insert(index, radius)
+
+        # --- 기존 직선 구간 정리 ---
+        # index 기준 앞뒤 직선 세그먼트를 삭제해야 새 커브 생성 가능
+        prev_seg ,next_seg = self._segment_manager.find_straight_by_coord(self.coord_list[index])
+
+        if prev_seg and next_seg:
+            self._segment_manager.delete_segment_in_list(prev_seg)
+            self._segment_manager.delete_segment_in_list(next_seg)
+            self._update_prev_next_entity_id()
+        else:
+            raise SegmentListNullError()
+
+        # --- 커브 그룹 생성 ---
+        self._process_segment_at_index(index)
+
+        # --- 후속 처리 ---
+        self._update_prev_next_entity_id()
+        self._update_group_index()
+        self._update_stations()
 
     # 기존 메서드들은 내부 호출만 하도록 변경
     def update_pi_by_index(self, pipoint, index):
