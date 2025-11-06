@@ -78,13 +78,6 @@ class SegmentCollection:
         # index 기준 앞뒤 직선 세그먼트를 삭제해야 새 커브 생성 가능
         prev_seg ,next_seg = self._segment_manager.find_straight_by_coord(self.coord_list[index])
 
-        if prev_seg and next_seg:
-            self._segment_manager.delete_segment_in_list(prev_seg)
-            self._segment_manager.delete_segment_in_list(next_seg)
-            self._update_prev_next_entity_id()
-        else:
-            raise SegmentListNullError()
-
         # --- 커브 그룹 생성 ---
         self._process_segment_at_index(index)
 
@@ -173,6 +166,9 @@ class SegmentCollection:
             next_group.update_by_pi(bp_coordinate=target_pi)
             self._segment_manager.adjust_adjacent_straights(next_group)
 
+        #radiuslist 삭제
+        self._pi_manager.radius_list.pop(index)
+
         # 🧩 5. 인덱스 및 참조 갱신
         self._update_prev_next_entity_id()
         self._update_group_index()
@@ -230,7 +226,7 @@ class SegmentCollection:
             bp = self.coord_list[i - 1]
             ip = self.coord_list[i]
             ep = self.coord_list[i + 1]
-            r = self.radius_list[i - 1]
+            r = self.radius_list[i]
             isspiral = False  # 나중에 조건으로 확장 가능
 
             group = self._group_manager.create_curve_group(i, bp, ip, ep, r, isspiral)
@@ -303,8 +299,8 @@ class SegmentCollection:
         # PI 좌표 / 반경 리스트 갱신
         if pipoint is not None:
             self._pi_manager.coord_list[index] = pipoint
-        if radius is not None and index - 1 < len(self.radius_list):
-            self._pi_manager.radius_list[index - 1] = radius
+        if radius is not None:
+            self._pi_manager.radius_list[index] = radius
 
         # --- 그룹 탐색은 기존 좌표 기준 ---
         prev_group = self._group_manager.find_group_near_coord(prev_pi_coord) if prev_pi_coord else None
@@ -428,6 +424,9 @@ class SegmentCollection:
         # 1️⃣ PI 삭제
         self._pi_manager.coord_list.pop(index)
 
+        # radiuslist에서 삭제
+        self._pi_manager.radius_list.pop(index)
+        
         # 4️⃣ 인덱스/그룹/스테이션 갱신
         self._update_prev_next_entity_id()
         self._update_group_index()
