@@ -235,7 +235,7 @@ if __name__ == "__main__":
 
     al = Alignment(name='test')
     coord_list = [Point2d(0,0), Point2d(100,0), Point2d(150,50), Point2d(200,50)]
-    radius_list = [50, 30]
+    radius_list = [None, 50, 30, None]
     try:
         al.create(coord_list, radius_list)
     except AlignmentError as e:
