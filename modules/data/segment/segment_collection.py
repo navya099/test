@@ -45,7 +45,8 @@ class SegmentCollection:
 
         self._pi_manager.coord_list = coord_list
         self._pi_manager.radius_list = radius_list
-        self._group_manager.groups.clear()
+        # 그룹 리스트를 coord_list 길이에 맞게 None으로 초기화
+        self._group_manager.groups = [None] * len(coord_list)
         self._segment_manager.segment_list.clear()
 
         # 내부 빌드 호출
@@ -67,19 +68,19 @@ class SegmentCollection:
             raise PIOutOfRangeError(index)
 
         # 이미 커브가 존재하면 중복 방지
-        existing_group = self._group_manager.find_group_near_coord(self.coord_list[index])
+        existing_group = self._group_manager.groups[index]
         if existing_group:
             raise AlreadyHasCurveError(index)
 
         #radius 리스트에 추가
-        self._pi_manager.radius_list.insert(index, radius)
+        self._pi_manager.radius_list[index] = radius
 
         # --- 기존 직선 구간 정리 ---
         # index 기준 앞뒤 직선 세그먼트를 삭제해야 새 커브 생성 가능
         prev_seg ,next_seg = self._segment_manager.find_straight_by_coord(self.coord_list[index])
 
         # --- 커브 그룹 생성 ---
-        self._process_segment_at_index(index)
+        self._process_segment_at_index(index, rebuild_mode=False)
 
         # --- 후속 처리 ---
         self._update_prev_next_entity_id()
@@ -135,11 +136,9 @@ class SegmentCollection:
 
         target_pi = self.coord_list[index]
 
-        # 인접 그룹 탐색
-        prev_group = self._group_manager.find_group_near_coord(self.coord_list[index - 1]) if index > 0 else None
-        target_group = self._group_manager.find_group_near_coord(target_pi)
-        next_group = self._group_manager.find_group_near_coord(self.coord_list[index + 1]) if index + 1 < len(
-            self.coord_list) else None
+        # 삭제 전 PI 주변 그룹 및 직선 참조
+        # 이전, 대상, 다음 그룹 얻기
+        prev_group, target_group, next_group = self._group_manager.get_prev_next_groups(index)
 
         # 커브가 없으면 종료
         if not target_group:
@@ -148,8 +147,8 @@ class SegmentCollection:
         # 🧩 1. 그룹 내부 세그먼트 제거
         prev_seg, next_seg = self._segment_manager.remove_segments(target_group)
 
-        # 🧩 2. 그룹 삭제
-        self._group_manager.delete_group(target_group)
+        # 🧩 2. 그룹 none으로 초기화
+        self._group_manager.groups[index] = None
 
         # 🧩 3. 삭제된 양끝 직선 재연결
         if prev_seg and next_seg:
@@ -166,8 +165,8 @@ class SegmentCollection:
             next_group.update_by_pi(bp_coordinate=target_pi)
             self._segment_manager.adjust_adjacent_straights(next_group)
 
-        #radiuslist 삭제
-        self._pi_manager.radius_list.pop(index)
+        # 4-1 radiuslist NONE 초기화
+        self._pi_manager.radius_list[index] = None
 
         # 🧩 5. 인덱스 및 참조 갱신
         self._update_prev_next_entity_id()
@@ -194,13 +193,18 @@ class SegmentCollection:
 
         #pi인덱스 찾기
         prev_pi_index, next_pi_index = self._pi_manager.find_pi_interval(coord)
+        #pi 삽입
         self._pi_manager.coord_list.insert(next_pi_index, coord)
+        # pi추가시 동기화
+        self._group_manager.groups.insert(next_pi_index, None)
+        self._pi_manager.radius_list.insert(next_pi_index, None)  # 반경도 1:1 유지
+
+        #다시 변경된 리스트에서 이전 다음 pi index 찾기
         prev_pi_index, next_pi_index = self._pi_manager.find_pi_interval(coord)
 
         # 3️⃣ PI 주변 그룹 찾기
-        prev_group = self._group_manager.find_group_near_coord(self.coord_list[next_pi_index - 1])
-        next_group = self._group_manager.find_group_near_coord(self.coord_list[next_pi_index + 1]) \
-            if next_pi_index + 1 < len(self.coord_list) else None
+        # 이전, 대상, 다음 그룹 얻기
+        prev_group, target_group, next_group = self._group_manager.get_prev_next_groups(prev_pi_index + 1)
 
         # 4️⃣ 그룹 갱신 (곡선 존재할 때만)
         if prev_group:
@@ -255,8 +259,10 @@ class SegmentCollection:
                 self._segment_manager.adjust_adjacent_straights(group)
                 self._update_prev_next_entity_id()
 
-            # 그룹리스트 갱신
+            #그룹리스트 갱신
             self._group_manager.groups[i] = group
+            #RADIUS리스트 갱신
+            self._pi_manager.radius_list[i] = r
 
         # === 첫/마지막 PI ===
         else:
@@ -323,10 +329,9 @@ class SegmentCollection:
         if radius is not None:
             self._pi_manager.radius_list[index] = radius
 
-        # --- 그룹 탐색은 기존 좌표 기준 ---
-        prev_group = self._group_manager.find_group_near_coord(prev_pi_coord) if prev_pi_coord else None
-        target_group = self._group_manager.find_group_near_coord(old_pi_coord)
-        next_group = self._group_manager.find_group_near_coord(next_pi_coord) if next_pi_coord else None
+        #이전, 대상, 다음 그룹 얻기
+        prev_group ,target_group, next_group =  self._group_manager.get_prev_next_groups(index)
+
 
         # 일치하는 그룹이 없으면 (직선 PI) → 그룹 갱신 스킵
         if prev_group is None and target_group is None and next_group is None:
@@ -386,25 +391,24 @@ class SegmentCollection:
         groups 리스트에 있는 각 SegmentGroup의 인덱스를 0부터 순서대로 갱신
         """
         for idx, group in enumerate(self.groups):
-            group.group_index = idx
-            # 필요하면 내부 세그먼트의 prev/next group index도 갱신
-            if hasattr(group, "segments"):
-                for seg in group.segments:
-                    seg.group_index = idx
+            if group:
+                group.group_index = idx
 
     def _process_remove_one_only(self):
         # PI 삭제
         self._pi_manager.coord_list.pop(1)
 
-        target_group = self.groups[0]
+        target_group = self.groups[1]
         # 그룹 내부 세그먼트 제거
         if hasattr(target_group, "segments"):
             for seg in target_group.segments:
                 if seg in self.segment_list:
                     self._segment_manager.segment_list.remove(seg)
 
-        # 모든 곡선 그룹 제거
-        self._group_manager.groups.clear()
+        # 모든 곡선 그룹 제거 후 NONE 초기화
+        self._group_manager.groups = [None] * len(self._pi_manager.coord_list)
+        #모든 RADIUS 초기화
+        self._pi_manager.radius_list = [None] * len(self._pi_manager.coord_list)
 
         # 직선 세그먼트 갱신
         # 시작 세그먼트만 남기고 남은 세그먼트 제거
@@ -423,10 +427,7 @@ class SegmentCollection:
         deleted_pi = self.coord_list[index]
 
         # 삭제 전 PI 주변 그룹 및 직선 참조
-        prev_group = self._group_manager.find_group_near_coord(self.coord_list[index - 1]) if index > 0 else None
-        target_group = self._group_manager.find_group_near_coord(deleted_pi)
-        next_group = self._group_manager.find_group_near_coord(self.coord_list[index + 1]) if index + 1 < len(
-            self.coord_list) else None
+        prev_group, target_group, next_group = self._group_manager.get_prev_next_groups(index)
 
         # 2️⃣ 그룹 확인
         if target_group:
@@ -447,7 +448,7 @@ class SegmentCollection:
 
         # radiuslist에서 삭제
         self._pi_manager.radius_list.pop(index)
-        
+
         # 4️⃣ 인덱스/그룹/스테이션 갱신
         self._update_prev_next_entity_id()
         self._update_group_index()
