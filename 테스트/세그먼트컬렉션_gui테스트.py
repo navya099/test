@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk, FigureCanvasTkAgg
 from pyproj import Transformer
 import contextily as ctx
-
+import json
 from data.alignment.alignment import Alignment
 from data.alignment.exception.alignment_error import AlignmentError
 from data.segment.curve_segment import CurveSegment
@@ -25,14 +25,11 @@ transformer_to_5186 = Transformer.from_crs("EPSG:3857", "EPSG:5186", always_xy=T
 class SegmentVisualizer(tk.Tk):
     """SegmentCollection 시각화 + 지도 모드 + 드래그 가능한 PI"""
 
-    def __init__(self, alignment):
+    def __init__(self):
         super().__init__()
         self.title("SegmentCollection 시각화 테스트")
-        self.geometry("1000x700")
-
-        # 데이터 복제
-        self.original_collection = alignment.collection
-        self.collection = copy.deepcopy(alignment.collection)
+        self.geometry("1200x1000")
+        self.collection = None
 
         # matplotlib figure
         self.fig, self.ax = plt.subplots(figsize=(8, 6))
@@ -64,6 +61,15 @@ class SegmentVisualizer(tk.Tk):
         ttk.Button(control, text="곡선 추가", command=self.add_curve_ui).pack(side=tk.LEFT, padx=10)
         ttk.Button(control, text="곡선 변경", command=self.update_radius_ui).pack(side=tk.LEFT, padx=10)
 
+        # ✅ 지도 갱신 버튼 추가
+        ttk.Button(control, text="지도 갱신", command=self.update_map_zoom).pack(side=tk.LEFT, padx=10)
+
+        # ✅저장 버튼 추가
+        ttk.Button(control, text="저장", command=self.save_to_json).pack(side=tk.LEFT, padx=10)
+
+        # ✅로드 버튼 추가
+        ttk.Button(control, text="로드", command=self.load_from_json).pack(side=tk.LEFT, padx=10)
+
         # 상태
         self.dragging_index = None
         self._overlay_artists = []
@@ -74,8 +80,9 @@ class SegmentVisualizer(tk.Tk):
         self.canvas.mpl_connect('button_release_event', self.on_release)
         self.canvas.mpl_connect('button_press_event', self.add_pi)
 
-        # 초기 표시
-        self.update_plot("초기 상태")
+        self.path = 'c:/temp/data.json'
+
+        #객체관리
 
     # ────────────────────────────────
     # UI 로직
@@ -133,9 +140,15 @@ class SegmentVisualizer(tk.Tk):
         self.json_export()
 
     def reset_to_initial(self):
-        """초기 상태로 복원"""
-        self.collection = copy.deepcopy(self.original_collection)
-        self.update_plot("초기화 완료")
+        """화면 초기화: 현재 그려진 모든 객체 제거"""
+        # collection은 그대로 두고 화면만 초기화
+        for artist in list(self.ax.lines) + list(self.ax.texts) + list(self.ax.collections) + list(self.ax.images):
+            artist.remove()
+
+        self._overlay_artists.clear()  # 오버레이도 초기화
+        self.ax.set_aspect('equal', adjustable='datalim')
+        self.ax.grid(False)
+        self.canvas.draw_idle()
 
     def add_pi(self, event):
         """마우스 클릭으로 PI 추가"""
@@ -165,33 +178,67 @@ class SegmentVisualizer(tk.Tk):
     # Plot / 지도 관련
     # ────────────────────────────────
 
-    def update_plot(self, title="SegmentCollection"):
-        """전체 다시 그림"""
+    def update_plot(self, title="SegmentCollection",
+                    force_xlim=None, force_ylim=None, zoom=None):
+        """전체 다시 그림 — 외부에서 force_xlim/ylim/zoom 전달 가능"""
         self.fig.clf()
         self.ax = self.fig.add_subplot(111)
         self.ax.set_title(title)
 
         if self.view_map_mode.get():
-            self._draw_map_basemap()
+            # 전달된 force_* 를 _draw_map_basemap 에서 사용하게 함
+            self._draw_map_basemap(zoom=zoom,
+                                   force_xlim=force_xlim,
+                                   force_ylim=force_ylim)
 
         self._draw_segments()
         self.canvas.draw_idle()
 
-    def _draw_map_basemap(self):
-        """지도 배경 추가"""
+    def _draw_map_basemap(self, zoom=None, force_xlim=None, force_ylim=None):
+        """지도 배경 추가 — force_xlim/ylim 이 주어지면 그걸 우선 사용"""
         if not self.collection.coord_list:
             return
+
         xs, ys = zip(*[transformer_to_3857.transform(pt.x, pt.y)
                        for pt in self.collection.coord_list])
+
+        # default extent (데이터 기반)
         margin_x = (max(xs) - min(xs)) * 0.15 or 500
         margin_y = (max(ys) - min(ys)) * 0.15 or 500
-        self.ax.set_xlim(min(xs) - margin_x, max(xs) + margin_x)
-        self.ax.set_ylim(min(ys) - margin_y, max(ys) + margin_y)
+        default_xlim = (min(xs) - margin_x, max(xs) + margin_x)
+        default_ylim = (min(ys) - margin_y, max(ys) + margin_y)
+
+        # force 가 있으면 우선 사용, 없으면 기본 extent 사용
+        if force_xlim is not None and force_ylim is not None:
+            self.ax.set_xlim(force_xlim)
+            self.ax.set_ylim(force_ylim)
+        else:
+            # 최초 표시나 강제 재계산 시 기본 영역 적용
+            self.ax.set_xlim(default_xlim)
+            self.ax.set_ylim(default_ylim)
+
         self.ax.set_aspect('equal', adjustable='datalim')
+
+        # === zoom 결정: 호출자가 줌 전달하면 사용, 아니면 데이터 기반 계산 ===
+        import numpy as np
+        if zoom is None:
+            dx = self.ax.get_xlim()[1] - self.ax.get_xlim()[0]
+            dy = self.ax.get_ylim()[1] - self.ax.get_ylim()[0]
+            max_dim = max(dx, dy)
+            zoom = int(18 - np.log2(max_dim / 500))
+            zoom = int(np.clip(zoom, 5, 18))
+        else:
+            zoom = int(np.clip(zoom, 5, 18))
+
         try:
-            ctx.add_basemap(self.ax, crs="EPSG:3857", source=ctx.providers.OpenStreetMap.Mapnik)
+            ctx.add_basemap(
+                self.ax,
+                crs="EPSG:3857",
+                source=ctx.providers.OpenStreetMap.Mapnik,
+                zoom=zoom
+            )
         except Exception as e:
-            print(f"[지도 로드 실패]: {e}")
+            print(f"[지도 로드 실패]: {e}, zoom={zoom}")
 
     def _draw_segments(self):
         """세그먼트 + PI + 텍스트"""
@@ -245,6 +292,47 @@ class SegmentVisualizer(tk.Tk):
             return list(zip(x_arc, y_arc))
         return None
 
+    def update_map_zoom(self):
+        """현재 뷰 범위 기반으로 지도 타일만 다시 로드"""
+        if not self.view_map_mode.get():
+            messagebox.showinfo("안내", "지도 보기 모드를 먼저 켜세요.")
+            return
+
+        try:
+            xlim = self.ax.get_xlim()
+            ylim = self.ax.get_ylim()
+            dx = xlim[1] - xlim[0]
+            dy = ylim[1] - ylim[0]
+            max_dim = max(dx, dy)
+
+            import numpy as np
+            zoom = int(18 - np.log2(max_dim / 500))
+            zoom = int(np.clip(zoom, 5, 18))
+
+            # 현재 지도 타일만 다시 추가 (Axes는 그대로 유지)
+            # 기존 타일 제거
+            for im in list(self.ax.images):
+                im.remove()
+
+            # 새 타일 불러오기
+            ctx.add_basemap(
+                self.ax,
+                crs="EPSG:3857",
+                source=ctx.providers.OpenStreetMap.Mapnik,
+                zoom=zoom
+            )
+
+            # 기존 확대/이동 상태 그대로 복원
+            self.ax.set_xlim(xlim)
+            self.ax.set_ylim(ylim)
+            self.canvas.draw_idle()
+
+            print(f"[지도 갱신 완료] zoom={zoom}")
+
+        except Exception as e:
+            messagebox.showerror("지도 갱신 실패", str(e))
+
+    #----- 출력 ------
     def json_export(self):
         test_current_collection(self.collection, "c:/temp/")
 
@@ -326,17 +414,44 @@ class SegmentVisualizer(tk.Tk):
 
         self.dragging_index = None
 
+    def save_to_json(self):
+        """현재 SegmentCollection을 JSON으로 저장"""
+        data = []
+        for idx, (pt, r) in enumerate(zip(self.collection.coord_list, self.collection.radius_list)):
+            data.append({
+                "pi_index": idx,
+                "pi_coord": [pt.x, pt.y],
+                "radius": r
+            })
+        with open(self.path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        messagebox.showinfo("저장 완료", f"JSON 저장 완료: {self.path}")
+
+    def load_from_json(self):
+        """JSON으로부터 SegmentCollection 불러오기"""
+        try:
+            with open(self.path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            coord_list = []
+            radius_list = []
+
+            for item in data:
+                x, y = item["pi_coord"]
+                coord_list.append(Point2d(x, y))
+                radius_list.append(item.get("radius"))
+
+            al = Alignment(name="loaded")
+            al.create(coord_list, radius_list)
+            self.collection = al.collection
+            self.update_plot(al.name)
+            messagebox.showinfo("로드 완료", f"{al.name} SegmentCollection 로드 완료")
+
+        except Exception as e:
+            messagebox.showerror("로드 실패", str(e))
+
 
 # ================= 실행 =================
 if __name__ == "__main__":
-    al = Alignment(name='test')
-    coord_list = [
-        Point2d(198322.295865, 551717.440486),
-        Point2d(198989.169204, 548303.499112),
-        Point2d(202935.041692, 545189.094109),
-        Point2d(199139.705729, 536601.555990)
-    ]
-    radius_list = [None, 5000, 3100, None]
-    al.create(coord_list, radius_list)
-    app = SegmentVisualizer(al)
+    app = SegmentVisualizer()
     app.mainloop()
