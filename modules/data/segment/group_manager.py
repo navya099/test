@@ -43,3 +43,7 @@ class GroupManager:
         next_seg_obj = self.segment_manager.segment_list[next_seg] if next_seg is not None else None
 
         return prev_seg_obj, next_seg_obj
+
+    def get_prev_next_groups(self, index):
+        """지정된 index 주변 그룹을 튜플로 반환 (None 안전하게 처리)"""
+        return self.groups[index - 1] , self.groups[index], self.groups[index + 1]
