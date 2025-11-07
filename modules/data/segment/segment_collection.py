@@ -75,10 +75,6 @@ class SegmentCollection:
         #radius 리스트 갱신
         self._pi_manager.radius_list[index] = radius
 
-        # --- 기존 직선 구간 정리 ---
-        # index 기준 앞뒤 직선 세그먼트를 삭제해야 새 커브 생성 가능
-        prev_seg ,next_seg = self._segment_manager.find_straight_by_coord(self.coord_list[index])
-
         # --- 커브 그룹 생성 ---
         self._process_segment_at_index(index, rebuild_mode=False)
 
@@ -253,7 +249,8 @@ class SegmentCollection:
                 self._append_next_straight(group, i)
             else:
                 # 부분 삽입 모드
-                insert_pos = i
+                prev_seg, next_seg = self._segment_manager.find_straight_by_coord(ip)
+                insert_pos = next_seg.current_index
                 for seg in group.segments:
                     self._segment_manager.segment_list.insert(insert_pos, seg)
                     insert_pos += 1
