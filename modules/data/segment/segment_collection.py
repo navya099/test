@@ -215,8 +215,12 @@ class SegmentCollection:
         self._update_group_index()
         self._update_stations()
 
-    def _process_segment_at_index(self, i: int):
-        """내부: index 기준 세그먼트(직선/곡선) 생성"""
+    def _process_segment_at_index(self, i: int, *, rebuild_mode=True):
+        """
+        내부: index 기준 세그먼트(직선/곡선) 생성
+        - rebuild_mode=True  → 전체 재생성 루프용
+        - rebuild_mode=False → 부분 삽입용 (기존 직선/그룹 유지)
+        """
         n = len(self.coord_list)
         if n < 2:
             raise NotEnoughPIPointError()
@@ -227,25 +231,42 @@ class SegmentCollection:
             ip = self.coord_list[i]
             ep = self.coord_list[i + 1]
             r = self.radius_list[i]
-            isspiral = False  # 나중에 조건으로 확장 가능
+            isspiral = False
 
+            # --- 그룹 생성 시도 ---
             group = self._group_manager.create_curve_group(i, bp, ip, ep, r, isspiral)
             if group is None:
-                self.groups.clear()
-                self.segment_list.clear()
-                raise InvalidGeometryError("곡선 그룹 생성 실패")
+                if rebuild_mode:
+                    self.groups.clear()
+                    self.segment_list.clear()
+                raise InvalidGeometryError(f"곡선 그룹 생성 실패: PI {i}")
 
-            self.groups.append(group)
-            self._adjust_previous_straight(group)
-            self.segment_list.extend(group.segments)
-            self._append_next_straight(group, i)
+            # --- 모드별 처리 ---
+            if rebuild_mode:
+                # 전체 빌드 루프에서 사용하는 경우
+                self._adjust_previous_straight(group)
+                self._segment_manager.segment_list.extend(group.segments)
+                self._append_next_straight(group, i)
+            else:
+                # 부분 삽입 모드
+                for seg in group.segments:
+                    self._segment_manager.segment_list.insert(i, seg)
+                    i += 1
+                self._segment_manager.adjust_adjacent_straights(group)
+                self._update_prev_next_entity_id()
+
+            # 그룹리스트 갱신
+            self._group_manager.groups[i] = group
 
         # === 첫/마지막 PI ===
         else:
             bp = self.coord_list[i]
             ep = self.coord_list[i + 1]
             straight = StraightSegment(start_coord=bp, end_coord=ep)
-            self.segment_list.append(straight)
+            if rebuild_mode:
+                self.segment_list.append(straight)
+            else:
+                self._segment_manager.insert_straight(i, straight)
 
     def _adjust_previous_straight(self, group: SegmentGroup):
         if len(self.segment_list) > 0:
