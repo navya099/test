@@ -86,7 +86,7 @@ class SegmentCollection:
     # 기존 메서드들은 내부 호출만 하도록 변경
     def update_pi_by_index(self, pipoint, index):
         """공개API 주어진 PI로 업데이트"""
-        if index <= 0 or index >= len(self.coord_list) - 1:
+        if index < 0 or index > len(self.coord_list) - 1:
             raise NoUpdatePIError(index)
         self._update_pi(index, pipoint=pipoint)
 
