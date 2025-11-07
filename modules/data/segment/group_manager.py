@@ -46,4 +46,7 @@ class GroupManager:
 
     def get_prev_next_groups(self, index):
         """지정된 index 주변 그룹을 튜플로 반환 (None 안전하게 처리)"""
-        return self.groups[index - 1] , self.groups[index], self.groups[index + 1]
+        prev_group = self.groups[index - 1] if index > 0 else None
+        target_group = self.groups[index] if index < len(self.groups) else None
+        next_group = self.groups[index + 1] if index + 1 < len(self.groups) else None
+        return prev_group, target_group, next_group
