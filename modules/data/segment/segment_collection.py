@@ -72,7 +72,7 @@ class SegmentCollection:
         if existing_group:
             raise AlreadyHasCurveError(index)
 
-        #radius 리스트에 추가
+        #radius 리스트 갱신
         self._pi_manager.radius_list[index] = radius
 
         # --- 기존 직선 구간 정리 ---
@@ -253,11 +253,12 @@ class SegmentCollection:
                 self._append_next_straight(group, i)
             else:
                 # 부분 삽입 모드
+                insert_pos = i
                 for seg in group.segments:
-                    self._segment_manager.segment_list.insert(i, seg)
-                    i += 1
-                self._segment_manager.adjust_adjacent_straights(group)
+                    self._segment_manager.segment_list.insert(insert_pos, seg)
+                    insert_pos += 1
                 self._update_prev_next_entity_id()
+                self._segment_manager.adjust_adjacent_straights(group)
 
             #그룹리스트 갱신
             self._group_manager.groups[i] = group
