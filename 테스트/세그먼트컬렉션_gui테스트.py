@@ -6,6 +6,8 @@ from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk, FigureCanvas
 from pyproj import Transformer
 import contextily as ctx
 import json
+
+from curvedirection import CurveDirection
 from data.alignment.alignment import Alignment
 from data.alignment.exception.alignment_error import AlignmentError
 from data.segment.curve_segment import CurveSegment
@@ -103,6 +105,7 @@ class SegmentVisualizer(tk.Tk):
             self.update_plot()
             self.restore_lim(xlim, ylim)
             self.json_export()
+            self.save_bve()
             messagebox.showinfo("완료", f"PI {idx}에 반경 {radius:.2f}m 곡선 추가 완료")
         except Exception as e:
             messagebox.showerror("에러", str(e))
@@ -120,6 +123,7 @@ class SegmentVisualizer(tk.Tk):
             self.update_plot()
             self.restore_lim(xlim, ylim)
             self.json_export()
+            self.save_bve()
         except Exception as e:
             messagebox.showerror("에러", str(e))
 
@@ -138,7 +142,7 @@ class SegmentVisualizer(tk.Tk):
         self.update_plot()
         self.restore_lim(xlim, ylim)
         self.json_export()
-
+        self.save_bve()
     def reset_to_initial(self):
         """화면 초기화: 현재 그려진 모든 객체 제거"""
         # collection은 그대로 두고 화면만 초기화
@@ -171,6 +175,7 @@ class SegmentVisualizer(tk.Tk):
             self.restore_lim(xlim, ylim)
 
             self.json_export()
+            self.save_bve()
         except Exception as e:
             messagebox.showerror("PI 추가 오류", str(e))
 
@@ -394,7 +399,7 @@ class SegmentVisualizer(tk.Tk):
 
             self.canvas.draw_idle()
             self.json_export()
-
+            self.save_bve()
     def on_release(self, event):
         """드래그 종료 → 지도 포함 전체 다시 그림"""
         if self.dragging_index is not None:
@@ -411,7 +416,7 @@ class SegmentVisualizer(tk.Tk):
             self.canvas.draw_idle()
 
             self.json_export()
-
+            self.save_bve()
         self.dragging_index = None
 
     def save_to_json(self):
@@ -445,10 +450,63 @@ class SegmentVisualizer(tk.Tk):
             al.create(coord_list, radius_list)
             self.collection = al.collection
             self.update_plot(al.name)
+            self.json_export()
+            self.save_bve()
             messagebox.showinfo("로드 완료", f"{al.name} SegmentCollection 로드 완료")
 
         except Exception as e:
             messagebox.showerror("로드 실패", str(e))
+
+    def create_base_txt(self):
+        base_txt = ''
+        base_txt += 'Options.ObjectVisibility 1\n'
+        base_txt += 'With Route\n'
+        base_txt += '.comment 세그먼트컬렉션 테스트루트\n'
+        base_txt += '.Elevation 0\n'
+        base_txt += 'With Train\n'
+        base_txt += 'With Structure\n'
+        base_txt += '$Include(오브젝트.txt)\n'
+        base_txt += '$Include(프리오브젝트.txt)\n'
+        base_txt += '$Include(km_index.txt)\n'
+        base_txt += '$Include(curve_index.txt)\n'
+        base_txt += '$Include(pitch_index.txt)\n'
+        base_txt += 'With Track\n'
+        base_txt += '$Include(전주.txt)\n'
+        base_txt += '$Include(전차선.txt)\n'
+        base_txt += '$Include(km_post.txt)\n'
+        base_txt += '$Include(curve_post.txt)\n'
+        base_txt += '$Include(pitch_post.txt)\n'
+        base_txt += '$Include(신호.txt)\n'
+        base_txt += '$Include(통신.txt)\n'
+        base_txt += '0,.back 0;,.ground 0;,.dike 0;0;2;,.railtype 0;9;\n'
+        base_txt += '0,.sta START STATION;\n'
+        base_txt += '100,.stop 0;\n'
+        return base_txt
+
+    def extract_horizon(self):
+        """BVE 수평선형(.bve) 텍스트 추출"""
+        csv_txt = []
+        for seg in self.collection.segment_list:
+            if isinstance(seg, CurveSegment):
+                if seg.direction == CurveDirection.LEFT:
+                    text = f'{seg.start_sta:.2f},.CURVE -{seg.radius};\n'
+                    text2 = f'{seg.end_sta:.2f},.CURVE 0;\n'
+                else:
+                    text = f'{seg.start_sta:.2f},.CURVE {seg.radius};\n'
+                    text2 = f'{seg.end_sta:.2f},.CURVE 0;\n'
+
+                csv_txt.append(text)
+                csv_txt.append(text2)
+
+        return csv_txt
+
+    def save_bve(self):
+        lines = []
+        #lines.append(self.create_base_txt())
+        lines.extend(self.extract_horizon())
+        txt = '\n'.join(lines)
+        with open("c:/temp/평면선형.txt", "w", encoding="utf-8") as f:
+            f.write(txt)
 
 
 # ================= 실행 =================
