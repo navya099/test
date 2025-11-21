@@ -6,10 +6,10 @@ from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk, FigureCanvas
 from pyproj import Transformer
 import contextily as ctx
 import json
-
+import math
 from curvedirection import CurveDirection
 from data.alignment.alignment import Alignment
-from data.alignment.exception.alignment_error import AlignmentError
+from data.alignment.exception.alignment_error import AlignmentError, GroupNullError
 from data.segment.curve_segment import CurveSegment
 from data.segment.straight_segment import StraightSegment
 from math_utils import draw_arc
@@ -29,6 +29,8 @@ class SegmentVisualizer(tk.Tk):
 
     def __init__(self):
         super().__init__()
+        self.dragging_midpoint_seg = None
+        self.dragging_midpoint_index = None
         self.title("SegmentCollection 시각화 테스트")
         self.geometry("1200x1000")
         self.collection = None
@@ -249,7 +251,7 @@ class SegmentVisualizer(tk.Tk):
         """세그먼트 + PI + 텍스트"""
         colors = {"StraightSegment": "blue", "CurveSegment": "orange", "CUBICSegment": "green"}
         map_mode = self.view_map_mode.get()
-
+        self.mid_scatters = []
         # --- 세그먼트 ---
         for seg in self.collection.segment_list:
             name = seg.__class__.__name__
@@ -257,10 +259,19 @@ class SegmentVisualizer(tk.Tk):
             pts = self._segment_to_xy(seg)
             if not pts:
                 continue
+            # 곡선 midpoint 표시
+            if isinstance(seg, CurveSegment):
+                mid = seg.midpoint
+
             if map_mode:
                 pts = [transformer_to_3857.transform(x, y) for x, y in pts]
+                if isinstance(seg, CurveSegment):
+                    mid = transformer_to_3857.transform(mid.x, mid.y)
             x, y = zip(*pts)
             self.ax.plot(x, y, color=color, lw=2, zorder=2)
+            if isinstance(seg, CurveSegment):
+                scatter = self.ax.scatter(mid.x, mid.y, color='purple', s=40, zorder=6, picker=5)
+                self.mid_scatters.append((scatter, seg))  # scatter와 관련 segment 저장
 
         # --- PI ---
         if map_mode:
@@ -357,11 +368,26 @@ class SegmentVisualizer(tk.Tk):
     # ────────────────────────────────
 
     def on_pick(self, event):
-        if event.artist != self.pi_scatter:
+        # PI인지 확인
+        if event.artist == self.pi_scatter:
+            self.dragging_index = event.ind[0]
+            self.dragging_midpoint_seg = None
             return
-        self.dragging_index = event.ind[0]
+
+        # MIDPOINT인지 확인
+        for scatter, seg in self.mid_scatters:
+            if event.artist == scatter:
+                self.dragging_midpoint_seg = seg
+                self.dragging_index = None
+                return
 
     def on_drag(self, event):
+        if self.dragging_index is not None:
+            self._drag_pi(event)
+        elif self.dragging_midpoint_seg is not None:
+            self._drag_mid_point(event)
+
+    def _drag_pi(self, event):
         """PI 드래그 중 (지도 갱신 생략)"""
         if self.dragging_index is None:
             return
@@ -369,55 +395,117 @@ class SegmentVisualizer(tk.Tk):
             return
 
         # EPSG 변환 (지도 모드면 5186으로 변환)
-        if self.view_map_mode.get():
-            x, y = transformer_to_5186.transform(event.xdata, event.ydata)
-        else:
-            x, y = event.xdata, event.ydata
+        new_point = self._event_to_xy(event)
 
-        new_point = Point2d(x, y)
         try:
             with Transaction(self.collection):
                 self.collection.update_pi_by_index(new_point, self.dragging_index)
         except AlignmentError as e:
             messagebox.showerror('업데이트 실패', str(e))
             return
+        # 지도 제외 부분 갱신
+        self._redraw_partial()
+
+    def _event_to_xy(self, event):
+        """마우스 이벤트 → 내부 좌표(x,y) 변환 (공통 메서드)"""
+        if event.xdata is None or event.ydata is None:
+            return None
+
+        if self.view_map_mode.get():
+            x, y = transformer_to_5186.transform(event.xdata, event.ydata)
         else:
-            # 확대/이동 상태 유지
-            xlim = self.ax.get_xlim()
-            ylim = self.ax.get_ylim()
+            x, y = event.xdata, event.ydata
 
-            # 기존 그래픽 제거 (지도는 그대로 둠)
-            for artist in list(self.ax.lines) + list(self.ax.texts) + [self.pi_scatter]:
-                artist.remove()
+        return Point2d(x, y)
 
-            # 지도는 다시 안 그림, 세그먼트 + PI만 다시 그림
-            self._draw_segments()
 
-            # 축 상태 복원
-            self.ax.set_xlim(xlim)
-            self.ax.set_ylim(ylim)
+    def _redraw_partial(self):
+        # 줌/이동 유지
+        xlim = self.ax.get_xlim()
+        ylim = self.ax.get_ylim()
 
-            self.canvas.draw_idle()
-            self.json_export()
-            self.save_bve()
+        # 잔상 제거: PI scatter + midpoint scatter + 세그먼트 선들 제거
+        artists_to_remove = (
+                list(self.ax.lines)
+                + list(self.ax.texts)
+                + [self.pi_scatter]
+                + [sc for sc, _ in self.mid_scatters]
+        )
+        for a in artists_to_remove:
+            a.remove()
+
+        # 다시 그림 (지도는 건드리지 않음)
+        self._draw_segments()
+
+        # 축 복원
+        self.ax.set_xlim(xlim)
+        self.ax.set_ylim(ylim)
+
+        self.canvas.draw_idle()
+        self.json_export()
+        self.save_bve()
+
+
     def on_release(self, event):
-        """드래그 종료 → 지도 포함 전체 다시 그림"""
-        if self.dragging_index is not None:
-            # 현재 확대/이동 상태 저장
-            xlim = self.ax.get_xlim()
-            ylim = self.ax.get_ylim()
+        if self.dragging_index is None and self.dragging_midpoint_seg is None:
+            return
 
-            # 전체 갱신 (지도 포함)
-            self.update_plot("PI 이동 완료")
+        # 줌/이동 상태 저장
+        xlim = self.ax.get_xlim()
+        ylim = self.ax.get_ylim()
 
-            # 확대/이동 상태 복원
-            self.ax.set_xlim(xlim)
-            self.ax.set_ylim(ylim)
-            self.canvas.draw_idle()
+        # 전체 갱신 (지도 포함)
+        self.update_plot("드래그 종료")
 
-            self.json_export()
-            self.save_bve()
+        # 확대/이동 복원
+        self.ax.set_xlim(xlim)
+        self.ax.set_ylim(ylim)
+        self.canvas.draw_idle()
+
+        # 저장
+        self.json_export()
+        self.save_bve()
+
+        # 상태 초기화
         self.dragging_index = None
+        self.dragging_midpoint_seg = None
+
+    def _drag_mid_point(self, event):
+        if self.dragging_midpoint_seg is None:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+
+        group = None
+        idx = self.dragging_midpoint_seg.current_index
+        for gr in self.collection.groups:
+            if gr:
+                for sg in gr.segments:
+                    if sg.current_index == idx:
+                        group = gr
+                        break
+            if group:
+                break
+        if group is None:
+            raise GroupNullError()
+        gr_indx = group.group_id
+        current_pi = self.collection.coord_list[gr_indx]
+        new_mid = self._event_to_xy(event)
+
+        #새 반경 계산
+        #외할계산
+        new_e = current_pi.distance_to(new_mid)
+        new_r = new_e / (1 / math.cos(group.internal_angle / 2) - 1)
+
+        try:
+            with Transaction(self.collection):
+                self.collection.update_radius_by_index(new_r, gr_indx)
+        except AlignmentError as e:
+            messagebox.showerror('업데이트 실패', str(e))
+            return
+        # 지도 제외 부분 갱신
+        self._redraw_partial()
+
 
     def save_to_json(self):
         """현재 SegmentCollection을 JSON으로 저장"""
