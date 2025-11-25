@@ -7,6 +7,8 @@ from pyproj import Transformer
 import contextily as ctx
 import json
 import math
+
+from coordinate_utils import convert_coordinates
 from curvedirection import CurveDirection
 from data.alignment.alignment import Alignment
 from data.alignment.exception.alignment_error import AlignmentError, GroupNullError
@@ -266,7 +268,8 @@ class SegmentVisualizer(tk.Tk):
             if map_mode:
                 pts = [transformer_to_3857.transform(x, y) for x, y in pts]
                 if isinstance(seg, CurveSegment):
-                    mid = transformer_to_3857.transform(mid.x, mid.y)
+                    mid = convert_coordinates((mid.x,mid.y),5186,3857)
+                    mid = Point2d(mid[0],mid[1])
             x, y = zip(*pts)
             self.ax.plot(x, y, color=color, lw=2, zorder=2)
             if isinstance(seg, CurveSegment):
