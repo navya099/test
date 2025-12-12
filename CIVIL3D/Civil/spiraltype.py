@@ -12,13 +12,13 @@ class SpiralType(Enum):
     BiQuadratic = 262
     NSWCubic = 264
 
-    OffsetClothoid = 832
-    OffsetHalfWaveLenDimnTangent = 833
-    OffsetJapaneseCubic = 834
-    OffsetBloss = 835
-    OffsetCubicParabola = 836
-    OffsetSinusoidal = 837
-    OffsetBiQuadratic = 838
-    OffsetHalfWaveLenDimnTangent2 = 839
+    OffsetClothoid = 1048832
+    OffsetHalfWaveLenDimnTangent = 1048833
+    OffsetJapaneseCubic = 1048834
+    OffsetBloss = 1048835
+    OffsetCubicParabola = 1048836
+    OffsetSinusoidal = 1048837
+    OffsetBiQuadratic = 1048838
+    OffsetHalfWaveLenDimnTangent2 = 1048839
 
     OffsetInvalidSpiralType = 268435455
