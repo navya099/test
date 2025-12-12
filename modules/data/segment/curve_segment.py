@@ -14,25 +14,19 @@ class CurveSegment(Segment):
     Attributes:
         start_azimuth: 시작 각도
         end_azimuth: 끝 각도
+        start_coord: 시작 좌표
+        end_coord: 끝 좌표
         internal_angle(float): 교각 IA
         radius(float): 원곡선 반경 R
         ip_coordinate: IP좌표
     """
     start_azimuth: float = 0.0
     end_azimuth: float = 0.0
+    start_coord: Point2d = field(default_factory=lambda: Point2d(0, 0))
+    end_coord: Point2d = field(default_factory=lambda: Point2d(0, 0))
     internal_angle: float = 0.0
     radius: float = 0.0
     ip_coordinate: Point2d = field(default_factory=lambda: Point2d(0, 0))
-
-    @property
-    def start_coord(self) -> Point2d:
-        x, y =calculate_destination_coordinates(self.ip_coordinate, bearing=self.start_azimuth + math.pi, distance=self.tangent_length)
-        return Point2d(x, y)
-
-    @property
-    def end_coord(self) -> Point2d:
-        x, y= calculate_destination_coordinates(self.ip_coordinate, bearing=self.end_azimuth, distance=self.tangent_length)
-        return Point2d(x, y)
 
     @property
     def center_coord(self) -> Point2d:
