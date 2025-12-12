@@ -2,11 +2,15 @@ from dataclasses import dataclass, field
 import math
 from AutoCAD.point2d import Point2d
 from CIVIL3D.Alignment.alignmententitytype import AlignmentEntityType
+from curvedirection import CurveDirection
 from curvetype import CurveType
 from data.segment.cubic_segment import CubicSegment
 from data.segment.segment import Segment
-from math_utils import calculate_bearing, is_invalid_arc
+from math_utils import calculate_bearing, is_invalid_arc, find_curve_direction
 from data.segment.curve_segment import CurveSegment
+from data.alignment.spiral.geometry import TransitionCurvatureCalculator
+from data.alignment.spiral.params import TransitionCurveParams
+
 
 @dataclass
 class SegmentGroup:
@@ -20,6 +24,7 @@ class SegmentGroup:
         ip_coordinate: IP좌표
         ep_coordinate: EP좌표
         radius: 곡선반경R
+        transition: 완화곡선 파라미터
     """
     group_id: int = 0
     segments: list[Segment] = field(default_factory=list)
@@ -28,9 +33,11 @@ class SegmentGroup:
     ip_coordinate: Point2d = field(default_factory=lambda: Point2d(0, 0))
     ep_coordinate: Point2d = field(default_factory=lambda: Point2d(0, 0))
     radius: float = 0.0
+    # 새로 추가
+    transition: TransitionCurveParams | None = None
 
     @classmethod
-    def create_from_pi(cls, group_id, bp, ip, ep, radius, isspiral):
+    def create_from_pi(cls, group_id, bp, ip, ep, radius, isspiral, transition=None):
         """BP-IP-EP 좌표와 반경으로 SegmentGroup 생성"""
         #유효성 검사
         isinvalidcurve, messege =  is_invalid_arc(bp, ip, ep, radius)
@@ -54,11 +61,67 @@ class SegmentGroup:
             )
 
             group.segments.extend([curve])
-        else:
-            spiral1 = CubicSegment()
-            curve = CurveSegment()
-            spiral2 = CubicSegment()
-            group.segments.extend([spiral1, curve, spiral2])
+        else:#완화곡선 처리
+            #파라메터 계산 호출
+            transition.cal_params(
+                radius=radius,
+                internal_angle=group.internal_angle,
+                sp_type = None,
+                m=transition.m,
+                v=transition.v,
+                z=transition.z
+            )
+
+            #좌표계산 호출
+            cal = TransitionCurvatureCalculator(
+                tr_params=transition,
+                h1=bp_azimuth,
+                h2=ep_azimuth,
+                ip=group.ip_coordinate,
+                direction=group.curve_direction
+            )
+            cal.run()
+
+            #시작 완화곡선
+            if group.curve_direction == CurveDirection.LEFT:
+                end_theta = bp_azimuth + cal.params.theta_pc
+            else:
+                end_theta = bp_azimuth - cal.params.theta_pc
+
+            start_spiral = CubicSegment(
+                start_azimuth=bp_azimuth,
+                end_azimuth=end_theta,
+                radius=radius,
+                isstarted=True,
+                start_coord=cal.start_transition,
+                end_coord=cal.start_circle,
+                geom=cal,
+                type=CurveType.Spiral
+            )
+
+            #중간 곡선
+            curve = CurveSegment(
+                start_azimuth=start_spiral.end_azimuth,
+                end_azimuth=start_spiral.end_azimuth + cal.params.circle_internal_angle,
+                radius=radius,
+                ip_coordinate=ip,
+                internal_angle=cal.params.circle_internal_angle,
+                type=CurveType.Simple
+            )
+
+            #끝 완화곡선
+            end_spiral = CubicSegment(
+                start_azimuth=curve.end_azimuth,
+                end_azimuth=curve.end_azimuth + cal.params.theta_pc,
+                radius=radius,
+                isstarted=False,
+                start_coord=cal.end_circle,
+                end_coord=cal.end_transition,
+                geom=cal,
+                type=CurveType.Spiral
+            )
+            group.group_type = AlignmentEntityType.SpiralCurveSpiral
+            group.segments.extend([start_spiral, curve, end_spiral])
         return group
 
     def update_by_pi(self, bp_coordinate: Point2d = None, ip_coordinate: Point2d = None,
@@ -124,6 +187,10 @@ class SegmentGroup:
             ia += 2 * math.pi
         return abs(ia)
 
+    @property
+    def curve_direction(self):
+        return find_curve_direction(self.bp_coordinate, self.ip_coordinate, self.ep_coordinate)
+
     def _process_simple_curve(self, segment: Segment):
         segment.start_azimuth = self.bp_azimuth
         segment.end_azimuth = self.ep_azimuth
@@ -131,9 +198,9 @@ class SegmentGroup:
         segment.internal_angle = self.internal_angle
         segment.radius = self.radius
 
-    def _process_spiral(self, segment: Segment):
+    def _process_spiral(self, segment: CubicSegment):
         pass
-    
+
     def _refresh_segment(self):
         for seg in self.segments:
             if isinstance(seg, CurveSegment):
