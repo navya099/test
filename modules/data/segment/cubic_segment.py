@@ -1,11 +1,9 @@
 from dataclasses import dataclass, field
-import math
 from AutoCAD.point2d import Point2d
-from curvedirection import CurveDirection
+from data.alignment.spiral.pointcalc import SpiralPointCalculator
 from data.segment.segment import Segment
-from math_utils import find_curve_direction, calculate_destination_coordinates
-from transitioncurvecalculator import TransitionCurvatureCalculator
-
+from data.alignment.spiral.geometry import TransitionCurvatureCalculator
+import math
 
 @dataclass
 class CubicSegment(Segment):
@@ -50,7 +48,20 @@ class CubicSegment(Segment):
         station 기반 좌표 계산
         반환값: (Point2d, tangent_angle)
         """
-        pass
+        # --- 1) Station 비율 계산 ---
+        if station < self.start_sta or station > self.end_sta:
+            raise ValueError("Station이 세그먼트 범위를 벗어남")
+        s = station - self.start_sta
+        sp_calc = SpiralPointCalculator(self.geom.params, self.geom.dir)
+        if self.isstarted:
+            theta = self.geom.h1
+            pt = sp_calc.global_xy(self.start_coord, theta, s)
+            azimuth = sp_calc.tangent_bearing(s, theta)
+        else:
+            theta = self.geom.h2 + math.pi
+            pt = sp_calc.global_xy(self.end_coord, theta, s)
+            azimuth = sp_calc.tangent_bearing(s, self.geom.h2, isexit=True)
+        return pt, azimuth
 
     def station_at_point(self, coord: Point2d) -> tuple[float, float]:
         """지정한 좌표의 측점 및 거리 반환"""
