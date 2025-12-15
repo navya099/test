@@ -58,9 +58,10 @@ class CubicSegment(Segment):
             pt = sp_calc.global_xy(self.start_coord, theta, s)
             azimuth = sp_calc.tangent_bearing(s, theta)
         else:
-            theta = self.geom.h2 + math.pi
-            pt = sp_calc.global_xy(self.end_coord, theta, s)
-            azimuth = sp_calc.tangent_bearing(s, self.geom.h2, isexit=True)
+            theta = self.geom.h2
+            rev_s = self.length - s
+            pt = sp_calc.global_xy(self.end_coord, theta, rev_s,isexit=True)
+            azimuth = sp_calc.tangent_bearing(rev_s, theta, isexit=True)
         return pt, azimuth
 
     def station_at_point(self, coord: Point2d) -> tuple[float, float]:
