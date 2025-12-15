@@ -25,10 +25,11 @@ class SpiralPointCalculator:
 
         return x, y
 
-    def global_xy(self, origin: Point2d, origin_az: float, s: float) -> Point2d:
+    def global_xy(self, origin: Point2d, origin_az: float, s: float, isexit=False) -> Point2d:
         """로컬좌표(x,y)를 글로벌 좌표로 변환하여 실제 점 반환"""
         x, y = self.local_xy(s)
-
+        if isexit:
+            x = -x
 
         ca = math.cos(origin_az)
         sa = math.sin(origin_az)
