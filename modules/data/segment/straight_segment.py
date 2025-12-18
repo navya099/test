@@ -11,10 +11,10 @@ class StraightSegment(Segment):
     _geom: StraightGeometry = StraightGeometry
 
     @classmethod
-    def from_coord(cls, pt: Point2d, pt2: Point2d):
+    def from_coord(cls, start_point: Point2d, end_point: Point2d):
         """두 점으로부터 직선 세그먼트 생성"""
         return cls(
-            _geom=StraightGeometry(start_coord=pt, end_coord=pt2)
+            _geom=StraightGeometry(start_coord=start_point, end_coord=end_point)
         )
     @property
     def start_azimuth(self):
@@ -71,8 +71,6 @@ class StraightSegment(Segment):
 
     def split_to_segment(self, coord: Point2d):
         #다음 세그먼트 생성
-        new_seg = StraightSegment(_geom=StraightGeometry(start_coord=coord,
-            end_coord=self.end_coord)
-        )
+        new_seg = StraightSegment.from_coord(start_point=coord,end_point=self.end_coord)
         self._geom.end_coord = coord
         return new_seg
