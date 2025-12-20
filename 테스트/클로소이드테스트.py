@@ -54,6 +54,19 @@ def cal_intersect_point(line1: Line2d, line2: Line2d):
 
     return Point2d(Px, Py)
 
+#교각 계산
+def cal_internal_angle(bp_coordinate, ip_coordinate, ep_coordinate):
+    from math_utils import calculate_bearing
+    v1 = calculate_bearing(bp_coordinate, ip_coordinate)
+    v2 = calculate_bearing(ip_coordinate, ep_coordinate)
+    # ±π 범위로 보정
+    ia = v2 - v1
+    if ia > math.pi:
+        ia -= 2 * math.pi
+    elif ia < -math.pi:
+        ia += 2 * math.pi
+    return abs(ia)
+
 # --- 전체 좌표 계산 함수 ---
 def calculate_curve(R, L1, L2, delta=0.1):
     """클로소이드+원곡선+ETC+IP 좌표 계산"""
@@ -91,7 +104,7 @@ def calculate_curve(R, L1, L2, delta=0.1):
     line1 = Line2d(BTC, BTC.moved(0, 1000))
     line2 = Line2d(ETC, ETC.moved(h2, 1000))
     IP = cal_intersect_point(line1, line2)
-
+    ia = cal_internal_angle(BTC,IP,ETC)
     # 시점부 클로소이드 좌표
     s_pos = np.linspace(0, L1, 500)
     x_in, y_in = [], []
@@ -108,6 +121,8 @@ def calculate_curve(R, L1, L2, delta=0.1):
         pt = global_xy_cls(revs, A2, origin=ETC, origin_az=tangent_angle, dir=CurveDirection.LEFT, isexit=True)
         x_out.append(pt.x)
         y_out.append(pt.y)
+    spec = cal_spec(R, L1, L2, delta, ia)
+    print_spec(spec)
 
     return {
         'BTC': BTC, 'BCC': BCC, 'ECC': ECC, 'ETC': ETC, 'IP': IP,
@@ -116,7 +131,7 @@ def calculate_curve(R, L1, L2, delta=0.1):
         'x_out': x_out, 'y_out': y_out,
         'L1': L1, 'L2': L2,
         'A1': A1, 'A2': A2,
-        'R': R,
+        'R': R,'spec': spec,
     }
 
 # --- 시각화 함수 ---
@@ -158,6 +173,25 @@ def plot_curve(data):
     plt.legend()
     plt.show()
 
+def print_spec(specs: dict):
+    """
+    cal_spec에서 반환된 딕셔너리를 한 줄씩 관련 값끼리 출력
+    """
+    print("----- 완화곡선 제원출력 -----")
+    print(f"L1, L2: {specs['L1']:.3f}, {specs['L2']:.3f}")
+    print(f"A1, A2: {specs['A1']:.3f}, {specs['A2']:.3f}")
+    print(f"x1, y1: {specs['x1']:.3f}, {specs['y1']:.3f}")
+    print(f"x2, y2: {specs['x2']:.3f}, {specs['y2']:.3f}")
+    print(f"t1, t2: {specs['t1']:.3f}, {specs['t2']:.3f}")
+    print(f"xm1, xm2: {specs['xm1']:.3f}, {specs['xm2']:.3f}")
+    print(f"dr1, dr2: {specs['dr1']:.3f}, {specs['dr2']:.3f}")
+    print(f"w: {specs['w']:.3f}")
+    print(f"z1, z2: {specs['z1']:.3f}, {specs['z2']:.3f}")
+    print(f"d1, d2: {specs['d1']:.3f}, {specs['d2']:.3f}")
+    print(f"lc: {specs['lc']:.3f}\n")
+
+
+
 def print_coord(data):
     print(f"{'-' * 4} 완화곡선좌표출력 {'-' * 4}")
     for name, pt, color in [('BTC', data['BTC'], 'green'),
@@ -167,30 +201,51 @@ def print_coord(data):
                             ('IP', data['IP'], 'black')]:
         print(f'{name}: X = {pt.x}, Y = {pt.y}')
 
-def cal_spec(R, L1, L2, delta):
+def cal_spec(R, L1, L2, delta ,ia):
     A1 = math.sqrt(R * L1)
     A2 = math.sqrt(R * L2)
     x1, y1 = clothoid(L1, A1)
     x2, y2 = clothoid(L2, A2)
-    t1 = (A1 ** 2) / (2 * R ** 2)
-    t2 = (A2 ** 2) / (2 * R ** 2)
+    t1 = (L1) / (2 * R)
+    t2 = (L2) / (2 * R)
     xm1 = x1 - (R * math.sin(t1))
     xm2 = x2 - (R * math.sin(t2))
     dr1 = y1 + (R * math.cos(t1)) - R
-    dr2 = y2 - (R * math.cos(t2)) - R
-    w = (R * dr1) * math.tan(ia / 2)
+    dr2 = y2 + (R * math.cos(t2)) - R
+    w = (R + dr1) * math.tan(ia / 2)
     z1 = (dr2 -dr1) * (1 / math.sin(ia))
     z2 = (dr2 -dr1) * (1 / math.tan(ia))
     d1 = xm1 + w + z1
     d2 = xm2 + w - z2
-    lc = r * delta
+    lc = R * delta
 
+    return {
+        'L1': L1,
+        'L2': L2,
+        'A1': A1,
+        'A2': A2,
+        'x1': x1,
+        'y1': y1,
+        'x2': x2,
+        'y2': y2,
+        't1': t1,
+        't2': t2,
+        'xm1': xm1,
+        'xm2': xm2,
+        'dr1': dr1,
+        'dr2': dr2,
+        'w': w,
+        'z1': z1,
+        'z2': z2,
+        'd1': d1,
+        'd2': d2,
+        'lc': lc
+    }
 # --- 실행 예제 ---
 L1 = 160
-L2 = 320
+L2 = 0
 R = 600
 delta = 0.1
 data = calculate_curve(R=R, L1=L1, L2=L2, delta=delta)
-cal_spec(R, L1, L2, ia)
 print_coord(data)
 plot_curve(data)
