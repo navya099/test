@@ -7,7 +7,7 @@ from line import Line2d
 from point2d import Point2d
 import tkinter as tk
 from tkinter import ttk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] = False
@@ -71,7 +71,7 @@ def cal_internal_angle(bp_coordinate, ip_coordinate, ep_coordinate):
     return abs(ia)
 
 # --- 전체 좌표 계산 함수 ---
-def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2d(0, 0)):
+def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2d(0, 0), direction: CurveDirection = None):
     """클로소이드+원곡선+ETC+IP 좌표 계산"""
     A1 = math.sqrt(R * L1)
     A2 = math.sqrt(R * L2)
@@ -81,11 +81,17 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
     # BCC 계산
     x1, y1 = clothoid(L1, A1)
     BCC = BTC.moved(h1, x1)
-    BCC.move(h1 + math.pi/2, y1)
-
+    if direction == CurveDirection.LEFT:
+        BCC.move(h1 + math.pi/2, y1)
+    else:
+        BCC.move(h1 - math.pi / 2, y1)
     # 원곡선 중심과 ECC 계산
-    C = BCC.moved(t1 +  h1 + math.pi/2, R)
-    ECC = C.moved(t1 + h1 - math.pi/2 + delta, R)
+    if direction == CurveDirection.LEFT:
+        C = BCC.moved(t1 +  h1 + math.pi/2, R)
+        ECC = C.moved(t1 + h1 - math.pi/2 + delta, R)
+    else:
+        C = BCC.moved(h1 - t1 - math.pi / 2, R)
+        ECC = C.moved(h1 - t1 + math.pi / 2 - delta, R)
 
     # 원곡선 좌표
     theta_start = math.atan2(BCC.y - C.y, BCC.x - C.x)
@@ -95,22 +101,28 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
     y_curve = C.y + R * np.sin(theta_vals)
 
     # ETC 계산
-    tangent_angle = h1 + delta + t1 + t2
-    x2, y2 = clothoid(L2, A2)
-    ETC = ECC.moved(tangent_angle - math.pi /2 , y2)
-    ETC.move(tangent_angle, x2)
 
+    x2, y2 = clothoid(L2, A2)
+    if direction == CurveDirection.LEFT:
+        tangent_angle = h1 + delta + t1 + t2
+        ETC = ECC.moved(tangent_angle - math.pi /2 , y2)
+
+    else:
+        tangent_angle = h1 - delta - t1 - t2
+        ETC = ECC.moved(tangent_angle + math.pi / 2, y2)
+
+    ETC.move(tangent_angle, x2)
     # IP 계산
     h2 = tangent_angle + math.pi
-    line1 = Line2d(BTC, BTC.moved(h1, 1000))
-    line2 = Line2d(ETC, ETC.moved(h2, 1000))
+    line1 = Line2d(BTC, BTC.moved(h1, 10000))
+    line2 = Line2d(ETC, ETC.moved(h2, 10000))
     IP = cal_intersect_point(line1, line2)
     ia = cal_internal_angle(BTC,IP,ETC)
     # 시점부 클로소이드 좌표
     s_pos = np.linspace(0, L1, 500)
     x_in, y_in = [], []
     for s in s_pos:
-        pt = global_xy_cls(s, A1, origin=BTC, dir=CurveDirection.LEFT, isexit=False, origin_az=h1)
+        pt = global_xy_cls(s, A1, origin=BTC, dir=direction, isexit=False, origin_az=h1)
         x_in.append(pt.x)
         y_in.append(pt.y)
 
@@ -119,7 +131,7 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
     x_out, y_out = [], []
     for s in s_pos2:
         revs = L2 - s
-        pt = global_xy_cls(revs, A2, origin=ETC, origin_az=tangent_angle, dir=CurveDirection.LEFT, isexit=True)
+        pt = global_xy_cls(revs, A2, origin=ETC, origin_az=tangent_angle, dir=direction, isexit=True)
         x_out.append(pt.x)
         y_out.append(pt.y)
     spec = cal_spec(R, L1, L2, delta, ia)
@@ -164,6 +176,16 @@ def plot_curve(data ,ax):
     mid_x_out = data['x_out'][mid_idx_out]
     mid_y_out = data['y_out'][mid_idx_out] + y_offset
     ax.text(mid_x_out, mid_y_out, f"L2={ data['L2']}\nA2={ data['A2']:.2f}", fontsize=10, color='blue')
+    xmargin = 200
+    ymargin = 200
+    delta_x = data['ETC'].x - data['BTC'].x
+    delta_y = data['ETC'].y - data['BTC'].y
+    if delta_x <= xmargin:
+        xmargin *= 2
+    if delta_y <= ymargin:
+        ymargin *= 2
+    ax.set_xlim([data['BTC'].x - xmargin, data['ETC'].x + xmargin])
+    ax.set_ylim([data['BTC'].y - ymargin, data['ETC'].y + ymargin])
 
 def print_spec(specs: dict):
     """
@@ -242,8 +264,13 @@ def update_plot():
         R = float(entry_R.get())
         delta = float(entry_delta.get())
         h1 = float(entry_h1.get())
+        direction = entry_d.get()
+        if direction == 'L':
+            direction = CurveDirection.LEFT
+        else:
+            direction = CurveDirection.RIGHT
 
-        data = calculate_curve(R=R, L1=L1, L2=L2, delta=delta, h1=h1, BTC=BTC)
+        data = calculate_curve(R=R, L1=L1, L2=L2, delta=delta, h1=h1, BTC=BTC ,direction=direction)
         print_coord(data)
 
         # 기존 캔버스 지우고 새로 그림
@@ -292,13 +319,26 @@ entry_h1 = ttk.Entry(frame); entry_h1.grid(row=6, column=1)
 entry_h1.insert(0, "0")
 ttk.Label(frame, text="방위각 1").grid(row=6, column=0)
 
-# --- Matplotlib Figure 설정 ---
-fig, ax = plt.subplots(figsize=(8,6))
-canvas = FigureCanvasTkAgg(fig, master=root)
-canvas.get_tk_widget().grid(row=6, column=1)
+entry_d = ttk.Entry(frame); entry_d.grid(row=7, column=1)
+entry_d.insert(0, "L")
+ttk.Label(frame, text="곡선방향").grid(row=7, column=0)
+
+# 캔버스와 툴바를 담을 프레임 생성
+canvas_frame = ttk.Frame(root)
+canvas_frame.grid(row=6, column=1, sticky="nsew")
+
+# Matplotlib Figure 설정
+fig, ax = plt.subplots(figsize=(8,8))
+canvas = FigureCanvasTkAgg(fig, master=canvas_frame)
+canvas.get_tk_widget().pack(fill='both', expand=True)  # pack 허용, canvas_frame 안에서
+
+# 툴바 생성
+toolbar = NavigationToolbar2Tk(canvas, canvas_frame)
+toolbar.update()
+toolbar.pack(fill='x')  # canvas_frame 안에서 pack 사용 가능
 
 # --- 이벤트 바인딩: 입력값 변화시 그래프 업데이트 ---
-for entry in [entry_L1, entry_L2, entry_R, entry_delta, entry_BTCX, entry_BTCY, entry_h1]:
+for entry in [entry_L1, entry_L2, entry_R, entry_delta, entry_BTCX, entry_BTCY, entry_h1, entry_d]:
     entry.bind("<KeyRelease>", lambda event: update_plot())
 
 # 초기 그래프 그리기
