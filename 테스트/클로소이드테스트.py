@@ -11,48 +11,40 @@ plt.rcParams['axes.unicode_minus'] = False
 
 # --- 클로소이드 함수 ---
 def clothoid(s, a):
-    """클로소이드
-    s: 곡선 거리
-    a: 클로소이드 매개변수 A"""
+    """클로소이드 좌표 계산"""
+    if s == 0 or a == 0:
+        return 0, 0
     l = s / a
     r = 1 / l
     x = l * (1 - ((l**2)/(40*r**2)) + ((l**4)/(3456*r**4)) - ((l**6)/(599040*r**6)))
-    y = (l**2)/(6*r) * (1 - ((l**2)/(56*r**2)) + ((l**4)/(7040*r**4)) - ((l**6)/(1612800*r**6)))
-
+    y = (l**2)/(6*r) * (1 - ((l**2)/(56*r**2)) + ((l**4)/(7040*r**4)) - ((l**6)/(1612800*r**4)))
     return x * a, y * a
 
-def global_xy_cls(s, a, orizin,origin_az, isexit=False ,dir=CurveDirection):
-    """클로소이드 글로벌 좌표"""
-    x ,y = clothoid(s, a)
+# --- 글로벌 좌표 변환 ---
+def global_xy_cls(s, a, origin, origin_az, isexit=False, dir=CurveDirection.LEFT):
+    """클로소이드 글로벌 좌표 계산"""
+    x, y = clothoid(s, a)
     if isexit:
         x = -x
-    # 회전방향 부호
     if dir == CurveDirection.RIGHT:
         y = -y
 
     ca = math.cos(origin_az)
     sa = math.sin(origin_az)
 
-    gx = orizin.x + x * ca - y * sa
-    gy = orizin.y + x * sa + y * ca
+    gx = origin.x + x * ca - y * sa
+    gy = origin.y + x * sa + y * ca
 
     return Point2d(gx, gy)
 
+# --- 교점 계산 ---
 def cal_intersect_point(line1: Line2d, line2: Line2d):
-    """
-    두 직선의 교점 계산
-    line1, line2: Line2d 객체
-        Line2d는 시작점 p1, 끝점 p2를 가짐
-    반환: Point2d (교점 좌표)
-    """
-
+    """두 직선의 교점 계산"""
     x1, y1 = line1.start.x, line1.start.y
     x2, y2 = line1.end.x, line1.end.y
-
     x3, y3 = line2.start.x, line2.start.y
     x4, y4 = line2.end.x, line2.end.y
 
-    # 직선 방정식: (x1,y1)->(x2,y2), (x3,y3)->(x4,y4)
     denom = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4)
     if denom == 0:
         raise ValueError("두 직선이 평행하여 교점이 없습니다.")
@@ -62,95 +54,124 @@ def cal_intersect_point(line1: Line2d, line2: Line2d):
 
     return Point2d(Px, Py)
 
-# --- 기본 파라미터 ---
-R = 600      # 원곡선 반지름
-L = 160     # 클로소이드 길이
-a = math.sqrt(R * L)
-t = (a**2) / (2 * R**2)  # 접선각
-#ip좌표 추출
-#교점함수 구현
-h1 = 0
+# --- 전체 좌표 계산 함수 ---
+def calculate_curve(R, L1, L2, delta=0.1):
+    """클로소이드+원곡선+ETC+IP 좌표 계산"""
+    A1 = math.sqrt(R * L1)
+    A2 = math.sqrt(R * L2)
+    t1 = (A1**2) / (2 * R**2)
+    t2 = (A2**2) / (2 * R**2)
 
-# BTC = (0,0)
-BTC = Point2d(0,0)
-x1,y1  = clothoid(L, a)
-BCC = BTC.moved(h1, x1)  # 클로소이드 끝점 / 원곡선 시작점
-BCC.move(h1 + math.pi / 2, y1)
+    BTC = Point2d(0,0)
 
+    # BCC 계산
+    x1, y1 = clothoid(L1, A1)
+    BCC = BTC.moved(0, x1)
+    BCC.move(math.pi/2, y1)
 
+    # 원곡선 중심과 ECC 계산
+    C = BCC.moved(t1 + math.pi/2, R)
+    ECC = C.moved(t1 - math.pi/2 + delta, R)
 
-C = BCC.moved(t + math.pi/2, R)  # 원곡선 중심
-# --- ECC 계산 (원곡선 끝점) ---
-delta = 2  # 원곡선 각도
-ECC = C.moved(t - math.pi/2 + delta, R)
+    # 원곡선 좌표
+    theta_start = math.atan2(BCC.y - C.y, BCC.x - C.x)
+    theta_end = math.atan2(ECC.y - C.y, ECC.x - C.x)
+    theta_vals = np.linspace(theta_start, theta_end, 200)
+    x_curve = C.x + R * np.cos(theta_vals)
+    y_curve = C.y + R * np.sin(theta_vals)
 
-# --- 원곡선 좌표 ---
-theta_start = math.atan2(BCC.y - C.y, BCC.x - C.x)
-theta_end = math.atan2(ECC.y - C.y, ECC.x - C.x)
-theta_vals = np.linspace(theta_start, theta_end, 100)
-x_vals2 = C.x + R * np.cos(theta_vals)
-y_vals2 = C.y + R * np.sin(theta_vals)
+    # ETC 계산
+    tangent_angle = delta + t1 + t2
+    x2, y2 = clothoid(L2, A2)
+    ETC = ECC.moved(tangent_angle - math.pi /2 , y2)
+    ETC.move(tangent_angle, x2)
 
-tangent_angle = delta + t * 2 # 원곡선 끝점의 접선 방향
-ETC = ECC.moved(tangent_angle - math.pi /2 , y1)
-ETC.move(tangent_angle, x1)
+    # IP 계산
+    h2 = tangent_angle + math.pi
+    line1 = Line2d(BTC, BTC.moved(0, 1000))
+    line2 = Line2d(ETC, ETC.moved(h2, 1000))
+    IP = cal_intersect_point(line1, line2)
 
+    # 시점부 클로소이드 좌표
+    s_pos = np.linspace(0, L1, 500)
+    x_in, y_in = [], []
+    for s in s_pos:
+        pt = global_xy_cls(s, A1, origin=BTC, dir=CurveDirection.LEFT, isexit=False, origin_az=0)
+        x_in.append(pt.x)
+        y_in.append(pt.y)
 
-h2 = tangent_angle + math.pi
-line1 = Line2d(BTC, BTC.moved(0,1000))
-line2 = Line2d(ETC, ETC.moved(h2,1000))
-IP = cal_intersect_point(line1, line2)
+    # 종점부 클로소이드 좌표
+    s_pos2 = np.linspace(0, L2, 200)
+    x_out, y_out = [], []
+    for s in s_pos2:
+        revs = L2 - s
+        pt = global_xy_cls(revs, A2, origin=ETC, origin_az=tangent_angle, dir=CurveDirection.LEFT, isexit=True)
+        x_out.append(pt.x)
+        y_out.append(pt.y)
 
-# ---시점부 클로소이드 좌표 ---
-s_pos = np.linspace(0, L, 500)
-x_vals, y_vals = [], []
-for s in s_pos:
-    pt = global_xy_cls(s, a, orizin=BTC, dir=CurveDirection.LEFT, isexit=False, origin_az=h1)
-    x_vals.append(pt.x)
-    y_vals.append(pt.y)
+    return {
+        'BTC': BTC, 'BCC': BCC, 'ECC': ECC, 'ETC': ETC, 'IP': IP,
+        'x_in': x_in, 'y_in': y_in,
+        'x_curve': x_curve, 'y_curve': y_curve,
+        'x_out': x_out, 'y_out': y_out,
+        'L1': L1, 'L2': L2,
+        'A1': A1, 'A2': A2,
+        'R': R,
+    }
 
-# --- 종점부 클로소이드 좌표 ---
-s_pos2 = np.linspace(0, L, 50)
-x_vals3, y_vals3 = [], []
+# --- 시각화 함수 ---
+def plot_curve(data):
+    plt.figure(figsize=(8,6))
+    plt.plot(data['x_in'], data['y_in'], color='blue', label='진입클로소이드')
+    plt.plot(data['x_curve'], data['y_curve'], color='red', label='원곡선')
+    plt.plot(data['x_out'], data['y_out'], color='blue', label='진출클로소이드')
 
-for s in s_pos2:
-    revs = L - s
-    pt = global_xy_cls(revs, a, origin_az=tangent_angle, orizin=ETC, dir=CurveDirection.LEFT, isexit=True)
-    x_vals3.append(pt.x)
-    y_vals3.append(pt.y)
+    for name, pt, color in [('BTC', data['BTC'], 'green'),
+                             ('BCC', data['BCC'], 'orange'),
+                             ('ECC', data['ECC'], 'purple'),
+                             ('ETC', data['ETC'], 'brown'),
+                             ('IP', data['IP'], 'black')]:
+        plt.scatter(pt.x, pt.y, color=color, label=name)
+        plt.text(pt.x, pt.y, name, fontsize=12, color=color)
 
-# --- print 출력 ---
-print(f'BTC: X={BTC.x},Y={BTC.y}')
-print(f'BCC: X={BCC.x},Y={BCC.y}')
-print(f'ECC: X={ECC.x},Y={ECC.y}')
-print(f'ETC: X={ETC.x},Y={ETC.y}')
-print(f'IP: X={IP.x},Y={IP.y}')
+    y_offset = 50
+    plt.plot([data['BTC'].x, data['IP'].x], [data['BTC'].y, data['IP'].y], color='gray', label='h1')
+    plt.plot([data['IP'].x, data['ETC'].x], [data['IP'].y, data['ETC'].y], color='gray', label='h2')
+    plt.text(data['IP'].x, data['IP'].y -  y_offset,f"X={data['IP'].x:.4f}\nY={data['IP'].y:.4f}\nR={data['R']}")
+    # --- 클로소이드 중간점 좌표 ---
+    y_offset = 20
+    mid_idx = len(data['x_in']) // 2
+    mid_x_in = data['x_in'][mid_idx]
+    mid_y_in = data['y_in'][mid_idx] + y_offset
+    plt.text(mid_x_in, mid_y_in, f"L1={ data['L1']}\nA1={ data['A1']:.2f}", fontsize=10, color='blue')
 
-# --- 시각화 ---
-plt.figure(figsize=(8,6))
-plt.plot(x_vals, y_vals, color='blue', label='진입클로소이드')
-plt.plot(x_vals2, y_vals2, color='red', label='원곡선')
-plt.plot(x_vals3, y_vals3, color='blue', label='진출클로소이드')
+    mid_idx_out = len(data['x_out']) // 2
+    mid_x_out = data['x_out'][mid_idx_out]
+    mid_y_out = data['y_out'][mid_idx_out] + y_offset
+    plt.text(mid_x_out, mid_y_out, f"L2={ data['L2']}\nA2={ data['A2']:.2f}", fontsize=10, color='blue')
 
-plt.scatter([BTC.x], [BTC.y], color='green', label='BTC')
-plt.scatter(BCC.x, BCC.y, color='orange', label='BCC')
-plt.scatter(ECC.x, ECC.y, color='purple', label='ECC')
-plt.scatter(ETC.x, ETC.y, color='brown', label='ETC')
-plt.scatter(IP.x, IP.y, color='black', label='IP')
+    plt.axis('equal')
+    plt.title("클로소이드 + 원곡선 + ETC + IP")
+    plt.xlabel("X (m)")
+    plt.ylabel("Y (m)")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
 
-plt.plot([BTC.x,IP.x], [BTC.y,IP.y], color='gray', label='h1')
-plt.plot([IP.x ,ETC.x], [IP.y,ETC.y], color='gray', label='h2')
+def print_coord(data):
+    print(f"{'-' * 4} 완화곡선좌표출력 {'-' * 4}")
+    for name, pt, color in [('BTC', data['BTC'], 'green'),
+                            ('BCC', data['BCC'], 'orange'),
+                            ('ECC', data['ECC'], 'purple'),
+                            ('ETC', data['ETC'], 'brown'),
+                            ('IP', data['IP'], 'black')]:
+        print(f'{name}: X = {pt.x}, Y = {pt.y}')
 
-plt.text(IP.x, IP.y, 'IP',fontsize=12, color='black')
-plt.text(BTC.x, BTC.y, 'BTC', fontsize=12, color='green')
-plt.text(BCC.x, BCC.y, 'BCC', fontsize=12, color='orange')
-plt.text(ECC.x, ECC.y, 'ECC', fontsize=12, color='purple')
-plt.text(ETC.x, ETC.y, 'ETC', fontsize=12, color='brown')
-
-plt.axis('equal')
-plt.title("클로소이드 + 원곡선 + ETC")
-plt.xlabel("X (m)")
-plt.ylabel("Y (m)")
-plt.grid(True)
-plt.legend()
-plt.show()
+# --- 실행 예제 ---
+L1 = 160
+L2 = 320
+R = 600
+delta = 0.1
+data = calculate_curve(R=R, L1=L1, L2=L2, delta=delta)
+print_coord(data)
+plot_curve(data)
