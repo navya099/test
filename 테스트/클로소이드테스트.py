@@ -167,11 +167,30 @@ def print_coord(data):
                             ('IP', data['IP'], 'black')]:
         print(f'{name}: X = {pt.x}, Y = {pt.y}')
 
+def cal_spec(R, L1, L2, delta):
+    A1 = math.sqrt(R * L1)
+    A2 = math.sqrt(R * L2)
+    x1, y1 = clothoid(L1, A1)
+    x2, y2 = clothoid(L2, A2)
+    t1 = (A1 ** 2) / (2 * R ** 2)
+    t2 = (A2 ** 2) / (2 * R ** 2)
+    xm1 = x1 - (R * math.sin(t1))
+    xm2 = x2 - (R * math.sin(t2))
+    dr1 = y1 + (R * math.cos(t1)) - R
+    dr2 = y2 - (R * math.cos(t2)) - R
+    w = (R * dr1) * math.tan(ia / 2)
+    z1 = (dr2 -dr1) * (1 / math.sin(ia))
+    z2 = (dr2 -dr1) * (1 / math.tan(ia))
+    d1 = xm1 + w + z1
+    d2 = xm2 + w - z2
+    lc = r * delta
+
 # --- 실행 예제 ---
 L1 = 160
 L2 = 320
 R = 600
 delta = 0.1
 data = calculate_curve(R=R, L1=L1, L2=L2, delta=delta)
+cal_spec(R, L1, L2, ia)
 print_coord(data)
 plot_curve(data)
