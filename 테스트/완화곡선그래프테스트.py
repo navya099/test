@@ -1,23 +1,17 @@
+import sys
 import math
 import numpy as np
-import matplotlib.pyplot as plt
-
-from math_utils import degrees_to_dms
+from PyQt5 import QtWidgets, QtCore
+import pyqtgraph as pg
 from utils import format_distance
-from curvedirection import CurveDirection
 from data.alignment.geometry.spiral.params import TransitionCurveParams
 from line import Line2d
+from math_utils import degrees_to_dms
 from point2d import Point2d
-import tkinter as tk
-from tkinter import ttk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-
-plt.rcParams['font.family'] = 'Malgun Gothic'
-plt.rcParams['axes.unicode_minus'] = False
+from curvedirection import CurveDirection
 
 # --- 클로소이드 함수 ---
 def clothoid(s, a):
-    """클로소이드 좌표 계산"""
     if s == 0 or a == 0:
         return 0, 0
     l = s / a
@@ -26,21 +20,16 @@ def clothoid(s, a):
     y = (l**2)/(6*r) * (1 - ((l**2)/(56*r**2)) + ((l**4)/(7040*r**4)) - ((l**6)/(1612800*r**4)))
     return x * a, y * a
 
-# --- 글로벌 좌표 변환 ---
 def global_xy_cls(s, a, origin, origin_az, isexit=False, dir=CurveDirection.LEFT):
-    """클로소이드 글로벌 좌표 계산"""
     x, y = clothoid(s, a)
     if isexit:
         x = -x
     if dir == CurveDirection.RIGHT:
         y = -y
-
     ca = math.cos(origin_az)
     sa = math.sin(origin_az)
-
     gx = origin.x + x * ca - y * sa
     gy = origin.y + x * sa + y * ca
-
     return Point2d(gx, gy)
 
 def cubic_local_xy(s: float ,R, L ,X1) -> tuple:
@@ -110,9 +99,8 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
         data = process_cubic(R, L1, L2)
 
     else:
-        pass
         #data = process_sine(R, L1, L2, A1, A2)
-
+        data = process_clothoid(R, L1, L2, A1, A2)
     # BCC 계산
     x1, y1 , x2, y2, t1, t2 = data
     BCC = BTC.moved(h1, x1)
@@ -162,7 +150,7 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
         elif spiral_definination == 'CUBIC':
             pt = cubic_global_xy(s,R,L1,x1,dir=direction, origin=BTC, origin_az=h1, isexit=False)
         else:
-            pt = Point2d(0,0)
+            pt = global_xy_cls(s, A1, origin=BTC, dir=direction, isexit=False, origin_az=h1)
         x_in.append(pt.x)
         y_in.append(pt.y)
 
@@ -176,7 +164,7 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
         elif spiral_definination == 'CUBIC':
             pt = cubic_global_xy(revs, R, L2, x2, dir=direction, origin=ETC, origin_az=tangent_angle ,isexit=True)
         else:
-            pt = Point2d(0, 0)
+            pt = global_xy_cls(revs, A2, origin=ETC, origin_az=tangent_angle, dir=direction, isexit=True)
 
         x_out.append(pt.x)
         y_out.append(pt.y)
@@ -195,63 +183,8 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
         'IA': ia,
         'H1': h1,
         'H2' : h2,
-        'direction': direction
+        'direction': direction,
     }
-
-# --- 시각화 함수 ---
-def plot_curve(data ,ax):
-    ax.plot(data['x_in'], data['y_in'], color='blue', label='진입클로소이드')
-    ax.plot(data['x_curve'], data['y_curve'], color='red', label='원곡선')
-    ax.plot(data['x_out'], data['y_out'], color='blue', label='진출클로소이드')
-
-    if data['type'] == 'CLOTHOID':
-        points = [('BTC', data['BTC'], 'green'),
-                  ('BCC', data['BCC'], 'orange'),
-                  ('ECC', data['ECC'], 'purple'),
-                  ('ETC', data['ETC'], 'brown')]
-    elif data['type'] == 'CUBIC':
-        points = [('SP', data['BTC'], 'green'),
-                  ('PC', data['BCC'], 'orange'),
-                  ('CP', data['ECC'], 'purple'),
-                  ('PS', data['ETC'], 'brown')]
-    else:
-        points = [('TS', data['BTC'], 'green'),
-                  ('SC', data['BCC'], 'orange'),
-                  ('CS', data['ECC'], 'purple'),
-                  ('ST', data['ETC'], 'brown')]
-
-    # 공통적으로 IP는 항상 추가
-    points.append(('IP', data['IP'], 'black'))
-
-    for name, pt, color in points:
-        ax.scatter(pt.x, pt.y, color=color, label=name)
-        ax.text(pt.x, pt.y, name, fontsize=12, color=color)
-
-    y_offset = 50
-    ax.plot([data['BTC'].x, data['IP'].x], [data['BTC'].y, data['IP'].y], color='gray')
-    ax.plot([data['IP'].x, data['ETC'].x], [data['IP'].y, data['ETC'].y], color='gray')
-    ax.text(data['IP'].x, data['IP'].y -  y_offset,f"X={data['IP'].x:.4f}\nY={data['IP'].y:.4f}\nR={data['R']}")
-    # --- 클로소이드 중간점 좌표 ---
-    y_offset = 20
-    mid_idx = len(data['x_in']) // 2
-    mid_x_in = data['x_in'][mid_idx]
-    mid_y_in = data['y_in'][mid_idx] + y_offset
-    ax.text(mid_x_in, mid_y_in, f"L1={ data['L1']}\nA1={ data['A1']:.2f}", fontsize=10, color='blue')
-
-    mid_idx_out = len(data['x_out']) // 2
-    mid_x_out = data['x_out'][mid_idx_out]
-    mid_y_out = data['y_out'][mid_idx_out] + y_offset
-    ax.text(mid_x_out, mid_y_out, f"L2={ data['L2']}\nA2={ data['A2']:.2f}", fontsize=10, color='blue')
-    xmargin = 200
-    ymargin = 200
-    delta_x = data['ETC'].x - data['BTC'].x
-    delta_y = data['ETC'].y - data['BTC'].y
-    if delta_x <= xmargin:
-        xmargin *= 2
-    if delta_y <= ymargin:
-        ymargin *= 2
-    ax.set_xlim([data['BTC'].x - xmargin, data['ETC'].x + xmargin])
-    ax.set_ylim([data['BTC'].y - ymargin, data['ETC'].y + ymargin])
 
 def print_spec(specs: dict, spiral_definination: str):
     """
@@ -297,9 +230,9 @@ def print_coord(data):
         print(f'{name}: X = {pt.x:.4f}, Y = {pt.y:.4f}')
 
 
-def print_station(specs: dict, sp_type):
-    btc = float(entry_sta.get())
-    bcc = btc + specs['L1']
+def print_station(specs: dict, sp_type ,btc_sta = 0.0):
+
+    bcc = btc_sta + specs['L1']
     ecc = bcc + specs['lc']
     etc = ecc + specs['L2']
     if sp_type == 'CLOTHOID':
@@ -309,9 +242,10 @@ def print_station(specs: dict, sp_type):
     else:
         name = 'TS', 'SC', 'CS', 'ST'
     print(f"\n{'-' * 4} 완화곡선 측점출력 {'-' * 4}")
-    print(f"{name[0]}: {format_distance(btc)}")
+    print(f"{name[0]}: {format_distance(btc_sta)}")
     print(f"{name[1]}: {format_distance(bcc)}")
     print(f"{name[2]}: {format_distance(ecc)}")
+
     print(f"{name[3]}: {format_distance(etc)}")
 
 def print_ipinfo(data):
@@ -379,110 +313,195 @@ def process_cubic(R, L1, L2):
     t2 = math.atan(x2 / (2 * R))
 
     return x1, y1, x2, y2, t1, t2
-def update_plot():
-    try:
-        BTC = Point2d(float(entry_BTCX.get()), float(entry_BTCY.get()))
-        L1 = float(entry_L1.get())
-        L2 = float(entry_L2.get())
-        R = float(entry_R.get())
-        delta = float(entry_delta.get())
-        h1 = float(entry_h1.get())
-        direction = entry_d.get()
-        sipral_definination = entry_type.get()
-        if direction == 'L':
-            direction = CurveDirection.LEFT
+
+# --- PyQt5 GUI ---
+class CurveApp(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.ip_line2 = None
+        self.ip_line1 = None
+        self.setWindowTitle("완화곡선 PyQtGraph 실시간 그래프")
+        self.resize(1000, 600)
+
+        layout = QtWidgets.QGridLayout(self)
+
+        # 입력 위젯
+        self.entries = {}
+        labels = ["BTC X", "BTC Y", "L1", "L2", "R" , "DELTA", "H1" , "BTC STA"]
+        defaults = [0, 0, 160, 320, 600, 0.1, 0 , 0]
+        for i, (label, default) in enumerate(zip(labels, defaults)):
+            layout.addWidget(QtWidgets.QLabel(label), i, 0)
+            entry = QtWidgets.QLineEdit(str(default))
+            self.entries[label] = entry
+            layout.addWidget(entry, i, 1)
+            entry.textChanged.connect(self.update_plot)
+
+        # 곡선 방향
+        layout.addWidget(QtWidgets.QLabel("Curve Direction"), 8, 0)
+        self.direction_cb = QtWidgets.QComboBox()
+        self.direction_cb.addItems(["L", "R"])
+        layout.addWidget(self.direction_cb, 8, 1)
+        self.direction_cb.currentIndexChanged.connect(self.update_plot)
+
+        # 완화곡선 유형
+        layout.addWidget(QtWidgets.QLabel("Spiral Type"), 9, 0)
+        self.spiral_cb = QtWidgets.QComboBox()
+        self.spiral_cb.addItems(["CLOTHOID", "CUBIC", "SINE"])
+        layout.addWidget(self.spiral_cb, 9, 1)
+        self.spiral_cb.currentIndexChanged.connect(self.update_plot)
+
+        # PyQtGraph PlotWidget
+        self.plot_widget = pg.PlotWidget()
+        layout.addWidget(self.plot_widget, 0, 2, 20, 1)  # 오른쪽에 그래프 영역
+        self.plot_widget.setAspectLocked(True)
+        self.curve_in = self.plot_widget.plot(pen=pg.mkPen('b', width=2))
+        self.circle = self.plot_widget.plot(pen=pg.mkPen('r', width=2))
+        self.curve_out = self.plot_widget.plot(pen=pg.mkPen('b', width=2))
+        self.scatter = pg.ScatterPlotItem(size=10, brush=pg.mkBrush(0, 255, 0))
+        self.plot_widget.addItem(self.scatter)
+
+        self.update_plot()
+
+    def update_plot(self):
+        try:
+            BTCX = float(self.entries["BTC X"].text())
+            BTCY = float(self.entries["BTC Y"].text())
+            L1 = float(self.entries["L1"].text())
+            L2 = float(self.entries["L2"].text())
+            R = float(self.entries["R"].text())
+            BTC = Point2d(BTCX, BTCY)
+            h1 = float(self.entries["H1"].text())
+            delta = float(self.entries["DELTA"].text())
+            direction = CurveDirection.LEFT if self.direction_cb.currentText() == 'L' else CurveDirection.RIGHT
+            spiral_definination = self.spiral_cb.currentText()
+            btc_sta = float(self.entries["BTC STA"].text())
+            data = calculate_curve(R=R, L1=L1, L2=L2, delta=delta, h1=h1, BTC=BTC ,direction=direction, spiral_definination=spiral_definination)
+
+            print_ipinfo(data)
+            print_spec(data['spec'], data['type'])
+            print_station(data['spec'], data['type'] ,btc_sta)
+            print_coord(data)
+
+            self.plot_curve(data)
+        except ValueError as e:
+            print(f'에러 발생 {e}')  # 입력 중에 잘못된 값이 들어오면 무시
+
+    def plot_curve(self, data):
+        #각 곡선 그래프
+        self.curve_in.setData(data['x_in'], data['y_in'])
+        self.circle.setData(data['x_curve'], data['y_curve'])
+        self.curve_out.setData(data['x_out'], data['y_out'])
+
+        if data['type'] == 'CLOTHOID':
+            points = [('BTC', data['BTC'], 'green'),
+                      ('BCC', data['BCC'], 'orange'),
+                      ('ECC', data['ECC'], 'purple'),
+                      ('ETC', data['ETC'], 'brown')]
+        elif data['type'] == 'CUBIC':
+            points = [('SP', data['BTC'], 'green'),
+                      ('PC', data['BCC'], 'orange'),
+                      ('CP', data['ECC'], 'purple'),
+                      ('PS', data['ETC'], 'brown')]
         else:
-            direction = CurveDirection.RIGHT
+            points = [('TS', data['BTC'], 'green'),
+                      ('SC', data['BCC'], 'orange'),
+                      ('CS', data['ECC'], 'purple'),
+                      ('ST', data['ETC'], 'brown')]
+        # 공통적으로 IP는 항상 추가
+        points.append(('IP', data['IP'], 'black'))
 
-        data = calculate_curve(R=R, L1=L1, L2=L2, delta=delta, h1=h1, BTC=BTC ,direction=direction, spiral_definination=sipral_definination)
+        # ScatterPlotItem 갱신
+        self.scatter.setData(
+            x=[pt.x for _, pt, _ in points],
+            y=[pt.y for _, pt, _ in points],
+            brush=[pg.mkBrush(color) for _, _, color in points],
+            size=10
+        )
 
-        print_ipinfo(data)
-        print_spec(data['spec'], data['type'])
-        print_station(data['spec'], data['type'])
-        print_coord(data)
+        #곡선제원문자
+        # 기존 아이템 제거
+        if hasattr(self, 'spec_text_items'):
+            for item in self.spec_text_items:
+                self.plot_widget.removeItem(item)
+        self.spec_text_items = []
 
-        # 기존 캔버스 지우고 새로 그림
-        ax.clear()
-        plot_curve(data ,ax)
-        ax.set_aspect('equal')
-        ax.grid(True)
-        #ax.legend()
-        canvas.draw()
-    except ValueError as e:
-        print(f'에러 발생 {e}')  # 입력 중에 잘못된 값이 들어오면 무시
+        # 각 점마다 TextItem 생성
+        for text, pt, color in points:
+            item = pg.TextItem(text=text, color=color, anchor=(0, 0))
+            item.setPos(pt.x, pt.y)  # 좌표 지정
+            self.plot_widget.addItem(item)
+            self.spec_text_items.append(item)
 
-# --- Tkinter GUI 생성 ---
-root = tk.Tk()
-root.title("완화곡선 실시간 그래프")
+        # IP 라인 그리기
+        # 기존 IP 라인 제거
+        if hasattr(self, 'ip_line1'):
+            self.plot_widget.removeItem(self.ip_line1)
+        if hasattr(self, 'ip_line2'):
+            self.plot_widget.removeItem(self.ip_line2)
 
-frame = ttk.Frame(root, padding=10)
-frame.grid(row=0, column=0, sticky="nw")
+        self.ip_line1 = pg.PlotDataItem([data['BTC'].x, data['IP'].x], [data['BTC'].y, data['IP'].y],
+                                        pen=pg.mkPen('gray', width=1))
+        self.ip_line2 = pg.PlotDataItem([data['IP'].x, data['ETC'].x], [data['IP'].y, data['ETC'].y],
+                                        pen=pg.mkPen('gray', width=1))
 
-# 입력 라벨 + 엔트리
-entry_BTCX = ttk.Entry(frame); entry_BTCX.grid(row=0, column=1)
-entry_BTCX.insert(0, "0")
-ttk.Label(frame, text="완화곡선 시점 X좌표:").grid(row=0, column=0)
+        # PlotWidget에 추가
+        self.plot_widget.addItem(self.ip_line1)
+        self.plot_widget.addItem(self.ip_line2)
 
-entry_BTCY = ttk.Entry(frame); entry_BTCY.grid(row=1, column=1)
-entry_BTCY.insert(0, "0")
-ttk.Label(frame, text="완화곡선 시점 Y좌표:").grid(row=1, column=0)
+        # IP 제원 문자
+        y_offset = 0
 
-entry_L1 = ttk.Entry(frame); entry_L1.grid(row=2, column=1)
-entry_L1.insert(0, "160")
-ttk.Label(frame, text="L1").grid(row=2, column=0)
+        # 기존 아이템 제거
+        if hasattr(self, 'ip_text'):
+            self.plot_widget.removeItem(self.ip_text)
 
-entry_L2 = ttk.Entry(frame); entry_L2.grid(row=3, column=1)
-entry_L2.insert(0, "320")
-ttk.Label(frame, text="L2").grid(row=3, column=0)
+        # TextItem 생성
+        self.ip_text = pg.TextItem(
+            text=f"IP\n"
+                 f"IA={degrees_to_dms(math.degrees(data['IA']))}\n"
+                 f"R={data['R']}\n"
+                 f"TL1={data['spec']['d1']:.3f}\n"
+                 f"TL2={data['spec']['d2']:.3f}\n"
+                 f"CL={data['L1'] + data['spec']['lc'] + data['L2']:.3f}\n"
+                 f"X={data['IP'].x:.4f}\n"
+                 f"Y={data['IP'].y:.4f}\n",
+            color='w',  # 검은색
+            anchor=(0, 0)  # 왼쪽 위 기준
+        )
+        self.ip_text.setPos(data['IP'].x, data['IP'].y + y_offset)  # 좌표 지정
+        self.plot_widget.addItem(self.ip_text)
 
-entry_R = ttk.Entry(frame); entry_R.grid(row=4, column=1)
-entry_R.insert(0, "600")
-ttk.Label(frame, text="R").grid(row=4, column=0)
+        #클로소이드 제원문자
+        # --- 클로소이드 시작, 끝 중간점 좌표 ---
+        y_offset = 20 #마진값
+        mid_idx = len(data['x_in']) // 2
+        mid_x_in = data['x_in'][mid_idx]
+        mid_y_in = data['y_in'][mid_idx] + y_offset
 
-entry_delta = ttk.Entry(frame); entry_delta.grid(row=5, column=1)
-entry_delta.insert(0, "0.1")
-ttk.Label(frame, text="원곡선 교각").grid(row=5, column=0)
+        mid_idx_out = len(data['x_out']) // 2
+        mid_x_out = data['x_out'][mid_idx_out]
+        mid_y_out = data['y_out'][mid_idx_out] + y_offset
 
-entry_h1 = ttk.Entry(frame); entry_h1.grid(row=6, column=1)
-entry_h1.insert(0, "0")
-ttk.Label(frame, text="방위각 1").grid(row=6, column=0)
+        # 기존 아이템 제거
+        if hasattr(self, 'length_a_avalues'):
+            for item in self.length_a_avalues:
+                self.plot_widget.removeItem(item)
+        self.length_a_avalues = []
 
-ttk.Label(frame, text="곡선 방향").grid(row=7, column=0)
-entry_d = ttk.Combobox(frame, values=("L", "R"))
-entry_d.current(0)  # 기본값 선택
-entry_d.grid(row=7, column=1)
+        # 텍스트, 좌표, 색 지정
+        texts = [f"L1={data['L1']}\nA1={data['A1']:.2f}", f"L2={data['L2']}\nA2={data['A2']:.2f}"]
+        pts = [(mid_x_in, mid_y_in), (mid_x_out, mid_y_out)]
+        colors = ['r', 'r']
 
-ttk.Label(frame, text="완화곡선 유형").grid(row=8, column=0)
-entry_type = ttk.Combobox(frame, values=("CLOTHOID", "CUBIC", "SINE"))
-entry_type.current(0)  # 기본값 선택
-entry_type.grid(row=8, column=1)
+        # 각 점마다 TextItem 생성
+        for text, (x, y), color in zip(texts, pts, colors):
+            item = pg.TextItem(text=text, color=color, anchor=(0, 0))
+            item.setPos(x, y)
+            self.plot_widget.addItem(item)
+            self.length_a_avalues.append(item)
 
-entry_sta = ttk.Entry(frame); entry_sta.grid(row=9, column=1)
-entry_sta.insert(0, "0")
-ttk.Label(frame, text="시작 측점").grid(row=9, column=0)
-
-# 캔버스와 툴바를 담을 프레임 생성
-canvas_frame = ttk.Frame(root)
-canvas_frame.grid(row=6, column=1, sticky="nsew")
-
-# Matplotlib Figure 설정
-fig, ax = plt.subplots(figsize=(8,8))
-canvas = FigureCanvasTkAgg(fig, master=canvas_frame)
-canvas.get_tk_widget().pack(fill='both', expand=True)  # pack 허용, canvas_frame 안에서
-
-# 툴바 생성
-toolbar = NavigationToolbar2Tk(canvas, canvas_frame)
-toolbar.update()
-toolbar.pack(fill='x')  # canvas_frame 안에서 pack 사용 가능
-
-# --- 이벤트 바인딩: 입력값 변화시 그래프 업데이트 ---
-for entry in [entry_L1, entry_L2, entry_R, entry_delta, entry_BTCX, entry_BTCY, entry_h1, entry_d ,entry_sta]:
-    entry.bind("<KeyRelease>", lambda event: update_plot())
-
-for widget in [entry_type, entry_d]:  # 실제 Combobox/Entry 객체
-    widget.bind("<<ComboboxSelected>>", lambda event: update_plot())
-
-# 초기 그래프 그리기
-update_plot()
-
-root.mainloop()
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    win = CurveApp()
+    win.show()
+    sys.exit(app.exec_())
