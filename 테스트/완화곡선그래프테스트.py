@@ -171,20 +171,38 @@ def calculate_curve(R, L1, L2, delta=0.1, h1: float = 0.0, BTC: Point2d = Point2
 
     spec = cal_spec(R, L1, L2, delta, ia)
 
-    return {
-        'BTC': BTC, 'BCC': BCC, 'ECC': ECC, 'ETC': ETC, 'IP': IP,
+    # 점 이름 매핑
+    POINT_KEYS = {
+        'CLOTHOID': ['BTC', 'BCC', 'ECC', 'ETC'],
+        'CUBIC': ['SP', 'PC', 'CP', 'PS'],
+        'SINE': ['TS', 'SC', 'CS', 'ST']
+    }
+
+    keys = POINT_KEYS.get(spiral_definination, ['BTC', 'BCC', 'ECC', 'ETC'])
+    point_values = [BTC, BCC, ECC, ETC]
+
+    # 딕셔너리 생성
+    data = {
+        keys[0]: point_values[0],
+        keys[1]: point_values[1],
+        keys[2]: point_values[2],
+        keys[3]: point_values[3],
+        'IP': IP,
         'x_in': x_in, 'y_in': y_in,
         'x_curve': x_curve, 'y_curve': y_curve,
         'x_out': x_out, 'y_out': y_out,
         'L1': L1, 'L2': L2,
         'A1': A1, 'A2': A2,
-        'R': R,'spec': spec,
+        'R': R, 'spec': spec,
         'type': spiral_definination,
         'IA': ia,
         'H1': h1,
-        'H2' : h2,
+        'H2': h2,
         'direction': direction,
     }
+
+    return data
+
 
 def print_spec(specs: dict, spiral_definination: str):
     """
@@ -215,15 +233,15 @@ def print_coord(data):
                   ('ETC', data['ETC'], 'brown')]
 
     elif data['type'] == 'CUBIC':
-        points = [('SP', data['BTC'], 'green'),
-                  ('PC', data['BCC'], 'orange'),
-                  ('CP', data['ECC'], 'purple'),
-                  ('PS', data['ETC'], 'brown')]
+        points = [('SP', data['SP'], 'green'),
+                  ('PC', data['PC'], 'orange'),
+                  ('CP', data['CP'], 'purple'),
+                  ('PS', data['PS'], 'brown')]
     else:
-        points = [('TS', data['BTC'], 'green'),
-                  ('SC', data['BCC'], 'orange'),
-                  ('CS', data['ECC'], 'purple'),
-                  ('ST', data['ETC'], 'brown')]
+        points = [('TS', data['TS'], 'green'),
+                  ('SC', data['SC'], 'orange'),
+                  ('CS', data['CS'], 'purple'),
+                  ('ST', data['ST'], 'brown')]
 
     print(f"\n{'-' * 4} 완화곡선 좌표출력 {'-' * 4}")
     for name, pt, color in points:
@@ -382,31 +400,37 @@ class CurveApp(QtWidgets.QWidget):
             print_station(data['spec'], data['type'] ,btc_sta)
             print_coord(data)
 
-            self.plot_curve(data)
+            self.plot_curve(data, btc_sta)
         except ValueError as e:
             print(f'에러 발생 {e}')  # 입력 중에 잘못된 값이 들어오면 무시
 
-    def plot_curve(self, data):
+    def plot_curve(self, data ,btc_sta):
         #각 곡선 그래프
         self.curve_in.setData(data['x_in'], data['y_in'])
         self.circle.setData(data['x_curve'], data['y_curve'])
         self.curve_out.setData(data['x_out'], data['y_out'])
 
-        if data['type'] == 'CLOTHOID':
-            points = [('BTC', data['BTC'], 'green'),
-                      ('BCC', data['BCC'], 'orange'),
-                      ('ECC', data['ECC'], 'purple'),
-                      ('ETC', data['ETC'], 'brown')]
-        elif data['type'] == 'CUBIC':
-            points = [('SP', data['BTC'], 'green'),
-                      ('PC', data['BCC'], 'orange'),
-                      ('CP', data['ECC'], 'purple'),
-                      ('PS', data['ETC'], 'brown')]
-        else:
-            points = [('TS', data['BTC'], 'green'),
-                      ('SC', data['BCC'], 'orange'),
-                      ('CS', data['ECC'], 'purple'),
-                      ('ST', data['ETC'], 'brown')]
+        btc = btc_sta
+        bcc = btc + data['spec']['L1']
+        ecc = bcc + data['spec']['lc']
+        etc = ecc + data['spec']['L2']
+
+        # 곡선 타입별 점 이름과 색상, 측점 값 매핑
+        POINTS_MAP = {
+            'CLOTHOID': [('BTC', 'green', btc), ('BCC', 'orange', bcc), ('ECC', 'purple', ecc), ('ETC', 'brown', etc)],
+            'CUBIC': [('SP', 'green', btc), ('PC', 'orange', bcc), ('CP', 'purple', ecc), ('PS', 'brown', etc)],
+            'SINE': [('TS', 'green', btc), ('SC', 'orange', bcc), ('CS', 'purple', ecc), ('ST', 'brown', etc)],
+        }
+
+        # 점 데이터 생성
+        points = []
+        for name, color, sta in POINTS_MAP.get(data['type'], []):
+            pt = data.get(name)
+            if pt is not None:
+                # 이름에 시리얼 번호 추가
+                name = f"{name} = {format_distance(sta)}"
+                points.append((name, pt, color))
+
         # 공통적으로 IP는 항상 추가
         points.append(('IP', data['IP'], 'black'))
 
@@ -418,19 +442,16 @@ class CurveApp(QtWidgets.QWidget):
             size=10
         )
 
-        #곡선제원문자
-        # 기존 아이템 제거
-        if hasattr(self, 'spec_text_items'):
-            for item in self.spec_text_items:
+        # 텍스트 처리
+        if hasattr(self, 'text_items'):
+            for item in self.text_items:
                 self.plot_widget.removeItem(item)
-        self.spec_text_items = []
-
-        # 각 점마다 TextItem 생성
-        for text, pt, color in points:
-            item = pg.TextItem(text=text, color=color, anchor=(0, 0))
-            item.setPos(pt.x, pt.y)  # 좌표 지정
-            self.plot_widget.addItem(item)
-            self.spec_text_items.append(item)
+        self.text_items = []
+        for name, pt, color in points:
+            text_item = pg.TextItem(text=name, color=color, anchor=(0, 0))
+            text_item.setPos(pt.x, pt.y)
+            self.plot_widget.addItem(text_item)
+            self.text_items.append(text_item)
 
         # IP 라인 그리기
         # 기존 IP 라인 제거
@@ -439,12 +460,25 @@ class CurveApp(QtWidgets.QWidget):
         if hasattr(self, 'ip_line2'):
             self.plot_widget.removeItem(self.ip_line2)
 
-        self.ip_line1 = pg.PlotDataItem([data['BTC'].x, data['IP'].x], [data['BTC'].y, data['IP'].y],
-                                        pen=pg.mkPen('gray', width=1))
-        self.ip_line2 = pg.PlotDataItem([data['IP'].x, data['ETC'].x], [data['IP'].y, data['ETC'].y],
+        # 각 점 좌표 가져오기
+        # 타입 가져오기
+        curve_type = data['type']
+        keys = POINTS_MAP.get(curve_type, ['BTC', 'BCC', 'ECC', 'ETC'])
+
+        pt_start = data[keys[0][0]]  # BTC / SP / TS
+        pt_middle1 = data[keys[1][0]]  # BCC / PC / SC
+        pt_middle2 = data[keys[2][0]]  # ECC / CP / CS
+        pt_end = data[keys[3][0]]  # ETC / PS / ST
+
+        # IP 라인
+        self.ip_line1 = pg.PlotDataItem([pt_start.x, data['IP'].x],
+                                        [pt_start.y, data['IP'].y],
                                         pen=pg.mkPen('gray', width=1))
 
-        # PlotWidget에 추가
+        self.ip_line2 = pg.PlotDataItem([data['IP'].x, pt_end.x],
+                                        [data['IP'].y, pt_end.y],
+                                        pen=pg.mkPen('gray', width=1))
+
         self.plot_widget.addItem(self.ip_line1)
         self.plot_widget.addItem(self.ip_line2)
 
