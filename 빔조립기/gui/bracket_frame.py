@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
+
 from library import LibraryManager
+
 
 class BracketFrame(ttk.LabelFrame):
     def __init__(self, master ,event):

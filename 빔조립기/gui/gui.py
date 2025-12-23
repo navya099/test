@@ -2,11 +2,11 @@ import tkinter as tk
 from tkinter import ttk
 
 from controller.event_controller import EventController
+from controller.main_controller import MainProcess
 from .basic_frame import BasicInfoFrame
 
 from .bracket_frame import BracketFrame
 from .structure_frame import StructureFrame
-
 
 class PoleInstallGUI(tk.Tk):
     def __init__(self):
@@ -47,7 +47,8 @@ class PoleInstallGUI(tk.Tk):
         ttk.Button(frame, text="미리보기", command=self.plot_preview).pack(side="right", padx=10)
 
     def _generate(self):
-        pass
+        mp = MainProcess(self)
+        mp.run()
 
     def destyoy(self):
         self.destroy()
