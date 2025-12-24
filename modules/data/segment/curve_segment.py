@@ -13,13 +13,6 @@ class CurveSegment(Segment):
     """
     _geom: CurveGeometry = CurveGeometry
 
-    @classmethod
-    def create(cls, center: Point2d, radius: float, start_angle: float, end_angle: float, direction: CurveDirection) -> "CurveSegment":
-        """중심점과 반경, 시작각도, 끝 각도, 방향으로 세그먼트 생성"""
-        return cls(_geom=CurveGeometry
-                         (center=center, radius=radius, start_angle=start_angle, end_angle=end_angle, direction=direction)
-                   )
-
     @property
     def start_azimuth(self) -> float:
         """시작 각도"""
