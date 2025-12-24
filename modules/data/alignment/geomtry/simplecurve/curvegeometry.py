@@ -7,7 +7,14 @@ from data.alignment.geometry.segmentgeometry import SegmentGeometry
 
 @dataclass
 class CurveGeometry(SegmentGeometry):
-    """단곡선 지오메트리 엔진"""
+    """단곡선 지오메트리 엔진
+    Attributes:
+        center: 중심점
+        radius: 곡선반경
+        start_angle: 시작 각도
+        end_angle: 끝 각도
+        direction: 방향
+        """
     center: Point2d
     radius: float
     start_angle: float   # rad
