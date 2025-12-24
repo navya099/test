@@ -24,47 +24,29 @@ class TransitionCurveParams:
 
     _x1 = None
 
-    def cal_params(self,
-                   radius: float,
-                   internal_angle: float,
-                   sp_type: SpiralParamType,
-                   length=None,
-                   a=None,
-                   m=None,
-                   v=None,
-                   z=None):
-
-        self.radius = radius
-        self.internal_angle = internal_angle
-        self.sp_type = sp_type
-
+    def cal_params(self):
         # --- 공용식(클로소이드) 계산 ---
-        if sp_type == SpiralParamType.Length:
+        if self.sp_type == SpiralParamType.Length:
             # L 입력 → A 계산
-            if length is None:
+            if self.l is None:
                 raise ValueError("Length(L) must be provided for Length mode.")
-            self.l = length
             self.a = math.sqrt(self.l * self.radius)
             self._x1 = self.solve_x1(self.l, self.radius)
-        elif sp_type == SpiralParamType.AValue:
+        elif self.sp_type == SpiralParamType.AValue:
             # A 입력 → L 계산
-            if a is None:
+            if self.a is None:
                 raise ValueError("A value must be provided for AValue mode.")
-            self.a = a
             self.l = (self.a ** 2) / self.radius
             self._x1 = self.solve_x1(self.l, self.radius)
         # --- 국철변수(M, V, Z) ---
         else:
-            if m is None:
+            if self.m is None:
                 raise ValueError("M value must be provided for K-mode.")
-            if v is None:
+            if self.v is None:
                 raise ValueError("V value must be provided for K-mode.")
-            if z is None:
+            if self.z is None:
                 raise ValueError("Z value must be provided for K-mode.")
 
-            self.m = m
-            self.v = v
-            self.z = z
             self._x1 = self.m * self.z
             self.l = self.x1 * (1 + (math.tan(self.theta_pc) ** 2) / 10)  # 완화곡선 길이
             self.a = math.sqrt(self.l * self.radius)
@@ -127,29 +109,9 @@ class TransitionCurveParams:
         return self.f / math.cos(self.internal_angle / 2)
 
     @property
-    def total_tangent_length(self):
-        """TL"""
-        return self.radius * math.tan(self.internal_angle / 2) + self.x2 + self.k
-
-    @property
-    def circle_length(self):
-        """원곡선 길이 LC"""
-        return self.radius * (self.internal_angle - 2 * self.theta_pc)
-
-    @property
-    def total_curve_length(self):
-        """전체곡선길이 CL"""
-        return self.circle_length + 2 * self.l
-
-    @property
     def sl(self):
         """외선장 SL"""
         return self.radius * (1 / (math.cos(self.internal_angle / 2)) - 1) + self.s
-
-    @property
-    def circle_internal_angle(self):
-        """원곡선교각"""
-        return self.internal_angle - (2 * self.theta_pc)
 
     @property
     def c(self):
