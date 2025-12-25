@@ -72,7 +72,6 @@ class CurveGeometry(SegmentGeometry):
     def point_at(self, s: float, offset: float = 0.0) -> Point2d:
         # 반지름 각도
         angle = self._angle_at(s)
-
         # 원 위 점
         pt = self.center.moved(angle, self.radius)
 
@@ -156,9 +155,7 @@ class CurveGeometry(SegmentGeometry):
     def _angle_at(self, s: float) -> float:
         """s 위치의 반지름 각도 (center 기준)"""
         theta = s / self.radius
-        if self.direction == CurveDirection.RIGHT:
-            theta = -theta
-        return self.start_angle + theta
+        return self.end_angle - theta
 
     def reversed(self):
         self.start_angle = self.end_angle  # rad
