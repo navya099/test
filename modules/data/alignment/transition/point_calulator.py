@@ -74,7 +74,7 @@ class TransitionPointCalulator:
             theta = self.h1 + self.params1.theta_pc
             center = self.start_circle.moved(theta + math.pi /2, self.params1.radius)
         else:
-            theta = self.h1 - self.params2.theta_pc
+            theta = self.h1 - self.params1.theta_pc
             center = self.start_circle.moved(theta - math.pi /2, self.params2.radius)
 
         self.center_circle = center
