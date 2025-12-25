@@ -1,4 +1,4 @@
-from traits.trait_types import self
+import math
 
 from curvedirection import CurveDirection
 from data.alignment.geometry.simplecurve.curvegeometry import CurveGeometry
@@ -55,6 +55,7 @@ class TransitionDesignCalculator:
             tl2=d2,
             direction=direction,
         )
+        spiral_point_calculator.run()
         #주요 좌표
         ts = spiral_point_calculator.start_transition
         st = spiral_point_calculator.end_transition
@@ -70,6 +71,16 @@ class TransitionDesignCalculator:
         else:
             az_sc = bp_azimuth - entry_params.theta_pc
             az_cs = az_sc - delta
+
+        if direction == CurveDirection.LEFT:
+            arc_start_angle = az_sc + math.pi /2
+            arc_end_angle = arc_start_angle + delta
+        else:
+            h1_revese = az_sc + math.pi
+            h2_revese = az_cs + math.pi
+            arc_start_angle = h2_revese - math.pi / 2
+            arc_end_angle = arc_start_angle + delta
+
         az_st = ep_azimuth
 
         # 지오메트리 생성
@@ -79,8 +90,8 @@ class TransitionDesignCalculator:
             center = cc,
             radius=radius,
             direction=direction,
-            start_angle=az_sc,
-            end_angle=az_cs,
+            start_angle=arc_start_angle,
+            end_angle=arc_end_angle,
         )
         # 세그먼트 생성은 밖에서 처리
 
