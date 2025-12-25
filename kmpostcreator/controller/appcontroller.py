@@ -1,7 +1,9 @@
 # controller/controller.py
 from kmpostcreator.controller.dialogs import DialogService
+from kmpostcreator.controller.prerunsetup import PreRunSetup
 from kmpostcreator.controller.state import AppState
 from kmpostcreator.controller.mainrunner import MainRunner
+
 
 class AppController:
     def __init__(self, dialogs: DialogService):
@@ -9,10 +11,7 @@ class AppController:
         self.dialogs = dialogs
         self._logger = None
 
-    def select_alignment(self, widget):
-        widget.show_alignment_selector(self._set_alignment)
-
-    def _set_alignment(self, value):
+    def set_alignment(self, value):
         self.state.alignment_type = value
         self.log(f"노선 종류 선택됨: {value}")
 
@@ -23,8 +22,38 @@ class AppController:
         if self._logger:
             self._logger(msg)
 
+    def select_structure_excel(self):
+        path = self.dialogs.select_excel_file()
+
+        if not path:
+            self.log("❌ 엑셀 파일 선택 취소")
+            return False
+
+        self.state.structure_excel_path = path
+        self.log(f"엑셀 파일 선택됨: {path}")
+        return True
+
+    def select_directory(self):
+        path = self.dialogs.select_directory()
+
+        if not path:
+            self.log("❌ 대상 디렉토리 선택 취소")
+            return False
+
+        self.state.target_directory = path
+        self.log(f"대상 디렉토리 선택됨: {path}")
+        return True
+
     def run(self):
-        self.state.target_directory = self.dialogs.select_directory()
+        #사전작업
+        setup = PreRunSetup(
+            dialogs=self.dialogs,
+            state=self.state,
+            logger=self.log
+        )
+
+        if not setup.run():
+            return
 
         runner = MainRunner(
             state=self.state,
