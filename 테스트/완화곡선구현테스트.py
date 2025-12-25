@@ -1,10 +1,9 @@
 #완화곡선 테스트코드
 from AutoCAD.point2d import Point2d
-from data.alignment.spiral.pointcalc import SpiralPointCalculator
-from data.segment.segment_group import SegmentGroup
+from data.alignment.geometry.spiral.params import TransitionCurveParams
+from data.alignment.transition.calulator import TransitionCalulator
+from data.segment.segment_group.segment_group import SegmentGroup
 from math_utils import calculate_bearing
-from data.alignment.spiral.geometry import TransitionCurvatureCalculator
-from data.alignment.spiral.params import TransitionCurveParams
 import math
 from matplotlib import pyplot as plt
 
@@ -20,39 +19,27 @@ def cal_internal_angle(bp_coordinate, ip_coordinate, ep_coordinate):
     return abs(ia)
 
 def test(bp,ip,ep,m:float,z:float,v:float,radius:float,sp_sta:float,target_sta:float):
-    transition = TransitionCurveParams()
-    transition.cal_params(
-        m=m,
+    ia = cal_internal_angle(bp, ip, ep)
+
+    transition = TransitionCurveParams(m=m,
         z=z,
         v=v,
         radius=radius,
-        internal_angle=cal_internal_angle(bp, ip, ep),
+        internal_angle=ia,
         sp_type=None
     )
+    transition.cal_params()
+
     group = SegmentGroup.create_from_pi(
-        group_id=0,
+        group_id=1,
         bp=bp,
         ip=ip,
         ep=ep,
         radius=radius,
         isspiral=True,
-        transition=transition
+        transition1=transition,
+        transition2=transition
     )
-
-    # 곡선 세그먼트 (IP)
-    bp_azimuth = calculate_bearing(group.bp_coordinate, group.ip_coordinate)
-    ep_azimuth = calculate_bearing(group.ip_coordinate, group.ep_coordinate)
-
-    # 좌표계산 호출
-    cal = TransitionCurvatureCalculator(
-        tr_params=transition,
-        h1=bp_azimuth,
-        h2=ep_azimuth,
-        ip=group.ip_coordinate,
-        direction=group.curve_direction
-    )
-    cal.run()
-
 
     #완화곡선 측점계산
     #SP~PC
@@ -70,6 +57,9 @@ def test(bp,ip,ep,m:float,z:float,v:float,radius:float,sp_sta:float,target_sta:f
     ps_curve.start_sta = pc_curve.end_sta
     ps_curve.end_sta = ps_curve.start_sta + ps_curve.length
 
+    # 접선장 및 CL계산
+    d1, d2, delta, lc = TransitionCalulator.cal_spec(radius, transition, transition, ia)
+
     # 임의의 지점에 대한 좌표 및 방위각
     pt,dr = None ,None
     for curve in (sp_curve, pc_curve, ps_curve):
@@ -81,7 +71,7 @@ def test(bp,ip,ep,m:float,z:float,v:float,radius:float,sp_sta:float,target_sta:f
 
     # 곡선 전체 시각화용 샘플 생성
     xs, ys = [], []
-    for s in range(int(sp_sta), int(ps_curve.end_sta), 20):
+    for s in range(int(sp_sta), int(ps_curve.end_sta), 40):
         for curve in (sp_curve, pc_curve, ps_curve):
             if curve.start_sta <= s <= curve.end_sta:
                 p, _ = curve.point_at_station(s)
@@ -96,31 +86,31 @@ def test(bp,ip,ep,m:float,z:float,v:float,radius:float,sp_sta:float,target_sta:f
     print(f'X1={transition.x1}')
     print(f'Y1={transition.y1}')
     print(f'접선각 θ={math.degrees(transition.theta_pc)}')
-    print(f'원곡선교각 ia={math.degrees(transition.circle_internal_angle)}')
+    print(f'원곡선교각 ia={math.degrees(pc_curve.delta)}')
     print(f'이정량 F={transition.f}')
     print(f'수평좌표차 K={transition.k}')
-    print(f'원곡선장 CL={transition.circle_length}')
+    print(f'원곡선장 CL={pc_curve.length}')
     print(f'완화곡선장 L={transition.l}')
     print(f'X2={transition.x2}')
-    print(f'접선장 TL={transition.total_tangent_length}')
-    print(f'곡선장 CL={transition.total_curve_length}')
+    print(f'접선장 TL={d1}')
+    print(f'곡선장 CL={sp_curve.length + pc_curve.length + ps_curve.length}')
     print('\n완화곡선 측점출력\n')
     print(f'SP={sp_curve.start_sta}')
     print(f'PC={pc_curve.start_sta}')
     print(f'CP={pc_curve.end_sta}')
     print(f'PS={ps_curve.end_sta}')
     print('\n완화곡선 좌표출력\n')
-    print(f'SP={cal.start_transition.x},{cal.start_transition.y}')
-    print(f'PC={cal.start_circle.x},{cal.start_circle.y}')
-    print(f'CP={cal.end_circle.x},{cal.end_circle.y}')
-    print(f'PS={cal.end_transition.x},{cal.end_transition.y}')
+    print(f'SP={sp_curve.start_coord.x},{sp_curve.start_coord.y}')
+    print(f'PC={sp_curve.end_coord.x},{sp_curve.end_coord.y}')
+    print(f'CP={ps_curve.start_coord.x},{ps_curve.start_coord.y}')
+    print(f'PS={ps_curve.end_coord.x},{ps_curve.end_coord.y}')
     print(f'\n임의 지점 {target_sta}의 좌표 및 접선 방위각=\nX={pt.x},Y={pt.y}, DR={90 - math.degrees(dr)}')
 
     fig, ax = plt.subplots()
-    ax.scatter(cal.start_transition.x, cal.start_transition.y, c='b')
-    ax.scatter(cal.start_circle.x, cal.start_circle.y, c='b')
-    ax.scatter(cal.end_circle.x, cal.end_circle.y, c='b')
-    ax.scatter(cal.end_transition.x, cal.end_transition.y, c='b')
+    ax.scatter(sp_curve.start_coord.x, sp_curve.start_coord.y, c='b')
+    ax.scatter(pc_curve.start_coord.x, pc_curve.start_coord.y, c='b')
+    ax.scatter(ps_curve.start_coord.x, ps_curve.start_coord.y, c='b')
+    ax.scatter(ps_curve.end_coord.x, ps_curve.end_coord.y, c='b')
     ax.scatter(pt.x, pt.y, c='r', marker='x')
 
     ax.scatter(ip.x, ip.y, c='g')
@@ -141,7 +131,7 @@ z=0.142
 v=120
 radius=1200
 sp_sta = 9414.4184
-target_sta = 9420
+target_sta = 10760
 test(
     bp=bp,
     ip=ip,
