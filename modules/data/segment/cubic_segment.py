@@ -28,7 +28,6 @@ class CubicSegment(Segment):
     end_azimuth: float = 0.0
     start_coord: Point2d = field(default_factory=lambda: Point2d(0, 0))
     end_coord: Point2d = field(default_factory=lambda: Point2d(0, 0))
-    direction: CurveDirection = CurveDirection.NULL
 
     @property
     def length(self):
@@ -44,6 +43,10 @@ class CubicSegment(Segment):
     def delta(self):
         """완화곡선 접선각"""
         return self.geom.params.theta_pc
+
+    @property
+    def direction(self):
+        return self.geom.direction
 
     def distance_to_point(self, point: Point2d) -> float:
         pass
