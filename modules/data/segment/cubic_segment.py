@@ -107,5 +107,7 @@ class CubicSegment(Segment):
         t = self.geom.local_tangent(s)
         if isexit:
             t = -t
-
-        return origin_az + t
+        if self.direction == CurveDirection.RIGHT:
+            return origin_az - t
+        else:
+            return origin_az + t
