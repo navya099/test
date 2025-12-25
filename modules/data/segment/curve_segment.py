@@ -24,6 +24,10 @@ class CurveSegment(Segment):
         return self._geom.end_angle
 
     @property
+    def delta(self):
+        return self._geom.delta
+
+    @property
     def radius(self) -> float:
         """곡선반경"""
         return self._geom.radius
