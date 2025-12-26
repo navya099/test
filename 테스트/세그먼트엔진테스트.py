@@ -3,11 +3,15 @@ import numpy as np
 
 from AutoCAD.point2d import Point2d
 from curvedirection import CurveDirection
+from data.alignment.geometry.simplecurve.curvegeometry import CurveGeometry
 from data.alignment.geometry.straight.straightgeometry import StraightGeometry
 from data.segment.curve_segment import CurveSegment
 from data.segment.straight_segment import StraightSegment
 from matplotlib import pyplot as plt
 import math
+
+from math_utils import calculate_bearing
+
 
 def test_st_segment(start_sta:float, pt,pt2,target_sta:float, isrevese=False, isoffset=False):
     """직선 세그먼트 테스트"""
@@ -29,7 +33,7 @@ def test_st_segment(start_sta:float, pt,pt2,target_sta:float, isrevese=False, is
 
     #메서드 테스트
     #distance_to_point
-    ps = pt.moved(0.5,350)
+    ps = Point2d(218104.85745254942,434202.1723730752)
     print(f'distance_to_userpoint : {seg.distance_to_point(ps)}')
     try:
         #point_at_station
@@ -87,12 +91,15 @@ def test_st_segment(start_sta:float, pt,pt2,target_sta:float, isrevese=False, is
         c='r',label='origin')
     ax.scatter(pt.x, pt.y, c='b',label='target_sta')
     ax.scatter(ps.x, ps.y, c='g',label='userpoint')
-
+    ax.set_aspect('equal')
     ax.legend()
     plt.show()
 
-def test_curve_segment(center,radius,start_angle,end_angle,direction, target_sta):
-    seg = CurveSegment.create(center=center,radius=radius,start_angle=start_angle,end_angle=end_angle,direction=direction)
+def test_curve_segment(radius,start_angle,end_angle,direction, target_sta, start_coord, end_coord):
+    seg = CurveSegment(
+           _geom=CurveGeometry(radius=radius,start_azimuth=start_angle,end_azimuth=end_angle,
+                               direction=direction,start_coord=start_coord,end_coord=end_coord)
+    )
     seg.start_sta = 9556.468
     seg.end_sta = seg.start_sta + seg.length
 
@@ -118,7 +125,7 @@ def test_curve_segment(center,radius,start_angle,end_angle,direction, target_sta
     # 메서드 테스트
     print('ww메서드 테스트ww')
     # distance_to_point
-    ps = Point2d(218469.926694075 ,434449.11002772 )
+    ps = Point2d(218451.7415  ,434440.3932 )
     print(f'임의점 PS : X={ps.x},Y={ps.y}\n')
     print(f'distance_to_userpoint : {seg.distance_to_point(ps)}')
     try:
@@ -157,31 +164,37 @@ def test_curve_segment(center,radius,start_angle,end_angle,direction, target_sta
         c='r', label='origin')
     ax.scatter(pt.x, pt.y, c='b', label='target_sta')
     ax.scatter(ps.x, ps.y, c='g', label='userpoint')
+    ax.scatter(seg.center_coord.x, seg.center_coord.y, c='g', label='center')
+
     ax.set_aspect('equal')
     ax.legend()
     plt.show()
 def main():
+
     bp = Point2d(217811.3092, 433993.7751)
     sp = Point2d(218230.7719, 434291.5622)
     bp_sta = 8900
     target_sta = 9260
-    # test_st_segment(start_sta=bp_sta,pt=bp,pt2=sp, target_sta=target_sta)
+    #test_st_segment(start_sta=bp_sta,pt=bp,pt2=sp, target_sta=target_sta)
 
+    ip = Point2d(218848.2178, 434729.9024)
     # 곡선 테스트
     pc = Point2d(218348.1816, 434371.4797)
     cp = Point2d(219408.5955, 434475.9736)
+    ps =Point2d(219539.3458 ,434420.5100 )
+    ep =Point2d( 220748.6982, 433879.1276 )
+    # 시작 , 끝 방위각 계산
+    bp_azimuth = calculate_bearing(bp, sp)
+
+    ep_azimuth = calculate_bearing(ps, ep)
 
     r = 1200
     target_sta = 9700
     dire = CurveDirection.RIGHT
-    center = circle_centers_from_two_points(pc, cp, r, dirction=dire)
-    start_angle = angle(center, pc)
-    end_angle = angle(center, cp)
+    t1 = math.atan(142 / (2 * r))
 
-    test_curve_segment(center, r, start_angle, end_angle, dire, target_sta)
+    test_curve_segment(r, bp_azimuth - t1, ep_azimuth + t1, dire, target_sta, pc,cp)
 
-def angle(center: Point2d, p):
-    return math.atan2(p.y - center.y, p.x - center.x)
 
 def circle_centers_from_two_points(p1, p2, R, dirction):
     dx = p2.x - p1.x
