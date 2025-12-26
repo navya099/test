@@ -101,9 +101,16 @@ class CurveGeometry(SegmentGeometry):
 
         # 점의 극각
         ang = math.atan2(vy, vx)
-
-        a0 = self.start_azimuth
-        a1 = self.end_azimuth
+        start_radius_angle = math.atan2(
+            self.start_coord.y - self.center_coord.y,
+            self.start_coord.x - self.center_coord.x
+        )
+        end_radius_angle = math.atan2(
+            self.end_coord.y - self.center_coord.y,
+            self.end_coord.x - self.center_coord.x
+        )
+        a0 = start_radius_angle
+        a1 = end_radius_angle
 
         # 방향 보정
         if self.direction == CurveDirection.RIGHT and a1 > a0:
