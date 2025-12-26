@@ -60,25 +60,28 @@ class CurveGeometry(SegmentGeometry):
         #반지름 각도
         angle = self._angle_at(s)
 
-        # 접선각 = 반지름각 ± 90°
+        # 접선각 = 시각각도 +-반지름각
         if self.direction == CurveDirection.LEFT:
-            tangent = angle + math.pi / 2
+            angle = self.start_azimuth + angle
         else:
-            tangent = angle - math.pi / 2
+            angle = self.start_azimuth - angle
 
-        # 정규화
-        return math.atan2(math.sin(tangent), math.cos(tangent))
+        return angle
 
     def point_at(self, s: float, offset: float = 0.0) -> Point2d:
-        # 반지름 각도
-        angle = self._angle_at(s)
+        #접선 각도
+        angle = self.tangent_at(s)
+        #좌표 = 접선각 +- 90
+        if self.direction == CurveDirection.LEFT:
+            angle = angle - math.pi / 2
+        else:
+            angle = angle + math.pi / 2
         # 원 위 점
         pt = self.center_coord.moved(angle, self.radius)
 
         if offset != 0.0:
-            tan = self.tangent_at(s)
             # 좌(-), 우(+): 진행방향 기준
-            pt.move(tan - math.pi / 2, offset)
+            pt.move(angle, offset)
 
         return pt
 
@@ -155,7 +158,7 @@ class CurveGeometry(SegmentGeometry):
     def _angle_at(self, s: float) -> float:
         """s 위치의 반지름 각도 (center 기준)"""
         theta = s / self.radius
-        return self.end_azimuth - theta
+        return theta
 
     def reversed(self):
         #좌표 스왑
