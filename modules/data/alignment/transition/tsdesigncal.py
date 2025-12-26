@@ -72,26 +72,18 @@ class TransitionDesignCalculator:
             az_sc = bp_azimuth - entry_params.theta_pc
             az_cs = az_sc - delta
 
-        if direction == CurveDirection.LEFT:
-            arc_start_angle = az_sc + math.pi /2
-            arc_end_angle = arc_start_angle + delta
-        else:
-            h1_revese = az_sc + math.pi
-            h2_revese = az_cs + math.pi
-            arc_start_angle = h2_revese - math.pi / 2
-            arc_end_angle = arc_start_angle + delta
-
         az_st = ep_azimuth
 
         # 지오메트리 생성
         entry_geometry = SpiralGeometry(direction=direction, params=entry_params)
         exit_geometry = SpiralGeometry(direction=direction, params=exit_params)
         curve_geometry = CurveGeometry(
-            center = cc,
             radius=radius,
             direction=direction,
-            start_angle=arc_start_angle,
-            end_angle=arc_end_angle,
+            start_azimuth=az_sc,
+            end_azimuth=az_cs,
+            start_coord=sc,
+            end_coord=cs,
         )
         # 세그먼트 생성은 밖에서 처리
 
