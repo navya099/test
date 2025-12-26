@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from AutoCAD.point2d import Point2d
 from curvedirection import CurveDirection
@@ -9,26 +9,28 @@ from data.alignment.geometry.segmentgeometry import SegmentGeometry
 class CurveGeometry(SegmentGeometry):
     """단곡선 지오메트리 엔진
     Attributes:
-        center: 중심점
         radius: 곡선반경
-        start_angle: 시작 각도
-        end_angle: 끝 각도
         direction: 방향
+        start_coord: 시작 좌표
+        end_coord: 끝 좌표
+        start_azimuth: 시작 각도
+        end_azimuth: 끝 각도
         """
-    center: Point2d
     radius: float
-    start_angle: float   # rad
-    end_angle: float     # rad
-    direction: CurveDirection
+    start_coord: Point2d = field(default_factory=lambda: Point2d(0, 0))
+    end_coord: Point2d= field(default_factory=lambda: Point2d(0, 0))
+    start_azimuth: float = 0.0
+    end_azimuth: float = 0.0
+    direction: CurveDirection = CurveDirection.NULL
 
     @property
     def delta(self) -> float:
-        """중심각 (양수)"""
-        return abs(self.end_angle - self.start_angle)
+        """교각 IA"""
+        return abs(self.end_azimuth - self.start_azimuth)
 
     @property
     def length(self) -> float:
-        """호의 길이"""
+        """곡선장 CL"""
         return self.radius * self.delta
 
     @property
@@ -37,14 +39,12 @@ class CurveGeometry(SegmentGeometry):
         return self.radius * math.tan(self.delta / 2)
 
     @property
-    def start_coord(self) -> Point2d:
-        """시작 좌표"""
-        return self.center.moved(self.start_angle, self.radius)
-
-    @property
-    def end_coord(self) -> Point2d:
-        """끝 좌표"""
-        return self.center.moved(self.end_angle, self.radius)
+    def center_coord(self) -> Point2d:
+        """단곡선 중심점"""
+        if self.direction == CurveDirection.RIGHT:
+            return self.start_coord.moved(self.start_azimuth - math.pi / 2, self.radius)
+        else:
+            return self.start_coord.moved(self.start_azimuth + math.pi / 2, self.radius)
 
     @property
     def external_secant(self) -> float:
@@ -73,7 +73,7 @@ class CurveGeometry(SegmentGeometry):
         # 반지름 각도
         angle = self._angle_at(s)
         # 원 위 점
-        pt = self.center.moved(angle, self.radius)
+        pt = self.center_coord.moved(angle, self.radius)
 
         if offset != 0.0:
             tan = self.tangent_at(s)
@@ -83,7 +83,7 @@ class CurveGeometry(SegmentGeometry):
         return pt
 
     def project_at(self, p: Point2d) -> tuple[Point2d, float]:
-        cx, cy = self.center.x, self.center.y
+        cx, cy = self.center_coord.x, self.center_coord.y
         px, py = p.x, p.y
 
         # 중심 → 점
@@ -99,8 +99,8 @@ class CurveGeometry(SegmentGeometry):
         # 점의 극각
         ang = math.atan2(vy, vx)
 
-        a0 = self.start_angle
-        a1 = self.end_angle
+        a0 = self.start_azimuth
+        a1 = self.end_azimuth
 
         # 방향 보정
         if self.direction == CurveDirection.RIGHT and a1 > a0:
@@ -116,7 +116,7 @@ class CurveGeometry(SegmentGeometry):
 
         # ── 호 내부 투영
         if min(a0, a1) <= ang <= max(a0, a1):
-            proj = self.center.moved(ang, self.radius)
+            proj = self.center_coord.moved(ang, self.radius)
 
             # 중심각 → s
             delta = ang - a0
@@ -155,11 +155,18 @@ class CurveGeometry(SegmentGeometry):
     def _angle_at(self, s: float) -> float:
         """s 위치의 반지름 각도 (center 기준)"""
         theta = s / self.radius
-        return self.end_angle - theta
+        return self.end_azimuth - theta
 
     def reversed(self):
-        self.start_angle = self.end_angle  # rad
-        self.end_angle = self.start_angle # rad
+        #좌표 스왑
+        new_end_coord = self.start_coord.copy()
+        new_start_coord = self.end_coord.copy()
+        self.start_coord = new_start_coord
+        self.end_coord = new_end_coord
+        #시각각 스왑
+        self.start_azimuth = self.end_azimuth + math.pi  #반대이므로 180도 더하기
+        self.end_azimuth = self.start_azimuth + math.pi # rad
+        #방향 뒤집기
         if self.direction == CurveDirection.LEFT:
             self.direction = CurveDirection.RIGHT
         else:
@@ -174,8 +181,8 @@ class CurveGeometry(SegmentGeometry):
     def arc_length_between(self, p1: Point2d, p2: Point2d) -> float:
         """호 위의 두점 사이의 호의 길이"""
 
-        a1 = math.atan2(p1.y - self.center.y, p1.x - self.center.x)
-        a2 = math.atan2(p2.y - self.center.y, p2.x - self.center.x)
+        a1 = math.atan2(p1.y - self.center_coord.y, p1.x - self.center_coord.x)
+        a2 = math.atan2(p2.y - self.center_coord.y, p2.x - self.center_coord.x)
 
         delta = a2 - a1
 
