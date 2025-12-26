@@ -1,6 +1,9 @@
+from data.alignment.geometry.segmentgeometry import SegmentGeometry
+from data.alignment.geometry.straight.straightgeometry import StraightGeometry
 from data.segment.curve_segment import CurveSegment
 from data.segment.exception.segment_exception import SegmentNotFoundError
-from data.segment.segment_group import SegmentGroup
+from data.segment.segment_group.segment_group import SegmentGroup
+
 from data.segment.straight_segment import StraightSegment
 from point2d import Point2d
 
@@ -30,14 +33,15 @@ class SegmentManager:
         if prev_idx is not None:
             prev_seg = self.segment_list[prev_idx]
             if isinstance(prev_seg, StraightSegment):
-                prev_seg.end_coord = group.segments[0].start_coord
-
+                geom = StraightGeometry(start_coord=prev_seg.start_coord,end_coord=group.segments[0].start_coord)
+                prev_seg._geom = geom
         # 다음 직선
         next_idx = group.segments[-1].next_index
         if next_idx is not None:
             next_seg = self.segment_list[next_idx]
             if isinstance(next_seg, StraightSegment):
-                next_seg.start_coord = group.segments[-1].end_coord
+                geom = StraightGeometry(start_coord=group.segments[-1].end_coord, end_coord=next_seg.end_coord)
+                next_seg._geom = geom
 
     def adjust_adjacent_straights_without_group(self, old_coord: Point2d, new_coord: Point2d, tol: float = 1e-6):
         """
