@@ -1,11 +1,12 @@
 from AutoCAD.point2d import Point2d
 from data.alignment.exception.alignment_error import NotEnoughPIPointError, InvalidGeometryError, PIOutOfRangeError, \
-    NoUpdatePIError, NoDeletePIError, RadiusError, GroupNullError, AlreadyHasCurveError
+    NoUpdatePIError, NoDeletePIError, RadiusError, GroupNullError
+from data.alignment.geometry.straight.straightgeometry import StraightGeometry
 from data.segment.exception.segment_exception import SegmentListNullError
 from data.segment.group_manager import GroupManager
 from data.pi_manager import PIManager
 from data.segment.segment import Segment
-from data.segment.segment_group import SegmentGroup
+from data.segment.segment_group.segment_group import SegmentGroup
 from data.segment.segment_manager import SegmentManager
 from data.segment.straight_segment import StraightSegment
 
@@ -70,7 +71,7 @@ class SegmentCollection:
         # 이미 커브가 존재하면 중복 방지
         existing_group = self._group_manager.groups[index]
         if existing_group:
-            raise AlreadyHasCurveError(index)
+            raise ValueError(index)
 
         #radius 리스트 갱신
         self._pi_manager.radius_list[index] = radius
@@ -138,7 +139,7 @@ class SegmentCollection:
 
         # 커브가 없으면 종료
         if not target_group:
-            raise GroupNullError()
+            raise GroupNullError(None)
 
         # 🧩 1. 그룹 내부 세그먼트 제거
         prev_seg, next_seg = self._segment_manager.remove_segments(target_group)
@@ -149,8 +150,17 @@ class SegmentCollection:
         # 🧩 3. 삭제된 양끝 직선 재연결
         if prev_seg and next_seg:
             # 기존 커브 구간을 하나의 직선으로 대체
-            prev_seg.end_coord=target_pi
-            next_seg.start_coord=target_pi
+            new_geom = StraightGeometry()
+            new_geom.start_coord = prev_seg.start_coord
+            new_geom.end_coord = target_pi
+            prev_seg._geom = new_geom
+
+            new_geom2 = StraightGeometry()
+            new_geom2.start_coord = target_pi
+            new_geom2.end_coord = next_seg.end_coord
+
+            next_seg._geom = new_geom2
+
         self._update_prev_next_entity_id()
 
         # 🧩 4. 인접 세그먼트 보정
@@ -266,7 +276,7 @@ class SegmentCollection:
         else:
             bp = self.coord_list[i]
             ep = self.coord_list[i + 1]
-            straight = StraightSegment(start_coord=bp, end_coord=ep)
+            straight = StraightSegment(_geom=StraightGeometry(start_coord=bp, end_coord=ep))
             if rebuild_mode:
                 self.segment_list.append(straight)
             else:
@@ -276,13 +286,14 @@ class SegmentCollection:
         if len(self.segment_list) > 0:
             last_straight = self.segment_list[-1]
             if isinstance(last_straight, StraightSegment):
-                last_straight.end_coord = group.segments[0].start_coord
+                geom=StraightGeometry(start_coord=last_straight.start_coord,end_coord=group.segments[0].start_coord)
+                last_straight._geom = geom
 
     def _append_next_straight(self, group: SegmentGroup, i):
         if i + 1 < len(self.coord_list):
             next_bp = group.segments[-1].end_coord
             next_ep = self.coord_list[i + 1]
-            straight = StraightSegment(start_coord=next_bp, end_coord=next_ep)
+            straight = StraightSegment(_geom=StraightGeometry(start_coord=next_bp, end_coord=next_ep))
             self.segment_list.append(straight)
 
     def _update_prev_next_entity_id(self):
@@ -468,7 +479,7 @@ class SegmentCollection:
         self._update_prev_next_entity_id()
 
         #신설
-        new_seg = StraightSegment(start_coord=prev_seg.start_coord, end_coord=next_seg.end_coord)
+        new_seg = StraightSegment(_geom=StraightGeometry(start_coord=prev_seg.start_coord, end_coord=next_seg.end_coord))
         # 리스트에 추가
         self._segment_manager.segment_list.insert(prev_seg.current_index, new_seg)
 
@@ -500,7 +511,7 @@ class SegmentCollection:
             self._segment_manager.delete_segment_in_list(next_seg)
 
         # 4️⃣ 새 직선 생성
-        new_seg = StraightSegment(start_coord=prev_pi, end_coord=next_pi)
+        new_seg = StraightSegment(_geom=StraightGeometry(start_coord=prev_pi, end_coord=next_pi))
         insert_index = prev_seg.current_index if prev_seg else 0
         self._segment_manager.segment_list.insert(insert_index, new_seg)
         self._update_prev_next_entity_id()
