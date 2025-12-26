@@ -25,9 +25,9 @@ def _segment_to_dict(cl):
     }
     if isinstance(cl, CurveSegment):
         seg_data.update({
-            "IA": degrees_to_dms(math.degrees(cl.internal_angle)),
+            "IA": degrees_to_dms(math.degrees(cl.delta)),
             "radius": cl.radius,
-            "ip_coord": {"x": cl.ip_coordinate.x, "y": cl.ip_coordinate.y},
+            "ip_coord": 'j',
             "tangent_length": cl.tangent_length,
             "external_secant": cl.external_secant,
             "middle_oridante": cl.middle_oridante,
