@@ -17,9 +17,8 @@ class SimpleCurveDesignCalculator:
             Return:
                 curve_geomtry
             """
-        bp_coordinate = inputdata.bp_coordinate
         ip = inputdata.ip_coordinate
-        ep_coordinate = inputdata.ep_coordinate
+
         ia = inputdata.internal_angle
         radius = inputdata.radius
         direction = inputdata.direction
@@ -39,8 +38,9 @@ class SimpleCurveDesignCalculator:
         curve_geomtry = CurveGeometry(
             radius=radius,
             direction=direction,
-            start_angle=bp_azimuth,
-            end_angle=ep_azimuth,
-            center=cc,
+            start_azimuth=bp_azimuth,
+            end_azimuth=ep_azimuth,
+            start_coord=bc,
+            end_coord=ec
         )
         return curve_geomtry
