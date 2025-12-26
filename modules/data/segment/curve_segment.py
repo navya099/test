@@ -9,23 +9,28 @@ from data.segment.segment import Segment
 @dataclass
 class CurveSegment(Segment):
     """
-    구간별 곡선 세그먼트 저장용 클래스 (단곡선).
+    단곡선 세그먼트.
     """
     _geom: CurveGeometry = CurveGeometry
 
     @property
     def start_azimuth(self) -> float:
-        """시작 각도"""
-        return self._geom.start_angle
+        """시작 방위각"""
+        return self._geom.start_azimuth
 
     @property
     def end_azimuth(self) -> float:
-        """끝 각도"""
-        return self._geom.end_angle
+        """끝 방위각"""
+        return self._geom.end_azimuth
 
     @property
     def delta(self):
+        """교각"""
         return self._geom.delta
+
+    @property
+    def direction(self) -> CurveDirection:
+        return self._geom.direction
 
     @property
     def radius(self) -> float:
@@ -45,12 +50,7 @@ class CurveSegment(Segment):
     @property
     def center_coord(self) -> Point2d:
         """중심 좌표"""
-        return self._geom.center
-
-    @property
-    def direction(self) -> CurveDirection:
-        """방향"""
-        return self._geom.direction
+        return self._geom.center_coord
 
     @property
     def tangent_length(self):
@@ -87,7 +87,7 @@ class CurveSegment(Segment):
         if station < self.start_sta or station > self.end_sta:
             raise ValueError("Station이 세그먼트 범위를 벗어남")
         #거리 s
-        s = station - self.start_sta # 곡선 시작점으로부터의 곡선상 거리
+        s = station - self.start_sta
         return self._geom.point_at(s, offset), self._geom.tangent_at(s)
 
     def station_at_point(self, coord: Point2d) -> tuple[float, float]:
@@ -116,12 +116,18 @@ class CurveSegment(Segment):
     def split_to_segment(self, coord: Point2d):
         # 다음 세그먼트 생성
         s = self._geom.arc_length_between(p1=self.start_coord,p2=coord)
-        new_seg = CurveSegment.create(
-                radius= self.radius,
-                start_angle= s / self.radius,  # l = r * θ , θ = l / r
-                end_angle= self.end_azimuth,     # rad
-                direction= self.direction,
-                center= self.center_coord
-            )
+        # 2. 분할 지점의 접선각 (이게 핵심)
+        split_azimuth = self._geom.tangent_at(s)
+
+        new_seg = CurveSegment()
+        new_geom = CurveGeometry(
+                        radius= self.radius,
+                        start_azimuth= split_azimuth,#s의 접선각
+                        end_azimuth= self.end_azimuth,     # rad
+                        direction= self.direction,
+                        start_coord= coord,
+                        end_coord= self.end_coord
+        )
+        new_seg._geom = new_geom
 
         return new_seg
