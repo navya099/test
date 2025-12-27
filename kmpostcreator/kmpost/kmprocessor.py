@@ -17,7 +17,7 @@ class KMPostProcessor:
         file_path = os.path.join(source_directory, f'{post_type}.dxf')
         modified_path = os.path.join(work_directory, f'{post_type}-수정됨.dxf')
 
-        lineprogram = LineProcessor(file_path, modified_path, data, alignmenttype)
+        lineprogram = LineProcessor(file_path, modified_path, data.km_string, data.m_string, alignmenttype)
         mode = 'km' if post_type == 'km표' else 'm'
         lineprogram.replace_text_in_dxf(mode=mode)
 
