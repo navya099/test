@@ -12,7 +12,7 @@ class KMGenerator(BaseObjectGenerator):
         self.base_source_directory = 'c:/temp/km_post/소스/'
         self.work_directory = 'c:/temp/km_post/result/'
         self.source_directory = ''
-        self.structure_list = []
+        self.structure_processor = None
 
     def generate(self):
         try:
@@ -33,19 +33,21 @@ class KMGenerator(BaseObjectGenerator):
             self.log(f"마지막 측점 = {end_sta}")
 
             self.log("구조물 정보 불러오는 중...")
-            self.structure_list = self.load_structures()
+            self.structure_processor = self.load_structures()
 
-            if self.structure_list:
+            if self.structure_processor:
                 self.log("구조물 정보가 성공적으로 로드되었습니다.")
             else:
                 self.log("구조물 정보가 없습니다.")
 
             interval = 100 if self.state.alignment_type == '도시철도' else 200
             self.log("KM Object 생성 중...")
-            builder = KMObjectBuilder(start_sta, end_sta, structure_list=self.structure_list,
+            builder = KMObjectBuilder(start_sta, end_sta, structure_processor=self.structure_processor,
                                       alignmenttype=self.state.alignment_type,
                                       offset=self.state.offset,
-                                      interval=interval)
+                                      interval=interval,
+                                      reverse_start=self.state.reverse_start,
+                                      is_reverse=self.state.is_reverse)
             builder_results = builder.run()
 
             # Output Manager에게 위임
