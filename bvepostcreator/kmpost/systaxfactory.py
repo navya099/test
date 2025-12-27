@@ -12,10 +12,10 @@ class KMBVESyntaxFactory:
     @staticmethod
     def create_km_index_data(idx, sta, work_directory):
         object_folder = work_directory.split("Object/")[-1]
-        data = f'.freeobj({idx}) {object_folder}/{sta}.csv\n'
+        data = f'.freeobj({idx}) {object_folder}/{sta.after_sta}.csv\n'
         return data
 
     @staticmethod
     def create_km_post_data(idx, sta, struc):
-        data = f'{sta},.freeobj 0;{idx};,;{struc}\n'
+        data = f'{sta.origin_sta},.freeobj 0;{idx};,;{struc}\n'
         return data
