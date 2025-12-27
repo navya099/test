@@ -1,6 +1,6 @@
 # infrastructure/filesystem.py
 import os
-
+import shutil
 class FileSystemService:
     @staticmethod
     def ensure_directory(path, logger=None):
@@ -29,6 +29,7 @@ class FileSystemService:
 
         # 대상 폴더가 존재하면 삭제 후 다시 생성
         if os.path.exists(target_directory):
+
             shutil.rmtree(target_directory)  # 대상 폴더 삭제
         os.makedirs(target_directory, exist_ok=True)  # 대상 폴더 재생성
 
