@@ -56,6 +56,7 @@ class AppController:
 
         runner = MainRunner(
             state=self.state,
-            logger=self.log
+            logger=self.log,
+            generator_type=self.state.posttype
         )
         runner.run()
