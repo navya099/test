@@ -1,5 +1,9 @@
 import pandas as pd
 
+from common.stationmanager import StationManager
+from model.stationdata import StationData
+
+
 class StructureProcessor:
     """구조물처리 프로세서"""
 
@@ -13,34 +17,33 @@ class StructureProcessor:
         self.apply_brokenchain_to_structure(brokenchain)
 
     def find_structure_section(self):
-        """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 메서드"""
+        """xlsx 파일 읽고 교량과 터널 정보를 StationData로 반환"""
         self.structure_list = {'bridge': [], 'tunnel': []}
-
-        # xlsx 파일 읽기
 
         df_bridge = pd.read_excel(self.filepath, sheet_name='교량', header=None)
         df_tunnel = pd.read_excel(self.filepath, sheet_name='터널', header=None)
 
-        # 첫 번째 행을 열 제목으로 설정
         df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
         df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
 
-        # 교량 구간과 터널 구간 정보
         for _, row in df_bridge.iterrows():
-            self.structure_list['bridge'].append((row['br_START_STA'], row['br_END_STA']))
+            start = StationData(origin_sta=row['br_START_STA'])
+            end = StationData(origin_sta=row['br_END_STA'])
+            self.structure_list['bridge'].append((start, end))
 
         for _, row in df_tunnel.iterrows():
-            self.structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
+            start = StationData(origin_sta=row['tn_START_STA'])
+            end = StationData(origin_sta=row['tn_END_STA'])
+            self.structure_list['tunnel'].append((start, end))
 
-    @staticmethod
-    def define_bridge_tunnel_at_station(sta, structure_list):
+    def define_bridge_tunnel_at_station(self, sta):
         """sta가 교량/터널/토공 구간에 해당하는지 구분하는 메서드"""
-        for start, end in structure_list['bridge']:
-            if start <= sta <= end:
+        for start, end in self.structure_list['bridge']:
+            if start.after_sta <= sta <= end.after_sta:
                 return '교량'
 
-        for start, end in structure_list['tunnel']:
-            if start <= sta <= end:
+        for start, end in self.structure_list['tunnel']:
+            if start.after_sta <= sta <= end.after_sta:
                 return '터널'
 
         return '토공'
@@ -52,15 +55,26 @@ class StructureProcessor:
         :param brokenchain: float, 오프셋 값 (예: 0.0 또는 양수/음수)
         """
         if brokenchain == 0.0:
-            # 오프셋이 없으면 원본 그대로 반환
-            return
-
-        updated_structure = {'bridge': [], 'tunnel': []}
+            return  # 오프셋이 없으면 그대로
 
         for key in ['bridge', 'tunnel']:
-            for start, end in self.structure_list.get(key, []):
-                new_start = start + brokenchain
-                new_end = end + brokenchain
-                updated_structure[key].append((new_start, new_end))
+            for start_sd, end_sd in self.structure_list.get(key, []):
+                start_sd.after_sta = start_sd.origin_sta + brokenchain
+                end_sd.after_sta = end_sd.origin_sta + brokenchain
 
-        self.structure_list = updated_structure
+    def apply_after_station_to_structure(self, reverse_start, last_block):
+        """
+        structure_list의 각 구간에 역측점 적용
+        """
+        for key in ['bridge', 'tunnel']:
+            for start_sd, end_sd in self.structure_list.get(key, []):
+                start_sd.after_sta = StationManager.to_reverse_station(last_block, reverse_start, start_sd.origin_sta)
+                end_sd.after_sta = StationManager.to_reverse_station(last_block, reverse_start, end_sd.origin_sta)
+
+    def reverse(self):
+        """구간 시작/끝 뒤집기"""
+        for key in ['bridge', 'tunnel']:
+            reversed_list = []
+            for start_sd, end_sd in self.structure_list.get(key, []):
+                reversed_list.append((end_sd, start_sd))
+            self.structure_list[key] = reversed_list
