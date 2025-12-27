@@ -3,6 +3,7 @@ from infrastructure.filemanager import FileSystemService
 import os
 
 from kmpost.kmbuilder import KMObjectBuilder
+from kmpost.kmouputmanager import KMOutputManager
 
 
 class KMGenerator(BaseObjectGenerator):
@@ -44,28 +45,16 @@ class KMGenerator(BaseObjectGenerator):
             builder = KMObjectBuilder(start_sta, end_sta, structure_list=self.structure_list,
                                       alignmenttype=self.state.alignment_type,
                                       offset=self.state.offset,
-                                      interval=interval,
-                                      source_directory=self.source_directory,
-                                      work_directory=self.work_directory,
-                                      target_directory=self.state.target_directory)
-            index_datas, post_datas = builder.run()
+                                      interval=interval)
+            builder_results = builder.run()
 
-            index_file = os.path.join(self.work_directory, 'km_index.txt')
-            post_file = os.path.join(self.work_directory, 'km_post.txt')
-
-            self.log(f"파일 작성: {index_file}")
-            FileSystemService.create_txt(index_file, index_datas)
-
-            self.log(f"파일 작성: {post_file}")
-            FileSystemService.create_txt(post_file, post_datas)
-
-            self.log("txt 작성이 완료됐습니다.")
-
-            # 파일 복사
-            self.log("결과 파일 복사 중...")
-            FileSystemService.copy_all_files(self.work_directory, self.state.target_directory,
-                                             ['.csv', '.png', '.txt', '.jpg'], ['.dxf', '.ai'])
-
+            # Output Manager에게 위임
+            output_manager = KMOutputManager(self.work_directory, self.state.target_directory, self.state.offset)
+            index_datas ,post_datas = output_manager.generate_images_csv_bve(builder_results, self.source_directory, self.state.alignment_type)
+            self.log("파일 저장 중...")
+            output_manager.save_txt_files(index_datas, post_datas)
+            self.log("파일 복사 중...")
+            output_manager.copy_result_files()
             self.log("모든 작업이 완료됐습니다.")
 
         except Exception as e:
