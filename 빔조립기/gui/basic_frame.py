@@ -35,9 +35,3 @@ class BasicInfoFrame(ttk.LabelFrame):
         for i, (label, var) in enumerate(fields):
             ttk.Label(self, text=label).grid(row=i, column=0, sticky="w", padx=5)
             ttk.Entry(self, textvariable=var, width=15).grid(row=i, column=1, padx=5)
-
-        ttk.Label(self, text="선로 종류").grid(row=5, column=0, sticky="w")
-        ttk.Combobox(
-            self, textvariable=self.railtype,
-            values=["일반철도", "도시철도", "준고속철도", '고속철도'], width=15
-        ).grid(row=5, column=1)
