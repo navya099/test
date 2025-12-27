@@ -32,8 +32,8 @@ class KMOutputManager:
         index_datas= []
         post_datas = []
         kmsystaxf = KMBVESyntaxFactory()
-        for i, (sta, post_type, structure) in enumerate(builder_results):
-            imgdata = KMImageDataFactory.create(post_type, sta, structure)
+        for i, (stadata, post_type, structure) in enumerate(builder_results):
+            imgdata = KMImageDataFactory.create(post_type, stadata.after_sta, structure)
             KMImageGenerator.generate(imgdata, post_type, alignment_type, source_directory, self.work_directory)
             CSVManager.copy_and_export_csv(
                 imgdata.openfile_name, imgdata.imgname, post_type,
@@ -41,7 +41,7 @@ class KMOutputManager:
                 work_directory=self.work_directory,
                 offset=self.offset
             )
-            index, post = kmsystaxf.create(i=i, station=sta, structure=structure, target_directory=self.target_directory)
+            index, post = kmsystaxf.create(i=i, station=stadata, structure=structure, target_directory=self.target_directory)
             index_datas.append(index)
             post_datas.append(post)
         return index_datas, post_datas
