@@ -20,7 +20,7 @@ class PreRunSetup:
         self.state.isbrokenchain = True
         self.state.brokenchain = value
 
-        offset = self.dialogs.select_offset()
+        offset = self.dialogs.ask_offset()
         if offset is None:
             offset = 0.0
         self.state.offset = offset
