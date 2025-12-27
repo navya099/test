@@ -1,3 +1,13 @@
+import os
+import re
+
+import ezdxf
+import numpy as np
+from ezdxf.addons.drawing import RenderContext, Frontend
+from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+from matplotlib import pyplot as plt
+from PIL import Image
+
 class DXF2IMG:
     """DXF 파일을 이미지로 변환하는 클래스"""
     default_img_format = '.png'
@@ -49,6 +59,7 @@ class DXF2IMG:
     def trim_and_resize_image(self, input_path, output_path, target_size=(500, 300)):
         """bbox 없이 이미지 여백을 직접 제거하고 500x300 크기로 조정"""
         try:
+
             img = Image.open(input_path).convert("RGB")
             np_img = np.array(img)
 
