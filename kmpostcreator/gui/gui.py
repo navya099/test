@@ -1,8 +1,8 @@
 import tkinter as tk
 
-from kmpostcreator.controller.appcontroller import AppController
-from kmpostcreator.gui.tk_dialogs import TkDialogService
-from kmpostcreator.gui.widget import GUIWidget
+from controller.appcontroller import AppController
+from gui.tk_dialogs import TkDialogService
+from gui.widget import GUIWidget
 
 
 class KmObjectApp(tk.Tk):
