@@ -68,3 +68,21 @@ class TkDialogService(DialogService):
                 return float(value)
             except ValueError:
                 messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
+
+    def show_select_function(self):
+        result = {"value": None}
+
+        top = tk.Toplevel(self.master)
+        top.title("제표 종류 선택")
+
+        def select(v):
+            result["value"] = v
+            top.destroy()
+
+        for opt in ["거리표", "곡선표", "기울기표", "구조물표"]:
+            ttk.Button(top, text=opt, command=lambda v=opt: select(v)).pack(pady=5)
+
+        top.grab_set()
+        top.wait_window()
+
+        return result["value"]
