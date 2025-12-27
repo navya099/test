@@ -13,16 +13,17 @@ class PreRunSetup:
         self.state.alignment_type = alignment
 
         exists, value = self.dialogs.ask_brokenchain()
-        if not exists:
-            self.state.isbrokenchain = False
-            return True
-
-        self.state.isbrokenchain = True
-        self.state.brokenchain = value
+        self.state.isbrokenchain = exists
+        self.state.brokenchain = value if exists else 0.0
 
         offset = self.dialogs.ask_offset()
         if offset is None:
             offset = 0.0
         self.state.offset = offset
+
+        posttype = self.dialogs.show_select_function()
+        if posttype is None:
+            return False
+        self.state.posttype = posttype
 
         return True
