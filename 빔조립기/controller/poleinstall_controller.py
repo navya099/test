@@ -59,12 +59,23 @@ class PoleInstall:
 
         text += ',;브래킷\n'
         n = len(self.beam.brackets)
-        s = 0.5
+        s = 1
+        offs = self.offsets(n, s)  # 🔥 한 번만 계산
+
         for i ,br in enumerate(self.beam.brackets):
-            offset = (i - (n - 1) / 2) * s
+            offset = offs[i]
             station = self.station + offset
             text += f'{station}\n'
             text += f',;{br.rail_no}\n'
             text += f'.freeobj {br.rail_no};{br.index};{br.xoffset};{br.yoffset};{br.rotation};,;{br.type}\n'
 
         return text
+
+    @staticmethod
+    def offsets(n, s):
+        if n == 1:
+            return [0.0]
+        if n == 2:
+            return [-s * 0.5, s * 0.5]
+        # n >= 3
+        return [(i - (n - 1) / 2) * s * 0.5 for i in range(n)]
