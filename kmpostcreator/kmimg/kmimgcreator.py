@@ -1,10 +1,15 @@
-class KMImgCreator:
-    def __init__(self):
-        pass
+import textwrap
 
-    def create_km_image(text, bg_color, filename, text_color, work_directory, image_size=(500, 300), font_size=40):
+from PIL import Image, ImageDraw, ImageFont
+
+from model.bveimgdata import BVEImageData
+
+
+class KMImgCreator:
+    @staticmethod
+    def create_km_image(imgdata: BVEImageData, work_directory, image_size=(500, 300), font_size=40):
         # 이미지 생성
-        img = Image.new('RGB', image_size, color=bg_color)
+        img = Image.new('RGB', image_size, color=imgdata.img_bg_color)
         draw = ImageDraw.Draw(img)
 
         # 폰트 설정
@@ -12,6 +17,7 @@ class KMImgCreator:
             font = ImageFont.truetype('c:/windows/fonts/HYGTRE.ttf', font_size)
         except:
             font = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', font_size)
+
         # 텍스트 박스 크기 (25px 여백 적용)
         box_x1, box_y1 = 25, 25
         box_x2, box_y2 = image_size[0] - 25, image_size[1] - 25
@@ -19,7 +25,7 @@ class KMImgCreator:
         box_height = box_y2 - box_y1
 
         # 줄바꿈 적용
-        wrapped_text = textwrap.fill(text, width=15)  # 글자 수 제한
+        wrapped_text = textwrap.fill(imgdata.km_string, width=15)  # 글자 수 제한
         text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
         text_width = text_bbox[2] - text_bbox[0]
         text_height = text_bbox[3] - text_bbox[1]
@@ -37,18 +43,15 @@ class KMImgCreator:
         text_y = box_y1 + (box_height - text_height) // 2
 
         # 이미지에 텍스트 추가
-        draw.text((text_x, text_y), wrapped_text, font=font, fill=text_color)
+        draw.text((text_x, text_y), wrapped_text, font=font, fill=imgdata.txt_color)
 
         # 이미지 저장
-        if not filename.endswith('.png'):
-            filename += '.png'
-        final_dir = work_directory + filename
-        img.save(final_dir)
+        KMImgCreator.save_png(img, imgdata.imgname, work_directory)
 
-    def create_m_image(text, text2, bg_color, filename, text_color, work_directory, image_size=(500, 300), font_size=40,
+    @staticmethod
+    def create_m_image(imgdata: BVEImageData, work_directory, image_size=(500, 300), font_size=40,
                        font_size2=40):
-        # 이미지 생성
-        img = Image.new('RGB', image_size, color=bg_color)
+        img = Image.new('RGB', image_size, color=imgdata.img_bg_color)
         draw = ImageDraw.Draw(img)
 
         # 폰트 설정
@@ -58,40 +61,50 @@ class KMImgCreator:
         except:
             font = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', font_size)
             font2 = ImageFont.truetype('c:/windows/fonts/H2GTRE.ttf', font_size2)
-        # km문자 위치
-        # 글자수별로 글자 분리
-        if len(text) == 1:
-            text_x = 80
-            text_y = 220
-        elif len(text) == 2:
-            text_x = 35
-            text_y = 220
-        elif len(text) == 3:
-            text_x = -10
-            text_y = 220
-        else:
-            text_x = 150
-            text_y = 220
 
-        # m문자 위치
-        text_x2 = 60
-        text_y2 = 22
+        KM_DIGIT_POS = {
+            1: (80, 220),
+            2: (35, 220),
+            3: None,  # 특수 처리
+        }
+        text = imgdata.km_string
+        text2 = imgdata.m_string
+        text_color = imgdata.txt_color
+        filename = imgdata.imgname
 
-        # km텍스트 추가
-        if not len(text) == 3:
-            draw.text((text_x, text_y), text, font=font, fill=text_color)
+        if len(text) == 3:
+            KMImgCreator.draw_three_digits(draw, text, font)
         else:
-            # 예시 숫자 '145'
-            digit100 = int(text[0])  # 1
-            digit10 = int(text[1])  # 4
-            digit1 = int(text[2])  # 5
-            draw.text((10, text_y), str(digit100), font=font, fill=text_color)  # 100의자리
-            draw.text((72, text_y), str(digit10), font=font, fill=text_color)  # 10의자리
-            draw.text((152, text_y), str(digit1), font=font, fill=text_color)  # 1의자리
-        # 이미지에 텍스트 추가
-        draw.text((text_x2, text_y2), text2, font=font2, fill=text_color)
-        # 이미지 저장
+            x, y = KM_DIGIT_POS.get(len(text), (150, 220))
+            draw.text((x, y), text, font=font, fill=text_color)
+
+        draw.text((60, 22), text2, font=font2, fill=text_color)
+        KMImgCreator.save_png(img, filename, work_directory)
+
+
+    @staticmethod
+    def load_font(font: str, size: int):
+        return ImageFont.truetype(font, size)
+
+
+    @staticmethod
+    def save_png(img, filename, work_directory):
         if not filename.endswith('.png'):
             filename += '.png'
-        final_dir = work_directory + filename
-        img.save(final_dir)
+        img.save(work_directory + filename)
+
+    @staticmethod
+    def draw_three_digits(
+            draw,
+            text,
+            font,
+            positions=(10, 72, 152),
+            y=220,
+            color=(255, 255, 255)
+    ):
+        if len(text) != 3 or not text.isdigit():
+            raise ValueError("text must be a 3-digit number")
+
+        for digit, x in zip(text, positions):
+            draw.text((x, y), digit, font=font, fill=color)
+
