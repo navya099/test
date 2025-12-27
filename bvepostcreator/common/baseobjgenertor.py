@@ -16,4 +16,4 @@ class BaseObjectGenerator:
     def load_structures(self):
         processor = StructureProcessor(self.state.structure_excel_path)
         processor.process_structure(self.state.brokenchain or 0)
-        return processor.structure_list
+        return processor
