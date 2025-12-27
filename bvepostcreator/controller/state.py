@@ -13,3 +13,4 @@ class AppState:
         self.target_directory = ''
         self.work_directory = ''
         self.base_source_directory = ''
+        self.posttype = ''
