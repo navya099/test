@@ -46,7 +46,7 @@ class PoleInstall:
     def to_bve(self):
         """BVE 구문화 메서드"""
         text = ''
-        text = f',;{self.pole_number}\n'
+        text += f',;{self.pole_number}\n'
         text += f'{self.station}\n'
         text += ',;급전선지지설비\n'
         text += '.freeobj 0;1119;0;,;전주대용물1선\n'
@@ -58,7 +58,12 @@ class PoleInstall:
         text += f'.freeobj 0;{self.beam.beam.index};{self.beam.columns[0].xoffset};0;0;,;{self.beam.beam.type}\n'
 
         text += ',;브래킷\n'
-        for br in self.beam.brackets:
+        n = len(self.beam.brackets)
+        s = 0.5
+        for i ,br in enumerate(self.beam.brackets):
+            offset = (i - (n - 1) / 2) * s
+            station = self.station + offset
+            text += f'{station}\n'
             text += f',;{br.rail_no}\n'
             text += f'.freeobj {br.rail_no};{br.index};{br.xoffset};{br.yoffset};{br.rotation};,;{br.type}\n'
 
