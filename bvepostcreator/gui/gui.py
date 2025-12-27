@@ -5,10 +5,10 @@ from gui.tk_dialogs import TkDialogService
 from gui.widget import GUIWidget
 
 
-class KmObjectApp(tk.Tk):
+class BVEObjectApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("KM Object 생성기")
+        self.title("BVE 선로제표 생성기")
         self.geometry("600x400")
         dialogs = TkDialogService(self)
         self.controller = AppController(dialogs)
