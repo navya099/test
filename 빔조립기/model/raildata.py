@@ -1,9 +1,13 @@
-from dataclasses import dataclass
-
-from .bracket import Bracket
+from dataclasses import dataclass, field
 
 @dataclass
 class RailData:
-    name: str
-    index: int
-    brackets: list[Bracket]
+    """레일데이터
+    Attributes:
+        name:선로명
+        index:선로인덱스
+        brackets:브래킷들
+    """
+    name: str = ''
+    index: int = 0
+    brackets: list = field(default_factory=list)
