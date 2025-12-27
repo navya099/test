@@ -1,8 +1,7 @@
-# controller/controller.py
-from kmpostcreator.controller.dialogs import DialogService
-from kmpostcreator.controller.prerunsetup import PreRunSetup
-from kmpostcreator.controller.state import AppState
-from kmpostcreator.controller.mainrunner import MainRunner
+from controller.dialogs import DialogService
+from controller.mainrunner import MainRunner
+from controller.prerunsetup import PreRunSetup
+from controller.state import AppState
 
 
 class AppController:
