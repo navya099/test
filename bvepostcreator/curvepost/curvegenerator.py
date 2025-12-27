@@ -1,0 +1,2 @@
+class CurveGenerator:
+    pass
