@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox ,simpledialog
-from kmpostcreator.controller.dialogs import DialogService
+from controller.dialogs import DialogService
 
 
 class TkDialogService(DialogService):
