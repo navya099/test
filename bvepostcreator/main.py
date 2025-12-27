@@ -1,5 +1,4 @@
-from kmpostcreator.gui.gui import KmObjectApp
-
+from gui.gui import BVEObjectApp
 if __name__ == '__main__':
-    app = KmObjectApp()
+    app = BVEObjectApp()
     app.mainloop()
