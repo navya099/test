@@ -9,10 +9,11 @@ from kmpost.systaxfactory import KMBVESyntaxFactory
 
 class KMOutputManager:
     """KM 결과 파일, 이미지, CSV, BVE 구문 처리"""
-    def __init__(self, work_directory, target_directory, offset):
+    def __init__(self, work_directory, target_directory, offset, is_twotrack):
         self.work_directory = work_directory
         self.target_directory = target_directory
         self.offset = offset
+        self.is_twotrack = is_twotrack
 
     def save_txt_files(self, index_datas, post_datas):
         index_file = os.path.join(self.work_directory, 'km_index.txt')
@@ -41,7 +42,7 @@ class KMOutputManager:
                 work_directory=self.work_directory,
                 offset=self.offset
             )
-            index, post = kmsystaxf.create(i=i, station=stadata, structure=structure, target_directory=self.target_directory)
+            index, post = kmsystaxf.create(i=i, station=stadata, structure=structure, target_directory=self.target_directory,is_two_track=self.is_twotrack)
             index_datas.append(index)
             post_datas.append(post)
         return index_datas, post_datas
