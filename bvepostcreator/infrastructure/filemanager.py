@@ -17,7 +17,7 @@ class FileSystemService:
         return os.path.join(path, string + '/')
 
     @staticmethod
-    def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None):
+    def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None, is_delete_original=True):
         """
         원본 폴더의 모든 파일을 대상 폴더로 복사 (대상 폴더의 모든 데이터 제거)
 
@@ -25,6 +25,7 @@ class FileSystemService:
         :param target_directory: 대상 폴더 경로
         :param include_extensions: 복사할 확장자의 리스트 (예: ['.txt', '.csv'] → 이 확장자만 복사)
         :param exclude_extensions: 제외할 확장자의 리스트 (예: ['.log', '.tmp'] → 이 확장자는 복사 안 함)
+        :param is_delete_original: 원본 삭제유무
         """
 
         # 대상 폴더가 존재하면 삭제 후 다시 생성
@@ -54,7 +55,8 @@ class FileSystemService:
                 shutil.copy2(source_path, target_path)
 
         # 모든작업 종료후 원본폴더째로 삭제
-        shutil.rmtree(source_directory)
+        if is_delete_original:
+            shutil.rmtree(source_directory)
 
         print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
