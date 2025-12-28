@@ -51,7 +51,7 @@ class KMGenerator(BaseObjectGenerator):
             builder_results = builder.run()
 
             # Output Manager에게 위임
-            output_manager = KMOutputManager(self.work_directory, self.state.target_directory, self.state.offset)
+            output_manager = KMOutputManager(self.work_directory, self.state.target_directory, self.state.offset, self.state.is_two_track)
             index_datas ,post_datas = output_manager.generate_images_csv_bve(builder_results, self.source_directory, self.state.alignment_type)
             self.log("파일 저장 중...")
             output_manager.save_txt_files(index_datas, post_datas)
