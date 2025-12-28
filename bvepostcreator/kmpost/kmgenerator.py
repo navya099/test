@@ -17,16 +17,22 @@ class KMGenerator(BaseObjectGenerator):
     def generate(self):
         try:
             self.log("KM 생성 시작")
-            self.log("작업 디렉토리 확인 중...")
-
-            FileSystemService.ensure_directory(self.work_directory, self.log)
-
-            self.log(f"대상 디렉토리: {self.state.target_directory}")
+            self.log("소스 경로 확인중")
             self.source_directory = os.path.join(
                 self.base_source_directory,
                 self.state.alignment_type
             )
             self.log(f"소스 경로: {self.source_directory}")
+            
+            # 소스의 이미지 모두 복사
+            FileSystemService.copy_all_files(self.source_directory, self.work_directory,
+                                             include_extensions=['.jpg', '.png'],
+                                             exclude_extensions=['.dxf', '.ai', '.csv'],
+                                             is_delete_original=False)
+
+            FileSystemService.ensure_directory(self.work_directory, self.log)
+
+            self.log(f"대상 디렉토리: {self.state.target_directory}")
 
             start_sta, end_sta = self.calculate_stations()
             self.log(f"시작 측점 = {start_sta}")
