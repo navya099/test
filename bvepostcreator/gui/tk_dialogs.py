@@ -56,12 +56,9 @@ class TkDialogService(DialogService):
             except ValueError:
                 messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
 
-    def ask_offset(self):
+    def show_input_float(self, title, prompt):
         while True:
-            value = simpledialog.askstring(
-                "오프셋 입력",
-                "오프셋 값을 입력하세요 (예: 12.34):"
-            )
+            value = simpledialog.askstring(title,prompt)
             if value is None:
                 return None
             try:
