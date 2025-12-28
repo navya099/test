@@ -14,3 +14,5 @@ class AppState:
         self.work_directory = ''
         self.base_source_directory = ''
         self.posttype = ''
+        self.is_two_track = False
+        self.track_distance = 0.0
