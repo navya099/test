@@ -49,6 +49,11 @@ class GUIWidget:
         chk.state(['!alternate'])
         chk.pack(side=tk.LEFT, padx=10)
 
+        self.is_twotrack_var = tk.BooleanVar(value=False)
+        chk2 = ttk.Checkbutton(btn_frame, text='복선', variable=self.is_twotrack_var)
+        chk2.state(['!alternate'])
+        chk2.pack(side=tk.LEFT, padx=10)
+
         ttk.Button(btn_frame, text="대상 디렉터리 설정", command=self.on_select_directory).pack(side=tk.LEFT, padx=10)
 
         ttk.Button(btn_frame, text="구조물 엑셀 파일 선택", command=self.on_select_excel).pack(side=tk.LEFT, padx=10)
@@ -78,6 +83,7 @@ class GUIWidget:
         self.controller.state.end_station = self.end_station_var.get()
         self.controller.state.reverse_start = self.reverse_start_station_var.get()
         self.controller.state.is_reverse = self.is_reverse_var.get()
+        self.controller.state.is_two_track = self.is_twotrack_var.get()
         # 🔹 실행
         self.controller.run()
 
