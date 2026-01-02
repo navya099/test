@@ -6,6 +6,26 @@ import ezdxf
 
 plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] = False
+import csv
+
+def read_stagger_csv(file_path):
+
+        with open(file_path, 'r',encoding='utf-8') as file:
+            lines = file.readlines()
+
+        sections = []
+        for line in lines:
+            try:
+                parts = line.strip().split(',')
+                if len(parts) == 3:
+                    post_number = parts[0]
+                    station = float(parts[1].strip())
+                    stagger = float(parts[2].strip())
+                    sections.append((post_number, station,stagger) ) # Corrected order of z and y
+            except ValueError:
+                continue
+        return sections
+
 
 # ========================
 # 유틸리티 함수
@@ -29,6 +49,11 @@ def read_polyline(file_path):
             x, y, z = map(float, line.strip().split(','))
             points.append((x, y, z))
     return points
+
+def calculate_slope(h1: float, h2: float, gauge: float) -> float:
+    """주어진 높이 차이와 수평 거리를 바탕으로 기울기(각도) 계산"""
+    slope = (h2 - h1) / gauge  # 기울기 값 (비율)
+    return math.degrees(math.atan(slope))  # 아크탄젠트 적용 후 degree 변환
 
 # ========================
 # 클래스 정의
@@ -101,34 +126,51 @@ class OffsetGUI:
     def __init__(self, master):
         self.master = master
         master.title("Railway Offset Tool")
-
-        tk.Label(master, text="BVE 좌표 파일").grid(row=0, column=0)
+        row = 0
+        tk.Label(master, text="BVE 좌표 파일").grid(row=row, column=0)
         self.entry_file = tk.Entry(master, width=40)
-        self.entry_file.grid(row=0, column=1)
+        self.entry_file.grid(row=row, column=1)
         tk.Button(master, text="찾기", command=self.browse_file).grid(row=0, column=2)
+        row += 1
+        tk.Label(master, text="Stagger CSV 파일").grid(row=1, column=0)
+        self.entry_csv = tk.Entry(master, width=40)
+        self.entry_csv.grid(row=row, column=1)
+        tk.Button(master, text="찾기", command=self.browse_csv).grid(row=1, column=2)
 
-        tk.Label(master, text="선형 시작 측점").grid(row=1, column=0)
-        self.entry_startblock = tk.Entry(master); self.entry_startblock.grid(row=1, column=1)
+        labels = [
+            ("선형 시작 측점", "startblock"),
+            ("시작측점", "pos"),
+            ("경간", "span"),
+            ("시점 offset", "stagger"),
+            ("끝 offset", "stagger2"),
+            ("파정값", "brokenchain"),
 
-        tk.Label(master, text="시작측점").grid(row=2, column=0)
-        self.entry_pos = tk.Entry(master); self.entry_pos.grid(row=2, column=1)
+        ]
 
-        tk.Label(master, text="경간").grid(row=3, column=0)
-        self.entry_span = tk.Entry(master); self.entry_span.grid(row=3, column=1)
+        self.entries = {}
+        for text, key in labels:
+            row += 1
+            tk.Label(master, text=text).grid(row=row, column=0)
+            entry = tk.Entry(master, width=40)
+            entry.grid(row=row, column=1)
+            self.entries[key] = entry
 
-        tk.Label(master, text="시점 offset").grid(row=4, column=0)
-        self.entry_stagger = tk.Entry(master); self.entry_stagger.grid(row=4, column=1)
-
-        tk.Label(master, text="끝 offset").grid(row=5, column=0)
-        self.entry_stagger2 = tk.Entry(master); self.entry_stagger2.grid(row=5, column=1)
-
-        tk.Button(master, text="계산 및 DXF 저장", command=self.run_calculation).grid(row=6, column=0, columnspan=3, pady=10)
+        tk.Button(master, text="계산 및 DXF 저장", command=self.run_calculation).grid(row=row, column=0, columnspan=3, pady=10)
+        row += 1
+        tk.Button(master, text="계산 및 리스트 저장", command=self.run_csv_calculation).grid(row=row, column=0, columnspan=3, pady=10)
 
     def browse_file(self):
         filename = filedialog.askopenfilename(filetypes=[("Text files","*.txt")])
         if filename:
             self.entry_file.delete(0, tk.END)
             self.entry_file.insert(0, filename)
+
+    def browse_csv(self):
+        filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+        if filename:
+            self.entry_csv.delete(0, tk.END)
+            self.entry_csv.insert(0, filename)
+
 
     def run_calculation(self):
         try:
@@ -149,13 +191,71 @@ class OffsetGUI:
 
             a_b_angle = calculate_bearing(offset_a[0], offset_a[1], offset_b[0], offset_b[1])
             finale_angle = vector_a - a_b_angle
-            messagebox.showinfo("완료", f"DXF 저장 완료!\n전차선 각도: {a_b_angle:.4f}\n폴리선과 전차선 각도: {finale_angle:.4f}")
+
+            height1 =  float(self.entry_height.get())
+            height2 = float(self.entry_height2.get())
+            z_angle = calculate_slope(height1, height2, span)
+
+            messagebox.showinfo("완료", f"DXF 저장 완료!\n전차선 각도: {a_b_angle:.4f}\n폴리선과 전차선 각도: {finale_angle:.4f}\n높이각도: {z_angle}\n")
             DXFSaver.save(polyline, [offset_a, offset_b], "c:/temp/railway_offset.dxf")
             Visualizer.plot(polyline, [point_a, point_b], [offset_a, offset_b])
 
 
         except Exception as e:
             messagebox.showerror("오류", str(e))
+
+    def run_csv_calculation(self):
+        try:
+            final = []
+            filepath = self.entry_file.get()
+            polyline = read_polyline(filepath)
+            csvpath = self.entry_csv.get()
+            stagger_data = read_stagger_csv(csvpath)
+            startblock_value = float(self.entries["startblock"].get())
+            manager = PolylineManager(polyline, start_station=startblock_value)
+            offset = float(self.entries["brokenchain"].get())
+            spans = {25: 669, 30:668, 35: 667, 40: 477, 45:484, 50:478, 55:485, 60:479}
+            for i in range(len(stagger_data) - 1):
+                post_number, station, staager = stagger_data[i]
+                if i < len(stagger_data) - 1:
+                    _, next_station, next_stagger = stagger_data[i + 1]
+                else:
+                    next_station, next_stagger = station, staager  # 혹은 적절한 기본값
+                next_station += offset
+                pos = station + offset
+                span = next_station - pos
+                span_key = nearest_span(int(span), spans)
+
+                index = spans.get(span_key, 478)
+                stagger = staager
+                stagger2 = next_stagger
+
+                point_a, _, vector_a = manager.interpolate(pos)
+                point_b, _, vector_b = manager.interpolate(pos + span)
+
+                offset_a = OffsetCalculator.offset_point(vector_a, point_a, stagger)
+                offset_b = OffsetCalculator.offset_point(vector_b, point_b, stagger2)
+
+                a_b_angle = calculate_bearing(offset_a[0], offset_a[1], offset_b[0], offset_b[1])
+                finale_angle = vector_a - a_b_angle
+                final.append((post_number, station, staager, index,span, finale_angle))
+            messagebox.showinfo("완료",'작업이 끝났습니다,.')
+            save_data(final)
+            return final
+
+        except Exception as e:
+            messagebox.showerror("에러", f'작업이 실패했습니다 {e}')
+
+def nearest_span(span, spans):
+    # spans.keys() 중 가장 가까운 값 찾기
+    return min(spans.keys(), key=lambda k: abs(k - span))
+
+
+
+def save_data(data):
+    with open('c:/temp/wiredata.txt', 'w', newline='') as f:
+        for post_number, station, staager, index, span, finale_angle in data:
+            f.write(f',;{post_number}\n{station}\n,;SPAN={span}\n,.freeobj 0;{index};{staager};0;{finale_angle};0;,;contact\n')
 
 # ========================
 # 실행
