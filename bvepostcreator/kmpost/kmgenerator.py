@@ -71,7 +71,7 @@ class KMGenerator(BaseObjectGenerator):
             self.state.is_two_track
         )
         index_datas, post_datas = output_manager.generate_images_csv_bve(
-            builder_results, self.source_directory, self.state.alignment_type
+            builder_results, self.source_directory, self.state.alignment_type,self.state.start_index
         )
         self.log("파일 저장 중...")
         output_manager.save_txt_files(index_datas, post_datas)

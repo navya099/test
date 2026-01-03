@@ -1,8 +1,7 @@
 from common.stationmanager import StationManager
-from infrastructure.structuresystem import StructureProcessor
 from kmpost.typeresolver import KMPostTypeResolver
 from model.stationdata import StationData
-
+import math
 
 class KMObjectBuilder:
     """KM포스트 빌더"""
@@ -32,7 +31,10 @@ class KMObjectBuilder:
             start_block = self.start_block
             end_block = self.last_block
 
-        for i in range(int(start_block // self.interval), int(end_block // self.interval)):
+        start_i = math.ceil(start_block / self.interval)
+        end_i = math.floor(end_block / self.interval)
+
+        for i in range(start_i, end_i + 1):
             sta = i * self.interval
             stadata = self.create_station_data(sta)
             structure, post_type = self.get_structure_and_post_type(stadata.after_sta)
