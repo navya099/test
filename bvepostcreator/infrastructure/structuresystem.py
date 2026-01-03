@@ -23,18 +23,19 @@ class StructureProcessor:
         df_bridge = pd.read_excel(self.filepath, sheet_name='교량', header=None)
         df_tunnel = pd.read_excel(self.filepath, sheet_name='터널', header=None)
 
-        df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
-        df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
+        if not df_bridge.empty and df_bridge.shape[1] >= 4:
+            df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
+            for _, row in df_bridge.iterrows():
+                start = StationData(origin_sta=row['br_START_STA'])
+                end = StationData(origin_sta=row['br_END_STA'])
+                self.structure_list['bridge'].append((start, end))
 
-        for _, row in df_bridge.iterrows():
-            start = StationData(origin_sta=row['br_START_STA'])
-            end = StationData(origin_sta=row['br_END_STA'])
-            self.structure_list['bridge'].append((start, end))
-
-        for _, row in df_tunnel.iterrows():
-            start = StationData(origin_sta=row['tn_START_STA'])
-            end = StationData(origin_sta=row['tn_END_STA'])
-            self.structure_list['tunnel'].append((start, end))
+        if not df_tunnel.empty and df_tunnel.shape[1] >= 4:
+            df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
+            for _, row in df_tunnel.iterrows():
+                start = StationData(origin_sta=row['tn_START_STA'])
+                end = StationData(origin_sta=row['tn_END_STA'])
+                self.structure_list['tunnel'].append((start, end))
 
     def define_bridge_tunnel_at_station(self, sta):
         """sta가 교량/터널/토공 구간에 해당하는지 구분하는 메서드"""
