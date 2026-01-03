@@ -41,6 +41,16 @@ class GUIWidget:
             width=15
         ).grid(row=0, column=5, padx=5)
 
+        # 🔹시작 인덱스 입력
+        ttk.Label(input_frame, text="시작 인덱스").grid(row=0, column=6, sticky="e", padx=5)
+
+        self.start_index_var = tk.IntVar(value=4025)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.start_index_var,
+            width=15
+        ).grid(row=0, column=7, padx=5)
+
         btn_frame = ttk.Frame(self.master)
         btn_frame.pack(pady=10, anchor="center")
 
@@ -84,6 +94,7 @@ class GUIWidget:
         self.controller.state.reverse_start = self.reverse_start_station_var.get()
         self.controller.state.is_reverse = self.is_reverse_var.get()
         self.controller.state.is_two_track = self.is_twotrack_var.get()
+        self.controller.state.start_index = self.start_index_var.get()
         # 🔹 실행
         self.controller.run()
 

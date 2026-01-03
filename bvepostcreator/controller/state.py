@@ -16,3 +16,4 @@ class AppState:
         self.posttype = ''
         self.is_two_track = False
         self.track_distance = 0.0
+        self.start_index = 0
