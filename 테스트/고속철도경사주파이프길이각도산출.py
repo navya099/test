@@ -1,10 +1,10 @@
 import math
+import tkinter as tk
 import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
-
-from math_utils import calculate_distance, calculate_bearing
-
+from math_utils import calculate_distance, calculate_bearing, calculate_destination_coordinates
+from tkinter import ttk, messagebox
 
 class TangentSolver:
     def __init__(self, A, C, R):
@@ -64,18 +64,130 @@ class TangentSolver:
         plt.tight_layout()
         plt.show()
 
+
+class TKINTER(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.result_length = tk.DoubleVar()
+        self.result_angle = tk.DoubleVar()
+        self.title("경사 주 파이프 계산기")
+
+        # 입력 필드
+        labels = [
+            "#1 전주면에서 궤도중심까지의 거리 (-는 좌측):",
+            "#2 전차선 높이:",
+            "#3 가고:",
+            "#4 조가선 현수클램프 치수:",
+            "#5 조가선 파이프측 지지클램프 치수:",
+            "#6 전차선 높이와 가동브래켓 중심점 높이 m:",
+            "#7 전주면에서 파이프 시작점 수평거리 x:",
+            "#8 편위:"
+        ]
+        defaults = [-2.947, 5.08, 1.4, 0.07, 0.11, 0.11, 0.275, -0.2]  # 원하는 기본값 리스트
+
+        # Entry들을 인스턴스 속성으로 저장
+        self.entries = {}
+        for i, text in enumerate(labels):
+            ttk.Label(self, text=text).grid(row=i, column=0, sticky="w")
+            e = ttk.Entry(self)
+            e.grid(row=i, column=1)
+            e.insert(0, str(defaults[i]))  # 기본값 삽입
+            self.entries[f"entry_{i+1}"] = e
+
+        ttk.Button(self, text="계산하기", command=self.run_solver).grid(row=8, column=0, columnspan=2, pady=10)
+
+    def run_solver(self):
+        try:
+            # Entry 값 읽기
+            dist = float(self.entries["entry_1"].get())
+            height = float(self.entries["entry_2"].get())
+            sysheight = float(self.entries["entry_3"].get())
+            fitingh1 = float(self.entries["entry_4"].get())
+            fitingh2 = float(self.entries["entry_5"].get())
+            m = float(self.entries["entry_6"].get())
+            fitingh3 = float(self.entries["entry_7"].get())
+            stagger = float(self.entries["entry_8"].get())
+
+            # 계산
+            A = (dist + fitingh3, height + m)
+            C = (stagger, height + sysheight + fitingh1)
+            R = fitingh2
+
+            solver = TangentSolver(A, C, R)
+            points = solver.tangent_points()
+            top_point = solver.top_point(points)
+
+            angle = calculate_bearing(A, top_point)
+            length = calculate_distance(A, top_point) + 0.15
+
+            # 결과 표시
+            self.result_angle.set(math.degrees(angle))
+            self.result_length.set(length)
+
+
+            self.data = [A, C, R, top_point, self.result_angle.get(), self.result_length.get(), self.entries]
+            messagebox.showinfo('계산 결과', f'경사 주 파이프 각도:{self.result_angle.get()}\n경사 주 파이프 길이:{self.result_length.get()}')
+            render = Render()
+            render.plot_graph(self.data)
+
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+class Render:
+    def __init__(self):
+        pass
+
+    def plot_graph(self, data: list):
+        A, C, R, top_point, theta, length, entries = data
+
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.set_aspect('equal')
+        ax.grid(True)
+
+        # 원
+        circle = plt.Circle(C, R, fill=False, color='black', linestyle='--')
+        #ax.add_artist(circle)
+
+        # 점 A, C
+        ax.scatter(*A, color='blue')
+        ax.text(A[0] + 0.05, A[1], 'A', color='blue')
+
+        ax.scatter(*C, color='red')
+        ax.text(C[0] + 0.05, C[1], 'C', color='red')
+
+        # 접점
+        ax.scatter(*top_point, color='green')
+        ax.text(top_point[0] + 0.05, top_point[1], 'Top', color='green')
+
+        dist = float(entries["entry_1"].get())
+        height = float(entries["entry_2"].get())
+        sysheight = float(entries["entry_3"].get())
+        fitingh1 = float(entries["entry_4"].get())
+        fitingh2 = float(entries["entry_5"].get())
+        m = float(entries["entry_6"].get())
+        fitingh3 = float(entries["entry_7"].get())
+        stagger = float(entries["entry_8"].get())
+
+        # A → top_point 직선
+        B = calculate_destination_coordinates(A,bearing=math.radians(theta),distance=length)
+
+        MW = calculate_destination_coordinates(C,bearing=-math.pi / 2,distance=fitingh1)#조가선
+        ax.text(MW[0], MW[1], 'MW',color='blue')
+        ax.scatter(MW[0], MW[1], color='green')
+
+        CW = stagger, height
+        ax.scatter(CW[0],CW[1], color='green')
+        ax.text(CW[0], CW[1], 'CW', color='blue')
+
+        ax.plot([A[0], B[0]], [A[1], B[1]], color='orange', label='Tangent')
+        ax.plot([top_point[0], C[0]], [top_point[1], C[1]])
+        ax.plot([C[0], MW[0]], [C[1], MW[1]])
+        ax.legend()
+        ax.set_title(f"θ={theta:.2f}°, Length={length:.3f}")
+        plt.tight_layout()
+        plt.show()
+
+
 if __name__ == '__main__':
-    # 모듈 사용
-    A = (-2.947, 5.136)
-    C = (0.2, 6.570)
-    R = 0.11
-
-    solver = TangentSolver(A, C, R)
-
-    points = solver.tangent_points()
-
-    top_point = solver.top_point(points)
-    angle = calculate_bearing(A, top_point)
-    length= calculate_distance(A, top_point) + 0.15
-    print("경사 주 파이프 각도:", math.degrees(angle))
-    print("경사 주 파이프 길이:", length)
+    main = TKINTER()
+    main.mainloop()
