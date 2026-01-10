@@ -1,6 +1,5 @@
 import tkinter as tk
-from tokenize import endpats
-
+import json
 import ezdxf
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -10,6 +9,7 @@ from AutoCAD.line import Line2d
 from bulgesegment import BulgeSegment
 from polyline import Polyline
 import numpy as np
+import os
 
 plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] = False
@@ -116,7 +116,7 @@ class PipeApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Slider Control")
-        self.geometry("400x900")
+        self.geometry("400x1000")
 
         # Plot 창
         self.plot_root = tk.Toplevel()
@@ -148,11 +148,43 @@ class PipeApp(tk.Tk):
         self.create_slider("곡선당김금구x", -10, 10, 0.1, 0)
         self.create_slider("곡선당김금구방향", -1, 1, 2, 1)
 
+        # 저장/로드 버튼 추가
+        btn_save = tk.Button(self, text="세팅 저장", command=self.save_settings)
+        btn_save.pack(pady=5)
+        btn_load = tk.Button(self, text="세팅 불러오기", command=self.load_settings)
+        btn_load.pack(pady=5)
+
         btn = tk.Button(self, text="DXF 저장", command=self.save_dxf)
         btn.pack(pady=10)
 
 
         self.update_plot()
+
+    def save_settings(self):
+        settings = {}
+        # 모든 슬라이더 값 저장
+        for attr in dir(self):
+            if attr.startswith("slider_"):
+                slider = getattr(self, attr)
+                settings[attr] = slider.get()
+        # JSON 파일로 저장
+        with open("c:/temp/settings.json", "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+        print("세팅 저장 완료!")
+
+    def load_settings(self):
+        if not os.path.exists("c:/temp/settings.json"):
+            print("저장된 세팅 파일이 없습니다.")
+            return
+        with open("c:/temp/settings.json", "r", encoding="utf-8") as f:
+            settings = json.load(f)
+        # 슬라이더 값 복원
+        for attr, value in settings.items():
+            if hasattr(self, attr):
+                slider = getattr(self, attr)
+                slider.set(value)
+        self.update_plot()
+        print("세팅 불러오기 완료!")
 
     def create_slider(self, label, from_, to, resolution, init):
         slider = tk.Scale(self, label=label, from_=from_, to=to,
