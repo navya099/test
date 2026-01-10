@@ -552,6 +552,40 @@ class PipeApp(tk.Tk):
             else:
                 msp.add_line((seg.start.x, seg.start.y),
                              (seg.end.x, seg.end.y))
+        #급전선
+        for seg in self.feeder.segments:
+            msp.add_line((seg.start.x, seg.start.y),
+                         (seg.end.x, seg.end.y))
+
+        #급전선애자
+        block = msp.doc.blocks.new(name="FEEDER_INSULATOR")
+        block.add_line((self.feeder_ins.core.start.x, self.feeder_ins.core.start.y),
+                       (self.feeder_ins.core.end.x, self.feeder_ins.core.end.y))
+        for isn in self.feeder_ins.insulators:
+            block.add_line((isn.start.x, isn.start.y),
+                         (isn.end.x, isn.end.y))
+        msp.add_blockref("FEEDER_INSULATOR", (0, 0))
+
+        #장간애자
+        block = msp.doc.blocks.new(name="MAINPIPE_INSULATOR")
+        block.add_line(
+            (self.mainpipe_ins.core.start.x, self.mainpipe_ins.core.start.y),
+            (self.mainpipe_ins.core.end.x, self.mainpipe_ins.core.end.y)
+        )
+        for isn in self.mainpipe_ins.insulators:
+            block.add_line((isn.start.x, isn.start.y),
+                           (isn.end.x, isn.end.y))
+        msp.add_blockref("MAINPIPE_INSULATOR", (0, 0))
+
+        block = msp.doc.blocks.new(name="SLOPEPIPE_INSULATOR")
+        block.add_line(
+            (self.slopepipe_ins.core.start.x, self.slopepipe_ins.core.start.y),
+            (self.slopepipe_ins.core.end.x, self.slopepipe_ins.core.end.y)
+        )
+        for isn in self.slopepipe_ins.insulators:
+            block.add_line((isn.start.x, isn.start.y),
+                           (isn.end.x, isn.end.y))
+        msp.add_blockref("SLOPEPIPE_INSULATOR", (0, 0))
 
         doc.saveas("c:/temp/pipe_system.dxf")
         messagebox.showinfo('저장', '도면 저장 완료')
