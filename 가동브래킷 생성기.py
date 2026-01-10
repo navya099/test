@@ -1,20 +1,22 @@
 import tkinter as tk
 import json
 from tkinter import ttk, messagebox, simpledialog
-
 import ezdxf
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import math
+import numpy as np
+import os
+
 from AutoCAD.point2d import Point2d
 from AutoCAD.line import Line2d
 from AutoCAD.bulgesegment import BulgeSegment
 from AutoCAD.polyline import Polyline
-import numpy as np
-import os
+
 
 plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] = False
+
 
 # ---------- 클래스 ----------
 class Pipe(Line2d):
@@ -28,7 +30,7 @@ class Pipe(Line2d):
         line, = ax.plot([self.start.x, self.end.x], [self.start.y, self.end.y], color=self.color)
         self.artist = line
         if self.label:
-            ax.text((self.start.x + self.end.x)/2, (self.start.y +self.end.y)/2, self.label,
+            ax.text((self.start.x + self.end.x) / 2, (self.start.y + self.end.y) / 2, self.label,
                     fontsize=9, ha='center', color=self.color)
 
     def remove(self):
@@ -36,14 +38,16 @@ class Pipe(Line2d):
             self.artist.remove()
             self.artist = None
 
+
 class SteadyARM(Polyline):
-    def __init__(self, length: float,height: float, origin=Point2d(0,0),direction: int=1, color="green", label=None):
+    def __init__(self, length: float, height: float, origin=Point2d(0, 0), direction: int = 1, color="green",
+                 label=None):
         self.color = color
         self.label = label
         self.artist = None
         self.direction = direction
-        p2 = origin.moved(-math.pi/ 2 , height)
-        line1 = Line2d(origin,p2)
+        p2 = origin.moved(-math.pi / 2, height)
+        line1 = Line2d(origin, p2)
         if self.direction == 1:
             p3 = p2.moved(0, length)
             bulge = -0.15
@@ -52,7 +56,7 @@ class SteadyARM(Polyline):
             bulge = 0.15
 
         bulgearc = BulgeSegment(p2, p3, bulge)
-        segments = [line1,bulgearc]
+        segments = [line1, bulgearc]
         super().__init__(segments)
 
     import numpy as np
@@ -76,12 +80,14 @@ class SteadyARM(Polyline):
             mid = self.segments[-1].end
             ax.text(mid.x, mid.y, self.label,
                     fontsize=9, ha='center', color=self.color)
+
     @property
     def end_point(self):
         return self.segments[-1].end
 
+
 class Feeder(Polyline):
-    def __init__(self, segs ,label, color):
+    def __init__(self, segs, label, color):
         super().__init__(segs)
         self.color = color
         self.label = label
@@ -106,6 +112,7 @@ class Feeder(Polyline):
             mid = self.segments[-1].end
             ax.text(mid.x, mid.y, self.label,
                     fontsize=9, ha='center', color=self.color)
+
     def remove(self):
         if self.artist:
             self.artist.remove()
@@ -130,10 +137,10 @@ class MAST(Line2d):
 
     def draw_outline(self, ax):
         coords = [
-            ([self.start.x - self.width/2, self.end.x - self.width/2], [self.start.y, self.end.y]),
-            ([self.start.x + self.width/2, self.end.x + self.width/2], [self.start.y, self.end.y]),
-            ([self.start.x - self.width/2, self.start.x + self.width/2], [self.end.y, self.end.y]),
-            ([self.start.x - self.width/2, self.start.x + self.width/2], [self.end.y, self.end.y]),
+            ([self.start.x - self.width / 2, self.end.x - self.width / 2], [self.start.y, self.end.y]),
+            ([self.start.x + self.width / 2, self.end.x + self.width / 2], [self.start.y, self.end.y]),
+            ([self.start.x - self.width / 2, self.start.x + self.width / 2], [self.end.y, self.end.y]),
+            ([self.start.x - self.width / 2, self.start.x + self.width / 2], [self.end.y, self.end.y]),
         ]
         for x, y in coords:
             line, = ax.plot(x, y, 'skyblue')
@@ -144,6 +151,63 @@ class MAST(Line2d):
             artist.remove()
         self.artists.clear()
 
+
+class Insulator:
+    """애자 어셈블리
+    Attributes:
+        length: 애자 길이
+        width: 애자 폭
+        count: 절연체 갯수
+        insulators: 애자들
+        origin: 원점(기본값 0,0)
+    """
+    def __init__(self, length, width, count, origin):
+        self.length = length
+        self.width = width
+        self.count = count
+        self.insulators = []
+        self.origin = origin
+
+    def create_assembly(self):
+        """어셈블리 조립"""
+        self.create_core()
+        self.create_wings()
+
+    def draw(self, ax, color):
+        # 코어 그리기
+        ax.plot([self.core.start.x, self.core.end.x],
+                     [self.core.start.y, self.core.end.y],
+                     color=color, linewidth=2)
+        # 각 애자 날개 그리기
+        for ins in self.insulators:
+            ax.plot([ins.start.x, ins.end.x],
+                         [ins.start.y, ins.end.y],
+                         color=color)
+
+    def create_core(self):
+        """애자 일직선 코어 생성"""
+        p2 = self.origin.moved(0, self.length)
+        self.core = Line2d(self.origin, p2)
+
+    def create_wing(self, y_offset=0):
+        """각 애자 날개들"""
+        p1 = Point2d(self.origin.x, self.origin.y + self.width / 2)
+        p2 = Point2d(self.origin.x, self.origin.y - self.width / 2)
+        return Line2d(p1, p2)
+
+    def create_wings(self):
+        self.insulators.clear()
+        step = self.length / (self.count - 1) if self.count > 1 else 0
+        for i in range(self.count):
+            ins = self.create_wing()
+            ins.move(0, i * step)
+            self.insulators.append(ins)
+
+    def rotation(self, angle):
+        """애자 전체를 angle 만큼 회전"""
+        self.core.rotate(angle, self.origin)
+        for ins in self.insulators:
+            ins.rotate(angle, self.origin)
 
 # ---------- 메인 GUI ----------
 class PipeApp(tk.Tk):
@@ -156,7 +220,6 @@ class PipeApp(tk.Tk):
         self.bind("<Right>", lambda e: self.adjust_slider(1))
         self.bind("<Up>", lambda e: self.adjust_slider(10))
         self.bind("<Down>", lambda e: self.adjust_slider(-10))
-
 
         self.title("Slider Control")
         self.geometry("500x800")
@@ -186,11 +249,13 @@ class PipeApp(tk.Tk):
         frame_pipe = ttk.Frame(notebook)
         frame_steady = ttk.Frame(notebook)
         frame_feeder = ttk.Frame(notebook)
+        frame_insulator = ttk.Frame(notebook)
 
         notebook.add(frame_wire, text="전차선")
         notebook.add(frame_pipe, text="파이프")
         notebook.add(frame_steady, text="곡선당김금구")
         notebook.add(frame_feeder, text="급전선")
+        notebook.add(frame_insulator, text="애자")
 
         # 전차선 관련 슬라이더
         self.create_slider("전차선높이", 1, 10, 0.1, 5.2, parent=frame_wire)
@@ -217,9 +282,20 @@ class PipeApp(tk.Tk):
         # 급전선 관련 슬라이더
         self.create_slider("완철길이", 0, 10, 0.01, 2, parent=frame_feeder)
         self.create_slider("완철방향", -1, 1, 2, 1, parent=frame_feeder)
-        self.create_slider("완철높이y", -10, 20, 0.01, 8, parent=frame_feeder)
+        self.create_slider("완철높이y", -10, 20, 0.01, 9, parent=frame_feeder)
         self.create_slider("현수길이", 0, 5, 0.01, 1.5, parent=frame_feeder)
         self.create_slider("현수각도", -180, 180, 0.01, -90, parent=frame_feeder)
+
+        #애자
+        self.create_slider("장간애자길이", 0, 2, 0.01, 0.75, parent=frame_insulator)
+        self.create_slider("장간애자폭", 0, 1, 0.01, 0.15, parent=frame_insulator)
+        self.create_slider("장간애자날개수", 0, 20, 1, 12, parent=frame_insulator)
+
+
+        self.create_slider("급전선현수애자길이", 0, 2, 0.01, 0.75, parent=frame_insulator)
+        self.create_slider("급전선현수애자폭", 0, 1, 0.01, 0.15, parent=frame_insulator)
+        self.create_slider("급전선현수애자날개수", 0, 20, 1, 8, parent=frame_insulator)
+
 
         # 저장/로드 버튼
         btn_save = tk.Button(self, text="세팅 저장", command=self.save_settings)
@@ -233,7 +309,6 @@ class PipeApp(tk.Tk):
         btn_dxf = tk.Button(self, text="종료", command=self.destroy)
         btn_dxf.pack(pady=10)
 
-
     def save_settings(self):
         settings = {}
         # 모든 슬라이더 값 저장
@@ -244,7 +319,7 @@ class PipeApp(tk.Tk):
         # JSON 파일로 저장
         with open("c:/temp/settings.json", "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
-        messagebox.showinfo('저장','설정 저장 완료')
+        messagebox.showinfo('저장', '설정 저장 완료')
 
     def load_settings(self):
         if not os.path.exists("c:/temp/settings.json"):
@@ -260,7 +335,7 @@ class PipeApp(tk.Tk):
                 slider = getattr(self, attr)
                 slider.set(value)
         self.update_plot()
-        messagebox.showinfo('로드','설정 로드 완료')
+        messagebox.showinfo('로드', '설정 로드 완료')
 
     def create_slider(self, label, from_, to, resolution, init, parent=None):
         if parent is None:
@@ -276,7 +351,6 @@ class PipeApp(tk.Tk):
         # 더블 클릭 이벤트 연결
         slider.bind("<Double-Button-1>", self.on_double_click)
 
-
         setattr(self, f"slider_{label}", slider)
 
     def set_focus_slider(self, slider):
@@ -285,7 +359,7 @@ class PipeApp(tk.Tk):
 
     def on_double_click(self, event=None):
         if self.focus_slider:
-            value = simpledialog.askstring('새 값 입력','새 값을 입력하세요')
+            value = simpledialog.askstring('새 값 입력', '새 값을 입력하세요')
             if value is None:
                 return False, 0
             try:
@@ -327,12 +401,11 @@ class PipeApp(tk.Tk):
         system_height = float(self.slider_가고.get())
         contact_height = float(self.slider_전차선높이.get())
         stagger = float(self.slider_편위.get())
-        rail_level = Point2d(0,0)
+        rail_level = Point2d(0, 0)
         trolly_wire = Point2d(stagger, contact_height)
         messanger_wire = Point2d(stagger, trolly_wire.y + system_height)
         pole_height = float(self.slider_전주길이.get())
         gague = float(self.slider_건식게이지.get())
-
 
         mainpipe_l = float(self.slider_메인파이프길이.get())
         mainpipe_y = float(self.slider_메인파이프y.get())
@@ -345,11 +418,11 @@ class PipeApp(tk.Tk):
         subpipe_x = float(self.slider_보조파이프x.get())
 
         steadyarm_x = float(self.slider_곡선당김금구x.get())
-        steadyarm_dir = float(self.slider_곡선당김금구방향.get())
+        steadyarm_dir = int(self.slider_곡선당김금구방향.get())
         steadyarm_l = float(self.slider_곡선당김금구길이.get())
         steadyarm_h = float(self.slider_곡선당김금구높이.get())
 
-        #급전선
+        # 급전선
         crossarm_l = float(self.slider_완철길이.get())
         crossarm_y = float(self.slider_완철높이y.get())
         crossarm_dir = float(self.slider_완철방향.get())
@@ -357,7 +430,7 @@ class PipeApp(tk.Tk):
         suspenssion_angle = float(self.slider_현수각도.get())
 
         # 전주
-        p1 = Point2d(rail_level.x - gague,0)
+        p1 = Point2d(rail_level.x - gague, 0)
         p2 = p1.moved(math.pi / 2, pole_height)
 
         self.mast = MAST("강관주", 0.264, p1=p1, p2=p2)
@@ -367,7 +440,7 @@ class PipeApp(tk.Tk):
         # 메인 파이프
         mps = Point2d(p1.x, mainpipe_y)
         mpe = mps.moved(math.radians(mainpipe_a), mainpipe_l)
-        self.main_pipe = Pipe(point1=mps,point2=mpe,color="green",label='주파이프')
+        self.main_pipe = Pipe(point1=mps, point2=mpe, color="skyblue", label='주파이프')
         self.main_pipe.draw(self.ax)
 
         # 경사 파이프
@@ -382,42 +455,67 @@ class PipeApp(tk.Tk):
         self.sub_pipe = Pipe(point1=subs, point2=sube, color="skyblue", label='수평파이프')
         self.sub_pipe.draw(self.ax)
 
-        #곡선당김금구
+        # 곡선당김금구
         origin = Point2d(steadyarm_x, subs.y)
-        self.stadyarm = SteadyARM(length=steadyarm_l,height=steadyarm_h,origin=origin,direction=steadyarm_dir,color='red',label=None)
+        self.stadyarm = SteadyARM(length=steadyarm_l, height=steadyarm_h, origin=origin, direction=steadyarm_dir,
+                                  color='skyblue', label=None)
         self.stadyarm.draw(self.ax)
 
         # 포인트 표시
-        for point, label, color in [(rail_level, "RL", "black"), (trolly_wire, "TW", "red"), (messanger_wire, "MW", "blue")]:
+        for point, label, color in [(rail_level, "RL", "black"), (trolly_wire, "TW", "red"),
+                                    (messanger_wire, "MW", "blue")]:
             self.ax.scatter(point.x, point.y, color=color)
             self.ax.text(point.x, point.y, label, fontsize=12, ha='left', color=color)
 
-        #현재 endpoint 표시
+        # 현재 endpoint 표시
         current_ep = self.stadyarm.end_point
-        if math.isclose(trolly_wire.y, current_ep.y,rel_tol=1e-3):
-            self.ax.text(current_ep.x,current_ep.y, '수평파이프 X 정상',color='blue')
-        else:
-            self.ax.text(current_ep.x, current_ep.y, '수평파이프 X 미달', color='red')
+        if not math.isclose(trolly_wire.y, current_ep.y, rel_tol=1e-3):
             h = trolly_wire.y + steadyarm_h
             x = self.slope_pipe.get_x_from_y(h)
-            self.ax.text(current_ep.x, current_ep.y, f'필요 수평파이프 x:{x:.4f}')
-        #곡선당김금구 위치판별
-        if math.isclose(trolly_wire.x, current_ep.x,rel_tol=1e-3):
-            self.ax.text(origin.x,origin.y, '곡선당김금구 x 정상', color='blue')
-        else:
+            self.ax.text(current_ep.x, current_ep.y, f'수평파이프 X 미달.\n 필요 x={x:.4f}', color='red')
+        # 곡선당김금구 위치판별
+        if not math.isclose(trolly_wire.x, current_ep.x, rel_tol=1e-3):
             x = trolly_wire.x
             solx = x - steadyarm_l if steadyarm_dir == 1 else x + steadyarm_l
-            self.ax.text(origin.x, origin.y, f'곡선당김금구 x 미달\n필요 곡선당김금구 x:{solx:.4f}')
+            self.ax.text(origin.x, origin.y, f'곡선당김금구 x 미달\n필요 x={solx:.4f}', color='red')
 
-        #급전선 객체
+        # 급전선 객체
         f_s = Point2d(p1.x, crossarm_y)
-        dird = 0 if crossarm_dir == 1 else  math.pi
+        dird = 0 if crossarm_dir == 1 else math.pi
         f_e = f_s.moved(dird, crossarm_l)
         i_e = f_e.moved(math.radians(suspenssion_angle), insulator_l)
-        l1 = Line2d(f_s,f_e)
-        l2 = Line2d(f_e,i_e)
-        self.feeder = Feeder([l1, l2], label='AF', color='orange')
+        l1 = Line2d(f_s, f_e)
+        l2 = Line2d(f_e, i_e)
+        self.feeder = Feeder([l1, l2], label='AF', color='skyblue')
         self.feeder.draw(self.ax)
+
+        #급전선 현수애자
+        feeder_i_l = float(self.slider_급전선현수애자길이.get())
+        feeder_i_w = float(self.slider_급전선현수애자폭.get())
+        feeder_i_c = int(self.slider_급전선현수애자날개수.get())
+
+        self.feeder_ins = Insulator(feeder_i_l, feeder_i_w, feeder_i_c, i_e)
+        self.feeder_ins.create_assembly()
+        self.feeder_ins.rotation(math.radians(suspenssion_angle) + math.pi)
+        self.feeder_ins.draw(ax=self.ax, color='green')
+
+        #주파이프 장간애자
+        mainpipe_i_l = float(self.slider_장간애자길이.get())
+        mainpipe_i_w = float(self.slider_장간애자폭.get())
+        mainpipe_i_c = int(self.slider_장간애자날개수.get())
+
+
+        self.mainpipe_ins = Insulator(mainpipe_i_l, mainpipe_i_w, mainpipe_i_c, self.main_pipe.start)
+        self.mainpipe_ins.create_assembly()
+        self.mainpipe_ins.rotation(math.radians(mainpipe_a))
+        self.mainpipe_ins.draw(ax=self.ax, color='green')
+
+        # 경사파이프 장간애자
+
+        self.slopepipe_ins = Insulator(mainpipe_i_l, mainpipe_i_w, mainpipe_i_c, self.slope_pipe.start)
+        self.slopepipe_ins.create_assembly()
+        self.slopepipe_ins.rotation(self.slope_pipe.direction)
+        self.slopepipe_ins.draw(ax=self.ax, color='green')
 
         # 기존 확대/축소 상태 복원
         self.ax.set_xlim(cur_xlim)
@@ -456,7 +554,7 @@ class PipeApp(tk.Tk):
                              (seg.end.x, seg.end.y))
 
         doc.saveas("c:/temp/pipe_system.dxf")
-        messagebox.showinfo('저장','도면 저장 완료')
+        messagebox.showinfo('저장', '도면 저장 완료')
 
 
 # 실행
