@@ -1,6 +1,6 @@
 import tkinter as tk
 import json
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 
 import ezdxf
 import matplotlib.pyplot as plt
@@ -166,12 +166,12 @@ class PipeApp(tk.Tk):
         self.create_slider("편위", -1, 1, 0.01, 0, parent=frame_wire)
 
         # 파이프 관련 슬라이더
-        self.create_slider("메인파이프길이", 0.1, 10, 0.1, 3.5, parent=frame_pipe)
-        self.create_slider("메인파이프y", 0, 10, 0.1, 5.96, parent=frame_pipe)
+        self.create_slider("메인파이프길이", 0.1, 10, 0.01, 3.5, parent=frame_pipe)
+        self.create_slider("메인파이프y", 0, 10, 0.01, 5.96, parent=frame_pipe)
         self.create_slider("메인파이프각도", -90, 90, 1, 0, parent=frame_pipe)
         self.create_slider("경사파이프y", 0, 10, 0.01, 4.96, parent=frame_pipe)
         self.create_slider("경사파이프x", -10, 10, 0.01, 0, parent=frame_pipe)
-        self.create_slider("보조파이프길이", 0.1, 10, 0.1, 2.5, parent=frame_pipe)
+        self.create_slider("보조파이프길이", 0, 10, 0.01, 2.5, parent=frame_pipe)
         self.create_slider("보조파이프x", -10, 10, 0.01, -1.3, parent=frame_pipe)
 
         # 곡선당김금구 관련 슬라이더
@@ -191,7 +191,6 @@ class PipeApp(tk.Tk):
 
         btn_dxf = tk.Button(self, text="종료", command=self.destroy)
         btn_dxf.pack(pady=10)
-        self.update_plot()
 
 
     def save_settings(self):
@@ -233,11 +232,26 @@ class PipeApp(tk.Tk):
         # 포커스 이벤트 연결
         slider.bind("<Button-1>", lambda e, s=slider: self.set_focus_slider(s))
 
+        # 더블 클릭 이벤트 연결
+        slider.bind("<Double-Button-1>", self.on_double_click)
+
+
         setattr(self, f"slider_{label}", slider)
 
     def set_focus_slider(self, slider):
         self.focus_slider = slider
         slider.focus_set()
+
+    def on_double_click(self, event=None):
+        if self.focus_slider:
+            value = simpledialog.askstring('새 값 입력','새 값을 입력하세요')
+            if value is None:
+                return False, 0
+            try:
+                float_value = float(value)  # 문자열을 float으로 변환
+                self.focus_slider.set(float_value)
+            except ValueError:
+                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
 
     def adjust_slider(self, step):
         """현재 선택된 슬라이더 값을 step만큼 조정"""
@@ -308,7 +322,7 @@ class PipeApp(tk.Tk):
 
         # 경사 파이프
         sps = Point2d(p1.x, slopepipe_y)
-        spe = Point2d(slopepipe_x, mpe.y)
+        spe = Point2d(slopepipe_x, self.main_pipe.get_y_from_x(slopepipe_x))
         self.slope_pipe = Pipe(point1=sps, point2=spe, color="skyblue", label='경사파이프')
         self.slope_pipe.draw(self.ax)
 
