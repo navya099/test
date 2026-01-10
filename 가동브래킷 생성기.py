@@ -80,6 +80,38 @@ class SteadyARM(Polyline):
     def end_point(self):
         return self.segments[-1].end
 
+class Feeder(Polyline):
+    def __init__(self, segs ,label, color):
+        super().__init__(segs)
+        self.color = color
+        self.label = label
+        self.artist = None
+
+    def draw(self, ax):
+        for seg in self.segments:
+            if isinstance(seg, BulgeSegment) and seg.bulge != 0:
+                # 호를 샘플링해서 그리기
+
+                angles = np.linspace(seg.start_angle, seg.end_angle, 50)
+                xs = seg.center.x + seg.radius * np.cos(angles)
+                ys = seg.center.y + seg.radius * np.sin(angles)
+                ax.plot(xs, ys, color=self.color)
+            else:
+                # 직선은 그대로
+                ax.plot([seg.start.x, seg.end.x],
+                        [seg.start.y, seg.end.y],
+                        color=self.color)
+
+        if self.label:
+            mid = self.segments[-1].end
+            ax.text(mid.x, mid.y, self.label,
+                    fontsize=9, ha='center', color=self.color)
+    def remove(self):
+        if self.artist:
+            self.artist.remove()
+            self.artist = None
+
+
 class MAST(Line2d):
     def __init__(self, mast_type, width, p1, p2):
         super().__init__(p1, p2)
@@ -153,10 +185,12 @@ class PipeApp(tk.Tk):
         frame_wire = ttk.Frame(notebook)
         frame_pipe = ttk.Frame(notebook)
         frame_steady = ttk.Frame(notebook)
+        frame_feeder = ttk.Frame(notebook)
 
         notebook.add(frame_wire, text="전차선")
         notebook.add(frame_pipe, text="파이프")
         notebook.add(frame_steady, text="곡선당김금구")
+        notebook.add(frame_feeder, text="급전선")
 
         # 전차선 관련 슬라이더
         self.create_slider("전차선높이", 1, 10, 0.1, 5.2, parent=frame_wire)
@@ -179,6 +213,13 @@ class PipeApp(tk.Tk):
         self.create_slider("곡선당김금구방향", -1, 1, 2, 1, parent=frame_steady)
         self.create_slider("곡선당김금구길이", 1, 5, 0.1, 0.9, parent=frame_steady)
         self.create_slider("곡선당김금구높이", 0, 1, 0.01, 0.35, parent=frame_steady)
+
+        # 급전선 관련 슬라이더
+        self.create_slider("완철길이", 0, 10, 0.01, 2, parent=frame_feeder)
+        self.create_slider("완철방향", -1, 1, 2, 1, parent=frame_feeder)
+        self.create_slider("완철높이y", -10, 20, 0.01, 8, parent=frame_feeder)
+        self.create_slider("현수길이", 0, 5, 0.01, 1.5, parent=frame_feeder)
+        self.create_slider("현수각도", -180, 180, 0.01, -90, parent=frame_feeder)
 
         # 저장/로드 버튼
         btn_save = tk.Button(self, text="세팅 저장", command=self.save_settings)
@@ -281,6 +322,7 @@ class PipeApp(tk.Tk):
         self.ax.clear()
         self.ax.set_xlim(-5, 5)
         self.ax.set_ylim(0, 12)
+        self.ax.set_facecolor('black')
 
         system_height = float(self.slider_가고.get())
         contact_height = float(self.slider_전차선높이.get())
@@ -306,6 +348,14 @@ class PipeApp(tk.Tk):
         steadyarm_dir = float(self.slider_곡선당김금구방향.get())
         steadyarm_l = float(self.slider_곡선당김금구길이.get())
         steadyarm_h = float(self.slider_곡선당김금구높이.get())
+
+        #급전선
+        crossarm_l = float(self.slider_완철길이.get())
+        crossarm_y = float(self.slider_완철높이y.get())
+        crossarm_dir = float(self.slider_완철방향.get())
+        insulator_l = float(self.slider_현수길이.get())
+        suspenssion_angle = float(self.slider_현수각도.get())
+
         # 전주
         p1 = Point2d(rail_level.x - gague,0)
         p2 = p1.moved(math.pi / 2, pole_height)
@@ -358,6 +408,16 @@ class PipeApp(tk.Tk):
             x = trolly_wire.x
             solx = x - steadyarm_l if steadyarm_dir == 1 else x + steadyarm_l
             self.ax.text(origin.x, origin.y, f'곡선당김금구 x 미달\n필요 곡선당김금구 x:{solx:.4f}')
+
+        #급전선 객체
+        f_s = Point2d(p1.x, crossarm_y)
+        dird = 0 if crossarm_dir == 1 else  math.pi
+        f_e = f_s.moved(dird, crossarm_l)
+        i_e = f_e.moved(math.radians(suspenssion_angle), insulator_l)
+        l1 = Line2d(f_s,f_e)
+        l2 = Line2d(f_e,i_e)
+        self.feeder = Feeder([l1, l2], label='AF', color='orange')
+        self.feeder.draw(self.ax)
 
         # 기존 확대/축소 상태 복원
         self.ax.set_xlim(cur_xlim)
