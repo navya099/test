@@ -22,7 +22,12 @@ class BVEBlcokExporter:
         for sta in range(start_sta,end_sta + 1, interval):
             radius = 0
             cant = 0
-            for start, end, r, c in curve_segments:
+            for seg in curve_segments:
+                start = seg.bc_sta
+                end = seg.ec_sta
+                r = seg.radius
+                c = 0.0
+
                 if start <= sta <= end:
                     radius = r
                     cant = c
@@ -32,7 +37,8 @@ class BVEBlcokExporter:
 
     @staticmethod
     def export_pitch_info(pitch_segments, start_sta, end_sta, interval=25):
-
+        start_sta = int(start_sta)
+        end_sta = int(end_sta)
         # STA 오름차순 정렬
         pitch_segments.sort(key=lambda x: x[0])
 
