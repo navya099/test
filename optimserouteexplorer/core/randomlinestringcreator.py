@@ -60,7 +60,7 @@ class RandomLineStringCreator:
         while True:
 
 
-            angle = random.uniform(angle_to_end - math.radians(90), angle_to_end + math.radians(90))
+            angle = random.uniform(angle_to_end - math.radians(30), angle_to_end + math.radians(30))
             distance = random.uniform(min_distance, max_distance)
             x = point.x + distance * math.cos(angle)
             y = point.y + distance * math.sin(angle)
