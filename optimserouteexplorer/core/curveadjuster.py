@@ -78,7 +78,8 @@ class CurveAdjuster:
                 bc_sta=ip_sta - tl,
                 ec_sta=ip_sta - tl + cl,
                 cl=cl,
-                tl=tl
+                tl=tl,
+                radius=self.radius_list[i]
             ))
 
         return segments

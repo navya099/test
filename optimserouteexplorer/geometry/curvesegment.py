@@ -15,3 +15,4 @@ class CurveSegment:
     ec_sta: float
     cl: float
     tl: float
+    radius: float
