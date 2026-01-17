@@ -49,3 +49,25 @@ def get_random_radius(min_radius, max_radius):
     # 랜덤하게 선택
 
     return random.choice(multiples_of_1000)
+
+class Vector2:
+    def __init__(self, x=0.0, y=0.0):
+        self.x = x
+        self.y = y
+
+    def rotate(self, cosine_of_angle, sine_of_angle):
+        x_new = cosine_of_angle * self.x - sine_of_angle * self.y
+        y_new = sine_of_angle * self.x + cosine_of_angle * self.y
+        self.x, self.y = x_new, y_new
+
+    def copy(self):
+        return Vector2(self.x, self.y)
+
+class Vector3:
+    def __init__(self, x=0.0, y=0.0, z=0.0):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def copy(self):
+        return Vector3(self.x, self.y, self.z)
