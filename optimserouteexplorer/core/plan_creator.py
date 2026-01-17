@@ -86,7 +86,8 @@ class PlanCreator:
         end_points = [c.ec_coord for c in curves]
         center_points = [c.center_coord for c in curves]
         direction_list = [c.direction for c in curves]
-
+        bc_stations = [c.bc_sta for c in curves]
+        ec_stations = [c.ec_sta for c in curves]
         lsp.create_joined_line_and_arc_linestirng(
             start_points=start_points,
             end_points=end_points,
@@ -103,5 +104,8 @@ class PlanCreator:
             "linestring": linestring,
             "tmcoords": tmcoords,
             "wgs_coords": wgs_coords,
-            "station_list": station_list
+            "station_list": station_list,
+            "bc_stations": bc_stations,
+            "ec_stations": ec_stations,
+            "segments": curves,
         }
