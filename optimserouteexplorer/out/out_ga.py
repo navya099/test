@@ -21,6 +21,9 @@ def format_top10(population, top_n) -> list[dict]:
             "최소곡선반경": min(radius_list),
             "coords": [[c[1], c[0]] for c in plan_full['wgs_coords']],
             "fls": profile.get('fg_profile'),  # 필요 시 profile에서 채움
-            "grounds": profile.get('eg_profile')
+            "grounds": profile.get('eg_profile'),
+            "station_list": plan_full['station_list'],
+            "collections": result['structure_collection'],
+
         })
     return top10
