@@ -1,4 +1,4 @@
-def format_top10(population, top_n=10) -> list[dict]:
+def format_top10(population, top_n) -> list[dict]:
     """
     GA 최종 후보를 웹/엑셀용 dict 포맷으로 변환
     """

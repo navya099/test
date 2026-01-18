@@ -64,7 +64,7 @@ class MapVisualizer(tk.Tk):
             end = (end_lonlat[1], end_lonlat[0])
 
             run_main_process(start, end,
-                             n_candidates=10, n_generations=30, top_n=10)
+                             n_candidates=30, n_generations=50, top_n=10,chain=25)
         else:
             messagebox.showwarning("경고", "시작점과 끝점을 먼저 선택하세요!")
 
