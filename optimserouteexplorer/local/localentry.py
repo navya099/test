@@ -42,3 +42,5 @@ def run_main_process(start, end, n_candidates, n_generations, top_n, chain):
     #6. BVE 변환 (필요 시)
     bve_processor = BVEProcess(results[0])
     bve_processor.run()
+
+    return top10

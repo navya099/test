@@ -63,8 +63,9 @@ class MapVisualizer(tk.Tk):
             start = (start_lonlat[1], start_lonlat[0])
             end = (end_lonlat[1], end_lonlat[0])
 
-            run_main_process(start, end,
+            top10 = run_main_process(start, end,
                              n_candidates=30, n_generations=50, top_n=10,chain=25)
+            messagebox.showinfo('정보', '모든 작업이 성공적으로 완료됐습니다.')
         else:
             messagebox.showwarning("경고", "시작점과 끝점을 먼저 선택하세요!")
 
