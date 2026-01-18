@@ -37,13 +37,17 @@ class BVEProcess:
         design_elevs = self.results['profile']['design_elevs']
         ground_elevs = self.results['profile']['ground_elevs']
 
-        elevdiff_list = np.array(ground_elevs) - np.array(design_elevs)
+        elevdiff_list = np.array(design_elevs) - np.array(ground_elevs)
         return design_elevs, ground_elevs, elevdiff_list
 
     def save_infos(self):
         segments = self.results['plan_full']['segments']
         length = self.results['plan_full']['linestring'].length
-        pitchs = self.results['profile']['fg_profile']
+        fg_profile = self.results['profile']['fg_profile']
+        slopes = self.results['profile']['slopes']
+        pitchs = [(sta, slope) for (sta, elevation), slope in zip(fg_profile, slopes)]
+
+
 
         curve_blocks = BVEBlcokExporter.export_curve_info(segments, 0.0, length)
         pitch_blocks = BVEBlcokExporter.export_pitch_info(pitchs, 0.0, length)
