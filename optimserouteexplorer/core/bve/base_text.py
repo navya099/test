@@ -1,9 +1,8 @@
-def create_base_txt() -> str:
+def create_base_txt():
     lines = [
         "Options.ObjectVisibility 1",
         "With Route",
         ".comment 랜덤루트",
-        ".Elevation 0",
         "With Train",
         "With Structure",
         "$Include(오브젝트.txt)",
@@ -12,6 +11,12 @@ def create_base_txt() -> str:
         "$Include(curve_index.txt)",
         "$Include(pitch_index.txt)",
         "With Track",
+        "$Include(평면선형.txt)",
+        "$Include(종단선형.txt)",
+        "$Include(구조물.txt)",
+        "$Include(사면.txt)",
+        "$Include(ground.txt)",
+        "$Include(height.txt)",
         "$Include(전주.txt)",
         "$Include(전차선.txt)",
         "$Include(km_post.txt)",
@@ -23,4 +28,4 @@ def create_base_txt() -> str:
         "0,.sta START STATION;",
         "100,.stop 0;"
     ]
-    return "\n".join(lines)
+    return lines
