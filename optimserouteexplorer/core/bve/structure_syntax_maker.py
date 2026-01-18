@@ -5,19 +5,18 @@ from core.bve.commnd_genmerator import BVECommandGenerator
 
 
 class BVEStructureSyntaxMaker:
-    def __init__(self):
-        pass
-
-    def create_structure_syntax(self, structure_collection: StructureCollection) -> list[str]:
+    @staticmethod
+    def create_structure_syntax(structure_collection: StructureCollection) -> list[str]:
         output = []
         for structure in structure_collection:
             if isinstance(structure, Tunnel):
-                output.extend(self.create_tunnel_syntax(structure))
+                output.extend(BVEStructureSyntaxMaker.create_tunnel_syntax(structure))
             elif isinstance(structure, Bridge):
-                output.extend(self.create_bridge_syntax(structure))
+                output.extend(BVEStructureSyntaxMaker.create_bridge_syntax(structure))
         return output
 
-    def create_bridge_syntax(self, structure) -> list[str]:
+    @staticmethod
+    def create_bridge_syntax(structure) -> list[str]:
         return [
             f',;{structure.name}',
             BVECommandGenerator.make_command(structure.startsta, 'wall', 0, -1, 28),
@@ -26,8 +25,8 @@ class BVEStructureSyntaxMaker:
             BVECommandGenerator.make_command(structure.endsta, 'dike', 0, 0, 32),
             ""  # 구조물 간 빈 줄
         ]
-
-    def create_tunnel_syntax(self, structure) -> list[str]:
+    @staticmethod
+    def create_tunnel_syntax(structure) -> list[str]:
         return [
             f',;{structure.name}',
             BVECommandGenerator.make_command(structure.startsta, 'wall', 0, -1, 51),
