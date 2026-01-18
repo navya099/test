@@ -1,5 +1,6 @@
 
-from local.localentry import main
+from visual.mappapp import MapVisualizer
 
 if __name__ == "__main__":
-    main()
+    app = MapVisualizer()
+    app.mainloop()
