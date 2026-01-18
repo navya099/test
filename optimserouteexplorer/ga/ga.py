@@ -2,6 +2,7 @@ import random
 from copy import deepcopy
 from core.generate_routes import GenerateRoutes
 from core.evaluate import Evaluator
+from core.linestringprocessor import LineStringProcessor
 from core.plan_creator import PlanCreator
 from shapely import LineString
 
@@ -83,18 +84,24 @@ class GeneticAlgorithm:
     def crossover_and_mutate(self, parents):
         children = []
         for i in range(0, len(parents), 2):
-            if i+1 >= len(parents):
+            if i + 1 >= len(parents):
                 break
-            p1, p2 = parents[i], parents[i+1]
+            p1, p2 = parents[i], parents[i + 1]
 
-            # IP 좌표 교배
+            # IP 좌표 교배 + 돌연변이
             child_ip = self.crossover_ip_list(p1['plan'], p2['plan'])
-            # IP 좌표 돌연변이
             child_ip = self.mutate_ip_list(child_ip)
 
+            # ✅ 새 각도/반경 계산
+            lsp = LineStringProcessor(child_ip)
+            lsp.process_linestring()
+            child_angles = lsp.angles
+            child_radius_list = self.ac.calculate_radius_list(child_angles)
+
             child = {
-                "plan": child_ip,
-                "ia": deepcopy(p1['ia']),  # 메타는 부모1 복사
+                "plan": deepcopy(lsp.linestring),  # 새 IP LineString
+                "ia": child_angles,  # 새 각도 리스트
+                "radius_list": child_radius_list,  # 새 반경 리스트
                 "fitness": None,
                 "cost": None,
                 "score": None
