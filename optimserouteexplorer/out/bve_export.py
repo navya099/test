@@ -1,20 +1,45 @@
+import os
+
 class BVEExporter:
-    def __init__(self):
-        pass
-    def export(self, filepath, data):
-        bc = data['bc_stas']
-        ec = data['ec_stas']
-        r = data['radius']
+    @staticmethod
+    def export_plan(filepath, data):
+        bc = data['bc_stations']
+        ec = data['ec_stations']
+        r = data['radius_list']
 
         with open(filepath, 'w') as f:
             for b,e,r in zip(bc, ec, r):
                 f.write(f'{b:.2f},.curve {r};0;\n')
                 f.write(f'{e:.2f},.curve 0;0;\n')
-    def export_profile(self ,filepath, data):
-        fg = data['fls'] #리스트
+    @staticmethod
+    def export_profile(filepath, data):
+        fg = data['fg_profile'] #리스트
         stations = [s for s, _ in fg]
 
         pitch = data['slopes']
         with open(filepath, 'w') as f:
             for s,p in zip(stations, pitch):
                 f.write(f'{s},.pitch {p * 1000:.2f};\n')
+
+    @staticmethod
+    def export(filepath, data):
+        with open(filepath, 'w', encoding='utf-8') as f:
+            if isinstance(data, (list, tuple)):
+                for item in data:
+                    f.write(str(item) + "\n")
+            else:
+                f.write(str(data))
+
+    @staticmethod
+    def export_terrain(folder, data):
+        height_path = os.path.join(folder, 'height.txt')
+        ground_path = os.path.join(folder, 'ground.txt')
+        nori_path = os.path.join(folder, '사면.txt')
+
+        #데이터 분리
+        heights = [h for h, _, _ in data]
+        grounds = [g for _, g, _ in data]
+        noris = [n for _, _, n in data]
+        BVEExporter.export(height_path, heights)
+        BVEExporter.export(ground_path, grounds)
+        BVEExporter.export(nori_path, noris)
