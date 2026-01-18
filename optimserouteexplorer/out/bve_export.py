@@ -42,4 +42,15 @@ class BVEExporter:
         noris = [n for _, _, n in data]
         BVEExporter.export(height_path, heights)
         BVEExporter.export(ground_path, grounds)
-        BVEExporter.export(nori_path, noris)
+        BVEExporter.export_nori(nori_path, noris)
+
+    @staticmethod
+    def export_nori(filepath, data):
+
+        with open(filepath, 'w') as f:
+            f.write(',;좌측사면\n')
+            for l,_ in data:
+                f.write(f'{l}\n')
+            f.write(',;우측사면\n')
+            for _, r in data:
+                f.write(f'{r}\n')
