@@ -2,6 +2,7 @@ import numpy as np
 import math
 from core.construction_cost_calculator import ConstructionCostCalculator
 from core.structure_detector import StructureDetector
+from core.structure_generator import StructureGenerator
 from math_utils import calculate_distance
 
 
@@ -28,14 +29,14 @@ class Evaluator:
         # --- 2. 구간거리(ds) 계산 ---
         linestring = plan["linestring"]
         coords = list(linestring.coords)
-        ds = np.array([
-            calculate_distance(coords[i], coords[i + 1])
-            for i in range(len(coords) - 1)
-        ])
+
 
         # --- 3. 교량/터널 판정 ---
-        detector = StructureDetector()
-        bridges, tunnels = detector.detect(dz, ds, chain)
+        generator = StructureGenerator()
+        generator.define_structure(plan['station_list'],dz)
+        colletion = generator.structures
+        bridges = colletion.get_by_type('교량')
+        tunnels = colletion.get_by_type('터널')
 
         # --- 4. 구간별 총 길이 ---
         total_km = linestring.length * 0.001
@@ -66,6 +67,7 @@ class Evaluator:
             'total_cost': total_cost,
             'total_score': score,
             'total_fitness': fitness,
+            "structure_collection": colletion,
         }
 
 
