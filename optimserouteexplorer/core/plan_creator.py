@@ -108,4 +108,5 @@ class PlanCreator:
             "bc_stations": bc_stations,
             "ec_stations": ec_stations,
             "segments": curves,
+            "radius_list": radius_list,
         }
