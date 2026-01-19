@@ -1,11 +1,16 @@
 import tkinter as tk
 from tkinter import ttk
 
+import numpy as np
+
 from controller.event_controller import EventController
 from controller.main_controller import MainProcess
+from controller.obj_builder import FaceBuilder
+from model.objmodel.csvobject import BracketObject3D
 from .basic_frame import BasicInfoFrame
 
 from .bracket_frame import BracketFrame
+from .preview import PreviewViewer
 from .structure_frame import StructureFrame
 
 class PoleInstallGUI(tk.Tk):
@@ -54,4 +59,44 @@ class PoleInstallGUI(tk.Tk):
         self.destroy()
 
     def plot_preview(self):
-        raise NotImplementedError
+
+        vertices = [
+            (0.127, -0.381, 0.0),
+            (0.06, 8.619, -0.116),
+            (0.06, -0.381, -0.116),
+            (0.127, 8.619, 0.0),
+            (-0.073, -0.381, -0.116),
+            (-0.073, 8.619, -0.116),
+            (-0.14, 8.619, 0.0),
+            (-0.14, -0.381, 0.0),
+            (-0.073, 8.619, 0.116),
+            (-0.073, -0.381, 0.116),
+            (-0.073, 8.619, 0.116),
+            (0.06, -0.381, 0.116),
+            (-0.073, -0.381, 0.116),
+            (0.06, 8.619, 0.116),
+        ]
+        faces = [
+            (0, 2, 1),
+            (1, 3, 0),
+            (1, 2, 4),
+            (4, 5, 1),
+            (6, 5, 4),
+            (4, 7, 6),
+            (8, 6, 7),
+            (7, 9, 8),
+            (10, 12, 11),
+            (11, 13, 10),
+            (11, 0, 3),
+            (3, 13, 11)
+        ]
+
+        edges = FaceBuilder.build_edges_from_faces(faces)
+        pole_obj = BracketObject3D(
+            vertices=vertices,
+            edges=edges
+        )
+        self.view = PreviewViewer()
+        self.view.set_projection('top')
+        self.view.add_object(pole_obj)
+        self.view.draw()
