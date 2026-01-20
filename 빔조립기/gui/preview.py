@@ -19,10 +19,19 @@ class PreviewViewer:
         self.win = None
         self.plot = None
         self.projection = projection
-    def show(self):
+        self._initialized = False
+    # -----------------------------
+    # 초기화
+    # -----------------------------
+    def initialize(self):
+        if self._initialized:
+            return
+
         self._ensure_app()
         self._build_window()
         self.win.show()
+
+        self._initialized = True
 
     # -----------------------------
     # 내부 구현
@@ -48,19 +57,24 @@ class PreviewViewer:
         self.objects.append(pole_obj)
 
     def draw(self):
+        self.initialize()
         self.plot.clear()
 
         for obj in self.objects:
             vertices = obj.get_vertices()
             edges = obj.get_edges()
 
+            xs = []
+            ys = []
+
             for i, j in edges:
                 p1 = self._project(*vertices[i])
                 p2 = self._project(*vertices[j])
-                self.plot.plot(
-                    [p1[0], p2[0]],
-                    [p1[1], p2[1]]
-                )
+
+                xs.extend([p1[0], p2[0]])
+                ys.extend([p1[1], p2[1]])
+
+            self.plot.plot(xs, ys, connect='pairs')
 
     def _project(self, x, y, z):
         if self.projection == "front":
