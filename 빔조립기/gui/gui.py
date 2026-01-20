@@ -4,9 +4,12 @@ from tkinter import ttk
 import numpy as np
 
 from controller.event_controller import EventController
+from controller.file_controler import FileController
 from controller.main_controller import MainProcess
 from controller.obj_builder import FaceBuilder
+from controller.temp_parser import parse_sketchup_csv_lines
 from model.objmodel.csvobject import BracketObject3D
+from world.coordinatesystem import sketchup_to_world
 from .basic_frame import BasicInfoFrame
 
 from .bracket_frame import BracketFrame
@@ -59,44 +62,30 @@ class PoleInstallGUI(tk.Tk):
         self.destroy()
 
     def plot_preview(self):
-
-        vertices = [
-            (0.127, -0.381, 0.0),
-            (0.06, 8.619, -0.116),
-            (0.06, -0.381, -0.116),
-            (0.127, 8.619, 0.0),
-            (-0.073, -0.381, -0.116),
-            (-0.073, 8.619, -0.116),
-            (-0.14, 8.619, 0.0),
-            (-0.14, -0.381, 0.0),
-            (-0.073, 8.619, 0.116),
-            (-0.073, -0.381, 0.116),
-            (-0.073, 8.619, 0.116),
-            (0.06, -0.381, 0.116),
-            (-0.073, -0.381, 0.116),
-            (0.06, 8.619, 0.116),
-        ]
-        faces = [
-            (0, 2, 1),
-            (1, 3, 0),
-            (1, 2, 4),
-            (4, 5, 1),
-            (6, 5, 4),
-            (4, 7, 6),
-            (8, 6, 7),
-            (7, 9, 8),
-            (10, 12, 11),
-            (11, 13, 10),
-            (11, 0, 3),
-            (3, 13, 11)
-        ]
-
-        edges = FaceBuilder.build_edges_from_faces(faces)
-        pole_obj = BracketObject3D(
-            vertices=vertices,
-            edges=edges
-        )
         self.view = PreviewViewer()
-        self.view.set_projection('top')
-        self.view.add_object(pole_obj)
+        self.view.set_projection('front')
+
+        testfile1 = "D:/다운로드/Railway/Object/철도표준도/전철전력/cako250/브래킷/CAKO250-OPG3.0-AJ-I.csv"
+        testfile2 = "D:/다운로드/Railway/Object/철도표준도/전철전력/공통/빔/트러스라멘빔-22.2M.csv"
+
+        filemanager = FileController(testfile1)
+        filemanager.load()
+        meshes = parse_sketchup_csv_lines(filemanager.get_lines())
+        for vertices, faces in meshes:
+            vertices = sketchup_to_world(vertices)
+            edges = FaceBuilder.build_edges_from_faces(faces)
+
+            obj = BracketObject3D(vertices, edges)
+            self.view.add_object(obj)
+
+        filemanager.set_path(testfile2)
+        filemanager.load()
+        meshes = parse_sketchup_csv_lines(filemanager.get_lines())
+        for vertices, faces in meshes:
+            vertices = sketchup_to_world(vertices)
+            edges = FaceBuilder.build_edges_from_faces(faces)
+
+            obj = BracketObject3D(vertices, edges)
+            self.view.add_object(obj)
+
         self.view.draw()
