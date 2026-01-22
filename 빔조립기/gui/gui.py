@@ -66,14 +66,21 @@ class PoleInstallGUI(tk.Tk):
     def plot_preview(self):
         mp = MainProcess(self)
         self.result = mp.run()
+
         self.viewer = PreviewViewer()
         self.viewer.set_projection('front')
-        try:
-            objects = PreviewService.build_from_install(self.result)
-        except FileNotFoundError as e:
-            messagebox.showerror('에러','지정한 파일을 찾을수 없습니다.')
 
-        for obj in objects:
+        result = PreviewService.build_from_install(self.result)
+
+        for obj in result.objects:
             self.viewer.add_object(obj)
 
+        if result.missing:
+            messagebox.showwarning(
+                '일부 파일 누락',
+                '다음 파일을 찾을 수 없습니다:\n\n' +
+                '\n'.join(result.missing)
+            )
         self.viewer.draw()
+
+
