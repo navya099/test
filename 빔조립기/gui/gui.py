@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 import numpy as np
 
@@ -9,6 +9,8 @@ from controller.main_controller import MainProcess
 from controller.obj_builder import FaceBuilder
 from controller.temp_parser import parse_sketchup_csv_lines
 from model.objmodel.csvobject import BracketObject3D
+from preview.previe_assembler import PreviewAssembler
+from preview.preview_sevice import PreviewService
 from world.coordinatesystem import sketchup_to_world
 from .basic_frame import BasicInfoFrame
 
@@ -56,36 +58,22 @@ class PoleInstallGUI(tk.Tk):
 
     def _generate(self):
         mp = MainProcess(self)
-        mp.run()
+        self.result = mp.run()
 
     def destyoy(self):
         self.destroy()
 
     def plot_preview(self):
-        self.view = PreviewViewer()
-        self.view.set_projection('front')
+        mp = MainProcess(self)
+        self.result = mp.run()
+        self.viewer = PreviewViewer()
+        self.viewer.set_projection('front')
+        try:
+            objects = PreviewService.build_from_install(self.result)
+        except FileNotFoundError as e:
+            messagebox.showerror('에러','지정한 파일을 찾을수 없습니다.')
 
-        testfile1 = "D:/다운로드/Railway/Object/철도표준도/전철전력/cako250/브래킷/CAKO250-OPG3.0-AJ-I.csv"
-        testfile2 = "D:/다운로드/Railway/Object/철도표준도/전철전력/공통/빔/트러스라멘빔-22.2M.csv"
+        for obj in objects:
+            self.viewer.add_object(obj)
 
-        filemanager = FileController(testfile1)
-        filemanager.load()
-        meshes = parse_sketchup_csv_lines(filemanager.get_lines())
-        for vertices, faces in meshes:
-            vertices = sketchup_to_world(vertices)
-            edges = FaceBuilder.build_edges_from_faces(faces)
-
-            obj = BracketObject3D(vertices, edges)
-            self.view.add_object(obj)
-
-        filemanager.set_path(testfile2)
-        filemanager.load()
-        meshes = parse_sketchup_csv_lines(filemanager.get_lines())
-        for vertices, faces in meshes:
-            vertices = sketchup_to_world(vertices)
-            edges = FaceBuilder.build_edges_from_faces(faces)
-
-            obj = BracketObject3D(vertices, edges)
-            self.view.add_object(obj)
-
-        self.view.draw()
+        self.viewer.draw()
