@@ -147,7 +147,8 @@ class BracketConfigWindow(tk.Toplevel):
                     xoffset=v[1].get(),
                     yoffset=v[2].get(),
                     rotation=v[3].get(),
-                    index=0
+                    index=0,
+                    rail_type=v[4].get()
                 )
             )
 
@@ -165,7 +166,9 @@ class BracketConfigWindow(tk.Toplevel):
                     xoffset=row["x"].get(),
                     yoffset=row["y"].get(),
                     rotation=row["r"].get(),
-                    index=0
+                    index=0,
+                    rail_type=row["rail_type"].get()   # 추가
+
                 )
             )
 

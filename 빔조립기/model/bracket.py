@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Bracket:
+
     """브래킷 데이터
     Attributes:
         rail_no:선로번호
@@ -18,3 +19,4 @@ class Bracket:
     yoffset: float
     rotation: float
     index: int
+    rail_type: str

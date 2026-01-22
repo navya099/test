@@ -77,6 +77,7 @@ class BeamAssembly:
                         yoffset=b.yoffset,
                         rotation=b.rotation,
                         index=index,
+                        rail_type=None
                     )
                 )
 
