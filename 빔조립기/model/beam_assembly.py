@@ -34,7 +34,8 @@ class BeamAssembly:
         return Beam(
             type=install.beam_type,
             length=length,
-            index=index
+            index=index,
+            name=name,
         )
 
     @staticmethod
@@ -47,6 +48,7 @@ class BeamAssembly:
 
             columns.append(
                 Column(
+                    name=name,
                     type=install.pole_type,
                     width=install.pole_width,
                     xoffset=x,

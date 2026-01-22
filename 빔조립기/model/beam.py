@@ -11,6 +11,7 @@ class Beam:
         length: 빔 길이
         index: 빔 오브젝트 인덱스
         """
+    name: str
     type: BeamType
     length: float
     index: int

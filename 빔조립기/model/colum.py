@@ -13,6 +13,7 @@ class Column:
             yoffset: y위치
             index: 기둥 오브젝트 인덱스
             """
+    name: str
     type: PoleType
     width: float
     xoffset: float
