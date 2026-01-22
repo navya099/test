@@ -7,10 +7,10 @@ from preview.preview_result import PreviewBuildResult
 class PreviewService:
     @staticmethod
     def build_from_install(install):
-        names = set()
-        names.add(install.beam.name)
-        names.update(br.type for br in install.brackets)
-        names.update(col.name for col in install.columns)
+        names = []
+        names.append(install.beam.name)
+        names.extend(br.type for br in install.brackets)
+        names.extend(col.name for col in install.columns)
 
         locator = FileLocator(PathResolver.BASE_PATH)
 
