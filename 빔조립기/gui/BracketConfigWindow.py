@@ -7,7 +7,7 @@ from model.raildata import RailData
 
 
 class BracketConfigWindow(tk.Toplevel):
-    def __init__(self, master, rail: RailData,libmanager: LibraryManager, on_close=None):
+    def __init__(self, master, rail: RailData,libmanager: LibraryManager, on_close=None, on_change=None):
         super().__init__(master)
 
         self.title(f"브래킷 설정 - {rail.name}")
@@ -16,7 +16,7 @@ class BracketConfigWindow(tk.Toplevel):
         self.on_close = on_close
         self.libmanager = libmanager
         self.vars = []  # 각 브래킷 행의 변수 저장
-
+        self.on_change = on_change
         self._build_ui()
         self._load_existing()
 
@@ -78,6 +78,11 @@ class BracketConfigWindow(tk.Toplevel):
         # ── 브래킷 타입
         bracket_type_var = tk.StringVar(value=bracket.type if bracket else "")
 
+        def update_brackets(*_):
+            self._sync_to_raildata()
+            if self.on_change:
+                self.on_change()  # ✅ Preview 갱신
+
         bracket_combo = ttk.Combobox(
             self.table,
             textvariable=bracket_type_var,
@@ -85,6 +90,8 @@ class BracketConfigWindow(tk.Toplevel):
             width=30
         )
         bracket_combo.grid(row=row, column=2, padx=5)
+
+
 
         # ── 갱신 함수 (이 행 전용)
         def reload_brackets(*_):
@@ -110,6 +117,17 @@ class BracketConfigWindow(tk.Toplevel):
         x = tk.DoubleVar(value=bracket.xoffset if bracket else 0.0)
         y = tk.DoubleVar(value=bracket.yoffset if bracket else 0.0)
         r = tk.DoubleVar(value=bracket.rotation if bracket else 0.0)
+
+        for var in [rail_type_var, bracket_type_var, x, y, r]:
+            var.trace_add("write", update_brackets)
+
+        self.vars.append({
+            "rail_type": rail_type_var,
+            "bracket_type": bracket_type_var,
+            "x": x,
+            "y": y,
+            "r": r
+        })
 
         ttk.Entry(self.table, textvariable=x, width=8).grid(row=row, column=3)
         ttk.Entry(self.table, textvariable=y, width=8).grid(row=row, column=4)
@@ -182,3 +200,18 @@ class BracketConfigWindow(tk.Toplevel):
             self.on_close()
 
         self.destroy()
+
+    def _sync_to_raildata(self):
+        self.rail.brackets.clear()
+        for row in self.vars:
+            self.rail.brackets.append(
+                Bracket(
+                    rail_no=self.rail.index,
+                    type=row["bracket_type"].get(),
+                    xoffset=row["x"].get(),
+                    yoffset=row["y"].get(),
+                    rotation=row["r"].get(),
+                    index=0,
+                    rail_type=row["rail_type"].get()
+                )
+            )

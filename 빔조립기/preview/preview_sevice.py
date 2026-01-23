@@ -22,7 +22,7 @@ class PreviewService:
                     path=beam_path,
                     transform=Transform(
                         x=install.beam.x,
-                        y=install.beam.y,
+                        z=install.beam.y,
                         rotation=install.beam.rotation,
                     )
                 )
@@ -39,7 +39,7 @@ class PreviewService:
                         path=path,
                         transform=Transform(
                             x=col.xoffset,
-                            y=col.yoffset,
+                            z=col.yoffset,
                             rotation=0
                         )
                     )
@@ -56,7 +56,7 @@ class PreviewService:
                         path=path,
                         transform=Transform(
                             x=br.xoffset,
-                            y=br.yoffset,
+                            z=br.yoffset,
                             rotation=br.rotation
                         )
                     )

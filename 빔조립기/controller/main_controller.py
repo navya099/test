@@ -13,9 +13,14 @@ class MainProcess:
     def __init__(self, master):
         self.master = master
 
+    _cached_df = None
+
     def run(self):
-        df = pd.read_csv(URL)
+        if MainProcess._cached_df is None:
+            MainProcess._cached_df = pd.read_csv(URL)
+        df = MainProcess._cached_df
         idxlib = IndexLibrary(df)
+
         # 설치 시작
         install = PoleInstall(
             station=self.master.station.get(),

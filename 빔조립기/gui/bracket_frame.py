@@ -19,11 +19,12 @@ class BracketFrame(ttk.LabelFrame):
         self.event.bind("basic.changed", self._rebuild_brackets)
 
     def open_bracket_config(self, rail: RailData):
-        BracketConfigWindow(
-            master=self,
-            rail=rail,
-            libmanager=self.lib_manager
-        )
+        def refresh_preview():
+            self.master.plot_preview()  # ✅ 기존 PreviewViewer 갱신 함수 호출
+
+        BracketConfigWindow(self, rail, self.lib_manager,
+                            on_change=refresh_preview,
+                            on_close=refresh_preview)
 
     def build_bracket_frame(self):
         self.bracket_frame = ttk.LabelFrame(self, text="브래킷 설정 (선로별)")
