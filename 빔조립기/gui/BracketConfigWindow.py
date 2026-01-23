@@ -93,8 +93,14 @@ class BracketConfigWindow(tk.Toplevel):
                 category="브래킷",
                 group=group
             )
+
             bracket_combo["values"] = values
-            if values:
+
+            # ✅ 기존 값이 있으면 유지
+            current = bracket_type_var.get()
+            if current in values:
+                bracket_combo.set(current)
+            elif values:
                 bracket_combo.current(0)
 
         rail_type_var.trace_add("write", reload_brackets)
