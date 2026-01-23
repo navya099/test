@@ -15,3 +15,6 @@ class Beam:
     type: BeamType
     length: float
     index: int
+    x: float
+    y: float
+    rotation: float

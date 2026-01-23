@@ -36,6 +36,9 @@ class BeamAssembly:
             length=length,
             index=index,
             name=name,
+            x=install.left_x,
+            y=0,
+            rotation=0,
         )
 
     @staticmethod
@@ -77,7 +80,7 @@ class BeamAssembly:
                         yoffset=b.yoffset,
                         rotation=b.rotation,
                         index=index,
-                        rail_type=None
+                        rail_type=''
                     )
                 )
 
