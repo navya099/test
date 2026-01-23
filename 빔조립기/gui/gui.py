@@ -1,19 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-
-import numpy as np
+from tkinter import scrolledtext
 
 from controller.event_controller import EventController
-from controller.file_controler import FileController
 from controller.main_controller import MainProcess
-from controller.obj_builder import FaceBuilder
-from controller.temp_parser import parse_sketchup_csv_lines
-from model.objmodel.csvobject import BracketObject3D
-from preview.previe_assembler import PreviewAssembler
 from preview.preview_sevice import PreviewService
-from world.coordinatesystem import sketchup_to_world
 from .basic_frame import BasicInfoFrame
-
 from .bracket_frame import BracketFrame
 from .preview import PreviewViewer
 from .structure_frame import StructureFrame
@@ -21,6 +13,7 @@ from .structure_frame import StructureFrame
 class PoleInstallGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.bve_window = None
         self.title("전주 설치 입력기")
         self.geometry("900x650")
 
@@ -63,7 +56,7 @@ class PoleInstallGUI(tk.Tk):
 
         # 기존 객체 초기화 후 다시 추가
         self.viewer.objects.clear()
-        result = PreviewService.build_from_install(self.result)
+        result = PreviewService.build_from_install(self.result.beam)
         for obj in result.objects:
             self.viewer.add_object(obj)
 
@@ -74,7 +67,7 @@ class PoleInstallGUI(tk.Tk):
             )
 
         self.viewer.draw()
-
+        self.show_bvesyntac()
     # ✅ 딜레이 방식: 값 변경 시 바로 실행하지 않고 일정 시간 후 실행
     def _schedule_preview(self, *args):
         # 기존 예약된 실행이 있으면 취소
@@ -105,5 +98,30 @@ class PoleInstallGUI(tk.Tk):
     # ✅ 값 변경 시 자동 호출되는 함수
     def _update_preview(self, *args):
         self.plot_preview()
+
+    def show_bvesyntac(self):
+        if self.result:
+            text = self.result.to_bve()
+
+            # ✅ 처음 호출 시에만 새창 생성
+            if self.bve_window is None or not self.bve_window.winfo_exists():
+                self.bve_window = tk.Toplevel(self)
+                self.bve_window.title("BVE 코드")
+                self.bve_window.geometry("600x400")
+
+
+                self.bve_text = scrolledtext.ScrolledText(self.bve_window, wrap="word")
+                self.bve_text.pack(fill="both", expand=True)
+
+                ttk.Button(self.bve_window, text="닫기", command=self.bve_window.destroy).pack(pady=5)
+
+            # ✅ 기존 Text 내용 갱신
+            self.bve_text.config(state="normal")
+            self.bve_text.delete("1.0", "end")
+            self.bve_text.insert("1.0", text)
+            self.bve_text.config(state="disabled")
+
+        else:
+            messagebox.showwarning('에러', '아직 개체가 생성되지 않았습니다.')
 
 

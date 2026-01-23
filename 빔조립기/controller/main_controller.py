@@ -37,6 +37,5 @@ class MainProcess:
         )
         install.brackets = self.master.bracket_frame.bracket_vars
         install.beam = BeamAssembly.create_from_install(install, idxlib)
-        print(install.to_bve())
-        return install.beam
+        return install
 
