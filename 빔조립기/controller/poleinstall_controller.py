@@ -66,7 +66,7 @@ class PoleInstall:
             offset = offs[i]
             station = self.station + offset
             text += f'{station}\n'
-            text += f',;{br.rail_no}\n'
+            text += f',;{br.rail_type}\n'
             text += f'.freeobj {br.rail_no};{br.index};{br.xoffset};{br.yoffset};{br.rotation};,;{br.type}\n'
 
         return text

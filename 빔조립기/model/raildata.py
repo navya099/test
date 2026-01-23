@@ -1,13 +1,16 @@
 from dataclasses import dataclass, field
-
+import tkinter as tk
 @dataclass
 class RailData:
-    """레일데이터
-    Attributes:
-        name:선로명
-        index:선로인덱스
-        brackets:브래킷들
-    """
-    name: str = ''
-    index: int = 0
-    brackets: list = field(default_factory=list)
+    index_var: tk.IntVar
+    name_var: tk.StringVar
+    brackets: list
+
+    @property
+    def index(self):
+        return self.index_var.get()
+
+    @property
+    def name(self):
+        return self.name_var.get()
+
