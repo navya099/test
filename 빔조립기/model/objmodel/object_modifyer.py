@@ -1,0 +1,53 @@
+import numpy as np
+
+class ObjectModifier:
+    def __init__(self, vertices=None):
+        self.vertices = vertices
+
+    def rotate_x(self, angle_deg: float):
+        theta = np.deg2rad(angle_deg)
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+
+        R = np.array([
+            [1, 0, 0],
+            [0, cos_t, -sin_t],
+            [0, sin_t, cos_t],
+        ])
+
+        self.vertices = self.vertices @ R.T
+
+    def rotate_y(self, angle_deg: float):
+        theta = np.deg2rad(angle_deg)
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+
+        R = np.array([
+            [ cos_t, 0, sin_t ],
+            [ 0,     1, 0     ],
+            [-sin_t, 0, cos_t ],
+        ])
+
+        self.vertices = self.vertices @ R.T
+
+    def rotate_z(self, angle_deg: float):
+        theta = np.deg2rad(angle_deg)
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+
+        R = np.array([
+            [cos_t, -sin_t, 0],
+            [sin_t, cos_t, 0],
+            [0, 0, 1],
+        ])
+
+        self.vertices = self.vertices @ R.T
+
+    def translate(self, dx, dy, dz=0):
+        offset = np.array([dx, dy, dz])
+        self.vertices = self.vertices + offset
+
+    def set_vertices(self, vertices):
+        self.vertices = []
+        self.vertices = vertices
+
