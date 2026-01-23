@@ -1,29 +1,70 @@
 from controller.filefinder import FileLocator
 from controller.path_resolver import PathResolver
 from preview.previe_assembler import PreviewAssembler
+from preview.preview_item import PreviewItem
 from preview.preview_result import PreviewBuildResult
-
+from model.objmodel.transform import Transform
 
 class PreviewService:
     @staticmethod
     def build_from_install(install):
-        names = []
-        names.append(install.beam.name)
-        names.extend(br.type for br in install.brackets)
-        names.extend(col.name for col in install.columns)
+        items = []
+        missing = []
 
         locator = FileLocator(PathResolver.BASE_PATH)
 
-        found_paths = []
-        missing = []
+        # 1. 빔
+        beam_path = locator.find(install.beam.name)
+        if beam_path:
 
-        for name in names:
-            path = locator.find(name)
+            items.append(
+                PreviewItem(
+                    path=beam_path,
+                    transform=Transform(
+                        x=install.beam.x,
+                        y=install.beam.y,
+                        rotation=install.beam.rotation,
+                    )
+                )
+            )
+        else:
+            missing.append(install.beam.name)
+
+        # 2. 기둥
+        for col in install.columns:
+            path = locator.find(col.name)
             if path:
-                found_paths.append(path)
+                items.append(
+                    PreviewItem(
+                        path=path,
+                        transform=Transform(
+                            x=col.xoffset,
+                            y=col.yoffset,
+                            rotation=0
+                        )
+                    )
+                )
             else:
-                missing.append(name)
+                missing.append(col.name)
 
-        objects = PreviewAssembler.load_objects(found_paths) if found_paths else []
+        # 3. 브래킷
+        for br in install.brackets:
+            path = locator.find(br.type)
+            if path:
+                items.append(
+                    PreviewItem(
+                        path=path,
+                        transform=Transform(
+                            x=br.xoffset,
+                            y=br.yoffset,
+                            rotation=br.rotation
+                        )
+                    )
+                )
+            else:
+                missing.append(br.type)
+
+        objects = PreviewAssembler.load_items(items)
 
         return PreviewBuildResult(objects=objects, missing=missing)
+
