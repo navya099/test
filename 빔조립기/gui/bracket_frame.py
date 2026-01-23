@@ -1,7 +1,6 @@
 import tkinter as tk
-from doctest import master
 from tkinter import ttk
-
+import string
 from gui.BracketConfigWindow import BracketConfigWindow
 from library import LibraryManager
 from model.raildata import RailData
@@ -10,6 +9,7 @@ from model.raildata import RailData
 class BracketFrame(ttk.LabelFrame):
     def __init__(self, master ,event):
         super().__init__(master, text="선로 정보")
+        self.bracket_vars = None
         self.master = master  # 명시적으로 잡아두는 게 좋음
         self.event = event
         self.lib_manager = LibraryManager()
@@ -56,6 +56,8 @@ class BracketFrame(ttk.LabelFrame):
         # =============================
         # 행
         # =============================
+        import string
+
         for i in range(self.master.rail_count.get()):
             row = i + 1
 
@@ -64,21 +66,29 @@ class BracketFrame(ttk.LabelFrame):
                 text=f"선로 {i + 1}"
             ).grid(row=row, column=0, padx=5, sticky="w")
 
-            rail_name_var = tk.StringVar()
+            # 기본 선로명 a, b, c ...
+            default_name = string.ascii_lowercase[i % 26]
+
+            rail_name_var = tk.StringVar(value=default_name)
+            rail_idx_var = tk.IntVar(value=i)
+
             ttk.Entry(
                 self.bracket_frame,
                 textvariable=rail_name_var,
                 width=6
             ).grid(row=row, column=1)
 
-            rail_idx_var = tk.IntVar(value=i)
             ttk.Entry(
                 self.bracket_frame,
                 textvariable=rail_idx_var,
                 width=6
             ).grid(row=row, column=2)
 
-            rail = RailData(index=rail_idx_var.get(), name=rail_name_var.get(), brackets=[])
+            rail = RailData(
+                index_var=rail_idx_var,
+                name_var=rail_name_var,
+                brackets=[]
+            )
 
             ttk.Button(
                 self.bracket_frame,
@@ -87,4 +97,5 @@ class BracketFrame(ttk.LabelFrame):
             ).grid(row=row, column=4, padx=5)
 
             self.bracket_vars.append(rail)
+
 
