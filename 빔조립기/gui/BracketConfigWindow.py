@@ -121,14 +121,6 @@ class BracketConfigWindow(tk.Toplevel):
         for var in [rail_type_var, bracket_type_var, x, y, r]:
             var.trace_add("write", update_brackets)
 
-        self.vars.append({
-            "rail_type": rail_type_var,
-            "bracket_type": bracket_type_var,
-            "x": x,
-            "y": y,
-            "r": r
-        })
-
         ttk.Entry(self.table, textvariable=x, width=8).grid(row=row, column=3)
         ttk.Entry(self.table, textvariable=y, width=8).grid(row=row, column=4)
         ttk.Entry(self.table, textvariable=r, width=8).grid(row=row, column=5)
@@ -155,46 +147,24 @@ class BracketConfigWindow(tk.Toplevel):
             messagebox.showwarning("경고", "브래킷은 최소 1개 이상 필요합니다.")
             return
 
+        # 해당 행의 변수 제거
         self.vars.pop(index)
 
-        for w in self.table.winfo_children():
+        # 해당 행의 위젯만 제거
+        for w in self.table.grid_slaves(row=index + 1):  # 헤더가 row=0이므로 +1
             w.destroy()
 
-        self.vars_copy = self.vars[:]
-        self.vars.clear()
-
-        for v in self.vars_copy:
-            self.add_row(
-                Bracket(
-                    rail_no=self.rail.index,
-                    type=v[0].get(),
-                    xoffset=v[1].get(),
-                    yoffset=v[2].get(),
-                    rotation=v[3].get(),
-                    index=0,
-                    rail_type=v[4].get()
-                )
-            )
+        # 남은 행들의 번호 라벨 업데이트
+        for i, row_vars in enumerate(self.vars, start=1):
+            for w in self.table.grid_slaves(row=i):
+                if isinstance(w, ttk.Label):  # 첫 번째 열 번호 라벨
+                    w.config(text=str(i))
 
     # =============================
     # 적용
     # =============================
     def apply(self):
-        self.rail.brackets.clear()
-
-        for row in self.vars:
-            self.rail.brackets.append(
-                Bracket(
-                    rail_no=self.rail.index,
-                    type=row["bracket_type"].get(),
-                    xoffset=row["x"].get(),
-                    yoffset=row["y"].get(),
-                    rotation=row["r"].get(),
-                    index=0,
-                    rail_type=row["rail_type"].get()   # 추가
-
-                )
-            )
+        self._sync_to_raildata()
 
         if self.on_close:
             self.on_close()
