@@ -3,6 +3,8 @@ import tkinter as tk
 import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 from math_utils import calculate_distance, calculate_bearing, calculate_destination_coordinates
 from tkinter import ttk, messagebox
 
@@ -95,6 +97,7 @@ class TKINTER(tk.Tk):
             self.entries[f"entry_{i+1}"] = e
 
         ttk.Button(self, text="계산하기", command=self.run_solver).grid(row=8, column=0, columnspan=2, pady=10)
+        self.render = Render(self)
 
     def run_solver(self):
         try:
@@ -126,38 +129,51 @@ class TKINTER(tk.Tk):
 
 
             self.data = [A, C, R, top_point, self.result_angle.get(), self.result_length.get(), self.entries]
-            messagebox.showinfo('계산 결과', f'경사 주 파이프 각도:{self.result_angle.get()}\n경사 주 파이프 길이:{self.result_length.get()}')
-            render = Render()
-            render.plot_graph(self.data)
+            #messagebox.showinfo('계산 결과', f'경사 주 파이프 각도:{self.result_angle.get()}\n경사 주 파이프 길이:{self.result_length.get()}')
+
+            self.render.plot_graph(self.data)
 
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
 class Render:
-    def __init__(self):
-        pass
+    def __init__(self, parent):
+        self.parent = parent
+        self.window = None
+        self.fig, self.ax = plt.subplots(figsize=(6, 6))
+        if not self.window:
+            self._create_window()
+
+    def _create_window(self):
+        self.window = tk.Toplevel(self.parent)
+        self.window.title("그래프 보기")
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.window)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def plot_graph(self, data: list):
+        if self.window is None or not self.window.winfo_exists():
+            self._create_window()
+
         A, C, R, top_point, theta, length, entries = data
 
-        fig, ax = plt.subplots(figsize=(6, 6))
-        ax.set_aspect('equal')
-        ax.grid(True)
+        self.ax.cla()
+        self.ax.set_aspect('equal')
+        self.ax.grid(True)
 
         # 원
         circle = plt.Circle(C, R, fill=False, color='black', linestyle='--')
         #ax.add_artist(circle)
 
         # 점 A, C
-        ax.scatter(*A, color='blue')
-        ax.text(A[0] + 0.05, A[1], 'A', color='blue')
+        self.ax.scatter(*A, color='blue')
+        self.ax.text(A[0] + 0.05, A[1], 'A', color='blue')
 
-        ax.scatter(*C, color='red')
-        ax.text(C[0] + 0.05, C[1], 'C', color='red')
+        self.ax.scatter(*C, color='red')
+        self.ax.text(C[0] + 0.05, C[1], 'C', color='red')
 
         # 접점
-        ax.scatter(*top_point, color='green')
-        ax.text(top_point[0] + 0.05, top_point[1], 'Top', color='green')
+        self.ax.scatter(*top_point, color='green')
+        self.ax.text(top_point[0] + 0.05, top_point[1], 'Top', color='green')
 
         dist = float(entries["entry_1"].get())
         height = float(entries["entry_2"].get())
@@ -172,20 +188,20 @@ class Render:
         B = calculate_destination_coordinates(A,bearing=math.radians(theta),distance=length)
 
         MW = calculate_destination_coordinates(C,bearing=-math.pi / 2,distance=fitingh1)#조가선
-        ax.text(MW[0], MW[1], 'MW',color='blue')
-        ax.scatter(MW[0], MW[1], color='green')
+        self.ax.text(MW[0], MW[1], 'MW',color='blue')
+        self.ax.scatter(MW[0], MW[1], color='green')
 
         CW = stagger, height
-        ax.scatter(CW[0],CW[1], color='green')
-        ax.text(CW[0], CW[1], 'CW', color='blue')
+        self.ax.scatter(CW[0],CW[1], color='green')
+        self.ax.text(CW[0], CW[1], 'CW', color='blue')
 
-        ax.plot([A[0], B[0]], [A[1], B[1]], color='orange', label='Tangent')
-        ax.plot([top_point[0], C[0]], [top_point[1], C[1]])
-        ax.plot([C[0], MW[0]], [C[1], MW[1]])
-        ax.legend()
-        ax.set_title(f"θ={theta:.2f}°, Length={length:.3f}")
-        plt.tight_layout()
-        plt.show()
+        self.ax.plot([A[0], B[0]], [A[1], B[1]], color='orange', label='Tangent')
+        self.ax.plot([top_point[0], C[0]], [top_point[1], C[1]])
+        self.ax.plot([C[0], MW[0]], [C[1], MW[1]])
+        self.ax.legend()
+        self.ax.set_title(f"θ={theta:.2f}°, Length={length:.3f}")
+        self.canvas.draw()
+
 
 
 if __name__ == '__main__':
