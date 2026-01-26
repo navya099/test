@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from vector3 import Vector3
+
 
 @dataclass(frozen=True)
 class Transform:
@@ -7,3 +9,4 @@ class Transform:
     y: float = 0.0
     z: float = 0.0
     rotation: float = 0.0
+    pivot: tuple[float,float,float] = (0,0,0)
