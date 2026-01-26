@@ -3,7 +3,7 @@ from tkinter import ttk
 import string
 from gui.BracketConfigWindow import BracketConfigWindow
 from library import LibraryManager
-from model.raildata import RailData
+from model.tkraildata import TKRailData
 
 
 class BracketFrame(ttk.LabelFrame):
@@ -18,7 +18,7 @@ class BracketFrame(ttk.LabelFrame):
 
         self.event.bind("basic.changed", self._rebuild_brackets)
 
-    def open_bracket_config(self, rail: RailData):
+    def open_bracket_config(self, rail: TKRailData):
         def refresh_preview():
             self.master.plot_preview()  # ✅ 기존 PreviewViewer 갱신 함수 호출
 
@@ -45,6 +45,8 @@ class BracketFrame(ttk.LabelFrame):
             "NO",
             "선로명",
             "선로 인덱스",
+            "선로 좌표 X",
+            "선로 좌표 Y"
         ]
 
         for col, text in enumerate(headers):
@@ -72,6 +74,8 @@ class BracketFrame(ttk.LabelFrame):
 
             rail_name_var = tk.StringVar(value=default_name)
             rail_idx_var = tk.IntVar(value=i)
+            rail_coordx_var = tk.DoubleVar(value=0.0)
+            rail_coordy_var = tk.DoubleVar(value=0.0)
 
             ttk.Entry(
                 self.bracket_frame,
@@ -85,17 +89,32 @@ class BracketFrame(ttk.LabelFrame):
                 width=6
             ).grid(row=row, column=2)
 
-            rail = RailData(
+            tk.Entry(
+                self.bracket_frame,
+                textvariable=rail_coordx_var,
+                width=6
+            ).grid(row=row, column=3)
+
+            tk.Entry(
+                self.bracket_frame,
+                textvariable=rail_coordy_var,
+                width=6
+            ).grid(row=row, column=4)
+
+            rail = TKRailData(
                 index_var=rail_idx_var,
                 name_var=rail_name_var,
-                brackets=[]
+                brackets=[],
+                coordx=rail_coordx_var,
+                coordy=rail_coordy_var,
+                coordz=tk.DoubleVar(value=0.0)
             )
 
             ttk.Button(
                 self.bracket_frame,
                 text="브래킷 설정",
                 command=lambda r=rail: self.open_bracket_config(r)
-            ).grid(row=row, column=4, padx=5)
+            ).grid(row=row, column=5, padx=5)
 
             self.bracket_vars.append(rail)
 

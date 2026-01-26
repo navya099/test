@@ -3,11 +3,11 @@ from tkinter import ttk, messagebox
 
 from library import LibraryManager
 from model.bracket import Bracket
-from model.raildata import RailData
+from model.tkraildata import TKRailData
 
 
 class BracketConfigWindow(tk.Toplevel):
-    def __init__(self, master, rail: RailData,libmanager: LibraryManager, on_close=None, on_change=None):
+    def __init__(self, master, rail: TKRailData, libmanager: LibraryManager, on_close=None, on_change=None):
         super().__init__(master)
 
         self.title(f"브래킷 설정 - {rail.name}")
@@ -182,6 +182,6 @@ class BracketConfigWindow(tk.Toplevel):
                     yoffset=row["y"].get(),
                     rotation=row["r"].get(),
                     index=0,
-                    rail_type=row["rail_type"].get()
+                    rail_type=row["rail_type"].get(),
                 )
             )
