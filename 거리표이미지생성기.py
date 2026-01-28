@@ -1,6 +1,7 @@
 import csv
 from dataclasses import dataclass
 from enum import Enum
+from functools import partial
 from tkinter import filedialog, ttk, messagebox, simpledialog
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageFont
@@ -44,6 +45,52 @@ csv파일에는 텍스쳐명이 bvc와 g 이어야함
 출력파일: OBJECT인덱스 파일 , FREEOBJ구문파일, CSV오브젝트파일, PNG텍스쳐파일
 
 '''
+from tqdm import tqdm
+
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
+
+def km_task(i, interval, structure_list, alignmenttype, source_directory, work_directory, target_directory, offset, first_index):
+    current_sta = i * interval
+    current_structure = isbridge_tunnel(current_sta, structure_list)
+
+    # km표/m표 구분
+    post_type = 'km표' if current_sta % 1000 == 0 else 'm표'
+
+    current_km_int = round(current_sta * 0.001, 1)
+    km_string, m_string = f"{current_km_int:.1f}".split('.')
+
+    img_text1 = km_string
+    img_text2 = m_string
+    img_f_name = str(current_sta)
+    img_bg_color = (2, 6, 140)
+    text_color = (255, 255, 255)
+    openfile_name = f'{post_type}_{current_structure}용'
+
+    # 이미지 생성
+    if alignmenttype in ['도시철도', '일반철도']:
+        process_dxf_image(img_text1, img_text2, img_f_name,
+                          source_directory, work_directory, post_type, alignmenttype)
+    else:
+        if len(img_text2) != 1:
+            img_text2 = resize_to_length(img_text2, desired_length=1)
+        if post_type == 'km표':
+            create_km_image(img_text1, img_bg_color, img_f_name, text_color,
+                            work_directory, image_size=(500, 300), font_size=235)
+        elif post_type == 'm표' and int(m_string) != 0:
+            create_m_image(img_text1, img_text2, img_bg_color, img_f_name, text_color,
+                           work_directory, image_size=(250, 400), font_size=144, font_size2=192)
+
+    # CSV 생성
+    copy_and_export_csv(openfile_name, img_f_name, post_type,
+                        source_directory, work_directory, offset)
+
+    # 구문 데이터 생성
+    index = first_index + i
+    index_data = create_km_index_data(index, current_sta, target_directory)
+    post_data = create_km_post_data(index, current_sta, current_structure)
+
+    return index_data, post_data
 def read_file():
     root = tk.Tk()
     root.withdraw()  # Tkinter 창을 숨김
@@ -222,11 +269,11 @@ def find_structure_section(filepath):
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
-    for start, end in structure_list['bridge']:
+    for name, start, end in structure_list['bridge']:
         if start <= sta <= end:
             return '교량'
     
-    for start, end in structure_list['tunnel']:
+    for name, start, end in structure_list['tunnel']:
         if start <= sta <= end:
             return '터널'
     
@@ -315,6 +362,16 @@ class DXF2IMG:
 
         return output_paths
 
+    def convert_doc2img(self, doc, output_path):
+        msp = doc.modelspace()
+        ctx = RenderContext(doc)
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.set_axis_off()
+        out = MatplotlibBackend(ax)
+        Frontend(ctx, out).draw_layout(msp, finalize=True)
+        fig.savefig(output_path, dpi=96, bbox_inches='tight', pad_inches=0)
+        plt.close(fig)
+
     def trim_and_resize_image(self, input_path, output_path, target_size=(500, 300)):
         """bbox 없이 이미지 여백을 직접 제거하고 500x300 크기로 조정"""
         try:
@@ -339,7 +396,7 @@ class DXF2IMG:
             # 크기 조정 (500x300)
             resized_img = cropped_img.resize(target_size, Image.LANCZOS)
             resized_img.save(output_path)
-            print(f"✅ 여백 제거 및 크기 조정 완료: {output_path}")
+
 
         except Exception as e:
             print(f"❌ 이미지 처리 실패: {e}")
@@ -423,100 +480,63 @@ class LineProcessor:
                         entity.dxf.text = text_func(self.kmtext, self.mtext)
                         layers.get(layer).on()
 
-            doc.saveas(self.modified_path)
-            return True
+
+            return doc
 
         except Exception as e:
             print(f"❌ DXF 수정 실패: {e}")
             return False
 
-def process_dxf_image(img_text1: str, img_text2: str, img_f_name: str, source_directory: str, work_directory: str, post_type: str, alignmenttype: str):
+def process_dxf_image(img_text1, img_text2, img_f_name, source_directory, work_directory, post_type, alignmenttype):
     """DXF 파일 수정 및 이미지 변환"""
-    file_path = source_directory + post_type + '.dxf'
-    modifed_path = work_directory + post_type + '-수정됨.dxf'
+    file_path = os.path.join(source_directory, post_type + '.dxf')
+    modifed_path = os.path.join(work_directory, post_type + '-수정됨.dxf')
 
     lineprogram = LineProcessor(file_path, modifed_path, img_text1, img_text2, alignmenttype)
-    if post_type == 'km표':
-        lineprogram.replace_text_in_dxf(mode='km')
+    mode = 'km' if post_type == 'km표' else 'm'
+    doc = lineprogram.replace_text_in_dxf(mode=mode)
 
-    else:
-        lineprogram.replace_text_in_dxf(mode='m')
-
-    #이미지 추출
     final_output_image = os.path.join(work_directory, img_f_name + '.png')
     converter = DXF2IMG()
-    if alignmenttype == '도시철도':
-        target_size = (200, 250)
-    else:
-        target_size = (180, 650)
-    output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+    target_size = (200, 250) if alignmenttype == '도시철도' else (180, 650)
 
-    if output_paths:
-        converter.trim_and_resize_image(output_paths[0], final_output_image, target_size)
+    # 멀티프로세싱 고려
+    converter.convert_doc2img(doc, final_output_image)
+    converter.trim_and_resize_image(final_output_image, final_output_image, target_size)
 
-def create_km_object(start_block: int, last_block: int, structure_list: dict, interval: int, alignmenttype: str, source_directory: str, work_directory: str, target_directory: str, offset=0.0):
-    start_block = start_block // interval
-    last_block = last_block // interval
-    index_datas=[]
-    post_datas= []
-    structure_comment=[]
+
+
+def create_km_object(start_block, last_block, structure_list, interval,
+                     alignmenttype, source_directory, work_directory,
+                     target_directory, offset=0.0):
+    start_block //= interval
+    last_block //= interval
     first_index = 4025
-    
+    total = last_block - start_block
+
     print('-----이미지 생성중-----\n')
-    for i in range(start_block, last_block):
-        current_sta = i * interval
-        current_structure = isbridge_tunnel(current_sta, structure_list)
-        post_type = ''
-        if current_sta % 1000 == 0: #1000의 배수이면
-            post_type = 'km표'
-                       
-        elif current_sta % interval == 0:#1000의 배수는 제외
-            post_type = 'm표'
 
-        # 소수점 앞뒤 자리 나누기
-        current_km_int = round(current_sta * 0.001, 1)  # 소수점 3자리까지만
-        km_string, m_string = f"{current_km_int:.1f}".split('.')  # 문자열로 변환 시 3자리 고정
+    # partial로 인자 고정
+    task = partial(km_task, interval=interval,
+                   structure_list=structure_list,
+                   alignmenttype=alignmenttype,
+                   source_directory=source_directory,
+                   work_directory=work_directory,
+                   target_directory=target_directory,
+                   offset=offset,
+                   first_index=first_index)
 
-        img_text1 = f'{km_string}'
-        img_text2 = f'{m_string}'
-        img_f_name = f'{current_sta}'
-        img_bg_color = (2, 6, 140)
-        text_color = (255, 255, 255)
+    results = []
 
-        openfile_name = f'{post_type}_{current_structure}용'
 
-        if alignmenttype in ['도시철도', '일반철도']:
-            process_dxf_image(img_text1, img_text2, img_f_name, source_directory, work_directory, post_type, alignmenttype)
+    with ProcessPoolExecutor() as executor:
+        for res in tqdm(executor.map(task, range(start_block, last_block)),
+                        total=total, desc="KM Object 생성"):
+            results.append(res)
 
-        else:
+    index_datas, post_datas = zip(*results)
+    return list(index_datas), list(post_datas)
 
-            if len(img_text2) !=1 :#글자수가 1이 아니면 강제로 1로 적용 예)60 >6
-               img_text2 = resize_to_length(img_text2, desired_length=1)
-            if post_type == 'km표':
-                create_km_image(img_text1, img_bg_color, img_f_name, text_color, work_directory, image_size=(500, 300), font_size=235)
-
-            elif post_type == 'm표':
-                if int(m_string) != 0:
-                    create_m_image(img_text1, img_text2, img_bg_color, img_f_name, text_color, work_directory, image_size=(250, 400), font_size=144, font_size2=192 )
-
-        #텍스쳐와 오브젝트 csv생성
-        copy_and_export_csv(openfile_name, img_f_name, post_type, source_directory, work_directory ,offset)
-        
-        index = first_index + i
-
-        #구문데이터 생성
-        index_data = create_km_index_data(index , current_sta, target_directory)
-        post_data = create_km_post_data(index , current_sta, current_structure)
-
-        #리스트에 추가
-        index_datas.append(index_data)
-        post_datas.append(post_data)
-
-    print("\n구문 생성 완료!")      
-    print("\n이미지 생성 완료!")
-    
-   
-    return index_datas, post_datas   
 
 def create_km_index_data(idx, sta, work_directory):
     object_folder = work_directory.split("Object/")[-1]
