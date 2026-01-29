@@ -10,20 +10,17 @@ class BeamAssembly:
     Attributes:
         beam:빔 객체
         columns: 기둥들
-        brackets:브래킷들
     """
     beam: Beam
     columns: list[Column]
-    brackets: list[Bracket]
 
     @classmethod
     def create_from_install(cls, install, idxlib):
         """팩토리메서드"""
         beam = cls._create_beam(install, idxlib)
         columns = cls._create_columns(install, idxlib)
-        brackets = cls._create_brackets(install, idxlib)
 
-        return cls(beam, columns, brackets)
+        return cls(beam, columns)
 
     @staticmethod
     def _create_beam(install, idxlib):
@@ -62,26 +59,3 @@ class BeamAssembly:
             )
         return columns
 
-    @staticmethod
-    def _create_brackets(install, idxlib):
-        brackets = []
-
-        for rail in install.brackets:  # RailData 단위로 순회
-            for b in rail.brackets:  # 이미 Bracket 객체임
-                name = b.type
-                name = name.replace('.csv', '')
-                index = idxlib.get_index(name)
-
-                brackets.append(
-                    Bracket(
-                        rail_no=rail.index,
-                        type=name,
-                        xoffset=b.xoffset,
-                        yoffset=b.yoffset,
-                        rotation=b.rotation,
-                        index=index,
-                        rail_type=rail.name
-                    )
-                )
-
-        return brackets
