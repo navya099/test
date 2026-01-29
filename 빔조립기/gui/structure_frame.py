@@ -9,6 +9,7 @@ class StructureFrame(ttk.LabelFrame):
         self.pole_type = tk.StringVar(value="강관주")
         self.pole_width = tk.StringVar(value="P10")
         self.pole_height = tk.DoubleVar(value=9.0)
+        self.pole_count = tk.IntVar(value=2)
         self._build()
 
     def _build(self):

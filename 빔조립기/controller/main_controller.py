@@ -1,6 +1,4 @@
 import pandas as pd
-
-from assembler.rail_assembler import RailAssembler
 from controller.library_controller import IndexLibrary
 from model.beam_assembly import BeamAssembly
 from model.pole_install import PoleInstall
