@@ -227,11 +227,11 @@ def create_freeobj(freeobj, structure_list,curve_info, index_dict: dict):
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
-    for start, end in structure_list['bridge']:
+    for name, start, end in structure_list['bridge']:
         if start <= sta <= end:
             return '교량'
     
-    for start, end in structure_list['tunnel']:
+    for name, start, end in structure_list['tunnel']:
         if start <= sta <= end:
             return '터널'
     
@@ -295,15 +295,7 @@ def open_excel_file():
     return file_path
 
 
-def save_files(content):
-    save_path = filedialog.asksaveasfilename(
-        defaultextension=".txt",
-        filetypes=[("Text files", "freeobj.txt"), ("All files", "*.*")]
-    )
-    
-    if not save_path:
-        print("파일 저장이 취소되었습니다.")
-        return
+def save_files(content, save_path):
 
     # Modify content
     modified_content = modify_content(content)
@@ -351,11 +343,7 @@ def create_railtype(curveinfo, structure_list, index_dict: dict):
         
     return railtype_list
 
-def save_railtype(content):
-    save_path = filedialog.asksaveasfilename(
-        defaultextension=".txt",
-        filetypes=[("Text files", "railtype.txt"), ("All files", "*.*")]
-    )
+def save_railtype(content, save_path):
     try:
         with open(save_path, 'w', encoding='utf-8') as f:
             for line in content:
@@ -364,6 +352,154 @@ def save_railtype(content):
     except Exception as e:
         print(f'파일 저장에 실패하였습니다: {e}')
 
+def get_default_values(alignment_type):
+    # alignmenttype별 기본값 딕셔너리
+    default_values = {
+        '도시철도': {
+            'freeobj': {
+                '곡선': {
+                    '터널': {
+                        '콘크리트도상': 449,
+                        '자갈도상': 450,
+                    }
+                },
+                '직선': 499,
+            },
+            'railtype': {
+                '곡선': 11,
+                '직선': {
+                    '터널': {
+                        '콘크리트도상': 2,
+                        '자갈도상': 0,
+                    }
+                }
+            }
+        },
+        '일반철도': {
+            'freeobj': {
+                '곡선': {
+                    '터널': {
+                        '콘크리트도상': 469,
+                        '자갈도상': 228,
+                    }
+                },
+                '직선': 499,
+            },
+            'railtype': {
+                '곡선': 4,
+                '직선': {
+                    '터널': {
+                        '콘크리트도상': 22,
+                        '자갈도상': 8,
+                    }
+                }
+            }
+        },
+        '준고속철도': {
+            'freeobj': {
+                '곡선': {
+                    '터널': {
+                        '콘크리트도상': 469,
+                        '자갈도상': 228,
+                    }
+                },
+                '직선': 499,
+            },
+            'railtype': {
+                '곡선': 4,
+                '직선': {
+                    '터널': {
+                        '콘크리트도상': 22,
+                        '자갈도상': 8,
+                    }
+                }
+            }
+        },
+        '고속철도': {
+            'freeobj': {
+                '곡선': {
+                    '터널': {
+                        '콘크리트도상': 490,
+                        '자갈도상': 470,
+                    }
+                },
+                '직선': 510,
+            },
+            'railtype': {
+                '곡선': 6,
+                '직선': {
+                    '터널': {
+                        '콘크리트도상': 20,
+                        '자갈도상': 13,
+                    }
+                }
+            }
+        }
+    }
+
+    # 전달받은 alignmenttype에 맞는 기본값 선택
+    defaults = default_values.get(alignment_type)
+    if defaults is None:
+        raise ValueError(f"알 수 없는 노선 유형: {alignment_type}")
+    return defaults
+
+
+# 2. UI 핸들러 (관심사 분리)
+def ask_user(prompt, default_value):
+    value = simpledialog.askstring("입력", f"{prompt} (기본값: {default_value})")
+    if value is None:  # 취소
+        return None
+    return int(value) if value.strip() else default_value
+
+def ask_user_cui(prompt, default_value):
+    """콘솔에서 사용자 입력을 받는 핸들러"""
+    value = input(f"{prompt} (기본값: {default_value}) 입력: ")
+    if not value.strip():  # 입력이 없으면 기본값 사용
+        return default_value
+    try:
+        return int(value)
+    except ValueError:
+        print("[경고] 숫자가 아닙니다. 기본값을 사용합니다.")
+        return default_value
+
+# 3. 사용자 입력 적용
+def apply_user_input(defaults, ui_handler=ask_user):
+    v1 = ui_handler("freeobj 곡선-터널-콘크리트도상", defaults['freeobj']['곡선']['터널']['콘크리트도상'])
+    if v1 is None: return None
+    v2 = ui_handler("freeobj 곡선-터널-자갈도상", defaults['freeobj']['곡선']['터널']['자갈도상'])
+    if v2 is None: return None
+    v3 = ui_handler("freeobj 직선", defaults['freeobj']['직선'])
+    if v3 is None: return None
+
+    v4 = ui_handler("railtype 곡선", defaults['railtype']['곡선'])
+    if v4 is None: return None
+    v5 = ui_handler("railtype 직선-터널-콘크리트도상", defaults['railtype']['직선']['터널']['콘크리트도상'])
+    if v5 is None: return None
+    v6 = ui_handler("railtype 직선-터널-자갈도상", defaults['railtype']['직선']['터널']['자갈도상'])
+    if v6 is None: return None
+
+    return {
+        'freeobj': {
+            '곡선': {'터널': {'콘크리트도상': v1, '자갈도상': v2}},
+            '직선': v3,
+        },
+        'railtype': {
+            '곡선': v4,
+            '직선': {'터널': {'콘크리트도상': v5, '자갈도상': v6}},
+        }
+    }
+
+# 4. 최종 사용
+def preprocess_input_index(alignment_type, mode="gui"):
+    defaults = get_default_values(alignment_type)
+    if mode == "gui":
+        return apply_user_input(defaults, ui_handler=ask_user)      # GUI 모드
+    elif mode == "cui":
+        return apply_user_input(defaults, ui_handler=ask_user_cui)  # CUI 모드
+    elif mode == 'default':
+        return defaults
+    else:
+        raise ValueError("지원하지 않는 모드입니다.")
 
 
 class FreeobjApp(tk.Tk):
@@ -388,127 +524,7 @@ class FreeobjApp(tk.Tk):
         self.log_box.insert(tk.END, message + "\n")
         self.log_box.see(tk.END)
 
-    def preprocess_input_index(self):
-        # alignmenttype별 기본값 딕셔너리
-        default_values = {
-            '도시철도': {
-                'freeobj': {
-                    '곡선': {
-                        '터널': {
-                            '콘크리트도상': 449,
-                            '자갈도상': 450,
-                        }
-                    },
-                    '직선': 499,
-                },
-                'railtype': {
-                    '곡선': 11,
-                    '직선': {
-                        '터널': {
-                            '콘크리트도상': 2,
-                            '자갈도상': 0,
-                        }
-                    }
-                }
-            },
-            '일반철도': {
-                'freeobj': {
-                    '곡선': {
-                        '터널': {
-                            '콘크리트도상': 469,
-                            '자갈도상': 228,
-                        }
-                    },
-                    '직선': 499,
-                },
-                'railtype': {
-                    '곡선': 4,
-                    '직선': {
-                        '터널': {
-                            '콘크리트도상': 22,
-                            '자갈도상': 8,
-                        }
-                    }
-                }
-            },
-            '고속철도': {
-                'freeobj': {
-                    '곡선': {
-                        '터널': {
-                            '콘크리트도상': 490,
-                            '자갈도상': 470,
-                        }
-                    },
-                    '직선': 510,
-                },
-                'railtype': {
-                    '곡선': 6,
-                    '직선': {
-                        '터널': {
-                            '콘크리트도상': 20,
-                            '자갈도상': 13,
-                        }
-                    }
-                }
-            }
-        }
 
-        # 전달받은 alignmenttype에 맞는 기본값 선택
-        defaults = default_values.get(self.alignment_type)
-        if defaults is None:
-            messagebox.showerror("오류", f"알 수 없는 노선 유형: {self.alignment_type}")
-            return None
-
-        def get_input(prompt, default_value):
-            value = simpledialog.askstring(prompt, f"{prompt} (기본값: {default_value})")
-            if value is None:  # 취소 시 None 반환
-                return None
-            return int(value) if value.strip() else default_value
-
-        # 사용자 입력 또는 기본값
-        v1 = get_input("freeobj 곡선-터널-콘크리트도상", defaults['freeobj']['곡선']['터널']['콘크리트도상'])
-        if v1 is None: return
-        v2 = get_input("freeobj 곡선-터널-자갈도상", defaults['freeobj']['곡선']['터널']['자갈도상'])
-        if v2 is None: return
-        v3 = get_input("freeobj 직선", defaults['freeobj']['직선'])
-        if v3 is None: return
-
-        v4 = get_input("railtype 곡선", defaults['railtype']['곡선'])
-        if v4 is None: return
-        v5 = get_input("railtype 직선-터널-콘크리트도상", defaults['railtype']['직선']['터널']['콘크리트도상'])
-        if v5 is None: return
-        v6 = get_input("railtype 직선-터널-자갈도상", defaults['railtype']['직선']['터널']['자갈도상'])
-        if v6 is None: return
-
-        self.log(
-            f"[Freeobj] 곡선-터널-콘크리트: {v1}, "
-            f"곡선-터널-자갈: {v2}, "
-            f"직선: {v3} | "
-            f"[Railtype] 곡선: {v4}, "
-            f"직선-터널-콘크리트: {v5}, "
-            f"직선-터널-자갈: {v6}"
-        )
-
-        return {
-            'freeobj': {
-                '곡선': {
-                    '터널': {
-                        '콘크리트도상': v1,
-                        '자갈도상': v2,
-                    }
-                },
-                '직선': v3,
-            },
-            'railtype': {
-                '곡선': v4,
-                '직선': {
-                    '터널': {
-                        '콘크리트도상': v5,
-                        '자갈도상': v6,
-                    }
-                }
-            }
-        }
 
     def process_interval(self):
         top = tk.Toplevel()
@@ -529,7 +545,7 @@ class FreeobjApp(tk.Tk):
     def run_main(self):
         try:
             self.process_interval()
-            index_dict  = self.preprocess_input_index()
+            index_dict  = preprocess_input_index(self.alignment_type)
             self.log("파일을 읽는 중...")
             lines = read_file()
             if not lines:
