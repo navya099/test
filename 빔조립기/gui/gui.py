@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import scrolledtext
 
+from adapter.tk_raildata_adapter import TKRaildataAdapter
+from adapter.tkinstalladpater import TkInstallAdapter
 from controller.event_controller import EventController
 from controller.main_controller import MainProcess
 from preview.preview_sevice import PreviewService
@@ -51,12 +53,11 @@ class PoleInstallGUI(tk.Tk):
         self._build_buttons()
 
     def plot_preview(self):
-        mp = MainProcess(self)
-        self.result = mp.run()
+        self._generate()
 
         # 기존 객체 초기화 후 다시 추가
         self.viewer.objects.clear()
-        result = PreviewService.build_from_install(self.result.beam)
+        result = PreviewService.build_from_install(self.result)
         for obj in result.objects:
             self.viewer.add_object(obj)
 
@@ -89,8 +90,9 @@ class PoleInstallGUI(tk.Tk):
         ttk.Button(frame, text="미리보기", command=self.plot_preview).pack(side="right", padx=10)
 
     def _generate(self):
-        mp = MainProcess(self)
-        self.result = mp.run()
+        dto = TkInstallAdapter.collect(self)
+        mp = MainProcess()
+        self.result = mp.run(dto)
 
     def destyoy(self):
         self.destroy()
@@ -123,5 +125,3 @@ class PoleInstallGUI(tk.Tk):
 
         else:
             messagebox.showwarning('에러', '아직 개체가 생성되지 않았습니다.')
-
-
