@@ -1,34 +1,61 @@
 # core/parser/sketchup_csv.py
+from model.objmodel.csvobject import CSVObject
+from vector3 import Vector3
+from model.objmodel.mesh.mesh import Mesh
+from model.objmodel.face.face import Face
+from world.coordinatesystem import CoordinateSystem
 
-def parse_sketchup_csv_lines(lines):
-    meshes = []
+class CSVObjectParser:
+    def __init__(self, lines):
+        self.lines = lines
 
-    cur_vertices = []
-    cur_faces = []
+    def parse(self) -> CSVObject:
+        try:
+            meshes: list[Mesh] = []
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+            cur_vertices: list[Vector3] = []
 
-        parts = [p.strip() for p in line.split(",") if p.strip()]
-        cmd = parts[0]
+            cur_faces: list[Face] = []
 
-        if cmd == "CreateMeshBuilder":
+            for line in self.lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                parts = [p.strip() for p in line.split(",") if p.strip()]
+                cmd = parts[0]
+
+                if cmd == "CreateMeshBuilder":
+                    if cur_vertices:
+                        meshes.append(
+                            Mesh(
+                                vertices=cur_vertices,
+                                faces=cur_faces,
+                            )
+                        )
+                    cur_vertices = []
+                    cur_faces = []
+
+                elif cmd == "AddVertex":
+                    x, y, z = map(float, parts[1:4])
+                    cur_vertices.append(Vector3(x, y, z))
+
+                elif cmd == "AddFace":
+                    a, b, c = map(int, parts[1:4])
+                    cur_faces.append(Face(a, b, c))
+
+            # 마지막 Mesh
             if cur_vertices:
-                meshes.append((cur_vertices, cur_faces))
-            cur_vertices = []
-            cur_faces = []
+                meshes.append(
+                    Mesh(
+                        vertices=cur_vertices,
+                        faces=cur_faces,
+                    )
+                )
 
-        elif cmd == "AddVertex":
-            cur_vertices.append(tuple(map(float, parts[1:4])))
+            obj = CSVObject(meshes)
 
-        elif cmd == "AddFace":
-            cur_faces.append(tuple(map(int, parts[1:4])))
-
-    # 마지막 mesh
-    if cur_vertices:
-        meshes.append((cur_vertices, cur_faces))
-
-    return meshes
-
+            obj.coordsystem=CoordinateSystem.OPENBVE
+            return obj
+        except Exception as e:
+            raise ValueError(f'파싱 실패 {e}')

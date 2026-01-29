@@ -58,7 +58,8 @@ class PreviewService:
                             transform=Transform(
                                 x=br.xoffset,
                                 z=br.yoffset,
-                                rotation=br.rotation
+                                rotation=br.rotation,
+                                pivot=rail.coord
                             )
                         )
                     )

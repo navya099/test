@@ -1,10 +1,9 @@
 from controller.file_controler import FileController
-from controller.obj_builder import FaceBuilder
-from controller.temp_parser import parse_sketchup_csv_lines
-from model.objmodel.csvobject import BracketObject3D
+from controller.temp_parser import CSVObjectParser
 from model.objmodel.object_modifyer import ObjectModifier
 from preview.preview_item import PreviewItem
-from world.coordinatesystem import sketchup_to_world
+from world.convert import CoordinateConverter
+from world.coordinatesystem import CoordinateSystem
 
 
 class PreviewAssembler:
@@ -12,26 +11,27 @@ class PreviewAssembler:
     def load_items(items: list[PreviewItem]):
         objects = []
         filecontroller = FileController()
-        transformer = ObjectModifier()
+        coordsystemconvertor = CoordinateConverter()
         for item in items:
             filecontroller.set_path(item.path)
             filecontroller.load()
-            meshes = parse_sketchup_csv_lines(
+
+            csvobj = CSVObjectParser(
                 filecontroller.get_lines()
+            ).parse()
+            ## 좌표계는 항상 WORLD 기준으로 ObjectModifier 적용
+            coordsystemconvertor.convert(csvobj, CoordinateSystem.WORLD)
+            modifier = ObjectModifier(csvobj)
+            modifier.set_pivot(item.transform.pivot)
+            modifier.rotate_z(item.transform.rotation)
+            modifier.translate_local(
+                item.transform.x,
+                item.transform.y,
+                item.transform.z
             )
+            modifier.apply()
 
-            for vertices, faces in meshes:
-                vertices = sketchup_to_world(vertices)
-                transformer.set_vertices(vertices)
-                transformer.rotate_z(item.transform.rotation)
-                transformer.translate(
-                    item.transform.x,
-                    item.transform.y,
-                    item.transform.z
-                )
-
-                edges = FaceBuilder.build_edges_from_faces(faces)
-                objects.append(BracketObject3D(transformer.vertices, edges))
+            objects.append(csvobj)
 
         return objects
 

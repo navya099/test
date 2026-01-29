@@ -1,6 +1,10 @@
-# core/geometry/transform.py
-from world.worldvec3 import WorldVec3
+from enum import Enum
 
-
-def sketchup_to_world(vertices):
-    return [(x, z , y) for x, y, z in vertices]
+class CoordinateSystem(Enum):
+    """좌표계 정의
+    Attributes:
+        OPENBVE: x,y,z(y=높이)
+        WORLD: x,y,z(z=높이)
+    """
+    OPENBVE = "OPENBVE"
+    WORLD = "world"

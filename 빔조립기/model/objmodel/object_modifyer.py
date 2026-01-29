@@ -1,79 +1,111 @@
 import numpy as np
 
+from model.objmodel.csvobject import CSVObject
 from vector3 import Vector3
+from model.objmodel.mesh.mesh import Mesh
 
 
 class ObjectModifier:
-    def __init__(self, vertices=None):
-        self.vertices = vertices
-        self.pivot = None
+    def __init__(self, csvobject: CSVObject):
+        self.csvobject = csvobject
+        self._np_pivot: np.ndarray | None = None
+
+        # Mesh별 NumPy 캐시
+        self._np_mesh_vertices: list[np.ndarray] = [
+            self._to_np(mesh.vertices)
+            for mesh in csvobject.meshes
+        ]
+
+    # ---------- Pivot ----------
+
+    def set_pivot(self, pivot: Vector3):
+        self._np_pivot = np.array(
+            [pivot.x, pivot.y, pivot.z],
+            dtype=float
+        )
+
+    # ---------- 회전 ----------
 
     def rotate_x(self, angle_deg: float):
-        theta = np.deg2rad(angle_deg)
-        cos_t = np.cos(theta)
-        sin_t = np.sin(theta)
-
-        R = np.array([
-            [1, 0, 0],
-            [0, cos_t, -sin_t],
-            [0, sin_t, cos_t],
-        ])
-
-        self.vertices = (
-                                (self.vertices - self.pivot) @ R.T
-                        ) + self.pivot
+        self._apply_rotation(self._rot_x(angle_deg))
 
     def rotate_y(self, angle_deg: float):
-        theta = np.deg2rad(angle_deg)
-        cos_t = np.cos(theta)
-        sin_t = np.sin(theta)
-
-        R = np.array([
-            [cos_t, 0, sin_t],
-            [0, 1, 0],
-            [-sin_t, 0, cos_t],
-        ])
-
-        self.vertices = (
-                                (self.vertices - self.pivot) @ R.T
-                        ) + self.pivot
+        self._apply_rotation(self._rot_y(angle_deg))
 
     def rotate_z(self, angle_deg: float):
-        theta = np.deg2rad(angle_deg)
-        cos_t = np.cos(theta)
-        sin_t = np.sin(theta)
+        self._apply_rotation(self._rot_z(angle_deg))
 
-        R = np.array([
-            [cos_t, -sin_t, 0],
-            [sin_t, cos_t, 0],
+    def _apply_rotation(self, R: np.ndarray):
+        if self._np_pivot is None:
+            raise ValueError("pivot is not set")
+
+        self._np_mesh_vertices = [
+            ((v - self._np_pivot) @ R.T) + self._np_pivot
+            for v in self._np_mesh_vertices
+        ]
+
+    # ---------- 이동 ----------
+
+    def translate_world(self, dx, dy, dz=0):
+        offset = np.array([dx, dy, dz], dtype=float)
+        self._np_mesh_vertices = [
+            v + offset for v in self._np_mesh_vertices
+        ]
+
+    def translate_local(self, dx, dy, dz=0):
+        if self._np_pivot is None:
+            raise ValueError("pivot is not set")
+
+        offset = np.array([dx, dy, dz], dtype=float)
+        self._np_mesh_vertices = [
+            (v - self._np_pivot) + offset + self._np_pivot
+            for v in self._np_mesh_vertices
+        ]
+
+    # ---------- 적용 ----------
+
+    def apply(self):
+        """NumPy 결과를 CSVObject에 반영"""
+        for mesh, np_vertices in zip(
+            self.csvobject.meshes,
+            self._np_mesh_vertices
+        ):
+            mesh.vertices = [
+                Vector3(x, y, z)
+                for x, y, z in np_vertices
+            ]
+
+    # ---------- 행렬 ----------
+
+    def _rot_x(self, angle_deg):
+        t = np.deg2rad(angle_deg)
+        c, s = np.cos(t), np.sin(t)
+        return np.array([
+            [1, 0, 0],
+            [0, c, -s],
+            [0, s, c],
+        ])
+
+    def _rot_y(self, angle_deg):
+        t = np.deg2rad(angle_deg)
+        c, s = np.cos(t), np.sin(t)
+        return np.array([
+            [c, 0, s],
+            [0, 1, 0],
+            [-s, 0, c],
+        ])
+
+    def _rot_z(self, angle_deg):
+        t = np.deg2rad(angle_deg)
+        c, s = np.cos(t), np.sin(t)
+        return np.array([
+            [c, -s, 0],
+            [s, c, 0],
             [0, 0, 1],
         ])
 
-        # 🔥 pivot 기준 회전
-        self.vertices = (
-            (self.vertices - self.pivot) @ R.T
-        ) + self.pivot
-
-    def translate_world(self, dx, dy, dz=0):
-        """전역 좌표이동"""
-        offset = np.array([dx, dy, dz])
-        self.vertices = self.vertices + offset
-
-    def translate_local(self, dx, dy, dz=0):
-        """로컬 좌표이동"""
-        offset = np.array([dx, dy, dz])
-        self.vertices = (self.vertices - self.pivot) + offset + self.pivot
-
-    def set_vertices(self, vertices):
-        self.vertices = vertices
-
-    def set_pivot(self, pivot: Vector3):
-        if pivot is None:
-            self.pivot = np.zeros(3)
-            return
-
-        if hasattr(pivot, "to_array"):
-            self.pivot = pivot.to_array()
-        else:
-            raise TypeError(f"Invalid pivot type: {type(pivot)}")
-
+    def _to_np(self, vertices: list[Vector3]) -> np.ndarray:
+        return np.array(
+            [[v.x, v.y, v.z] for v in vertices],
+            dtype=float
+        )
