@@ -14,15 +14,18 @@ class PreviewViewer:
         self.plotter = None
         self.objects = []
         self.projection = projection
-        self._initialized = False
 
     def initialize(self):
-        if self._initialized:
+        # 이미 창이 살아있으면 다시 띄우기
+        if self.win is not None:
+            self.win.show()
+            self.win.raise_()
+            self.win.activateWindow()
             return
+
         self._ensure_app()
         self._build_window()
         self.win.show()
-        self._initialized = True
 
     def _ensure_app(self):
         self.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
