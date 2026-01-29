@@ -14,24 +14,24 @@ class PreviewService:
         locator = FileLocator(PathResolver.BASE_PATH)
 
         # 1. 빔
-        beam_path = locator.find(install.beam.name)
+        beam_path = locator.find(install.beam_assembly.beam.name)
         if beam_path:
 
             items.append(
                 PreviewItem(
                     path=beam_path,
                     transform=Transform(
-                        x=install.beam.x,
-                        z=install.beam.y,
-                        rotation=install.beam.rotation,
+                        x=install.beam_assembly.beam.x,
+                        z=install.beam_assembly.beam.y,
+                        rotation=install.beam_assembly.beam.rotation,
                     )
                 )
             )
         else:
-            missing.append(install.beam.name)
+            missing.append(install.beam_assembly.beam.name)
 
         # 2. 기둥
-        for col in install.columns:
+        for col in install.beam_assembly.columns:
             path = locator.find(col.name)
             if path:
                 items.append(
@@ -48,21 +48,22 @@ class PreviewService:
                 missing.append(col.name)
 
         # 3. 브래킷
-        for br in install.brackets:
-            path = locator.find(br.type)
-            if path:
-                items.append(
-                    PreviewItem(
-                        path=path,
-                        transform=Transform(
-                            x=br.xoffset,
-                            z=br.yoffset,
-                            rotation=br.rotation
+        for rail in install.rails:
+            for br in rail.brackets:
+                path = locator.find(br.type)
+                if path:
+                    items.append(
+                        PreviewItem(
+                            path=path,
+                            transform=Transform(
+                                x=br.xoffset,
+                                z=br.yoffset,
+                                rotation=br.rotation
+                            )
                         )
                     )
-                )
-            else:
-                missing.append(br.type)
+                else:
+                    missing.append(br.type)
 
         objects = PreviewAssembler.load_items(items)
 
