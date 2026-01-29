@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from gui.viewmodel.bracket_input import BracketViewModel
 from library import LibraryManager
 from model.bracket import Bracket
 from model.tkraildata import TKRailData
@@ -58,13 +59,13 @@ class BracketConfigWindow(tk.Toplevel):
     # =============================
     # 행 추가
     # =============================
-    def add_row(self, bracket: Bracket | None = None):
+    def add_row(self, bracket: BracketViewModel | None = None):
         row = len(self.vars) + 1
 
         ttk.Label(self.table, text=str(row)).grid(row=row, column=0)
 
         # ── 선로 타입 (행별)
-        rail_type_var = tk.StringVar(value=bracket.rail_type if bracket else "일반철도")
+        rail_type_var = tk.StringVar(value=bracket.rail_type.get() if bracket else "일반철도")
 
         rail_combo = ttk.Combobox(
             self.table,
@@ -76,7 +77,7 @@ class BracketConfigWindow(tk.Toplevel):
         rail_combo.grid(row=row, column=1)
 
         # ── 브래킷 타입
-        bracket_type_var = tk.StringVar(value=bracket.type if bracket else "")
+        bracket_type_var = tk.StringVar(value=bracket.bracket_type.get() if bracket else "")
 
         def update_brackets(*_):
             self._sync_to_raildata()
@@ -114,9 +115,9 @@ class BracketConfigWindow(tk.Toplevel):
         reload_brackets()
 
         # ── 기타 값
-        x = tk.DoubleVar(value=bracket.xoffset if bracket else 0.0)
-        y = tk.DoubleVar(value=bracket.yoffset if bracket else 0.0)
-        r = tk.DoubleVar(value=bracket.rotation if bracket else 0.0)
+        x = tk.DoubleVar(value=bracket.xoffset.get() if bracket else 0.0)
+        y = tk.DoubleVar(value=bracket.yoffset.get() if bracket else 0.0)
+        r = tk.DoubleVar(value=bracket.rotation.get() if bracket else 0.0)
 
         for var in [rail_type_var, bracket_type_var, x, y, r]:
             var.trace_add("write", update_brackets)
@@ -172,16 +173,16 @@ class BracketConfigWindow(tk.Toplevel):
         self.destroy()
 
     def _sync_to_raildata(self):
+        """tkRAILDATA에 저장"""
         self.rail.brackets.clear()
         for row in self.vars:
             self.rail.brackets.append(
-                Bracket(
-                    rail_no=self.rail.index,
-                    type=row["bracket_type"].get(),
-                    xoffset=row["x"].get(),
-                    yoffset=row["y"].get(),
-                    rotation=row["r"].get(),
-                    index=0,
-                    rail_type=row["rail_type"].get(),
+                BracketViewModel(
+                    rail_no=self.rail.index_var,
+                    bracket_type=row["bracket_type"],
+                    xoffset=row["x"],
+                    yoffset=row["y"],
+                    rotation=row["r"],
+                    rail_type=row["rail_type"],
                 )
             )
