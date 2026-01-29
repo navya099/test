@@ -377,11 +377,11 @@ def find_curve_section(filepath):
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
-    for start, end in structure_list['bridge']:
+    for name, start, end in structure_list['bridge']:
         if start <= sta <= end:
             return '교량'
     
-    for start, end in structure_list['tunnel']:
+    for name, start, end in structure_list['tunnel']:
         if start <= sta <= end:
             return '터널'
     
@@ -688,8 +688,10 @@ def convert_curve_lines(lines):
 
 
 def is_civil3d_format(lines):
-    return any('curve' in cell.lower() for line in lines for cell in line)
-
+    try:
+        return any('curve' in cell.lower() for line in lines for cell in line)
+    except Exception as e:
+        return False
 
 def process_and_save_sections(lines , brokenchain):
     """곡선 정보를 처리하고 파일로 저장"""
