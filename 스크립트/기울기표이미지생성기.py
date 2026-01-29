@@ -717,11 +717,11 @@ def find_pitch_section(filepath, brokenchain=0.0):
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
-    for start, end in structure_list['bridge']:
+    for name, start, end in structure_list['bridge']:
         if start <= sta <= end:
             return '교량'
     
-    for start, end in structure_list['tunnel']:
+    for name, start, end in structure_list['tunnel']:
         if start <= sta <= end:
             return '터널'
     
@@ -825,7 +825,6 @@ def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, stru
 
 def select_target_directory():
     """폴더 선택 다이얼로그를 띄워 target_directory를 설정"""
-    global target_directory
     root = tk.Tk()
     root.withdraw()  # GUI 창 숨기기
 
@@ -839,7 +838,10 @@ def select_target_directory():
     return target_directory
 
 def is_civil3d_format(lines):
-    return any('pitch' in cell.lower() for line in lines for cell in line)
+    try:
+        return any('pitch' in cell.lower() for line in lines for cell in line)
+    except Exception as e:
+        return  False
 
 def convert_pitch_lines(lines):
     """
@@ -905,7 +907,7 @@ def get_vcurve_lines(vip: VIPdata) -> list[list]:
     else:
         return [['VIP', vip.VIP_STA]]
 
-def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str, al_type: str, offset= 0.0):
+def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str, target_directory, al_type: str, offset= 0.0):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
     #이미지 저장
     object_index = 3025
@@ -1140,7 +1142,7 @@ class PitchProcessingApp(tk.Tk):
             self.log(f"{flag}용 처리 시작...")
             vipdatas = process_and_save_sections(data, self.brokenchain, flag, data)
 
-            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory, self.alignment_type, offset=self.offset)
+            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory,self.target_directory, self.alignment_type, offset=self.offset)
 
             # 최종 텍스트 생성
             if objectdatas:
