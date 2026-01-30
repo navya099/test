@@ -70,7 +70,20 @@ class PreviewService:
                     )
                 else:
                     missing.append(br.type)
-
+        #4 레일
+        for rail in install.rails:
+            items.append(
+                PreviewItem(
+                    path=r'D:/BVE/루트/Railway/Object/철도표준라이브러리/궤도/표준단면/자갈도상/일반철도/5M레일_신선_전차선X.csv',#현재 임시로 하드코딩
+                    transform=Transform(
+                        x=0,
+                        z=0,
+                        rotation=0,
+                        pivot=rail.coord
+                    ),
+                    category=PreviewCategory.TRACK
+                )
+            )
         objects = PreviewAssembler.load_items(items)
 
         return PreviewBuildResult(objects=objects, missing=missing)
