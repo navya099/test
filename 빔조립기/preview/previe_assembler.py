@@ -1,7 +1,9 @@
 from controller.file_controler import FileController
 from controller.temp_parser import CSVObjectParser
 from model.objmodel.object_modifyer import ObjectModifier
+from preview.layer_object import PreviewLayerObject
 from preview.preview_item import PreviewItem
+from preview.preview_object import PreviewObject
 from world.convert import CoordinateConverter
 from world.coordinatesystem import CoordinateSystem
 
@@ -39,7 +41,15 @@ class PreviewAssembler:
             )
             modifier.apply()
 
-            objects.append(csvobj)
+            # PreviewObject 생성
+            preview_obj = PreviewLayerObject(
+                mesh=csvobj,
+                pivot=(pivot.x, pivot.y, pivot.z),
+                category=item.category.name,
+                color=None  # 나중에 _track_color()로 채움
+            )
+
+            objects.append(preview_obj)
 
         return objects
 

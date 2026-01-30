@@ -1,5 +1,6 @@
 from controller.filefinder import FileLocator
 from controller.path_resolver import PathResolver
+from preview.category import PreviewCategory
 from preview.previe_assembler import PreviewAssembler
 from preview.preview_item import PreviewItem
 from preview.preview_result import PreviewBuildResult
@@ -24,7 +25,9 @@ class PreviewService:
                         x=install.beam_assembly.beam.x,
                         z=install.beam_assembly.beam.y,
                         rotation=install.beam_assembly.beam.rotation,
-                    )
+                    ),
+                    category=PreviewCategory.BEAM
+
                 )
             )
         else:
@@ -41,7 +44,8 @@ class PreviewService:
                             x=col.xoffset,
                             z=col.yoffset,
                             rotation=0
-                        )
+                        ),
+                    category=PreviewCategory.POLE
                     )
                 )
             else:
@@ -60,7 +64,8 @@ class PreviewService:
                                 z=br.yoffset,
                                 rotation=br.rotation,
                                 pivot=rail.coord
-                            )
+                            ),
+                            category=PreviewCategory.BRACKET
                         )
                     )
                 else:

@@ -46,7 +46,7 @@ class PreviewViewer:
 
     def draw(self):
         self.initialize()
-        self.plotter.draw_objects(self.objects)
+        self.plotter.draw_layers(self.objects)
 
     def set_projection(self, projection):
         self.projection = projection
