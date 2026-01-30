@@ -15,7 +15,6 @@ class PreviewPlotter:
         self.clear()
 
         for layer in layers:
-
             # 1. Mesh 렌더링
             if layer.mesh:
                 self._draw_mesh(
@@ -26,16 +25,17 @@ class PreviewPlotter:
             # 2. 라벨 렌더링
             if layer.label and layer.pivot:
                 x, y = self._project(*layer.pivot)
-                self.plot.text(
-                    x, y,
+                text_item = pg.TextItem(
                     layer.label,
                     color=layer.color or "black",
-                    fontsize=10,
-                    ha="center",
-                    va="bottom"
+                    anchor=(0.5, 0)
                 )
+                text_item.setPos(x, y)
+                self.plot.addItem(text_item)
+
 
     def _draw_mesh(self, csvobj, color):
+        pen = pg.mkPen(color=color, width=1)
         for mesh in csvobj.meshes:
             vertices = mesh.vertices
 
@@ -63,13 +63,13 @@ class PreviewPlotter:
                     xs.extend([p1[0], p2[0]])
                     ys.extend([p1[1], p2[1]])
 
-            self.plot.plot(xs, ys, connect="pairs", color=color)
+            self.plot.plot(xs, ys, connect="pairs", pen=pen)
 
     def _color_from_category(self, category: str) -> str:
         return {
             "BEAM": "skyblue",
             "POLE": "skyblue",
-            "BRACKET": "people",
+            "BRACKET": "purple",
             "TRACK": "white",
             "STRUCTURE": "skyblue",
         }.get(category, "white")
