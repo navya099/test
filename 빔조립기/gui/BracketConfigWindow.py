@@ -21,8 +21,6 @@ class BracketConfigWindow(tk.Toplevel):
         self._build_ui()
         self._load_existing()
 
-        self.grab_set()  # 모달 처리
-
     # =============================
     # UI
     # =============================

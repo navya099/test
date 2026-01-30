@@ -23,6 +23,12 @@ class PreviewAssembler:
             coordsystemconvertor.convert(csvobj, CoordinateSystem.WORLD)
             modifier = ObjectModifier(csvobj)
             modifier.set_pivot(item.transform.pivot)
+            #필수: 월드좌표로 배치;
+            modifier.translate_world(
+                item.transform.pivot.x,
+                item.transform.pivot.y,
+                item.transform.pivot.z
+            )
             modifier.rotate_z(item.transform.rotation)
             modifier.translate_local(
                 item.transform.x,
