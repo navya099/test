@@ -216,9 +216,11 @@ def create_freeobj(freeobj, structure_list,curve_info, index_dict: dict):
 
         if iscurve == '곡선':  
             if current_structure == '터널':
-                freeobj_index = index_dict['freeobj']['곡선']['터널']['콘크리트도상']#콘크리트도상터널전차선x
+                freeobj_index = index_dict['freeobj']['곡선']['터널']['콘크리트도상']
+            elif current_structure == '토공' or current_structure == '교량':
+                freeobj_index = index_dict['freeobj']['곡선']['토공']['자갈도상']
             else:
-                freeobj_index = index_dict['freeobj']['곡선']['터널']['자갈도상']#자갈도상터널전차선x
+                raise KeyError(f'올바르지 않은 구조물 {current_structure}')
         else:
             freeobj_index = index_dict['freeobj']['직선']#Null.csv
         content.append(f'{sta},.freeobj 0;{freeobj_index};{x};0;{y};0;{z}\n')
@@ -336,7 +338,7 @@ def create_railtype(curveinfo, structure_list, index_dict: dict):
             if currnet_structure == '터널':
                 railtype = index_dict['railtype']['직선']['터널']['콘크리트도상']#콘크리트도상전차선x
             else:
-                railtype = index_dict['railtype']['직선']['터널']['자갈도상']  # 자갈도상 신선 전차선x
+                railtype = index_dict['railtype']['직선']['토공']['자갈도상']  # 자갈도상 신선 전차선x
         else:
             railtype = index_dict['railtype']['곡선']
         railtype_list.append(f'{sta},.railtype 0;{railtype};\n')
@@ -359,18 +361,34 @@ def get_default_values(alignment_type):
             'freeobj': {
                 '곡선': {
                     '터널': {
-                        '콘크리트도상': 449,
-                        '자갈도상': 450,
+                        '콘크리트도상': 473,
+                        '자갈도상': 228,
+                    },
+                    '토공': {
+                        '콘크리트도상': 465,
+                        '자갈도상': 228,
+                    },
+                    '교량': {
+                        '콘크리트도상': 465,
+                        '자갈도상': 228,
                     }
                 },
                 '직선': 499,
             },
             'railtype': {
-                '곡선': 11,
+                '곡선': 4,
                 '직선': {
                     '터널': {
-                        '콘크리트도상': 2,
-                        '자갈도상': 0,
+                        '콘크리트도상': 25,
+                        '자갈도상': 17,
+                    },
+                    '토공': {
+                        '콘크리트도상': 23,
+                        '자갈도상': 9,
+                    },
+                    '교량': {
+                        '콘크리트도상': 23,
+                        '자갈도상': 9,
                     }
                 }
             }
@@ -379,8 +397,16 @@ def get_default_values(alignment_type):
             'freeobj': {
                 '곡선': {
                     '터널': {
-                        '콘크리트도상': 469,
+                        '콘크리트도상': 473,
                         '자갈도상': 228,
+                    },
+                    '토공': {
+                        '콘크리트도상': 465,
+                        '자갈도상': 449,
+                    },
+                    '교량': {
+                        '콘크리트도상': 465,
+                        '자갈도상': 449,
                     }
                 },
                 '직선': 499,
@@ -389,8 +415,16 @@ def get_default_values(alignment_type):
                 '곡선': 4,
                 '직선': {
                     '터널': {
-                        '콘크리트도상': 22,
-                        '자갈도상': 8,
+                        '콘크리트도상': 25,
+                        '자갈도상': 17,
+                    },
+                    '토공': {
+                        '콘크리트도상': 23,
+                        '자갈도상': 9,
+                    },
+                    '교량': {
+                        '콘크리트도상': 23,
+                        '자갈도상': 9,
                     }
                 }
             }
@@ -399,8 +433,16 @@ def get_default_values(alignment_type):
             'freeobj': {
                 '곡선': {
                     '터널': {
-                        '콘크리트도상': 469,
+                        '콘크리트도상': 473,
                         '자갈도상': 228,
+                    },
+                    '토공': {
+                        '콘크리트도상': 465,
+                        '자갈도상': 449,
+                    },
+                    '교량': {
+                        '콘크리트도상': 465,
+                        '자갈도상': 449,
                     }
                 },
                 '직선': 499,
@@ -409,8 +451,16 @@ def get_default_values(alignment_type):
                 '곡선': 4,
                 '직선': {
                     '터널': {
-                        '콘크리트도상': 22,
-                        '자갈도상': 8,
+                        '콘크리트도상': 25,
+                        '자갈도상': 17,
+                    },
+                    '토공': {
+                        '콘크리트도상': 23,
+                        '자갈도상': 9,
+                    },
+                    '교량': {
+                        '콘크리트도상': 23,
+                        '자갈도상': 9,
                     }
                 }
             }
@@ -419,18 +469,34 @@ def get_default_values(alignment_type):
             'freeobj': {
                 '곡선': {
                     '터널': {
-                        '콘크리트도상': 490,
-                        '자갈도상': 470,
-                    }
+                        '콘크리트도상': 658,
+                        '자갈도상': 659,
+                    },
+                    '교량': {
+                        '콘크리트도상': 657,
+                        '자갈도상': 656,
+                    },
+                    '토공': {
+                        '콘크리트도상': 657,
+                        '자갈도상': 656,
+                    },
                 },
-                '직선': 510,
+                '직선': 499,
             },
             'railtype': {
-                '곡선': 6,
+                '곡선': 4,
                 '직선': {
                     '터널': {
-                        '콘크리트도상': 20,
-                        '자갈도상': 13,
+                        '콘크리트도상': 114,
+                        '자갈도상': 115,
+                    },
+                    '토공':{
+                        '콘크리트도상': 12,
+                        '자갈도상': 7,
+                    },
+                    '교량': {
+                        '콘크리트도상': 12,
+                        '자갈도상': 7,
                     }
                 }
             }
