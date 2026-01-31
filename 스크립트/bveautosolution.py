@@ -1,20 +1,21 @@
 import time
 
-from bve곡선레일구문생성기 import preprocess_input_index, extract_cant, create_freeobj, \
+from bve곡선레일구문생성기 import preprocess_input_index, extract_cant, create_freeobj,\
     cal_mainlogic, save_files, create_railtype, save_railtype
-from 거리표이미지생성기 import select_target_directory, copy_all_files, create_km_object, apply_brokenchain_to_structure
+from 거리표이미지생성기 import create_km_object
 from 곡선표이미지생성기 import process_curve_data, create_curve_post_txt, create_curve_index_txt, create_speed_limit
-from 교량터널구문생성기 import get_designspeed, get_linecount, load_structure_data, create_network_data, create_txt, \
-    find_structure_section
+from 교량터널구문생성기 import get_designspeed, get_linecount, load_structure_data, create_network_data, create_txt
 import os
 import random
 
 from 기울기표이미지생성기 import process_bve_profile, create_pitch_post_txt, create_pitch_index_txt
 from 랜덤신호위치생성 import save_signal_data
-from 랜덤전주위치생성 import distribute_pole_spacing_flexible, load_curve_data, load_pitch_data, \
+from 랜덤전주위치생성 import distribute_pole_spacing_flexible, load_curve_data, load_pitch_data,\
     load_coordinates, define_airjoint_section, generate_postnumbers, save_pole_data, save_wire_data
 from 자동통신구문생성 import create_transmisson_data
 
+from file_io_utils import copy_files
+from file_io_utils import copy_all_files
 
 def get_float_input(prompt):
     while 1:
@@ -37,7 +38,7 @@ class SolutionRunner:
         self.railtype_map = {120: '도시철도', 150: '일반철도', 250: '준고속철도', 350: '고속철도'}
         self.alignment_type = ''
         self.path = r'D:/BVE/루트/Railway/Route/연습용루트/'
-        self.obj_path = r'D:\BVE\루트\Railway\Object\abcdefg/'
+        self.obj_path = r'D:/BVE/루트/Railway/Object/abcdefg/'
 
     def log(self, msg):
         self.logger(msg)
@@ -92,7 +93,7 @@ class SolutionRunner:
         # 구문생성
         result = create_network_data(self.structure_list, self.designspeed, self.linecount)
         # txt저장
-        output_file = os.path.join(self.path, '교량터널.txt')
+        output_file = os.path.join(self.path, '구조물.txt')
         create_txt(output_file, result)
         # 최종 출력
         self.log('교량터널구조물 생성이 완료되었습니다.')
@@ -144,10 +145,12 @@ class SolutionRunner:
         #전주파일
         polefile = os.path.join(self.path, '전주.txt')
         wirefile = os.path.join(self.path, '전차선.txt')
-        save_pole_data(pole_positions, self.structure_list, self.curve_info, self.pitch_info, self.designspeed, airjoint_list, self.bve_coord, polefile)
-        save_wire_data(self.designspeed, pole_positions, spans, self.structure_list,self.curve_info, self.pitch_info, self.bve_coord, airjoint_list, wirefile)
-        self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
-
+        try:
+            save_pole_data(pole_positions, self.structure_list, self.curve_info, self.pitch_info, self.designspeed, airjoint_list, self.bve_coord, polefile)
+            save_wire_data(self.designspeed, pole_positions, spans, self.structure_list,self.curve_info, self.pitch_info, self.bve_coord, airjoint_list, wirefile)
+            self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
+        except Exception as e:
+            self.log(f"전주와 전차선 처리에서 문제가 발생했습니다. {e}")
         # 최종 출력
         self.log(f"전주 개수: {len(pole_positions)}")
         self.log(f"마지막 전주 위치: {pole_positions[-1]}m (종점: {int(end_km * 1000)}m)")
@@ -238,7 +241,11 @@ class SolutionRunner:
 
             # 파일 복사
             self.log("결과 파일 복사 중...")
-            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
+
+            copy_files([index_file, post_file], self.path)
+            copy_all_files(self.source_directory, self.target_directory, ['.jpg', '.jpeg'],['.csv', '.png', '.txt'],
+                           delete_source=False, delete_target=False)
+            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt', '.jpg', '.jpeg'], ['.dxf', '.ai'])
 
             self.log("모든 작업이 완료됐습니다.")
             self.log("KM Object 생성이 완료되었습니다.")
@@ -279,14 +286,19 @@ class SolutionRunner:
             # 최종 텍스트 생성
             if objectdatas:
                 self.log("최종 결과 생성 중...")
-                create_curve_post_txt(objectdatas, self.work_directory)
-                create_curve_index_txt(objectdatas, self.work_directory)
+                post_file = os.path.join(self.work_directory, 'curve_post.txt')
+                index_file = os.path.join(self.work_directory, 'curve_index.txt')
+                create_curve_post_txt(objectdatas, post_file)
+                create_curve_index_txt(objectdatas, index_file)
                 create_speed_limit(objectdatas, self.work_directory)
                 self.log("결과 파일 생성 완료!")
 
             # 파일 복사
             self.log("결과 파일 복사 중...")
-            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
+            copy_files([index_file, post_file], self.path)
+            copy_all_files(self.source_directory, self.target_directory, ['.jpg', '.jpeg'],
+                           delete_source=False, delete_target=False)
+            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt', '.jpg', '.jpeg'], ['.dxf', '.ai'])
 
             self.log("✅ 모든 작업이 성공적으로 완료되었습니다.")
 
@@ -323,12 +335,17 @@ class SolutionRunner:
             # 최종 텍스트 생성
             if objectdatas:
                 self.log("최종 결과 생성 중...")
-                create_pitch_post_txt(objectdatas, self.work_directory)
-                create_pitch_index_txt(objectdatas, self.work_directory)
+                post_file = os.path.join(self.work_directory, 'pitch_post.txt')
+                index_file = os.path.join(self.work_directory, 'pitch_index.txt')
+                create_pitch_post_txt(objectdatas, post_file)
+                create_pitch_index_txt(objectdatas, index_file)
                 self.log("결과 파일 생성 완료!")
             self.log("BVE 작업 완료")
+            copy_files([index_file, post_file], self.path)
+            copy_all_files(self.source_directory, self.target_directory, ['.jpg', '.jpeg'],
+                           delete_source=False, delete_target=False)
+            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt', '.jpg', '.jpeg'], ['.dxf', '.ai'])
 
-            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
             self.log("모든 작업이 완료되었습니다.")
 
             self.log( "Pitch 데이터 처리가 성공적으로 완료되었습니다.")
