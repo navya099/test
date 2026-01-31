@@ -893,11 +893,11 @@ def find_pitch_section(txt_filepath='pitchinfo.txt'):
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
-    for start, end in structure_list['bridge']:
+    for name, start, end in structure_list['bridge']:
         if start <= sta <= end:
             return '교량'
 
-    for start, end in structure_list['tunnel']:
+    for name, start, end in structure_list['tunnel']:
         if start <= sta <= end:
             return '터널'
 
@@ -1029,7 +1029,6 @@ def check_isairjoint(input_sta, airjoint_list):
 
 def write_to_file(filename, lines):
     """리스트 데이터를 파일에 저장하는 함수"""
-    filename = f'c:/temp/' + filename
     try:
         # 디렉토리 자동 생성
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -1242,7 +1241,7 @@ def add_F_and_AJ_brackets(DESIGNSPEED, lines, pos, f_code, bracket_code, airjoin
     """F형 및 AJ형 브래킷을 추가하는 공통 함수"""
     # F형 가동 브래킷 추가
     x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'F형_시점' if not end else 'F형_끝')
-    add_F_bracket(lines, pos - 0.528, f_code, "가동브래킷 F형", flat_fitting, x1, y1)
+    add_F_bracket(DESIGNSPEED, lines, pos - 0.528, f_code, "가동브래킷 F형", flat_fitting, x1, y1)
 
     # AJ형 가동 브래킷 추가
     x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_시점' if not end else 'AJ형_끝')
@@ -1440,7 +1439,7 @@ def get_spreader_idx(DESIGNSPEED, current_structure, current_airjoint):
     return spreader_name, spreader_idx
 
 
-def add_F_bracket(lines, pos, bracket_code, bracket_type, fitting_data, x1, y1):
+def add_F_bracket(DESIGNSPEED, lines, pos, bracket_code, bracket_type, fitting_data, x1, y1):
     """F형 가동 브래킷 및 금구류 추가"""
     idx1, idx2 = fitting_data
     if DESIGNSPEED == 150:
@@ -1542,7 +1541,7 @@ def get_block_index(current_track_position, block_interval=25):
     return math.floor(current_track_position / block_interval + 0.001) * block_interval
 
 
-def process_to_WIRE(positions, spans, structure_list, curve_list, pitchlist, polyline, airjoint_list,
+def process_to_WIRE(DESIGNSPEED, positions, spans, structure_list, curve_list, pitchlist, polyline, airjoint_list,
                     filename="wire.txt"):
     """ 전주 위치에 wire를 배치하는 함수 """
     post_number_lst = generate_postnumbers(positions)
@@ -1576,7 +1575,7 @@ def process_to_WIRE(positions, spans, structure_list, curve_list, pitchlist, pol
 
         # AF와 FPW오프셋(X,Y)
         AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset, AF_yz_angle, FPW_yz_angle, AF_xy_angle, FPW_xy_angle, AF_X_offset_Next, fpw_wire_X_offset_Next = CALULATE_AF_FPW_OFFET_ANGLE(
-            current_structure, next_structure, currentspan)
+            current_structure, next_structure, currentspan, DESIGNSPEED)
 
         # 편위(0.2)와 직선구간 각도
         lateral_offset, adjusted_angle = get_lateral_offset_and_angle(i, currentspan)
@@ -1590,7 +1589,7 @@ def process_to_WIRE(positions, spans, structure_list, curve_list, pitchlist, pol
 
         lines.extend(handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_sta, current_airjoint,
                                                        obj_index, comment, currnet_type, current_structure,
-                                                       next_structure, param_z))
+                                                       next_structure, param_z, DESIGNSPEED))
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, AF_X_offset, AF_X_offset_Next)
         lines.append(f"{pos},.freeobj 0;{AF_wire};{AF_X_offset};{AF_y_offset};{adjusted_angle};{AF_yz_angle};,;급전선\n")
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, fpw_wire_X_offset,
@@ -1623,7 +1622,7 @@ def calculate_height_at_new_distance(h1, h2, L, L_new):
     return h3
 
 
-def CALULATE_AF_FPW_OFFET_ANGLE(current_structure, next_structure, currentspan):
+def CALULATE_AF_FPW_OFFET_ANGLE(current_structure, next_structure, currentspan, DESIGNSPEED):
     # 현재
     AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset = get_wire_offsetanlge(DESIGNSPEED,
                                                                                           current_structure)
@@ -1695,7 +1694,6 @@ def get_wire_offsetanlge(DESIGNSPEED, current_structure):
 
 def buffered_write(filename, lines):
     """파일 쓰기 버퍼 함수"""
-    filename = "C:/TEMP/" + filename
     with open(filename, "w", encoding="utf-8") as f:
         f.writelines(lines)
 
@@ -1757,7 +1755,7 @@ def get_lateral_offset_and_angle(index, currentspan):
 
 
 def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_sta, current_airjoint, obj_index,
-                                      comment, currnet_type, current_structure, next_structure, param_z):
+                                      comment, currnet_type, current_structure, next_structure, param_z, DESIGNSPEED):
     """ 직선, 곡선 구간 wire 처리 """
     lines = []
     sign = -1 if currnet_type == 'I' else 1
@@ -2123,18 +2121,17 @@ def load_coordinates():
     return read_polyline(coord_filepath)
 
 
-def save_pole_data(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline):
+def save_pole_data(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline, filename="c:/temp/전주.txt"):
     """전주 데이터를 텍스트 파일로 저장하는 함수"""
     save_to_txt(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline,
-                filename="전주.txt")
-    print(f"✅ 전주 데이터가 'C:/TEMP/전주.txt' 파일로 저장되었습니다!")
+                filename)
+    print(f"✅ 전주 데이터가 {filename} 파일로 저장되었습니다!")
 
 
-def save_wire_data(pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list):
+def save_wire_data(DESIGNSPEED, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list, filename="c:/temp/전차선.txt"):
     """전차선 데이터를 텍스트 파일로 저장하는 함수"""
-    process_to_WIRE(pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list,
-                    filename="전차선.txt")
-    print(f"✅ 전차선 데이터가 'C:/TEMP/전차선.txt' 파일로 저장되었습니다!")
+    process_to_WIRE(DESIGNSPEED, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list,filename)
+    print(f"✅ 전차선 데이터가 {filename} 파일로 저장되었습니다!")
 
 
 def createtxt(filename, data):
@@ -2182,7 +2179,6 @@ def get_dxf_scale(scale=None):
 def main():
     """전체 작업을 관리하는 메인 함수"""
     # 고속철도인지 확인
-    global DESIGNSPEED
 
     DESIGNSPEED = get_designspeed()
 
@@ -2216,7 +2212,7 @@ def main():
 
     # 데이터 저장
     save_pole_data(pole_positions, structure_list, curvelist, pitchlist, DESIGNSPEED, airjoint_list, polyline)
-    save_wire_data(pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
+    save_wire_data(DESIGNSPEED, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
     # createtxt('c:/temp/airjoint_list.txt', airjoint_list)
     print("전주와 전차선 txt가 성공적으로 저장되었습니다.")
     print("도면 작성중.")
