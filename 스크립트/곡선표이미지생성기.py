@@ -275,22 +275,18 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
 
     return output_file
 
-def create_curve_post_txt(data_list: list[ObjectDATA], work_directory):
+def create_curve_post_txt(data_list: list[ObjectDATA], output_file):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
-    output_file = work_directory + "curve_post.txt"  # 저장할 파일 이름
-
     with open(output_file, "w", encoding="utf-8") as file:
          for data in data_list:  # 두 리스트를 동시에 순회
             file.write(f"{data.station},.freeobj 0;{data.object_index};,;IP{data.IPNO}_{data.curvetype}-{data.structure}\n")  # 원하는 형식으로 저장
 
-def create_curve_index_txt(data_list: list[ObjectDATA], work_directory):
+def create_curve_index_txt(data_list: list[ObjectDATA], output_file):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
-    output_file = work_directory + "curve_index.txt"  # 저장할 파일 이름
-
     with open(output_file, "w", encoding="utf-8") as file:
          for data in data_list:  # 두 리스트를 동시에 순회
             file.write(f".freeobj({data.object_index}) {data.object_path}/{data.filename}.csv\n")  # 원하는 형식으로 저장
@@ -552,7 +548,7 @@ def replace_text_in_dxf(file_path, modifed_path, new_text):
 
         # 변경된 DXF 저장
         doc.saveas(modifed_path)
-        print("✅ 텍스트 교체 완료")
+
         return True
 
     except Exception as e:
@@ -600,7 +596,6 @@ class DXF2IMG:
                 fig.savefig(output_path, dpi=img_res, bbox_inches='tight', pad_inches=0)
                 plt.close(fig)  # 메모리 해제
 
-                print(f"✅ 변환 완료: {output_path}")
                 output_paths.append(output_path)
 
             except Exception as e:
@@ -632,7 +627,6 @@ class DXF2IMG:
             # 크기 조정 (500x300)
             resized_img = cropped_img.resize(target_size, Image.LANCZOS)
             resized_img.save(output_path)
-            print(f"✅ 여백 제거 및 크기 조정 완료: {output_path}")
 
         except Exception as e:
             print(f"❌ 이미지 처리 실패: {e}")    
@@ -797,7 +791,7 @@ def citylineprocess(curve_type: str, radius: float, cant: float, tcl: int,
                         entity.dxf.text = str(tcl_value)
 
             doc.saveas(new_file_path)
-            print("✅ DXF 텍스트 교체 완료")
+
             return True
 
         except Exception as e:
@@ -817,7 +811,7 @@ def citylineprocess(curve_type: str, radius: float, cant: float, tcl: int,
                     entity.dxf.text = str(int(radius))
 
             doc.saveas(modified_speedfile_path)
-            print("✅ 속도 제한 DXF 텍스트 교체 완료")
+
             return True
 
         except Exception as e:

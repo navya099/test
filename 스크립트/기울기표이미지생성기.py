@@ -613,23 +613,19 @@ def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str
 
 
 
-def create_pitch_post_txt(data_list: list[ObjectDATA], work_directory: str):
+def create_pitch_post_txt(data_list: list[ObjectDATA], output_file):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
-    output_file = work_directory + "pitch_post.txt"  # 저장할 파일 이름
-
     with open(output_file, "w", encoding="utf-8") as file:
          for data in data_list:  # 두 리스트를 동시에 순회
             file.write(f"{data.station},.freeobj 0;{data.object_index};,;VIP{data.VIPNO}_{data.vcurvetype}-{data.structure}\n")  # 원하는 형식으로 저장
 
 
-def create_pitch_index_txt(data_list: list[ObjectDATA], work_directory: str):
+def create_pitch_index_txt(data_list: list[ObjectDATA], output_file):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
-    output_file = work_directory + "pitch_index.txt"  # 저장할 파일 이름
-
     with open(output_file, "w", encoding="utf-8") as file:
         for data in data_list:  # 두 리스트를 동시에 순회
             file.write(f".freeobj({data.object_index}) {data.object_path}/{data.filename}.csv\n")  # 원하는 형식으로 저장
@@ -915,7 +911,6 @@ def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory
     object_folder = target_directory.split("Object/")[-1]
 
     for i, vip in enumerate(vipdats):
-        print(f'현재 구간 VIP : {vip.VIPNO}')
         lines = get_vcurve_lines(vip)
         if not lines:
             continue
@@ -947,7 +942,6 @@ def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory
                 )
             )
             object_index += 1
-        print(f'현재 구간 VIP ; {vip.VIPNO} - 완료')
 
     return objects
 

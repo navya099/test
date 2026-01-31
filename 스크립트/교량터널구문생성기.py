@@ -85,9 +85,9 @@ def get_obj_index(DESIGNSPEED, LINECOUNT):
     """
     # 오브젝트 딕셔너리 (교량, 터널)
     OBJECT_DICTIONARY = {
-        150: {'토공': (62,21), '교량': (28, 33), '터널': (51, 22)},
+        150: {'토공': (32,32), '교량': (28, 33), '터널': (51, 22)},
         250: {'토공': (62,21), '교량': (28, 33), '터널': (51, 22)},
-        350: {'토공': (9,1), '교량': (0, 81), '터널': (91, 80)}
+        350: {'토공': (9,1), '교량': (88, 81), '터널': (91, 80)}
     }
 
     # 유효한 설계 속도 확인
@@ -130,6 +130,8 @@ def create_network_data(structure_list, designspeed,line_count):
     result = []
     e_idx , br_idx,tn_idx = get_obj_index(designspeed, line_count)
     idx_E, idx_tns, idx_tne = get_earthwork_embank_index(designspeed, line_count)
+    #시점부토공
+    result.append(f'0,.dike 0;-1;{e_idx};\n')
     for name, start, end in structure_list['bridge']:
         start = get_block_index(start)
         end = get_block_index(end)
