@@ -1574,8 +1574,11 @@ def process_to_WIRE(DESIGNSPEED, positions, spans, structure_list, curve_list, p
         obj_index, comment, AF_wire, FPW_wire = get_wire_span_data(DESIGNSPEED, currentspan, current_structure)
 
         # AF와 FPW오프셋(X,Y)
-        AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset, AF_yz_angle, FPW_yz_angle, AF_xy_angle, FPW_xy_angle, AF_X_offset_Next, fpw_wire_X_offset_Next = CALULATE_AF_FPW_OFFET_ANGLE(
-            current_structure, next_structure, currentspan, DESIGNSPEED)
+        AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset = get_wire_offsetanlge(DESIGNSPEED,
+                                                                                              current_structure)
+        # 다음
+        AF_X_offset_Next, AF_y_offset_Next, fpw_wire_X_offset_Next, fpw_wire_y_offset_Next = get_wire_offsetanlge(
+            DESIGNSPEED, next_structure)
 
         # 편위(0.2)와 직선구간 각도
         lateral_offset, adjusted_angle = get_lateral_offset_and_angle(i, currentspan)
@@ -1591,11 +1594,14 @@ def process_to_WIRE(DESIGNSPEED, positions, spans, structure_list, curve_list, p
                                                        obj_index, comment, currnet_type, current_structure,
                                                        next_structure, param_z, DESIGNSPEED))
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, AF_X_offset, AF_X_offset_Next)
-        lines.append(f"{pos},.freeobj 0;{AF_wire};{AF_X_offset};{AF_y_offset};{adjusted_angle};{AF_yz_angle};,;급전선\n")
+        pitch_angle = change_permile_to_degree(pitch)
+        topdown_angle = calculate_slope(current_z + AF_y_offset, next_z + AF_y_offset_Next, currentspan) - pitch_angle  # 전차선 상하각도
+        lines.append(f"{pos},.freeobj 0;{AF_wire};{AF_X_offset};{AF_y_offset};{adjusted_angle};{topdown_angle};,;급전선\n")
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, fpw_wire_X_offset,
                                                fpw_wire_X_offset_Next)
+        topdown_angle = calculate_slope(current_z + fpw_wire_y_offset, next_z + fpw_wire_y_offset_Next, currentspan) - pitch_angle
         lines.append(
-            f"{pos},.freeobj 0;{FPW_wire};{fpw_wire_X_offset};{fpw_wire_y_offset};{adjusted_angle};{FPW_yz_angle};,;FPW\n")
+            f"{pos},.freeobj 0;{FPW_wire};{fpw_wire_X_offset};{fpw_wire_y_offset};{adjusted_angle};{topdown_angle};,;FPW\n")
 
     buffered_write(filename, lines)
 
@@ -1620,26 +1626,6 @@ def calculate_height_at_new_distance(h1, h2, L, L_new):
     """주어진 거리 L에서의 높이 변화율을 기반으로 새로운 거리 L_new에서의 높이를 계산"""
     h3 = h1 + ((h2 - h1) / L) * L_new
     return h3
-
-
-def CALULATE_AF_FPW_OFFET_ANGLE(current_structure, next_structure, currentspan, DESIGNSPEED):
-    # 현재
-    AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset = get_wire_offsetanlge(DESIGNSPEED,
-                                                                                          current_structure)
-    # 다음
-    AF_X_offset_Next, AF_y_offset_Next, fpw_wire_X_offset_Next, fpw_wire_y_offset_Next = get_wire_offsetanlge(
-        DESIGNSPEED, next_structure)
-
-    # YZ 평면 각도 계산
-    AF_yz_angle = math.degrees(math.atan((AF_y_offset_Next - AF_y_offset) / currentspan))
-    FPW_yz_angle = math.degrees(math.atan((fpw_wire_y_offset_Next - fpw_wire_y_offset) / currentspan))
-
-    # XY 평면 각도 계산
-    AF_xy_angle = math.degrees(math.atan((AF_X_offset_Next - AF_X_offset) / currentspan))
-    FPW_xy_angle = math.degrees(math.atan((fpw_wire_X_offset_Next - fpw_wire_X_offset) / currentspan))
-
-    return AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset, AF_yz_angle, FPW_yz_angle, AF_xy_angle, FPW_xy_angle, AF_X_offset_Next, fpw_wire_X_offset_Next
-
 
 def get_wire_offsetanlge(DESIGNSPEED, current_structure):
     """AF,FPW offset을 반환하는 기본 딕셔너리(x,y)"""
@@ -1673,7 +1659,7 @@ def get_wire_offsetanlge(DESIGNSPEED, current_structure):
         },
         250: {
             'prefix': 'Cako250',
-            '토공': (3.239,  4.89),
+            '토공': (-3.239,  4.89),
             '교량': (-3.7397, 4.89),
             '터널': (2.049, 5.559)
         },
