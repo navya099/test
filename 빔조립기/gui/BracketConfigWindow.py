@@ -11,6 +11,8 @@ class BracketConfigWindow(tk.Toplevel):
     def __init__(self, master, rail: TKRailData, libmanager: LibraryManager, on_close=None, on_change=None):
         super().__init__(master)
 
+        self._bracket_cache = {}  # ✅ 반드시 먼저
+        self._isloading = False  # ✅ 이것도 같이
         self.title(f"브래킷 설정 - {rail.name}")
         self.geometry("850x300")
         self.rail = rail
@@ -48,13 +50,17 @@ class BracketConfigWindow(tk.Toplevel):
     # 데이터 로드
     # =============================
     def _load_existing(self):
+        self._isloading = True
         if not self.rail.brackets:
             self.add_row()
         else:
             for b in self.rail.brackets:
                 self.add_row(b)
+        self._isloading = False
 
-    # =============================
+        if self.on_change:
+            self.on_change()
+            # =============================
     # 행 추가
     # =============================
     def add_row(self, bracket: BracketViewModel | None = None):
@@ -78,6 +84,8 @@ class BracketConfigWindow(tk.Toplevel):
         bracket_type_var = tk.StringVar(value=bracket.bracket_type.get() if bracket else "")
 
         def update_brackets(*_):
+            if self._isloading:
+                return  # 🚫 로드 중이면 아무것도 하지 않음
             self._sync_to_raildata()
             if self.on_change:
                 self.on_change()  # ✅ Preview 갱신
@@ -94,15 +102,18 @@ class BracketConfigWindow(tk.Toplevel):
 
         # ── 갱신 함수 (이 행 전용)
         def reload_brackets(*_):
-            group = self.libmanager.define_group(rail_type_var.get())
-            values = self.libmanager.list_files_in_category(
-                category="브래킷",
-                group=group
-            )
+            rail_type = rail_type_var.get()
+            group = self.libmanager.define_group(rail_type)
 
+            if group not in self._bracket_cache:
+                self._bracket_cache[group] = self.libmanager.list_files_in_category(
+                    category="브래킷",
+                    group=group
+                )
+
+            values = self._bracket_cache[group]
             bracket_combo["values"] = values
 
-            # ✅ 기존 값이 있으면 유지
             current = bracket_type_var.get()
             if current in values:
                 bracket_combo.set(current)

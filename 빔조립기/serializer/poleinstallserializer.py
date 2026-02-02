@@ -1,6 +1,9 @@
 import json
 from dataclasses import asdict
+
+from library import LibraryManager
 from model.pole_install import PoleInstall
+from valid_data_detector.pole_Install_validator import PoleInstallValidator
 from vector3 import Vector3
 
 from vector3 import Vector3
@@ -66,9 +69,10 @@ class PoleInstallSerializer:
             )
 
     @staticmethod
-    def load(path: str) -> PoleInstall:
+    def load(path: str, lib_manager: LibraryManager):
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         data = PoleInstallSerializer.denormalize(data)
-        return PoleInstall(**data)
+        result = PoleInstallValidator.validate(data, lib_manager)
+        return PoleInstall(**data), result

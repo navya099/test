@@ -136,11 +136,39 @@ class PoleInstallGUI(tk.Tk):
     def load(self):
         path = r'c:/temp/saved_beam_assembler_data.json'
         try:# 임시 경로 및 파일명
-            install = PoleInstallSerializer.load(path)
+            install, error_result = PoleInstallSerializer.load(path, self.bracket_frame.lib_manager)
+            if error_result.errors:
+                self.show_errors("로드 실패 - 오류", error_result.errors)
+                return
+
+            if error_result.warnings:
+                if not self.show_warnings(error_result.warnings):
+                    return
+
             TkInstallAdapter.apply(self, install)
-            self.plot_preview()
             messagebox.showinfo('데이터 로드', '로드가 완료됐습니다.')
         except Exception as e:
             messagebox.showerror('에러', f'로드에 실패했습니다. {e}')
 
+    def show_errors(self, title, messages):
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.geometry("600x400")
+        win.grab_set()
 
+        text = tk.Text(win, wrap="word", state="normal")
+        text.pack(fill="both", expand=True)
+
+        for msg in messages:
+            text.insert("end", "• " + msg + "\n")
+
+        text.config(state="disabled")
+
+        ttk.Button(win, text="확인", command=win.destroy).pack(pady=5)
+
+    def show_warnings(self, warnings):
+        msg = "\n".join(f"• {w}" for w in warnings)
+        return messagebox.askyesno(
+            "경고",
+            f"다음 경고가 있습니다:\n\n{msg}\n\n계속 로드하시겠습니까?"
+        )
