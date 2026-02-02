@@ -27,8 +27,8 @@ class BasicInfoFrame(ttk.LabelFrame):
         fields = [
             ("측점", self.station),
             ("전주번호", self.pole_number),
-            ("좌측 X", self.left_x),
-            ("우측 X", self.right_x),
+            ("좌측 건식게이지", self.left_x),
+            ("우측 건식게이지", self.right_x),
             ("선로 수", self.rail_count),
         ]
 

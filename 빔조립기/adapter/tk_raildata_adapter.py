@@ -2,6 +2,7 @@ from adapter.tk_bracket_adapter import TKBracketAdapter
 from model.rail import RailData
 from model.tkraildata import TKRailData
 from vector3 import Vector3
+import tkinter as tk
 
 class TKRaildataAdapter:
     @staticmethod
@@ -28,3 +29,13 @@ class TKRaildataAdapter:
             )
         return result
 
+    @staticmethod
+    def from_dict(data: dict) -> TKRailData:
+        return TKRailData(
+            index_var=tk.IntVar(value=data["index"]),
+            name_var=tk.StringVar(value=data["name"]),
+            brackets=data.get("brackets", []),
+            coordx=tk.DoubleVar(value=data["coord"].x),
+            coordy=tk.DoubleVar(value=data["coord"].y),
+            coordz=tk.DoubleVar(value=data["coord"].z),
+        )

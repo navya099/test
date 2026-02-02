@@ -7,6 +7,7 @@ from adapter.tkinstalladpater import TkInstallAdapter
 from controller.event_controller import EventController
 from controller.main_controller import MainProcess
 from preview.preview_sevice import PreviewService
+from serializer.poleinstallserializer import PoleInstallSerializer
 from .basic_frame import BasicInfoFrame
 from .bracket_frame import BracketFrame
 from .preview import PreviewViewer
@@ -85,9 +86,10 @@ class PoleInstallGUI(tk.Tk):
         frame = ttk.Frame(self)
         frame.pack(fill="x", pady=10)
 
-        ttk.Button(frame, text="BVE 생성", command=self._generate).pack(side="right", padx=10)
         ttk.Button(frame, text="종료", command=self.destyoy).pack(side="right", padx=10)
         ttk.Button(frame, text="미리보기", command=self.plot_preview).pack(side="right", padx=10)
+        ttk.Button(frame, text="로드", command=self.load).pack(side="right", padx=10)
+        ttk.Button(frame, text="저장", command=self.save).pack(side="right", padx=10)
 
     def _generate(self):
         dto = TkInstallAdapter.collect(self)
@@ -125,3 +127,20 @@ class PoleInstallGUI(tk.Tk):
 
         else:
             messagebox.showwarning('에러', '아직 개체가 생성되지 않았습니다.')
+
+    def save(self):
+        install = TkInstallAdapter.collect(self)
+        path = r'c:/temp/saved_beam_assembler_data.json' #임시 경로 및 파일명
+        PoleInstallSerializer.save(install, path)
+        messagebox.showinfo('데이터 저장', '저장이 완료됐습니다.')
+    def load(self):
+        path = r'c:/temp/saved_beam_assembler_data.json'
+        try:# 임시 경로 및 파일명
+            install = PoleInstallSerializer.load(path)
+            TkInstallAdapter.apply(self, install)
+            self.plot_preview()
+            messagebox.showinfo('데이터 로드', '로드가 완료됐습니다.')
+        except Exception as e:
+            messagebox.showerror('에러', f'로드에 실패했습니다. {e}')
+
+

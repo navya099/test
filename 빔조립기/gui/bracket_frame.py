@@ -1,6 +1,9 @@
 import tkinter as tk
 from tkinter import ttk
 import string
+
+from adapter.tk_bracket_adapter import TKBracketAdapter
+from adapter.tk_raildata_adapter import TKRaildataAdapter
 from gui.BracketConfigWindow import BracketConfigWindow
 from library import LibraryManager
 from model.tkraildata import TKRailData
@@ -117,5 +120,23 @@ class BracketFrame(ttk.LabelFrame):
             ).grid(row=row, column=5, padx=5)
 
             self.bracket_vars.append(rail)
+
+    def rebuild_from_install(self, rails):
+        self._rebuild_brackets()
+        self._apply_rail_values(rails)
+
+    def _apply_rail_values(self, rails):
+        for rail_ui, rail_dict in zip(self.bracket_vars, rails):
+            rail_ui.index_var.set(rail_dict["index"])
+            rail_ui.name_var.set(rail_dict["name"])
+            coord = rail_dict["coord"]
+            rail_ui.coordx.set(coord.x)
+            rail_ui.coordy.set(coord.y)
+            rail_ui.coordz.set(coord.z)
+            # 🔥 핵심
+            brs = rail_dict["brackets"]#rail_dict["brackets"] == list[dict]
+            for br in brs:
+                rail_ui.brackets.append(TKBracketAdapter.from_dict(br))
+
 
 
