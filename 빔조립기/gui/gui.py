@@ -25,10 +25,11 @@ class PoleInstallGUI(tk.Tk):
         # 상태 변수들
         self.station = tk.DoubleVar(value=87943.0)
         self.pole_number = tk.StringVar(value="47-27")
-        self.railtype = tk.StringVar(value="준고속철도")
         self.left_x = tk.DoubleVar(value=-12.0)
         self.right_x = tk.DoubleVar(value=9.0)
         self.rail_count = tk.IntVar(value=2)
+        self.pole_count = tk.IntVar(value=2)
+        self.beam_count = tk.IntVar(value=1)
 
         # ✅ 미리보기 뷰어를 한 번만 생성
         self.viewer = PreviewViewer()
@@ -38,14 +39,13 @@ class PoleInstallGUI(tk.Tk):
         self._preview_after_id = None
 
         # 변수 변경 시 자동 업데이트 (딜레이 방식)
-        for var in [self.station, self.pole_number, self.railtype,
-                    self.left_x, self.right_x, self.rail_count]:
+        for var in [self.left_x, self.right_x]:
             var.trace_add("write", self._schedule_preview)
 
         # 프레임 생성
         self.basic_frame = BasicInfoFrame(self, self.event)
         self.basic_frame.pack(fill="x", padx=10, pady=5)
-        self.structure_frame = StructureFrame(self)
+        self.structure_frame = StructureFrame(self, self.event)
         self.structure_frame.pack(fill="x", padx=10, pady=5)
         self.bracket_frame = BracketFrame(self, self.event)
         self.bracket_frame.pack(fill="x", padx=10, pady=5)

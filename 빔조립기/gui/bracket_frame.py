@@ -110,7 +110,7 @@ class BracketFrame(ttk.LabelFrame):
                 brackets=[],
                 coordx=rail_coordx_var,
                 coordy=rail_coordy_var,
-                coordz=tk.DoubleVar(value=0.0)
+                coordz=tk.DoubleVar(value=0.0),
             )
 
             ttk.Button(
@@ -120,6 +120,12 @@ class BracketFrame(ttk.LabelFrame):
             ).grid(row=row, column=5, padx=5)
 
             self.bracket_vars.append(rail)
+            # 🔥 rail 목록 준비 완료 알림
+            rail_name_var.trace_add("write", self._on_rail_changed)
+            rail_idx_var.trace_add("write", self._on_rail_changed)
+    def _on_rail_changed(self, *_):
+        self.event.emit("rails.updated", self.bracket_vars)
+
 
     def rebuild_from_install(self, rails):
         self._rebuild_brackets()
@@ -137,6 +143,3 @@ class BracketFrame(ttk.LabelFrame):
             brs = rail_dict["brackets"]#rail_dict["brackets"] == list[dict]
             for br in brs:
                 rail_ui.brackets.append(TKBracketAdapter.from_dict(br))
-
-
-

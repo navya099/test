@@ -8,16 +8,14 @@ class BasicInfoFrame(ttk.LabelFrame):
         self.event = event
         self.station = master.station
         self.pole_number = master.pole_number
-        self.railtype = master.railtype
-        self.left_x = master.left_x
-        self.right_x = master.right_x
         self.rail_count = master.rail_count
-
+        self.pole_count = master.pole_count
+        self.beam_count = master.beam_count
         # 🔥 변경 감지
-        self.railtype.trace_add("write", self._on_changed)
         self.rail_count.trace_add("write", self._on_changed)
-
-
+        self.pole_count.trace_add("write", self._on_changed)
+        self.beam_count.trace_add("write", self._on_changed)
+        self.isbeaminstall = tk.BooleanVar(value=True)
         self._build()
 
     def _on_changed(self, *args):
@@ -27,11 +25,19 @@ class BasicInfoFrame(ttk.LabelFrame):
         fields = [
             ("측점", self.station),
             ("전주번호", self.pole_number),
-            ("좌측 건식게이지", self.left_x),
-            ("우측 건식게이지", self.right_x),
             ("선로 수", self.rail_count),
+            ("전주 갯수", self.pole_count),
+            ("빔 갯수", self.beam_count),
         ]
 
         for i, (label, var) in enumerate(fields):
             ttk.Label(self, text=label).grid(row=i, column=0, sticky="w", padx=5)
             ttk.Entry(self, textvariable=var, width=15).grid(row=i, column=1, padx=5)
+
+        # ✅ 빔 설치 여부
+        ttk.Checkbutton(
+            self,
+            text="빔 설치",
+            variable=self.isbeaminstall,
+            command=self._on_changed
+        ).grid(row=4, column=2, columnspan=2, sticky="w", padx=5)
