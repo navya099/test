@@ -12,32 +12,20 @@ class PoleInstall:
             station:측점
             pole_number:전주번호
             rail_count:전주가 감싸는 선로갯수
-            left_x:좌측 건식게이지
-            right_x:우측 건식게이지
+            pole_count: 전주 갯수
+            beam_count: 빔 갯수
 
-            beam_type: BeamType
-            pole_type: PoleType
-            pole_width: str
-            pole_height: float
-            pole_count: int
-
+            poles: 전주들
+            beams: 빔 객체들
             rails: 선로객체들
-            beam_assembly: 빔
     """
     station: float = 0.0
     pole_number: str = ''
-    left_x: float = 0.0
-    right_x: float = 0.0
     rail_count: int = 0
-
-    beam_type:  BeamType = BeamType.H_BEAM
-    pole_type: PoleType = PoleType.PIPE
-    pole_width: str = ''
-    pole_height: float = 0.0
     pole_count: int = 0
-
-    beam_assembly: BeamAssembly | None = None
-
+    beam_count: int = 0
+    beams: list | None = None
+    poles: list | None = None
     rails: list | None = None
 
     def to_bve(self):

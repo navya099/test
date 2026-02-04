@@ -1,3 +1,6 @@
+from Electric.Overhead.Pole.poletype import PoleType
+from adapter.tk_beam_adapter import TkBeamAdapter
+from adapter.tk_pole_adapter import TkPoleAdapter
 from adapter.tk_raildata_adapter import TKRaildataAdapter
 from model.pole_install import PoleInstall
 from model.tkraildata import TKRailData
@@ -11,13 +14,10 @@ class TkInstallAdapter:
             station=master.station.get(),
             pole_number=master.pole_number.get(),
             rail_count=master.rail_count.get(),
-            left_x=master.left_x.get(),
-            right_x=master.right_x.get(),
-            beam_type=master.structure_frame.beam_type.get(),
-            pole_type=master.structure_frame.pole_type.get(),
-            pole_width=master.structure_frame.pole_width.get(),
-            pole_height=master.structure_frame.pole_height.get(),
-            pole_count=master.structure_frame.pole_count.get(),
+            pole_count=master.pole_count.get(),
+            beam_count = master.beam_count.get(),
+            poles=TkPoleAdapter.collect(master.structure_frame.pole_vars),
+            beams=TkBeamAdapter.collect(master.structure_frame.beam_vars),
             rails=TKRaildataAdapter.collect(master.bracket_frame.bracket_vars),
         )
 
