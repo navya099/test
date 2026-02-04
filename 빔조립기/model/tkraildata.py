@@ -11,7 +11,8 @@ class TKRailData:
     coordx: tk.DoubleVar
     coordy: tk.DoubleVar
     coordz: tk.DoubleVar
-    uid= uuid.uuid4().hex  # 절대 안 바뀜
+    uid: str = field(default_factory=lambda: uuid.uuid4().hex)
+      # 절대 안 바뀜
     @property
     def index(self):
         return self.index_var.get()
