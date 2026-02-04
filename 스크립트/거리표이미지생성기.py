@@ -246,25 +246,30 @@ def copy_and_export_csv(open_filename='km표-토공용', output_filename='13460'
         # Write the modified lines to the output file
         file.writelines(new_lines)
 
+
 def find_structure_section(filepath):
     """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
     structure_list = {'bridge': [], 'tunnel': []}
-    
+
     # xlsx 파일 읽기
     df_bridge = pd.read_excel(filepath, sheet_name='교량', header=None)
     df_tunnel = pd.read_excel(filepath, sheet_name='터널', header=None)
-    
-     # 첫 번째 행을 열 제목으로 설정
+
+    # 열 개수 확인
+    print(df_tunnel.shape)  # (행 개수, 열 개수)
+    print(df_tunnel.head())  # 데이터 확인
+
+    # 첫 번째 행을 열 제목으로 설정
     df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
     df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
-    
+
     # 교량 구간과 터널 구간 정보
     for _, row in df_bridge.iterrows():
-        structure_list['bridge'].append((row['br_START_STA'], row['br_END_STA']))
-    
+        structure_list['bridge'].append((row['br_NAME'], row['br_START_STA'], row['br_END_STA']))
+
     for _, row in df_tunnel.iterrows():
-        structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
-    
+        structure_list['tunnel'].append((row['tn_NAME'], row['tn_START_STA'], row['tn_END_STA']))
+
     return structure_list
 
 def isbridge_tunnel(sta, structure_list):
@@ -607,6 +612,32 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
     shutil.rmtree(source_directory)
 
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
+
+import os
+import shutil
+
+def copy_files(file_list, target_path, overwrite=True):
+    """
+    여러 파일을 지정된 target_path로 복사하는 함수
+    :param file_list: 복사할 파일 경로들의 리스트
+    :param target_path: 대상 디렉토리 경로
+    :param overwrite: True면 덮어쓰기, False면 기존 파일 유지
+    """
+    os.makedirs(target_path, exist_ok=True)
+
+    for file_path in file_list:
+        if os.path.isfile(file_path):
+            dest_file = os.path.join(target_path, os.path.basename(file_path))
+            if os.path.exists(dest_file) and not overwrite:
+                print(f"⚠️ 이미 존재: {dest_file}, 덮어쓰기 안 함")
+                continue
+            try:
+                shutil.copy(file_path, target_path)
+                print(f"✅ 파일 복사 완료: {file_path} → {target_path}")
+            except Exception as e:
+                print(f"❌ 파일 복사 실패: {file_path}, 오류: {e}")
+        else:
+            print(f"⚠️ 파일 없음: {file_path}")
 
 def apply_brokenchain_to_structure(structure_list, brokenchain):
     """
