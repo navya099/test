@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox, simpledialog
 import math
 import csv
+from tkinter.filedialog import askopenfilename, asksaveasfilename
+
 import pandas as pd
 
 '''
@@ -259,10 +261,11 @@ def load_structure_data():
         print("엑셀 파일을 선택하지 않았습니다.")
         return None
 
+
 def find_structure_section(filepath):
     """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
     structure_list = {'bridge': [], 'tunnel': []}
-    
+
     # xlsx 파일 읽기
     df_bridge = pd.read_excel(filepath, sheet_name='교량', header=None)
     df_tunnel = pd.read_excel(filepath, sheet_name='터널', header=None)
@@ -271,17 +274,17 @@ def find_structure_section(filepath):
     print(df_tunnel.shape)  # (행 개수, 열 개수)
     print(df_tunnel.head())  # 데이터 확인
 
-     # 첫 번째 행을 열 제목으로 설정
+    # 첫 번째 행을 열 제목으로 설정
     df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
     df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
-    
+
     # 교량 구간과 터널 구간 정보
     for _, row in df_bridge.iterrows():
-        structure_list['bridge'].append((row['br_START_STA'], row['br_END_STA']))
-    
+        structure_list['bridge'].append((row['br_NAME'], row['br_START_STA'], row['br_END_STA']))
+
     for _, row in df_tunnel.iterrows():
-        structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
-    
+        structure_list['tunnel'].append((row['tn_NAME'], row['tn_START_STA'], row['tn_END_STA']))
+
     return structure_list
 
 def open_excel_file():
@@ -509,7 +512,22 @@ def get_default_values(alignment_type):
         raise ValueError(f"알 수 없는 노선 유형: {alignment_type}")
     return defaults
 
+def flatten_defaults(defaults):
+    flat = {}
 
+    # freeobj
+    for curve_type, sub in defaults['freeobj']['곡선'].items():
+        for track_type, val in sub.items():
+            flat[f"freeobj 곡선-{curve_type}-{track_type}"] = val
+    flat["freeobj 직선"] = defaults['freeobj']['직선']
+
+    # railtype
+    flat["railtype 곡선"] = defaults['railtype']['곡선']
+    for curve_type, sub in defaults['railtype']['직선'].items():
+        for track_type, val in sub.items():
+            flat[f"railtype 직선-{curve_type}-{track_type}"] = val
+
+    return flat
 # 2. UI 핸들러 (관심사 분리)
 def ask_user(prompt, default_value):
     value = simpledialog.askstring("입력", f"{prompt} (기본값: {default_value})")
@@ -527,45 +545,56 @@ def ask_user_cui(prompt, default_value):
     except ValueError:
         print("[경고] 숫자가 아닙니다. 기본값을 사용합니다.")
         return default_value
-
-# 3. 사용자 입력 적용
-def apply_user_input(defaults, ui_handler=ask_user):
-    v1 = ui_handler("freeobj 곡선-터널-콘크리트도상", defaults['freeobj']['곡선']['터널']['콘크리트도상'])
-    if v1 is None: return None
-    v2 = ui_handler("freeobj 곡선-터널-자갈도상", defaults['freeobj']['곡선']['터널']['자갈도상'])
-    if v2 is None: return None
-    v3 = ui_handler("freeobj 직선", defaults['freeobj']['직선'])
-    if v3 is None: return None
-
-    v4 = ui_handler("railtype 곡선", defaults['railtype']['곡선'])
-    if v4 is None: return None
-    v5 = ui_handler("railtype 직선-터널-콘크리트도상", defaults['railtype']['직선']['터널']['콘크리트도상'])
-    if v5 is None: return None
-    v6 = ui_handler("railtype 직선-터널-자갈도상", defaults['railtype']['직선']['터널']['자갈도상'])
-    if v6 is None: return None
-
-    return {
-        'freeobj': {
-            '곡선': {'터널': {'콘크리트도상': v1, '자갈도상': v2}},
-            '직선': v3,
-        },
-        'railtype': {
-            '곡선': v4,
-            '직선': {'터널': {'콘크리트도상': v5, '자갈도상': v6}},
-        }
-    }
-
 # 4. 최종 사용
 def preprocess_input_index(alignment_type, mode="gui"):
     defaults = get_default_values(alignment_type)
     if mode == "gui":
-        return apply_user_input(defaults, ui_handler=ask_user)      # GUI 모드
+        return defaults     # GUI 모드
     elif mode == "cui":
-        return apply_user_input(defaults, ui_handler=ask_user_cui)  # CUI 모드
+        return defaults  # CUI 모드
     elif mode == 'default':
         return defaults
     else:
         raise ValueError("지원하지 않는 모드입니다.")
+
+def unflatten_defaults(flat):
+    nested = {
+        'freeobj': {
+            '곡선': {
+                '터널': {
+                    '콘크리트도상': int(flat["freeobj 곡선-터널-콘크리트도상"]),
+                    '자갈도상': int(flat["freeobj 곡선-터널-자갈도상"]),
+                },
+                '토공': {
+                    '콘크리트도상': int(flat["freeobj 곡선-토공-콘크리트도상"]),
+                    '자갈도상': int(flat["freeobj 곡선-토공-자갈도상"]),
+                },
+                '교량': {
+                    '콘크리트도상': int(flat["freeobj 곡선-교량-콘크리트도상"]),
+                    '자갈도상': int(flat["freeobj 곡선-교량-자갈도상"]),
+                },
+            },
+            '직선': int(flat["freeobj 직선"]),
+        },
+        'railtype': {
+            '곡선': int(flat["railtype 곡선"]),
+            '직선': {
+                '터널': {
+                    '콘크리트도상': int(flat["railtype 직선-터널-콘크리트도상"]),
+                    '자갈도상': int(flat["railtype 직선-터널-자갈도상"]),
+                },
+                '토공': {
+                    '콘크리트도상': int(flat["railtype 직선-토공-콘크리트도상"]),
+                    '자갈도상': int(flat["railtype 직선-토공-자갈도상"]),
+                },
+                '교량': {
+                    '콘크리트도상': int(flat["railtype 직선-교량-콘크리트도상"]),
+                    '자갈도상': int(flat["railtype 직선-교량-자갈도상"]),
+                },
+            }
+        }
+    }
+    return nested
 
 
 class FreeobjApp(tk.Tk):
@@ -611,7 +640,9 @@ class FreeobjApp(tk.Tk):
     def run_main(self):
         try:
             self.process_interval()
-            index_dict  = preprocess_input_index(self.alignment_type)
+            form = UserForm(self, defaults=flatten_defaults(get_default_values(self.alignment_type)))
+            index_dict = form.ask_user_form()
+            index_dict = unflatten_defaults(index_dict)
             self.log("파일을 읽는 중...")
             lines = read_file()
             if not lines:
@@ -634,18 +665,75 @@ class FreeobjApp(tk.Tk):
 
             self.log("FreeObj 생성 중...")
             content = create_freeobj(freeobj, structure_list, curveinfo, index_dict)
-            save_files(content)
+            savefile = asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                title="FREEOBJ 저장"
+            )
+
+            save_files(content, savefile)
             self.log("FreeObj 저장 완료!")
 
             self.log("Railtype 생성 중...")
             railtype = create_railtype(curveinfo, structure_list, index_dict)
-            save_railtype(railtype)
+            savefile = asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                title="RAILTYPE 저장"
+            )
+
+            save_railtype(railtype, savefile)
             self.log("Railtype 저장 완료!")
 
             messagebox.showinfo("완료", "FreeObj 및 RailType 생성이 완료되었습니다.")
         except Exception as e:
             self.log(f"[오류] {str(e)}")
             messagebox.showerror("오류", f"실행 중 오류 발생:\n{e}")
+
+class UserForm(tk.Toplevel):
+    def __init__(self, master=None, defaults=None):
+        super().__init__(master)
+        self.title("구조물 입력 폼")
+        self.defaults = defaults or {}
+        self.entries = {}
+        self.values = None
+        self.create_widgets()
+
+    def create_widgets(self):
+        labels = [
+            "freeobj 곡선-토공-자갈도상",
+            "freeobj 곡선-토공-콘크리트도상",
+            "freeobj 곡선-교량-자갈도상",
+            "freeobj 곡선-교량-콘크리트도상",
+            "freeobj 곡선-터널-자갈도상",
+            "freeobj 곡선-터널-콘크리트도상",
+            "freeobj 직선",
+            "railtype 곡선",
+            "railtype 직선-토공-자갈도상",
+            "railtype 직선-토공-콘크리트도상",
+            "railtype 직선-교량-자갈도상",
+            "railtype 직선-교량-콘크리트도상",
+            "railtype 직선-터널-자갈도상",
+            "railtype 직선-터널-콘크리트도상",
+        ]
+
+        for i, label in enumerate(labels):
+            tk.Label(self, text=label).grid(row=i, column=0, sticky="w")
+            entry = tk.Entry(self)
+            entry.grid(row=i, column=1)
+            entry.insert(0, self.defaults.get(label, ""))  # 기본값 넣기
+            self.entries[label] = entry
+
+        tk.Button(self, text="확인", command=self.submit).grid(row=len(labels), column=0, columnspan=2)
+
+    def submit(self):
+        self.values = {label: entry.get() for label, entry in self.entries.items()}
+        self.destroy()
+
+    def ask_user_form(self):
+        self.grab_set()       # 모달처럼 동작
+        self.wait_window()    # 닫힐 때까지 대기
+        return self.values
 
 
 if __name__ == "__main__":
