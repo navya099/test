@@ -2,6 +2,7 @@ from tkinter import ttk
 import tkinter as tk
 
 from Electric.Overhead.Pole import poletype
+from gui.viewmodel.beam_vm import BeamVM
 from gui.viewmodel.pole_vm import PoleVM
 
 
@@ -43,7 +44,7 @@ class StructureFrame(ttk.LabelFrame):
 
         self.beam_vars.clear()
 
-        headers = ["NO", "빔 타입", '설치 전주']
+        headers = ["NO", "빔 타입", '시작 전주', '끝 전주']
         for col, text in enumerate(headers):
             ttk.Label(
                 self.beam_frame,
@@ -65,7 +66,42 @@ class StructureFrame(ttk.LabelFrame):
                 width=15
             ).grid(row=row, column=1)
 
-            self.beam_vars.append(var)
+            pole_labels = self._get_pole_labels()
+
+            start_pole_var = tk.IntVar(value=1)
+            end_pole_var = tk.IntVar(value=1)
+
+            ttk.Combobox(
+                self.beam_frame,
+                textvariable=start_pole_var,
+                values=list(range(1, len(pole_labels) + 1)),
+                state="readonly",
+                width=8
+            ).grid(row=row, column=2)
+
+            ttk.Combobox(
+                self.beam_frame,
+                textvariable=end_pole_var,
+                values=list(range(1, len(pole_labels) + 1)),
+                state="readonly",
+                width=8
+            ).grid(row=row, column=3)
+
+            beam_vm = BeamVM(
+                beamtype=var,
+                start_pole = start_pole_var,
+                end_pole= end_pole_var
+            )
+            self.beam_vars.append(beam_vm)
+
+    def _get_pole_labels(self):
+        """
+        Beam UI에서 사용할 전주 선택 목록
+        """
+        labels = []
+        for i, pole_vm in enumerate(self.pole_vars, start=1):
+            labels.append(f"전주 {i}")
+        return labels
 
     def _rebuild_poles(self, *_):
         for w in self.pole_frame.winfo_children():
@@ -73,7 +109,7 @@ class StructureFrame(ttk.LabelFrame):
 
         self.pole_vars.clear()
 
-        headers = ["NO", '설치 레일',"전주 타입", '전주 규격', '전주 길이', ]
+        headers = ["NO", '설치 레일',"전주 타입", '전주 규격', '전주 길이','건식게이지']
         for col, text in enumerate(headers):
             ttk.Label(
                 self.pole_frame,
@@ -95,6 +131,7 @@ class StructureFrame(ttk.LabelFrame):
             poletypevar = tk.StringVar(value="강관주")
             polespec_var = tk.StringVar(value="P10")
             length_var = tk.DoubleVar(value=9.0)
+            gague_var = tk.DoubleVar(value=3.0)
 
             # 2️⃣ PoleVM 생성 (상태의 근원)
             pole_vm = PoleVM(
@@ -103,7 +140,8 @@ class StructureFrame(ttk.LabelFrame):
                 polespec=polespec_var,
                 pole_length=length_var,
                 base_rail_index=tk.IntVar(value=0),
-                base_rail_uid=tk.StringVar(value='')
+                base_rail_uid=tk.StringVar(value=''),
+                gauge = gague_var
             )
             self.pole_vars.append(pole_vm)
 
@@ -146,10 +184,20 @@ class StructureFrame(ttk.LabelFrame):
                 width=6
             ).grid(row=row, column=4)
 
+            tk.Entry(
+                self.pole_frame,
+                textvariable=gague_var,
+                width=6
+            ).grid(row=row, column=5)
+
             # 4️⃣ 이벤트 연결
             self._bind_base_rail(base_rail_cb, pole_vm)
 
     def _refresh_pole_rail_combos(self):
+        print("=== rails.updated ===")
+        for r in self.rails:
+            print("rail:", r.uid, r.name_var.get(), r.index_var.get())
+
         rail_labels = [
             f"{rail.name_var.get()} ({rail.index_var.get()})"
             for rail in self.rails
@@ -164,16 +212,23 @@ class StructureFrame(ttk.LabelFrame):
             if not pole_vm:
                 continue
 
-            # 1️⃣ values만 갱신
+            print(
+                f"[BEFORE] pole {pole_vm.index.get()} "
+                f"uid={pole_vm.base_rail_uid.get()}"
+            )
+
             child["values"] = rail_labels
 
-            # 2️⃣ 상태는 VM에서만 읽음
             uid = pole_vm.base_rail_uid.get()
-
             if uid in rail_uid_map:
                 child.current(rail_uid_map.index(uid))
             else:
-                child.set("")  # 없는 rail이면 비움
+                child.set("")
+
+            print(
+                f"[AFTER ] pole {pole_vm.index.get()} "
+                f"uid={pole_vm.base_rail_uid.get()}"
+            )
 
     def _bind_base_rail(self, cb, pole_vm):
         def on_select(_):

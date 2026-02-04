@@ -13,3 +13,4 @@ class PoleVM:
     pole_length: tk.DoubleVar
     base_rail_index: tk.IntVar
     base_rail_uid: tk.StringVar
+    gauge: tk.DoubleVar
