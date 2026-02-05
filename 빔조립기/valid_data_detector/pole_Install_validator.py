@@ -8,36 +8,57 @@ class PoleInstallValidator:
     def validate(data: dict, lib_manager: LibraryManager) -> ValidationResult:
         result = ValidationResult()
 
-        PoleInstallValidator._validate_header(data, result)
-        PoleInstallValidator._validate_rails(data, lib_manager, result)
+        PoleInstallValidator._validate_poles(data['poles'], result)
+        PoleInstallValidator._validate_beams(data['beams'], result)
+        PoleInstallValidator._validate_rails(data['rails'], lib_manager, result)
 
         return result
 
     @staticmethod
-    def _validate_header(data, result: ValidationResult):
+    def _validate_poles(poles: list, result: ValidationResult):
         # beam_type
-        if data.get("beam_type") not in ["강관빔", "트러스빔", "트러스라멘빔", 'V트러스빔']:
-            result.errors.append(
-                f"알 수 없는 빔 타입: {data.get('beam_type')}"
-            )
-
-        # pole_type
-        if data.get("pole_type") not in ["강관주", "H형강주", "조립철주"]:
-            result.errors.append(
-                f"알 수 없는 전주 타입: {data.get('pole_type')}"
-            )
-
-        # rail_count
-        if data.get("rail_count") != len(data.get("rails", [])):
-            result.warnings.append(
-                "rail_count와 실제 rails 개수가 다릅니다. rails 기준으로 처리합니다."
-            )
+        for pole in poles:
+            #전주타입검사
+            if pole.get("type") not in ["강관주", "H형강주", "조립철주"]:
+                result.errors.append(
+                    f"알 수 없는 전주 타입: {pole.get('type')}"
+                )
+            #전주길이검사
+            if not isinstance(pole.get("length"), float):
+                result.errors.append(
+                    f"전주 길이는 숫자여야 합니다.: {pole.get('length')}"
+                )
+            #전주 규격검사
+            if pole.get('width') not in ["P10",'P12','P14','P16','P18','P20']:
+                result.errors.append(
+                    f"유효하지 않은 전주 규격입니다.: {pole.get('width')}"
+                )
+            #오프셋검사
+            if not isinstance(pole.get("xoffset"), float):
+                result.errors.append(
+                    f"건식게이지는 숫자여야 합니다.: {pole.get('length')}"
+                )
 
     @staticmethod
-    def _validate_rails(data, lib_manager, result: ValidationResult):
+    def _validate_beams(beams: list, result: ValidationResult):
+        # beam_type
+        for beam in beams:
+            # 빔타입검사
+            if beam.get("type") not in ["트러스빔", "트러스라멘빔", "강관빔", 'V트러스빔']:
+                result.errors.append(
+                    f"알 수 없는 빔 타입: {beam.get('type')}"
+                )
+            #시작 전주 끝 전주 검사
+            if not isinstance(beam.get("start_pole"), int) or not isinstance(beam.get("end_pole"), int):
+                result.errors.append(
+                    f"시작과 끝 전주는 숫자여야 합니다.: {beam.get('start_pole'), {beam.get('end_pole')}}"
+                )
+
+    @staticmethod
+    def _validate_rails(rails, lib_manager, result: ValidationResult):
         seen_indices = set()
 
-        for i, rail in enumerate(data.get("rails", [])):
+        for i, rail in enumerate(rails):
             name = rail.get("name", f"#{i}")
             idx = rail.get("index")
             #인덱스 유효성 검사
