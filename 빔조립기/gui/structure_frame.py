@@ -25,19 +25,51 @@ class StructureFrame(ttk.LabelFrame):
         self.rails = rails
         self._refresh_pole_rail_combos()
 
-
     def _on_basic_changed(self, *_):
-        # 전주는 항상 표시
+        if getattr(self.master, "isloading", False):
+            return  # 🔥 로딩 중이면 rebuild 금지
+
         self.pole_frame.grid()
         self._rebuild_poles()
 
-        # 빔은 옵션에 따라
         if not self.master.basic_frame.isbeaminstall.get():
             self.beam_frame.grid_remove()
             return
 
         self.beam_frame.grid()
         self._rebuild_beams()
+
+    def rebuild_from_install(self, beams, poles):
+        # pole
+        self.master.isloading = True
+        self.master.pole_count.set(len(poles))
+        self._rebuild_poles()  # UI/VM 초기화
+
+        # 각 PoleVM에 install 데이터 반영
+        for vm, pole in zip(self.pole_vars, poles):
+            vm.poletype.set(pole['type'])  # Enum -> String
+            vm.polespec.set(pole['width'])
+            vm.pole_length.set(pole['length'])
+            vm.gauge.set(pole['xoffset'])
+            # ⭐ 핵심
+            vm.base_rail_index.set(pole['base_rail_index'])
+            # uid 매칭
+            for rail in self.rails:
+                if rail.index_var.get() == pole['base_rail_index']:
+                    vm.base_rail_uid.set(rail.uid)
+                    break
+
+        self._refresh_pole_rail_combos()
+
+        # beam
+        self.master.beam_count.set(len(beams))
+        self._rebuild_beams()
+        for vm, beam in zip(self.beam_vars, beams):
+            vm.beamtype.set(beam['type'])
+            vm.start_pole.set(beam['start_pole'])
+            vm.end_pole.set(beam['end_pole'])
+        self.master.isloading = False
+
     def _rebuild_beams(self, *_):
         for w in self.beam_frame.winfo_children():
             w.destroy()
@@ -54,6 +86,7 @@ class StructureFrame(ttk.LabelFrame):
 
         for i in range(self.master.beam_count.get()):
             row = i + 1
+            index = tk.IntVar(value=i + 1)
             ttk.Label(self.beam_frame, text=str(i + 1))\
                 .grid(row=row, column=0)
 
@@ -88,6 +121,7 @@ class StructureFrame(ttk.LabelFrame):
             ).grid(row=row, column=3)
 
             beam_vm = BeamVM(
+                index = index,
                 beamtype=var,
                 start_pole = start_pole_var,
                 end_pole= end_pole_var
@@ -160,12 +194,13 @@ class StructureFrame(ttk.LabelFrame):
             # 기본값은 "아직 선택된 게 없을 때만"
             if self.rails and not pole_vm.base_rail_uid.get():
                 pole_vm.base_rail_uid.set(self.rails[0].uid)
+                pole_vm.base_rail_index.set(self.rails[0].index_var.get())
                 base_rail_cb.current(0)
 
             ttk.Combobox(
                 self.pole_frame,
                 textvariable=poletypevar,
-                values=["강관주", "H형주", "조립철주"],
+                values=["강관주", "H형강주", "조립철주"],
                 state="readonly",
                 width=15
             ).grid(row=row, column=2)
@@ -194,10 +229,6 @@ class StructureFrame(ttk.LabelFrame):
             self._bind_base_rail(base_rail_cb, pole_vm)
 
     def _refresh_pole_rail_combos(self):
-        print("=== rails.updated ===")
-        for r in self.rails:
-            print("rail:", r.uid, r.name_var.get(), r.index_var.get())
-
         rail_labels = [
             f"{rail.name_var.get()} ({rail.index_var.get()})"
             for rail in self.rails
@@ -212,23 +243,21 @@ class StructureFrame(ttk.LabelFrame):
             if not pole_vm:
                 continue
 
-            print(
-                f"[BEFORE] pole {pole_vm.index.get()} "
-                f"uid={pole_vm.base_rail_uid.get()}"
-            )
-
             child["values"] = rail_labels
 
             uid = pole_vm.base_rail_uid.get()
+
             if uid in rail_uid_map:
+                idx = rail_uid_map.index(uid)
                 child.current(rail_uid_map.index(uid))
+                # 🔥🔥🔥 핵심 추가
+                pole_vm.base_rail_index.set(
+                    self.rails[idx].index_var.get()
+                )
+
             else:
                 child.set("")
 
-            print(
-                f"[AFTER ] pole {pole_vm.index.get()} "
-                f"uid={pole_vm.base_rail_uid.get()}"
-            )
 
     def _bind_base_rail(self, cb, pole_vm):
         def on_select(_):
@@ -237,6 +266,7 @@ class StructureFrame(ttk.LabelFrame):
                 pole_vm.base_rail_uid.set(
                     self.rails[idx].uid
                 )
+                pole_vm.base_rail_index.set(self.rails[idx].index_var.get())
 
         cb.bind("<<ComboboxSelected>>", on_select)
 
