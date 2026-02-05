@@ -1,10 +1,5 @@
 from dataclasses import dataclass, field
 
-from Electric.Overhead.Pole.poletype import PoleType
-from Electric.Overhead.Structure.beamtype import BeamType
-from model.beam_assembly import BeamAssembly
-
-
 @dataclass
 class PoleInstall:
     """최상위: 설치 단위
