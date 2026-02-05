@@ -3,6 +3,7 @@ from model.rail import RailData
 from model.tkraildata import TKRailData
 from vector3 import Vector3
 import tkinter as tk
+import uuid
 
 class TKRaildataAdapter:
     @staticmethod
@@ -24,7 +25,7 @@ class TKRaildataAdapter:
                     index=index,
                     name=name,
                     coord=coord,
-                    brackets=brackets
+                    brackets=brackets,
                 )
             )
         return result

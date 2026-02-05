@@ -10,15 +10,10 @@ class TkBeamAdapter:
         for i, vm in enumerate(beam_vms, start=1):
             beams.append(
                 Beam(
-                    index=-1,#초기화
+                    index=vm.index.get(),#초기화
                     type=BeamType(vm.beamtype.get()),
                     start_pole=vm.start_pole.get(),
-                    end_pole=vm.end_pole.get(),
-                    name=None,
-                    length=None,
-                    x=None,
-                    y=None,
-                    rotation=None
+                    end_pole=vm.end_pole.get()
                 )
             )
         return beams

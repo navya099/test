@@ -9,32 +9,39 @@ from model.tkraildata import TKRailData
 class TkInstallAdapter:
     @staticmethod
     def collect(master) -> PoleInstall:
+        rails = TKRaildataAdapter.collect(
+            master.bracket_frame.bracket_vars
+        )
+
+        poles = TkPoleAdapter.collect(
+            master.structure_frame.pole_vars
+        )
+
+        beams = TkBeamAdapter.collect(
+            master.structure_frame.beam_vars  # beam도 rail 참조하면 동일
+        )
 
         return PoleInstall(
             station=master.station.get(),
             pole_number=master.pole_number.get(),
             rail_count=master.rail_count.get(),
             pole_count=master.pole_count.get(),
-            beam_count = master.beam_count.get(),
-            poles=TkPoleAdapter.collect(master.structure_frame.pole_vars),
-            beams=TkBeamAdapter.collect(master.structure_frame.beam_vars),
-            rails=TKRaildataAdapter.collect(master.bracket_frame.bracket_vars),
+            beam_count=master.beam_count.get(),
+            rails=rails,
+            poles=poles,
+            beams=beams,
         )
 
     @staticmethod
     def apply(master, install: PoleInstall):
+        master.isloading = True
         master.station.set(install.station)
         master.pole_number.set(install.pole_number)
         master.rail_count.set(install.rail_count)
-        master.left_x.set(install.left_x)
-        master.right_x.set(install.right_x)
+        master.pole_count.set(install.pole_count)
+        master.bracket_frame.rebuild_from_install(install.rails)
 
         sf = master.structure_frame
-        sf.beam_type.set(install.beam_type)
-        sf.pole_type.set(install.pole_type)
-        sf.pole_width.set(install.pole_width)
-        sf.pole_height.set(install.pole_height)
-        sf.pole_count.set(install.pole_count)
 
-        # rail은 rebuild 후 주입
-        master.bracket_frame.rebuild_from_install(install.rails)
+        sf.rebuild_from_install(install.beams, install.poles)
+        master.isloading = False
