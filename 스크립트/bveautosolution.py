@@ -1,4 +1,5 @@
 import time
+import tkinter as tk
 
 from bve곡선레일구문생성기 import preprocess_input_index, extract_cant, create_freeobj,\
     cal_mainlogic, save_files, create_railtype, save_railtype
@@ -25,23 +26,29 @@ def get_float_input(prompt):
             raise ValueError('숫자만 입력하세요')
 
 class SolutionRunner:
-    def __init__(self, logger=print):
+    def __init__(self, log_widget=None, designspeed=150, linecount=1):
         self.offset = None
         self.brokenchain = None
         self.last_block = None
         self.start_blcok = None
         self.base_source_directory = 'c:/temp/'  # 원본 소스 기본 경로
         self.structure_list = None
-        self.linecount = None
-        self.logger = logger
-        self.designspeed = None
+        self.linecount = linecount
+        self.log_widget = log_widget
+
+        self.designspeed = designspeed
         self.railtype_map = {120: '도시철도', 150: '일반철도', 250: '준고속철도', 350: '고속철도'}
         self.alignment_type = ''
         self.path = r'D:/BVE/루트/Railway/Route/연습용루트/'
         self.obj_path = r'D:/BVE/루트/Railway/Object/abcdefg/'
 
     def log(self, msg):
-        self.logger(msg)
+        if self.log_widget:
+            self.log_widget.insert("end", msg + "\n")
+            self.log_widget.see("end")
+        else:
+            print(msg)
+
 
     def run(self):
         try:
@@ -60,9 +67,6 @@ class SolutionRunner:
     def load_info(self):
         self.log(f"{'-' * 5}기본 정보 로드 시작{'-' * 5}")
         try:
-
-            self.designspeed = get_designspeed()
-            self.linecount = get_linecount()
             self.alignment_type = self.railtype_map.get(self.designspeed)
             self.log(f"로드된 정보 : 설계속도 : {self.designspeed}km/h, 선로구분: {self.alignment_type} , 선로수 {self.linecount}개")
             self.curve_info = load_curve_data()
@@ -312,16 +316,52 @@ class SolutionRunner:
         self.log(f"{'-' * 5} #6-4. 구조물표 생성 시작{'-' * 5}")
         self.log('정보: 구조물표 구현은 현재 미구현된 상태입니다.')
 
-if __name__ == '__main__':
-    runner = SolutionRunner()
+def run_step(runner, step_func, log_widget):
     start = time.time()
-    runner.load_info()       # 기본 정보 로드
-    runner.run_bridge()      # 교량/터널 구문 생성
-    runner.run_curve()       # 곡선 레일 생성
-    runner.run_pole()        # 전차선 생성
-    runner.run_signal()      # 신호 생성
-    runner.run_transmission()  # 통신 생성
-    runner.run_post()        # 포스트 생성
+    step_func()
     end = time.time()
     elapsed = end - start
-    runner.log(f"전체 작업 완료! 소요시간 : {elapsed:.2f}초")
+    msg = f"{step_func.__name__} 실행 완료! 소요시간 : {elapsed:.2f}초"
+    runner.log(msg)
+    log_widget.insert(tk.END, msg + "\n")
+
+def update_inputs():
+    try:
+        runner.designspeed = int(entry_speed.get())
+        runner.linecount = int(entry_linecount.get())
+        runner.log(f"입력값 반영: 설계속도={runner.designspeed}, 선로갯수={runner.linecount}")
+    except ValueError:
+        runner.log("⚠️ 숫자를 입력하세요")
+
+def clear_log():
+    log_box.delete("1.0", tk.END)  # 텍스트 전체 삭제
+
+if __name__ == "__main__":
+
+
+    root = tk.Tk()
+    root.title("SolutionRunner GUI")
+
+    log_box = tk.Text(root, height=15, width=60)
+    log_box.pack()
+
+    tk.Label(root, text="설계속도").pack()  # 라벨로 설명 붙이기
+    entry_speed = tk.Entry(root, width=20, textvariable=tk.IntVar(value=150))
+    entry_speed.pack()
+    tk.Label(root, text="선로갯수").pack()  # 라벨로 설명 붙이기
+    entry_linecount = tk.Entry(root, width=20, textvariable=tk.IntVar(value=1))
+    entry_linecount.pack()
+
+    runner = SolutionRunner(log_box)
+    tk.Button(root, text="전체실행", command=lambda: (update_inputs(), run_step(runner, runner.run, log_box))).pack()
+    tk.Button(root, text="기본정보 로드", command=lambda:(update_inputs(),  run_step(runner, runner.load_info, log_box))).pack()
+    tk.Button(root, text="교량/터널", command=lambda: run_step(runner, runner.run_bridge, log_box)).pack()
+    tk.Button(root, text="곡선 레일", command=lambda: run_step(runner, runner.run_curve, log_box)).pack()
+    tk.Button(root, text="전차선", command=lambda: run_step(runner, runner.run_pole, log_box)).pack()
+    tk.Button(root, text="신호", command=lambda: run_step(runner, runner.run_signal, log_box)).pack()
+    tk.Button(root, text="통신", command=lambda: run_step(runner, runner.run_transmission, log_box)).pack()
+    tk.Button(root, text="포스트", command=lambda: run_step(runner, runner.run_post, log_box)).pack()
+    tk.Button(root, text="로그 클리어", command=clear_log).pack()
+    tk.Button(root, text="종료", command=root.destroy).pack()
+
+    root.mainloop()
