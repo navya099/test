@@ -1,8 +1,8 @@
 import pandas as pd
 from controller.library_controller import IndexLibrary
-from model.beam_assembly import BeamAssembly
 from model.pole_install import PoleInstall
 from resolver.bracket_resolver import BracketResolver
+from resolver.pole_resolver import PoleResolver
 
 SHEET_ID = "1z0aUcuZCxOQp2St3icbQMbOkrSPfJK_8iZ2JKFDbW8c"
 SHEET_NAME = "freeobj"  # ← 원하는 시트 이름
@@ -22,8 +22,7 @@ class MainProcess:
         all_brackets = [
             b for rail in dto.rails for b in rail.brackets
         ]
+        PoleResolver.resolve(dto, idxlib)
         BracketResolver.resolve(all_brackets, idxlib)
-
-        dto.beam_assembly = BeamAssembly.create_from_install(dto, idxlib)
         return dto
 
