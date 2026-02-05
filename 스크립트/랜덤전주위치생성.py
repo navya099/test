@@ -34,7 +34,7 @@ def create_new_dxf():
 
 
 def crate_pegging_plan_mast_and_bracket(doc, msp, polyline, positions, structure_list, curve_list, pitchlist,
-                                        airjoint_list):
+                                        airjoint_list, DESIGNSPEED):
     post_number_lst = generate_postnumbers(positions)
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
@@ -181,7 +181,7 @@ def crate_pegging_plan_mast_and_bracket(doc, msp, polyline, positions, structure
     return doc, msp
 
 
-def crate_pegging_plan_wire(doc, msp, polyline, positions, structure_list, curve_list, pitchlist, airjoint_list):
+def crate_pegging_plan_wire(doc, msp, polyline, positions, structure_list, curve_list, pitchlist, airjoint_list, DESIGNSPEED):
     post_number_lst = generate_postnumbers(positions)
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
@@ -295,7 +295,7 @@ def draw_feeder_wire_plan(msp, pos_coord, end_pos, current_structure, next_struc
 
 
 def create_pegging_profile_mast_and_bracket(doc, msp, polyline, positions, structure_list, curve_list, pitchlist,
-                                            airjoint_list):
+                                            airjoint_list, DESIGNSPEED):
     post_number_lst = generate_postnumbers(positions)
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
@@ -421,7 +421,7 @@ def create_pegging_profile_mast_and_bracket(doc, msp, polyline, positions, struc
 
 
 def create_pegging_profile_wire(doc, msp, polyline, positions, structure_list, curve_list, pitchlist,
-                                airjoint_list):
+                                airjoint_list, DESIGNSPEED):
     post_number_lst = generate_postnumbers(positions)
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
@@ -839,23 +839,20 @@ def find_structure_section(filepath):
     df_bridge = pd.read_excel(filepath, sheet_name='교량', header=None)
     df_tunnel = pd.read_excel(filepath, sheet_name='터널', header=None)
 
-    # 교량 데이터 처리
-    if df_bridge is not None and not df_bridge.empty:
-        df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
-        for _, row in df_bridge.iterrows():
-            structure_list['bridge'].append((row['br_START_STA'], row['br_END_STA']))
-    else:
-        # 빈 시트일 경우 기본 구조만 반환
-        df_bridge = pd.DataFrame(columns=['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH'])
+    # 열 개수 확인
+    print(df_tunnel.shape)  # (행 개수, 열 개수)
+    print(df_tunnel.head())  # 데이터 확인
 
-    # 터널 데이터 처리
-    if df_tunnel is not None and not df_tunnel.empty:
-        df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
-        for _, row in df_tunnel.iterrows():
-            structure_list['tunnel'].append((row['tn_START_STA'], row['tn_END_STA']))
-    else:
-        # 빈 시트일 경우 기본 구조만 반환
-        df_tunnel = pd.DataFrame(columns=['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH'])
+    # 첫 번째 행을 열 제목으로 설정
+    df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
+    df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
+
+    # 교량 구간과 터널 구간 정보
+    for _, row in df_bridge.iterrows():
+        structure_list['bridge'].append((row['br_NAME'], row['br_START_STA'], row['br_END_STA']))
+
+    for _, row in df_tunnel.iterrows():
+        structure_list['tunnel'].append((row['tn_NAME'], row['tn_START_STA'], row['tn_END_STA']))
 
     return structure_list
 
@@ -2003,16 +2000,23 @@ def read_polyline(file_path):
     return points
 
 
+import re
+
 def find_last_block(data):
-    last_block = None  # None으로 초기화하여 값이 없을 때 오류 방지
+    """
+    데이터 리스트에서 마지막 블록 번호(첫 번째 숫자)를 반환.
+    예: ['45676,500,0','4646,366,35'] → 4646
+    """
+    last_block = None
 
     for line in data:
-        if isinstance(line, str):  # 문자열인지 확인
-            match = re.search(r'(\d+),', line)
+        if isinstance(line, str):
+            # 문자열 맨 앞의 숫자만 추출 (콤마 앞까지)
+            match = re.match(r'(\d+)', line)
             if match:
-                last_block = int(match.group(1))  # 정수 변환하여 저장
+                last_block = int(match.group(1))
 
-    return last_block  # 마지막 블록 값 반환
+    return last_block
 
 
 def read_file():
@@ -2211,15 +2215,15 @@ def main():
             # 전차선로평면도
             doc, msp = create_new_dxf()
             doc, msp = crate_pegging_plan_mast_and_bracket(doc, msp, polyline, pole_positions, structure_list,
-                                                           curvelist, pitchlist, airjoint_list)
+                                                           curvelist, pitchlist, airjoint_list, DESIGNSPEED)
             doc, msp = crate_pegging_plan_wire(doc, msp, polyline, pole_positions, structure_list, curvelist, pitchlist,
-                                               airjoint_list)
+                                               airjoint_list, DESIGNSPEED)
             # 전차선로종단면도
             doc1, msp1 = create_new_dxf()
             doc1, msp1 = create_pegging_profile_mast_and_bracket(doc1, msp1, polyline, pole_positions, structure_list,
-                                                                 curvelist, pitchlist, airjoint_list)
+                                                                 curvelist, pitchlist, airjoint_list, DESIGNSPEED)
             doc1, msp1 = create_pegging_profile_wire(doc1, msp1, polyline, pole_positions, structure_list,
-                                                     curvelist, pitchlist, airjoint_list)
+                                                     curvelist, pitchlist, airjoint_list, DESIGNSPEED)
             break
         except Exception as e:
             print(f'도면 생성중 에러 발생: {e}')
