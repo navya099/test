@@ -9,7 +9,7 @@ import numpy as np
 from enum import Enum
 from shapely.geometry import Point, LineString
 import ezdxf  # Import ezdxf for saving to DXF
-
+import json
 '''
 ver 2025.03.19
 종단면도작성기능 추가(진행중)
@@ -928,32 +928,15 @@ def isslope(cur_sta, curve_list):
     return '수평', 0  # 목록에 없으면 기본적으로 직선 처리
 
 
-def get_pole_data():
-    """전주 데이터를 반환하는 기본 딕셔너리"""
-    return {
-        150: {
-            'prefix': 'Cako150',
-            'tunnel': (947, 946),
-            'earthwork': (544, 545),
-            'straight_bridge': (556, 557),
-            'curve_bridge': (562, 563),
-        },
-        250: {
-            'prefix': 'Cako250',
-            'tunnel': (979, 977),  # 터널은 I,O반대
-            'earthwork': (508, 510),
-            'straight_bridge': (512, 514),
-            'curve_bridge': (527, 529),
-        },
-        350: {
-            'prefix': 'Cako350',
-            'tunnel': (569, 568),
-            'earthwork': (564, 565),
-            'straight_bridge': (566, 567),
-            'curve_bridge': (566, 567),
-        }
-    }
-
+def get_pole_data(filename="c:/temp/pole_data.json"):
+    import json, os
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # key를 int로 변환
+        return {int(k): v for k, v in data.items()}
+    else:
+        raise FileNotFoundError("치명적 에러: pole_data.json 파일을 찾을 수 없습니다.")
 
 def format_pole_data(design_speed):
     """설계 속도에 따른 전주 데이터를 특정 형식으로 변환"""
@@ -1038,76 +1021,66 @@ def write_to_file(filename, lines):
         print(f"⚠️ 파일 저장 중 오류 발생: {e}")
 
 
-def get_airjoint_bracket_data():
-    """에어조인트 브래킷 데이터를 반환하는 기본 딕셔너리"""
-    return {
-        150: {
-            'prefix': 'Cako150',  # 150급은 별도의 aj없음
-            '터널': (941, 942),  # G2.1 I,0
-            '토공': (1252, 1253),  # G3.0 I,O
-            '교량': (1254, 1255),  # G3.5 I,O
-        },
-        250: {
-            'prefix': 'Cako250',
-            '터널': (1325, 1326),  # CAKO250-Tn-AJ
-            '토공': (1296, 1297),  # CAKO250-G3.0-AJ
-            '교량': (1298, 1299),  # CAKO250-G3.5-AJ
-        },
-        350: {
-            'prefix': 'Cako350',
-            '터널': (639, 640),  # CAKO350-Tn-AJ
-            '토공': (635, 636),  # CAKO350-G3.0-AJ
-            '교량': (637, 638),  # CAKO350-G3.5-AJ
-        }
-    }
+def get_airjoint_bracket_data(filename="c:/temp/airjoint_bracket_data.json"):
+    """에어조인트 브래킷 데이터를 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 키를 int로 변환, 리스트는 튜플로 변환
+        result = {}
+        for k, v in data.items():
+            int_key = int(k)
+            result[int_key] = {}
+            for subk, subv in v.items():
+                if isinstance(subv, list):
+                    result[int_key][subk] = tuple(subv)
+                else:
+                    result[int_key][subk] = subv
+        return result
+    else:
+        raise FileNotFoundError('airjoint_bracket_data 파일을 찾을수 없습니다')
 
 
-def get_F_bracket_data():
-    """F브래킷 데이터를 반환하는 기본 딕셔너리"""
-    return {
-        150: {
-            'prefix': 'Cako150',
-            '터널': (1330, 1330),  # TN-F
-            '토공': (1253, 1253),  # G3.0F
-            '교량': (1255, 1255),  # G3.5-F
-        },
-        250: {
-            'prefix': 'Cako250',
-            '터널': (1290, 1291),
-            '토공': (1284, 1285),  # CAKO250-G3.0-F(S) CAKO250-G3.0-F(L)
-            '교량': (1286, 1287),  # CAKO250-G3.5-F
-        },
-        350: {
-            'prefix': 'Cako350',
-            '터널': (582, 583),  # CAKO350-Tn-F
-            '토공': (578, 579),  # CAKO350-G3.0-F(S) CAKO250-G3.0-F(L)
-            '교량': (580, 581),  # CAKO350-G3.5-F
-        }
-    }
+
+def get_F_bracket_data(filename="c:/temp/F_bracket_data.json"):
+    """F브래킷 데이터를 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 키를 int로 변환, 리스트는 튜플로 변환
+        result = {}
+        for k, v in data.items():
+            int_key = int(k)
+            result[int_key] = {}
+            for subk, subv in v.items():
+                if isinstance(subv, list):
+                    result[int_key][subk] = tuple(subv)
+                else:
+                    result[int_key][subk] = subv
+        return result
+    else:
+        raise FileNotFoundError('F_bracket_data파일을 찾을수 없습니다.')
 
 
-def get_airjoint_fitting_data():
-    """에어조인트 브래킷 금구류 데이터를 반환하는 기본 딕셔너리"""
-    return {
-        150: {
-            'prefix': 'Cako150',
-            '에어조인트': 499,  # 에어조인트용 조가선 지지금구
-            'FLAT': (1292, 1292),  # 무효인상용 조가선,전차선 지지금구(150-급에서는 f형 돼지꼬리)
-            '곡선당김금구': (1293, 1294),  # L,R
-        },
-        250: {
-            'prefix': 'Cako250',  #
-            '에어조인트': 1279,  # 에어조인트용 조가선 지지금구
-            'FLAT': (1281, 1282),  # 무효인상용 조가선, 전차선  지지금구
-            '곡선당김금구': (1280, 1283)  # L,R
-        },
-        350: {
-            'prefix': 'Cako350',  # 350
-            '에어조인트': 586,  # 에어조인트용 조가선 지지금구
-            'FLAT': (584, 585),  # 무효인상용 조가선, 전차선  지지금구
-            '곡선당김금구': (576, 577),  # L,R
-        }
-    }
+def get_airjoint_fitting_data(filename="c:/temp/airjoint_fitting_data.json"):
+    """에어조인트 브래킷 금구류 데이터를 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 키를 int로 변환, 리스트는 튜플로 변환
+        result = {}
+        for k, v in data.items():
+            int_key = int(k)
+            result[int_key] = {}
+            for subk, subv in v.items():
+                if isinstance(subv, list):
+                    result[int_key][subk] = tuple(subv)
+                else:
+                    result[int_key][subk] = subv
+        return result
+    else:
+        raise FileNotFoundError("치명적 에러: airjoint_fitting_data.json 파일을 찾을 수 없습니다.")
+
 
 
 def get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, bracket_type, current_structure, next_structure,
@@ -1274,28 +1247,24 @@ def get_fitting_and_mast_data(DESIGNSPEED, current_structure, bracket_type):
     return airjoint_fitting, flat_fitting, steady_arm_fitting, mast_type, mast_name, offset
 
 
-def get_mast_type(DESIGNSPEED, current_structure):
-    # 전주 인덱스 딕셔너리(idx,comment)
-    mast_dic = {
-        150: {
-            'prefix': 'Cako150',
-            '토공': (1370, 'P-10"x7t-9m'),
-            '교량': (1376, 'P-12"x7t-8.5m'),
-            '터널': (1400, '터널하수강'),
-        },
-        250: {
-            'prefix': 'Cako250',
-            '토공': (1370, 'P-10"x7t-9m'),
-            '교량': (1376, 'P-12"x7t-8.5m'),
-            '터널': (1400, '터널하수강'),
-        },
-        350: {
-            'prefix': 'Cako350',  # 350
-            '토공': (619, 'H형주-208X202'),
-            '교량': (620, 'H형주-250X255'),
-            '터널': (621, '터널하수강'),
-        }
-    }
+def get_mast_type(DESIGNSPEED, current_structure, filename="c:/temp/mast_data.json"):
+    """설계속도와 구조물에 따른 전주 인덱스와 이름 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 키를 int로 변환, 리스트는 튜플로 변환
+        mast_dic = {}
+        for k, v in data.items():
+            int_key = int(k)
+            mast_dic[int_key] = {}
+            for subk, subv in v.items():
+                if isinstance(subv, list):
+                    mast_dic[int_key][subk] = tuple(subv)
+                else:
+                    mast_dic[int_key][subk] = subv
+    else:
+        raise FileNotFoundError('mast_data 파일을 찾을수 없습니다.')
+
     mast_data = mast_dic.get(DESIGNSPEED, mast_dic[250])
     mast_type, mast_name = mast_data.get(current_structure, ("", "알 수 없는 구조"))
 
@@ -1322,43 +1291,18 @@ def add_pole(lines, pos, current_airjoint, pole_type, bracket_type):
 
 
 # 에어조인트 편위와 인상높이 딕셔너리
-def get_bracket_coordinates(DESIGNSPEED, bracket_type):
-    """설계속도와 브래킷 유형에 따른 좌표 반환"""
-    coordinates = {
-        "F형_시점": {
-            150: (-0.35, 0.3),
-            250: (-0.3, 0.32),
-            350: (-0.7, 0.5)
-        },
-        "AJ형_시점": {
-            150: (-0.15, 0),
-            250: (-0.1, 0),
-            350: (-0.2, 0)
-        },
-        "AJ형_중간1": {
-            150: (-0.15, 0),
-            250: (-0.1, 0),
-            350: (-0.25, 0)
-        },
-        "AJ형_중간2": {
-            150: (0.15, 0),
-            250: (0.1, 0),
-            350: (0.25, 0)
-        },
-        "AJ형_끝": {
-            150: (0.15, 0),
-            250: (0.1, 0),
-            350: (0.2, 0)
-        },
-        "F형_끝": {
-            150: (0.35, 0.3),
-            250: (0.3, 0.32),
-            350: (0.7, 0.5)
-        },
-    }
-
-    # 지정된 브래킷 유형과 속도에 맞는 좌표 반환
-    return coordinates.get(bracket_type, {}).get(DESIGNSPEED, (0, 0))
+def get_bracket_coordinates(DESIGNSPEED, bracket_type, filename="c:/temp/bracket_coordinates.json"):
+    """설계속도와 브래킷 유형에 따른 좌표 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 키 변환: DESIGNSPEED는 int, JSON은 str → 변환 필요
+        coords = {}
+        for btype, speeds in data.items():
+            coords[btype] = {int(k): tuple(v) for k, v in speeds.items()}
+        return coords.get(bracket_type, {}).get(DESIGNSPEED, (0, 0))
+    else:
+        raise FileNotFoundError('bracket_coordinates파일을 찾을 수 없습니다.')
 
 
 def common_lines(lines, mast_type, offset, mast_name, feeder_idx, spreader_name, spreader_idx):
@@ -1370,55 +1314,40 @@ def common_lines(lines, mast_type, offset, mast_name, feeder_idx, spreader_name,
     ])
 
 
-def get_feeder_insulator_idx(DESIGNSPEED, current_structure):
-    idx_dic = {
-        150: {
-            'prefix': 'Cako150',
-            '토공': 1234,
-            '교량': 1234,
-            '터널': 1249
-        },
-        250: {
-            'prefix': 'Cako250',
-            '토공': 1234,
-            '교량': 1234,
-            '터널': 1249
-        },
-        350: {
-            'prefix': 'Cako350',
-            '토공': 597,
-            '교량': 597,
-            '터널': 598
-        }
-    }
+def get_feeder_insulator_idx(DESIGNSPEED, current_structure, filename="c:/temp/feeder_insulator_idx.json"):
+    """설계속도와 구조물에 따른 피더 애자 인덱스 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 키를 int로 변환
+        idx_dic = {int(k): v for k, v in data.items()}
+        idx_data = idx_dic.get(DESIGNSPEED, idx_dic[250])
+        return idx_data.get(current_structure, idx_data['토공'])
 
-    idx_data = idx_dic.get(DESIGNSPEED, idx_dic[250])
-    idx = idx_data.get(current_structure, idx_data['토공'])
-    return idx
+    else:
+        raise FileNotFoundError('feeder_insulator_idx 파일을 찾을수 없습니다.')
 
 
-def get_spreader_idx(DESIGNSPEED, current_structure, current_airjoint):
-    """평행틀 인덱스를 반환하는 기본 딕셔너리"""
-    spreader_dictionary = {
-        150: {
-            'prefix': 'Cako150',
-            '토공': (531, 532),
-            '교량': (534, 535),
-            '터널': (537, 538)
-        },
-        250: {
-            'prefix': 'Cako250',
-            '토공': (531, 532),
-            '교량': (534, 535),
-            '터널': (537, 538)
-        },
-        350: {
-            'prefix': 'Cako350',
-            '토공': (587, 588),
-            '교량': (589, 590),
-            '터널': (587, 588)
-        }
-    }
+import json
+import os
+
+def get_spreader_idx(DESIGNSPEED, current_structure, current_airjoint, filename="c:/temp/spreader_idx.json"):
+    """평행틀 인덱스를 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 키를 int로 변환, 리스트는 튜플로 변환
+        spreader_dictionary = {}
+        for k, v in data.items():
+            int_key = int(k)
+            spreader_dictionary[int_key] = {}
+            for subk, subv in v.items():
+                if isinstance(subv, list):
+                    spreader_dictionary[int_key][subk] = tuple(subv)
+                else:
+                    spreader_dictionary[int_key][subk] = subv
+    else:
+        raise FileNotFoundError('spreader_idx.json 파일을 찾을 수 없습니다.')
 
     spreader_data = spreader_dictionary.get(DESIGNSPEED, spreader_dictionary[250])
     spreader_str = spreader_data.get(current_structure, (0, 0))  # 기본값 (0, 0) 설정
@@ -1484,6 +1413,8 @@ def save_to_txt(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, a
 
     for i in range(len(positions) - 1):
         pos, next_pos = positions[i], positions[i + 1]
+        if pos > positions[-1]:
+            continue
         currentspan = next_pos - pos  # 전주 간 거리 계산
         # 현재 위치의 구조물 및 곡선 정보 가져오기
         current_structure = isbridge_tunnel(pos, structure_list)
@@ -1624,55 +1555,30 @@ def calculate_height_at_new_distance(h1, h2, L, L_new):
     h3 = h1 + ((h2 - h1) / L) * L_new
     return h3
 
-def get_wire_offsetanlge(DESIGNSPEED, current_structure):
-    """AF,FPW offset을 반환하는 기본 딕셔너리(x,y)"""
-    AF_offset_values = {
-        150: {
-            'prefix': 'Cako150',
-            '토공': (-1.637, 7.228381),
-            '교량': (-2.137, 7.228381),
-            '터널': (-1.919, 5.479)
-        },
-        250: {
-            'prefix': 'Cako250',
-            '토공': (-1.637, 7.228381),
-            '교량': (-2.137, 7.228381),
-            '터널': (-1.919, 5.479)
-        },
-        350: {
-            'prefix': 'Cako350',
-            '토공': (-4.356,  6.154),
-            '교량': (-2.419, 8.133),
-            '터널': (1.598, 8.067)
-        }
-    }
+def get_wire_offsetanlge(DESIGNSPEED, current_structure, filename="c:/temp/wire_offset.json"):
+    """AF, FPW offset을 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-    FPW_offset_values = {
-        150: {
-            'prefix': 'Cako150',
-            '토공': (-3.239, 4.89),
-            '교량': (-3.7397,4.89),
-            '터널': (2.049, 5.559)
-        },
-        250: {
-            'prefix': 'Cako250',
-            '토공': (-3.239,  4.89),
-            '교량': (-3.7397, 4.89),
-            '터널': (2.049, 5.559)
-        },
-        350: {
-            'prefix': 'Cako350',
-            '토공': (-3.42, 5.505),
-            '교량': (-3.671, 5.505),
-            '터널': (2.206,7.766)
-        }
-    }
+        # 키를 int로 변환, 리스트는 튜플로 변환
+        AF_offset_values = {int(k): {sk: tuple(sv) if isinstance(sv, list) else sv
+                                     for sk, sv in v.items()}
+                            for k, v in data["AF"].items()}
+        FPW_offset_values = {int(k): {sk: tuple(sv) if isinstance(sv, list) else sv
+                                      for sk, sv in v.items()}
+                             for k, v in data["FPW"].items()}
+    else:
+        raise FileNotFoundError("wire_offset_values.json 파일을 찾을 수 없습니다.")
+
     AF_data = AF_offset_values.get(DESIGNSPEED, AF_offset_values[250])
     AF_X_offset, AF_y_offset = AF_data[current_structure]
+
     FPW_data = FPW_offset_values.get(DESIGNSPEED, FPW_offset_values[250])
     fpw_wire_X_offset, fpw_wire_y_offset = FPW_data[current_structure]
 
     return [AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset]
+
 
 
 def buffered_write(filename, lines):
@@ -1681,29 +1587,24 @@ def buffered_write(filename, lines):
         f.writelines(lines)
 
 
-def get_wire_span_data(DESIGNSPEED, currentspan, current_structure):
-    """ 경간에 따른 wire 데이터 반환 """
-    # SPEED STRUCTURE span 45, 50, 55, 60
-    span_data = {
-        150: {
-            'prefix': 'Cako150',
-            '토공': (592, 593, 594, 595),  # 가고 960
-            '교량': (592, 593, 594, 595),  # 가고 960
-            '터널': (614, 615, 616, 617)  # 가고 710
-        },
-        250: {
-            'prefix': 'Cako250',
-            '토공': (484, 478, 485, 479),  # 가고 1200
-            '교량': (484, 478, 485, 479),  # 가고 1200
-            '터널': (494, 495, 496, 497)  # 가고 850
-        },
-        350: {
-            'prefix': 'Cako350',
-            '토공': (488, 489, 490, 491),  # 가고 1400
-            '교량': (488, 489, 490, 491),  # 가고 1400
-            '터널': (488, 489, 490, 491)  # 가고 1400
-        }
-    }
+import json
+import os
+
+def get_wire_span_data(DESIGNSPEED, currentspan, current_structure, filename="c:/temp/wire_span_data.json"):
+    """경간에 따른 wire 데이터 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # span_data 키를 int로 변환, 리스트는 튜플로 변환
+        span_data = {int(k): {sk: tuple(sv) if isinstance(sv, list) else sv
+                              for sk, sv in v.items()}
+                     for k, v in data["span_data"].items()}
+
+        # span_index_mapping 키를 int로 변환
+        span_index_mapping = {int(k): tuple(v) for k, v in data["span_index_mapping"].items()}
+    else:
+        raise FileNotFoundError("wire_span_data.json 파일을 찾을 수 없습니다.")
 
     # DESIGNSPEED에 맞는 구조 선택 (기본값 250 사용)
     span_values = span_data.get(DESIGNSPEED, span_data[250])
@@ -1711,20 +1612,13 @@ def get_wire_span_data(DESIGNSPEED, currentspan, current_structure):
     # current_structure에 맞는 값 추출
     current_structure_list = span_values[current_structure]
 
-    # currentspan 값을 통해 인덱스를 추출
-    span_index_mapping = {
-        45: (0, '경간 45m', 1236, 1241),
-        50: (1, '경간 50m', 1237, 1242),
-        55: (2, '경간 55m', 1238, 1243),
-        60: (3, '경간 60m', 1239, 1244)
-    }
-
     # currentspan이 유효한 값인지 확인
     if currentspan not in span_index_mapping:
         raise ValueError(f"Invalid span value '{currentspan}'. Valid values are 45, 50, 55, 60.")
 
     # currentspan에 해당하는 인덱스 및 주석 추출
     idx, comment, feeder_idx, fpw_idx = span_index_mapping[currentspan]
+
     # idx 값을 current_structure_list에서 가져오기
     idx_value = current_structure_list[idx]
 
@@ -1923,14 +1817,15 @@ def calculate_curve_angle(polyline_with_sta, pos, next_pos, stagger1, stagger2):
     return finale_anlge
 
 
-def get_pole_gauge(DESIGNSPEED, current_structure):
-    GAUGE_dictionary = {
-        150: {'토공': -3, '교량': -3.5, '터널': 2.1},
-        250: {'토공': -3, '교량': -3.5, '터널': 2.1},
-        350: {'토공': -3.267, '교량': -3.5156, '터널': 2.1}
-    }
-    gauge = GAUGE_dictionary.get(DESIGNSPEED, {}).get(current_structure, "알 수 없는 구조")
-    return gauge
+def get_pole_gauge(DESIGNSPEED, current_structure, filename="c:/temp/pole_gauge.json"):
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data = {int(k): v for k, v in data.items()}  # 키를 int로 변환
+        return data.get(DESIGNSPEED, {}).get(current_structure, "알 수 없는 구조")
+    else:
+        raise FileNotFoundError('pole_gauge 파일을 찾을수 없습니다.')
+
 
 
 def get_airjoint_angle(gauge, stagger, span):
@@ -1940,23 +1835,31 @@ def get_airjoint_angle(gauge, stagger, span):
     return S_angle, E_angle
 
 
-def get_contact_wire_and_massanger_wire_info(DESIGNSPEED, current_structure, span):
-    inactive_contact_wire = {40: 1257, 45: 1258, 50: 1259, 55: 1260, 60: 1261}  # 무효 전차선 인덱스
-    inactive_messenger_wire = {40: 1262, 45: 1263, 50: 1264, 55: 1265, 60: 1266}  # 무효 조가선 인덱스
+import json
+import os
+
+def get_contact_wire_and_massanger_wire_info(DESIGNSPEED, current_structure, span, filename="c:/temp/contact_wire_info.json"):
+    """경간에 따른 무효 전차선/조가선 인덱스와 높이정보 반환 (JSON 기반)"""
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        inactive_contact_wire = {int(k): v for k, v in data["inactive_contact_wire"].items()}
+        inactive_messenger_wire = {int(k): v for k, v in data["inactive_messenger_wire"].items()}
+        contact_height_dictionary = {
+            int(k): {sk: tuple(sv) if isinstance(sv, list) else sv for sk, sv in v.items()}
+            for k, v in data["contact_height_dictionary"].items()
+        }
+    else:
+        raise FileNotFoundError("contact_wire_info.json 파일을 찾을 수 없습니다.")
 
     # 객체 인덱스 가져오기 (기본값 60)
-    contact_object_index = inactive_contact_wire.get(span, 1261)
-    messenger_object_index = inactive_messenger_wire.get(span, 1266)
+    contact_object_index = inactive_contact_wire.get(span, inactive_contact_wire[60])
+    messenger_object_index = inactive_messenger_wire.get(span, inactive_messenger_wire[60])
 
     # 가고와 전차선 높이정보
-    contact_height_dictionary = {
-        150: {'토공': (0.96, 5.2), '교량': (0.96, 5.2), '터널': (0.71, 5)},
-        250: {'토공': (1.2, 5.2), '교량': (1.2, 5.2), '터널': (0.85, 5)},
-        350: {'토공': (1.4, 5.1), '교량': (1.4, 5.1), '터널': (1.4, 5.1)}
-    }
-
     contact_data = contact_height_dictionary.get(DESIGNSPEED, contact_height_dictionary[250])
-    system_heigh, contact_height = contact_data.get(current_structure, (0, 0))  # 기본값 (0, 0) 설정
+    system_heigh, contact_height = contact_data.get(current_structure, (0, 0))
 
     return contact_object_index, messenger_object_index, system_heigh, contact_height
 
