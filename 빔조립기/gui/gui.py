@@ -19,6 +19,7 @@ class PoleInstallGUI(tk.Tk):
         self.bve_window = None
         self.title("전주 설치 입력기")
         self.geometry("900x650")
+        self.isloading = False
 
         self.event = EventController()
 

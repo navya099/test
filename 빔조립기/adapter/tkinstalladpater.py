@@ -45,3 +45,6 @@ class TkInstallAdapter:
 
         sf.rebuild_from_install(install.beams, install.poles)
         master.isloading = False
+        # 🔥 로드 완료 후 1회 sync
+        master.event.emit("rails.updated",
+                          master.bracket_frame.bracket_vars)

@@ -37,6 +37,8 @@ class BracketFrame(ttk.LabelFrame):
         self._rebuild_brackets()
 
     def _rebuild_brackets(self):
+        if self.master.isloading:
+            return
         for w in self.bracket_frame.winfo_children():
             w.destroy()
 
@@ -128,9 +130,11 @@ class BracketFrame(ttk.LabelFrame):
 
 
     def rebuild_from_install(self, rails):
+        self.master.isloading = True
+
         self._rebuild_brackets()
         self._apply_rail_values(rails)
-
+        self.master.isloading = False
     def _apply_rail_values(self, rails):
         for rail_ui, rail_dict in zip(self.bracket_vars, rails):
             rail_ui.index_var.set(rail_dict["index"])
