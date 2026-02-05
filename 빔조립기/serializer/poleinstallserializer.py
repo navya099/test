@@ -4,7 +4,7 @@ from dataclasses import asdict
 from library import LibraryManager
 from model.pole_install import PoleInstall
 from valid_data_detector.pole_Install_validator import PoleInstallValidator
-from vector3 import Vector3
+from enum import Enum
 
 from vector3 import Vector3
 
@@ -35,6 +35,8 @@ class PoleInstallSerializer:
                 for k, v in obj.items()
             }
 
+        if isinstance(obj, Enum):
+            return obj.value
         return obj
 
     @staticmethod
