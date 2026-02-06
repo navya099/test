@@ -4,6 +4,7 @@ from tkinter import scrolledtext
 
 from adapter.tk_raildata_adapter import TKRaildataAdapter
 from adapter.tkinstalladpater import TkInstallAdapter
+from bve.bveserializer import BVETextBuilder
 from controller.event_controller import EventController
 from controller.main_controller import MainProcess
 from preview.preview_sevice import PreviewService
@@ -106,7 +107,7 @@ class PoleInstallGUI(tk.Tk):
 
     def show_bvesyntac(self):
         if self.result:
-            text = self.result.to_bve()
+            text = BVETextBuilder.to_text(self.result)
 
             # ✅ 처음 호출 시에만 새창 생성
             if self.bve_window is None or not self.bve_window.winfo_exists():
