@@ -15,41 +15,42 @@ class PreviewService:
         locator = FileLocator(PathResolver.BASE_PATH)
 
         # 1. 빔
-        beam_path = locator.find(install.beam_assembly.beam.name)
-        if beam_path:
+        for beam in install.beams:
+            beam_path = locator.find(beam.name)
+            if beam_path:
 
-            items.append(
-                PreviewItem(
-                    path=beam_path,
-                    transform=Transform(
-                        x=install.beam_assembly.beam.x,
-                        z=install.beam_assembly.beam.y,
-                        rotation=install.beam_assembly.beam.rotation,
-                    ),
-                    category=PreviewCategory.BEAM
+                items.append(
+                    PreviewItem(
+                        path=beam_path,
+                        transform=Transform(
+                            x=0,
+                            z=0,
+                            rotation=0,
+                        ),
+                        category=PreviewCategory.BEAM
 
+                    )
                 )
-            )
-        else:
-            missing.append(install.beam_assembly.beam.name)
+            else:
+                missing.append(beam.name)
 
         # 2. 기둥
-        for col in install.beam_assembly.columns:
-            path = locator.find(col.name)
+        for col in install.poles:
+            path = locator.find(col.display_name)
             if path:
                 items.append(
                     PreviewItem(
                         path=path,
                         transform=Transform(
                             x=col.xoffset,
-                            z=col.yoffset,
+                            z=0,
                             rotation=0
                         ),
                     category=PreviewCategory.POLE
                     )
                 )
             else:
-                missing.append(col.name)
+                missing.append(col.display_name)
 
         # 3. 브래킷
         for rail in install.rails:
