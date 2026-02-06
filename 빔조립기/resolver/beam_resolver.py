@@ -17,3 +17,5 @@ class BeamResolver:
 
             beam.index = idxlib.get_index(name)
 
+            beam.ref_start_pole = start
+            beam.ref_end_pole = end

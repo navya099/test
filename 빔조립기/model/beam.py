@@ -24,6 +24,8 @@ class Beam:
     index: int | None = None
     start_pole: int | None = None
     end_pole: int | None = None
+    ref_start_pole: None  = None
+    ref_end_pole: None = None
     x: float | None = None
     y: float | None = None
     rotation: float | None = None

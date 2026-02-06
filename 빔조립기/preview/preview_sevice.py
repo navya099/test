@@ -23,9 +23,10 @@ class PreviewService:
                     PreviewItem(
                         path=beam_path,
                         transform=Transform(
-                            x=0,
+                            x=beam.ref_start_pole.xoffset,
                             z=0,
                             rotation=0,
+                            pivot=beam.ref_start_pole.base_rail.coord
                         ),
                         category=PreviewCategory.BEAM
 
@@ -44,7 +45,8 @@ class PreviewService:
                         transform=Transform(
                             x=col.xoffset,
                             z=0,
-                            rotation=0
+                            rotation=0,
+                            pivot=col.base_rail.coord
                         ),
                     category=PreviewCategory.POLE
                     )
