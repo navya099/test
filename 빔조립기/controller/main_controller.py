@@ -1,6 +1,7 @@
 import pandas as pd
 from controller.library_controller import IndexLibrary
 from model.pole_install import PoleInstall
+from resolver.beam_resolver import BeamResolver
 from resolver.bracket_resolver import BracketResolver
 from resolver.pole_resolver import PoleResolver
 
@@ -22,7 +23,14 @@ class MainProcess:
         all_brackets = [
             b for rail in dto.rails for b in rail.brackets
         ]
-        PoleResolver.resolve(dto, idxlib)
+        #rail맵 생성
+        rail_map = {
+            rail.index: rail
+            for rail in dto.rails
+        }
+        pole_map = {p.index: p for p in dto.poles}
         BracketResolver.resolve(all_brackets, idxlib)
+        PoleResolver.resolve(dto.poles, idxlib, rail_map)
+        BeamResolver.resolve(dto.beams, idxlib, rail_map, pole_map)
         return dto
 
