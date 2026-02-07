@@ -5,14 +5,15 @@ from bve곡선레일구문생성기 import preprocess_input_index, extract_cant,
     cal_mainlogic, save_files, create_railtype, save_railtype
 from 거리표이미지생성기 import create_km_object
 from 곡선표이미지생성기 import process_curve_data, create_curve_post_txt, create_curve_index_txt, create_speed_limit
-from 교량터널구문생성기 import get_designspeed, get_linecount, load_structure_data, create_network_data, create_txt
+from 교량터널구문생성기 import load_structure_data, create_network_data, create_txt
 import os
 import random
 
 from 기울기표이미지생성기 import process_bve_profile, create_pitch_post_txt, create_pitch_index_txt
 from 랜덤신호위치생성 import save_signal_data
-from 랜덤전주위치생성 import distribute_pole_spacing_flexible, load_curve_data, load_pitch_data,\
-    load_coordinates, define_airjoint_section, generate_postnumbers, save_pole_data, save_wire_data
+from 랜덤전주위치생성 import distribute_pole_spacing_flexible, load_curve_data, load_pitch_data, \
+    load_coordinates, define_airjoint_section, generate_postnumbers, process_pole, process_to_WIRE, write_to_file, \
+    load_dataset
 from 자동통신구문생성 import create_transmisson_data
 
 from file_io_utils import copy_files
@@ -27,6 +28,7 @@ def get_float_input(prompt):
 
 class SolutionRunner:
     def __init__(self, log_widget=None, designspeed=150, linecount=1):
+        self.iscustommode = False
         self.offset = None
         self.brokenchain = None
         self.last_block = None
@@ -141,13 +143,16 @@ class SolutionRunner:
 
             # 전주번호 추가
             post_number_lst = generate_postnumbers(pole_positions)
-
+            # 데이터셋 로드,
+            dataset = load_dataset(self.designspeed, self.iscustommode)
             # 데이터 저장
             #전주파일
             polefile = os.path.join(self.path, '전주.txt')
             wirefile = os.path.join(self.path, '전차선.txt')
-            save_pole_data(pole_positions, self.structure_list, self.curve_info, self.pitch_info, self.designspeed, airjoint_list, self.bve_coord, polefile)
-            save_wire_data(self.designspeed, pole_positions, spans, self.structure_list,self.curve_info, self.pitch_info, self.bve_coord, airjoint_list, wirefile)
+            poledata = process_pole(pole_positions, self.structure_list, self.curve_info, self.pitch_info, dataset, airjoint_list, self.bve_coord)
+            wire_data = process_to_WIRE(dataset, pole_positions, spans, self.structure_list,self.curve_info, self.pitch_info, self.bve_coord, airjoint_list)
+            write_to_file(polefile, poledata)
+            write_to_file(wirefile, wire_data)
             # 최종 출력
             self.log(f"생성된 전주 개수: {len(pole_positions)}, 에어조인트 구간 갯수: {len(airjoint_list)}")
             self.log("전주와 전차선 생성이 완료됐습니다.")
