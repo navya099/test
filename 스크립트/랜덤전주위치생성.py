@@ -1021,95 +1021,51 @@ def write_to_file(filename, lines):
         print(f"⚠️ 파일 저장 중 오류 발생: {e}")
 
 
-def get_airjoint_bracket_data(filename="c:/temp/airjoint_bracket_data.json"):
+def get_airjoint_bracket_data(dataset):
     """에어조인트 브래킷 데이터를 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # 키를 int로 변환, 리스트는 튜플로 변환
-        result = {}
-        for k, v in data.items():
-            int_key = int(k)
-            result[int_key] = {}
-            for subk, subv in v.items():
-                if isinstance(subv, list):
-                    result[int_key][subk] = tuple(subv)
-                else:
-                    result[int_key][subk] = subv
-        return result
-    else:
-        raise FileNotFoundError('airjoint_bracket_data 파일을 찾을수 없습니다')
+    return dataset['airjoint_bracket_data']
 
 
 
-def get_F_bracket_data(filename="c:/temp/F_bracket_data.json"):
+def get_F_bracket_data(dataset):
     """F브래킷 데이터를 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # 키를 int로 변환, 리스트는 튜플로 변환
-        result = {}
-        for k, v in data.items():
-            int_key = int(k)
-            result[int_key] = {}
-            for subk, subv in v.items():
-                if isinstance(subv, list):
-                    result[int_key][subk] = tuple(subv)
-                else:
-                    result[int_key][subk] = subv
-        return result
-    else:
-        raise FileNotFoundError('F_bracket_data파일을 찾을수 없습니다.')
+    return dataset['F_bracket_data']
 
 
-def get_airjoint_fitting_data(filename="c:/temp/airjoint_fitting_data.json"):
+def get_airjoint_fitting_data(dataset):
     """에어조인트 브래킷 금구류 데이터를 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # 키를 int로 변환, 리스트는 튜플로 변환
-        result = {}
-        for k, v in data.items():
-            int_key = int(k)
-            result[int_key] = {}
-            for subk, subv in v.items():
-                if isinstance(subv, list):
-                    result[int_key][subk] = tuple(subv)
-                else:
-                    result[int_key][subk] = subv
-        return result
-    else:
-        raise FileNotFoundError("치명적 에러: airjoint_fitting_data.json 파일을 찾을 수 없습니다.")
+    return dataset['airjoint_fitting_data']
 
 
 
 def get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, bracket_type, current_structure, next_structure,
-                       DESIGNSPEED, currentspan, polyline_with_sta):
+                       dataset, currentspan, polyline_with_sta):
     """에어조인트 구간별 전주 데이터 생성"""
     lines = []
 
     # 데이터 가져오기
     airjoint_fitting, flat_fitting, steady_arm_fitting, mast_type, mast_name, offset = get_fitting_and_mast_data(
-        DESIGNSPEED, current_structure, bracket_type)
-    bracket_values, f_values = get_bracket_codes(DESIGNSPEED, current_structure)
+        dataset, current_structure)
+    aj_bracket_values, f_bracket_valuse = get_bracket_codes(dataset, current_structure)
 
     # 구조물별 건식게이지 값
-    gauge = get_pole_gauge(DESIGNSPEED, current_structure)
-    next_gauge = get_pole_gauge(DESIGNSPEED, next_structure)
-    # 에어조인트 각도 가져오기
-    stagger, y1 = get_bracket_coordinates(DESIGNSPEED, 'F형_끝')
+    gauge = get_pole_gauge(dataset, current_structure)
+    next_gauge = get_pole_gauge(dataset, next_structure)
 
-    bracket_code_start, bracket_code_end = bracket_values
-    f_code_start, f_code_end = f_values
+    # 에어조인트 편위와 인상높이 가져오기
+    stagger, y1 = get_bracket_coordinates(dataset, 'F형_끝')
+
+    aj_i, aj_o = aj_bracket_values
+    f_i, f_o = f_bracket_valuse
 
     # 전주 추가
     add_pole(lines, pos, current_airjoint, pole_type, bracket_type)
 
     # 급전선 설비 인덱스 가져오기
-    feeder_idx = get_feeder_insulator_idx(DESIGNSPEED, current_structure)
+    feeder_idx = get_feeder_insulator_idx(dataset, current_structure)
 
     # 평행틀 설비 인덱스 가져오기
-    spreader_name, spreader_idx = get_spreader_idx(DESIGNSPEED, current_structure, current_airjoint)
+    spreader_name, spreader_idx = get_spreader_idx(dataset, current_structure, current_airjoint)
 
     # 공통 텍스트(전주,급전선,평행틀
     if current_airjoint in [AirJoint.POINT_2.value, AirJoint.MIDDLE.value, AirJoint.POINT_4.value]:
@@ -1122,17 +1078,17 @@ def get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, bracket_type,
         'lines': lines,
         'pos': pos,
         'next_pos': next_pos,
-        'DESIGNSPEED': DESIGNSPEED,
+        'dataset': dataset,
         'airjoint_fitting': airjoint_fitting,
         'steady_arm_fitting': steady_arm_fitting,
         'flat_fitting': flat_fitting,
         'pole_type': pole_type,
         'bracket_type': bracket_type,
         'offset': offset,
-        'f_code_start': f_code_start,
-        'f_code_end': f_code_end,
-        'bracket_code_start': bracket_code_start,
-        'bracket_code_end': bracket_code_end,
+        'f_code_start': f_i,
+        'f_code_end': f_o,
+        'aj_i': aj_i,
+        'aj_o': aj_o,
         'current_structure': current_structure,
         'next_structure': next_structure,
         'gauge': gauge,
@@ -1152,28 +1108,28 @@ def add_airjoint_brackets(params):
     lines = params['lines']
     pos = params['pos']
     next_pos = params['next_pos']
-    DESIGNSPEED = params['DESIGNSPEED']
+    dataset = params['dataset']
     airjoint_fitting = params['airjoint_fitting']
     steady_arm_fitting = params['steady_arm_fitting']
     flat_fitting = params['flat_fitting']
     pole_type = params['pole_type']
     bracket_type = params['bracket_type']
     offset = params['offset']
-    f_code_start = params['f_code_start']
-    f_code_end = params['f_code_end']
-    bracket_code_start = params['bracket_code_start']
-    bracket_code_end = params['bracket_code_end']
+    f_i = params['f_code_start']
+    f_o = params['f_code_end']
+    aj_i = params['aj_i']
+    aj_o = params['aj_o']
     current_structure = params['current_structure']
     next_structure = params['next_structure']
     gauge = params['gauge']
     next_gauge = params['next_gauge']
 
-    x, y = get_bracket_coordinates(DESIGNSPEED, 'AJ형_시점')
-    x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'F형_시점')
-    x2, y2 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_중간1')
-    x3, y3 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_중간2')
-    x4, y4 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_끝')
-    x5, y5 = get_bracket_coordinates(DESIGNSPEED, 'F형_끝')
+    x, y = get_bracket_coordinates(dataset, 'AJ형_시점')
+    x1, y1 = get_bracket_coordinates(dataset, 'F형_시점')
+    x2, y2 = get_bracket_coordinates(dataset, 'AJ형_중간1')
+    x3, y3 = get_bracket_coordinates(dataset, 'AJ형_중간2')
+    x4, y4 = get_bracket_coordinates(dataset, 'AJ형_끝')
+    x5, y5 = get_bracket_coordinates(dataset, 'F형_끝')
 
     """에어조인트 각 구간별 브래킷 추가"""
     if current_airjoint == AirJoint.START.value:
@@ -1186,17 +1142,17 @@ def add_airjoint_brackets(params):
 
     elif current_airjoint == AirJoint.POINT_2.value:
         # POINT_2 구간 처리
-        add_F_and_AJ_brackets(DESIGNSPEED, lines, pos, f_code_start, bracket_code_start, airjoint_fitting,
+        add_F_and_AJ_brackets(dataset, lines, pos, f_i, aj_i, airjoint_fitting,
                               steady_arm_fitting, flat_fitting)
 
     elif current_airjoint == AirJoint.MIDDLE.value:
         # MIDDLE 구간 처리
-        add_AJ_brackets_middle(DESIGNSPEED, lines, pos, bracket_code_start, bracket_code_end, airjoint_fitting,
+        add_AJ_brackets_middle(dataset, lines, pos, aj_i, aj_o, airjoint_fitting,
                                steady_arm_fitting)
 
     elif current_airjoint == AirJoint.POINT_4.value:
         # POINT_4 구간 처리
-        add_F_and_AJ_brackets(DESIGNSPEED, lines, pos, f_code_end, bracket_code_end, airjoint_fitting,
+        add_F_and_AJ_brackets(dataset, lines, pos, f_i, aj_i, airjoint_fitting,
                               steady_arm_fitting, flat_fitting, end=True)
 
     elif current_airjoint == AirJoint.END.value:
@@ -1206,77 +1162,59 @@ def add_airjoint_brackets(params):
         lines.append(f".freeobj 0;1247;{offset};0;{180 + end_angle};,;스프링식 장력조절장치\n")
 
 
-def add_F_and_AJ_brackets(DESIGNSPEED, lines, pos, f_code, bracket_code, airjoint_fitting, steady_arm_fitting,
+def add_F_and_AJ_brackets(dataset, lines, pos, f_code, bracket_code, airjoint_fitting, steady_arm_fitting,
                           flat_fitting, end=False):
     """F형 및 AJ형 브래킷을 추가하는 공통 함수"""
     # F형 가동 브래킷 추가
-    x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'F형_시점' if not end else 'F형_끝')
-    add_F_bracket(DESIGNSPEED, lines, pos - 0.528, f_code, "가동브래킷 F형", flat_fitting, x1, y1)
+    x1, y1 = get_bracket_coordinates(dataset, 'F형_시점' if not end else 'F형_끝')
+    add_F_bracket(lines, pos - 0.528, f_code, "가동브래킷 F형", flat_fitting, x1, y1)
 
     # AJ형 가동 브래킷 추가
-    x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_시점' if not end else 'AJ형_끝')
+    x1, y1 = get_bracket_coordinates(dataset, 'AJ형_시점' if not end else 'AJ형_끝')
     add_AJ_bracket(lines, pos + 0.528, bracket_code, '가동브래킷 AJ형', airjoint_fitting,
                    steady_arm_fitting[0] if not end else steady_arm_fitting[1], x1, y1)
 
 
-def add_AJ_brackets_middle(DESIGNSPEED, lines, pos, bracket_code_start, bracket_code_end, airjoint_fitting,
+def add_AJ_brackets_middle(dataset, lines, pos, bracket_code_start, bracket_code_end, airjoint_fitting,
                            steady_arm_fitting):
     """MIDDLE 구간에서 AJ형 브래킷 추가"""
     # AJ형 가동 브래킷 및 금구류 추가
-    x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_중간1')
-    bracket_code_else = bracket_code_start if DESIGNSPEED == 150 else bracket_code_end
-    steady_arm_fitting_else = steady_arm_fitting[0] if DESIGNSPEED == 150 else steady_arm_fitting[1]
-    add_AJ_bracket(lines, pos - 0.8, bracket_code_else, '가동브래킷 AJ형', airjoint_fitting, steady_arm_fitting_else, x1, y1)
+    x1, y1 = get_bracket_coordinates(dataset, 'AJ형_중간1')
+    add_AJ_bracket(lines, pos - 0.8, bracket_code_start, '가동브래킷 AJ형', airjoint_fitting, steady_arm_fitting, x1, y1)
 
     # AJ형 가동 브래킷 및 금구류 추가
-    x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_중간2')
+    x1, y1 = get_bracket_coordinates(dataset, 'AJ형_중간2')
     add_AJ_bracket(lines, pos + 0.8, bracket_code_end, '가동브래킷 AJ형', airjoint_fitting, steady_arm_fitting[1], x1, y1)
 
 
-def get_fitting_and_mast_data(DESIGNSPEED, current_structure, bracket_type):
+def get_fitting_and_mast_data(dataset, current_structure):
     """금구류 및 전주 데이터를 가져옴"""
-    fitting_data = get_airjoint_fitting_data().get(DESIGNSPEED, {})
+    fitting_data = get_airjoint_fitting_data(dataset)
     airjoint_fitting = fitting_data.get('에어조인트', 0)
     flat_fitting = fitting_data.get('FLAT', (0, 0))
     steady_arm_fitting = fitting_data.get('곡선당김금구', (0, 0))
 
-    mast_type, mast_name = get_mast_type(DESIGNSPEED, current_structure)
+    mast_type, mast_name = get_mast_type(dataset, current_structure)
 
-    offset = get_pole_gauge(DESIGNSPEED, current_structure)
+    offset = get_pole_gauge(dataset, current_structure)
 
     return airjoint_fitting, flat_fitting, steady_arm_fitting, mast_type, mast_name, offset
 
 
-def get_mast_type(DESIGNSPEED, current_structure, filename="c:/temp/mast_data.json"):
+def get_mast_type(dataset, current_structure):
     """설계속도와 구조물에 따른 전주 인덱스와 이름 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # 키를 int로 변환, 리스트는 튜플로 변환
-        mast_dic = {}
-        for k, v in data.items():
-            int_key = int(k)
-            mast_dic[int_key] = {}
-            for subk, subv in v.items():
-                if isinstance(subv, list):
-                    mast_dic[int_key][subk] = tuple(subv)
-                else:
-                    mast_dic[int_key][subk] = subv
-    else:
-        raise FileNotFoundError('mast_data 파일을 찾을수 없습니다.')
+    mast_data = dataset['mast_data']
+    mast_index, mast_name = mast_data.get(current_structure, ("", "알 수 없는 구조"))
 
-    mast_data = mast_dic.get(DESIGNSPEED, mast_dic[250])
-    mast_type, mast_name = mast_data.get(current_structure, ("", "알 수 없는 구조"))
-
-    return mast_type, mast_name
+    return mast_index, mast_name
 
 
-def get_bracket_codes(DESIGNSPEED, current_structure):
+def get_bracket_codes(dataset, current_structure):
     """브래킷 코드 가져오기"""
-    airjoint_data = get_airjoint_bracket_data().get(DESIGNSPEED, {})
-    f_data = get_F_bracket_data().get(DESIGNSPEED, {})
+    airjoint_bracket_data = get_airjoint_bracket_data(dataset)
+    f_data = get_F_bracket_data(dataset)
 
-    bracket_values = airjoint_data.get(current_structure, (0, 0))
+    bracket_values = airjoint_bracket_data.get(current_structure, (0, 0))
     f_values = f_data.get(current_structure, (0, 0))
 
     return bracket_values, f_values
@@ -1291,18 +1229,8 @@ def add_pole(lines, pos, current_airjoint, pole_type, bracket_type):
 
 
 # 에어조인트 편위와 인상높이 딕셔너리
-def get_bracket_coordinates(DESIGNSPEED, bracket_type, filename="c:/temp/bracket_coordinates.json"):
-    """설계속도와 브래킷 유형에 따른 좌표 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # 키 변환: DESIGNSPEED는 int, JSON은 str → 변환 필요
-        coords = {}
-        for btype, speeds in data.items():
-            coords[btype] = {int(k): tuple(v) for k, v in speeds.items()}
-        return coords.get(bracket_type, {}).get(DESIGNSPEED, (0, 0))
-    else:
-        raise FileNotFoundError('bracket_coordinates파일을 찾을 수 없습니다.')
+def get_bracket_coordinates(dataset, bracket_type):
+    return dataset['bracket_coordinates'][bracket_type]
 
 
 def common_lines(lines, mast_type, offset, mast_name, feeder_idx, spreader_name, spreader_idx):
@@ -1314,43 +1242,13 @@ def common_lines(lines, mast_type, offset, mast_name, feeder_idx, spreader_name,
     ])
 
 
-def get_feeder_insulator_idx(DESIGNSPEED, current_structure, filename="c:/temp/feeder_insulator_idx.json"):
+def get_feeder_insulator_idx(dataset, current_structure):
     """설계속도와 구조물에 따른 피더 애자 인덱스 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # 키를 int로 변환
-        idx_dic = {int(k): v for k, v in data.items()}
-        idx_data = idx_dic.get(DESIGNSPEED, idx_dic[250])
-        return idx_data.get(current_structure, idx_data['토공'])
+    return dataset['feeder_insulator_idx'][current_structure]
 
-    else:
-        raise FileNotFoundError('feeder_insulator_idx 파일을 찾을수 없습니다.')
-
-
-import json
-import os
-
-def get_spreader_idx(DESIGNSPEED, current_structure, current_airjoint, filename="c:/temp/spreader_idx.json"):
-    """평행틀 인덱스를 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # 키를 int로 변환, 리스트는 튜플로 변환
-        spreader_dictionary = {}
-        for k, v in data.items():
-            int_key = int(k)
-            spreader_dictionary[int_key] = {}
-            for subk, subv in v.items():
-                if isinstance(subv, list):
-                    spreader_dictionary[int_key][subk] = tuple(subv)
-                else:
-                    spreader_dictionary[int_key][subk] = subv
-    else:
-        raise FileNotFoundError('spreader_idx.json 파일을 찾을 수 없습니다.')
-
-    spreader_data = spreader_dictionary.get(DESIGNSPEED, spreader_dictionary[250])
-    spreader_str = spreader_data.get(current_structure, (0, 0))  # 기본값 (0, 0) 설정
+def get_spreader_idx(dataset, current_structure, current_airjoint):
+    spreader_dictionary = dataset['spreader_idx']
+    spreader_str = spreader_dictionary.get(current_structure, (0, 0))  # 기본값 (0, 0) 설정
 
     if current_airjoint in ['에어조인트 2호주', '에어조인트 4호주']:
         spreader_idx = spreader_str[0]
@@ -1365,23 +1263,15 @@ def get_spreader_idx(DESIGNSPEED, current_structure, current_airjoint, filename=
     return spreader_name, spreader_idx
 
 
-def add_F_bracket(DESIGNSPEED, lines, pos, bracket_code, bracket_type, fitting_data, x1, y1):
+def add_F_bracket(lines, pos, bracket_code, bracket_type, fitting_data, x1, y1):
     """F형 가동 브래킷 및 금구류 추가"""
     idx1, idx2 = fitting_data
-    if DESIGNSPEED == 150:
-        lines.extend([
-            ',;가동브래킷구문\n',
-            f"{pos},.freeobj 0;{bracket_code};0;{y1};,;{bracket_type}\n",
-            f"{pos},.freeobj 0;{idx1};{x1};{y1},;조가선지지금구-F용\n",
-            f"{pos},.freeobj 0;{idx2};{x1};{y1},;전차선선지지금구-F용\n",
-        ])
-    else:
-        lines.extend([
-            ',;가동브래킷구문\n',
-            f"{pos},.freeobj 0;{bracket_code};0;0;,;{bracket_type}\n",
-            f"{pos},.freeobj 0;{idx1};{x1};0,;조가선지지금구-F용\n",
-            f"{pos},.freeobj 0;{idx2};{x1};0,;전차선선지지금구-F용\n",
-        ])
+    lines.extend([
+        ',;가동브래킷구문\n',
+        f"{pos},.freeobj 0;{bracket_code};0;{y1};,;{bracket_type}\n",
+        f"{pos},.freeobj 0;{idx1};{x1};{y1},;조가선지지금구-F용\n",
+        f"{pos},.freeobj 0;{idx2};{x1};{y1},;전차선선지지금구-F용\n",
+    ])
 
 
 def add_AJ_bracket(lines, pos, bracket_code, bracket_type, fitting_data, steady_arm_fitting, x1, y1):
@@ -1400,12 +1290,12 @@ def find_post_number(lst, pos):
             return arg[1]
 
 
-def save_to_txt(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline,
-                filename="C:/TEMP/pole_positions.txt"):
+def save_to_txt(positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline,
+                filename="C:/TEMP/pole_positions.txt", mode=''):
     """전주 위치 데이터를 가공하여 .txt 파일로 저장하는 함수"""
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
     # 전주 데이터 구성
-    pole_data = format_pole_data(DESIGNSPEED)
+    pole_data = dataset['pole_data']
 
     lines = []  # 파일에 저장할 데이터를 담을 리스트
     # 전주번호
@@ -1423,31 +1313,34 @@ def save_to_txt(positions, structure_list, curve_list, pitchlist, DESIGNSPEED, a
         current_slope, pitch = isslope(pos, pitchlist)
         current_airjoint = check_isairjoint(pos, airjoint_list)
         post_number = find_post_number(post_number_lst, pos)
-        # 해당 구조물에 대한 전주 데이터 가져오기 (없으면 '토공' 기본값 사용)
-        station_data = pole_data.get(current_structure, pole_data.get('토공', {}))
 
-        # '교량' 같은 구간일 경우, 곡선 여부에 따라 데이터 선택
-        if isinstance(station_data, dict) and '직선' in station_data:
-            station_data = station_data.get('곡선' if current_curve == '곡선' else '직선', {})
+        #구조물에 따른 인덱스 가져오기ㅏ
+        if current_structure == '토공':
+            i_type_index, o_type_index = pole_data['토공']
+        elif current_structure == '교량':
+            if current_curve == '직선':
+                i_type_index, o_type_index = pole_data['교량']['직선']
+            else:
+                i_type_index, o_type_index = pole_data['교량']['곡선']
+        elif current_structure == '터널':
+            i_type_index, o_type_index = pole_data['터널']
+        else:
+            raise ValueError(f'지원하지 않는 구조물입니다. {current_structure}')
 
-        # 필요한 데이터 추출 (기본값 설정)
-        I_type = station_data.get('I_type', '기본_I_type')
-        O_type = station_data.get('O_type', '기본_O_type')
-        I_bracket = station_data.get('I_bracket', '기본_I_bracket')
-        O_bracket = station_data.get('O_bracket', '기본_O_bracket')
 
         # 홀수/짝수에 맞는 전주 데이터 생성
-        pole_type = I_type if i % 2 == 1 else O_type
-        bracket_type = I_bracket if i % 2 == 1 else O_bracket
+        current_type = 'I' if i % 2 == 1 else 'O'
+        pole_type = i_type_index if i % 2 == 1 else o_type_index
+        bracket_name =  f"{pole_data['prefix']}-{current_type}"
 
         if current_airjoint:
             lines.extend(f'\n,;{post_number}')
-            lines.extend(get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, bracket_type, current_structure,
-                                            next_structure, DESIGNSPEED, currentspan, polyline_with_sta))
+            lines.extend(get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, pole_type, current_structure,
+                                            next_structure, dataset, currentspan, polyline_with_sta))
         else:
             lines.append(f'\n,;{post_number}')
             lines.append(f'\n,;-----일반개소({current_structure})({current_curve})-----\n')
-            lines.append(f"{pos},.freeobj 0;{pole_type};,;{bracket_type}\n")
+            lines.append(f"{pos},.freeobj 0;{pole_type};,;{bracket_name}\n")
 
     # 파일 저장 함수 호출
     write_to_file(filename, lines)
@@ -1817,14 +1710,9 @@ def calculate_curve_angle(polyline_with_sta, pos, next_pos, stagger1, stagger2):
     return finale_anlge
 
 
-def get_pole_gauge(DESIGNSPEED, current_structure, filename="c:/temp/pole_gauge.json"):
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data = {int(k): v for k, v in data.items()}  # 키를 int로 변환
-        return data.get(DESIGNSPEED, {}).get(current_structure, "알 수 없는 구조")
-    else:
-        raise FileNotFoundError('pole_gauge 파일을 찾을수 없습니다.')
+def get_pole_gauge(dataset, current_structure):
+    """건식게이지 """
+    return dataset['pole_gauge'][current_structure]
 
 
 
@@ -2014,16 +1902,16 @@ def load_coordinates():
     return read_polyline(coord_filepath)
 
 
-def save_pole_data(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline, filename="c:/temp/전주.txt"):
+def save_pole_data(pole_positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline, filename="c:/temp/전주.txt"):
     """전주 데이터를 텍스트 파일로 저장하는 함수"""
-    save_to_txt(pole_positions, structure_list, curve_list, pitchlist, DESIGNSPEED, airjoint_list, polyline,
+    save_to_txt(pole_positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline,
                 filename)
     print(f"✅ 전주 데이터가 {filename} 파일로 저장되었습니다!")
 
 
-def save_wire_data(DESIGNSPEED, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list, filename="c:/temp/전차선.txt"):
+def save_wire_data(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list, filename="c:/temp/전차선.txt"):
     """전차선 데이터를 텍스트 파일로 저장하는 함수"""
-    process_to_WIRE(DESIGNSPEED, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list,filename)
+    process_to_WIRE(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list,filename)
     print(f"✅ 전차선 데이터가 {filename} 파일로 저장되었습니다!")
 
 
@@ -2045,6 +1933,17 @@ def get_designspeed():
         except ValueError:
             print("숫자를 입력하세요.")
 
+def get_iscustommode():
+    """사용자로부터 설계 속도를 입력받아 반환"""
+    while True:
+        try:
+            iscustommode = input('커스텀 모드?: ')
+            if iscustommode not in ('y' , 'n'):
+                print('올바르지 않은 값: y/ n 입력')
+            else:
+                return True if iscustommode == 'y' else False
+        except ValueError:
+            print("문자를 입력하세요.")
 
 def get_dxf_scale(scale=None):
     """
@@ -2069,12 +1968,31 @@ def get_dxf_scale(scale=None):
     return H_scale, V_scale
 
 
+def load_dataset(designspeed, iscustommode):
+    if iscustommode:
+        filename = r'c:/temp/custom_data.json'
+    else:
+        if designspeed == 150:
+            filename = r'c:/temp/railway_150.json'
+        elif designspeed == 250:
+            filename = r'c:/temp/railway_250.json'
+        elif designspeed == 350:
+            filename = r'c:/temp/railway_350.json'
+        else:
+            raise ValueError(f'지원하지 않는 속도 모드입니다. {designspeed}')
+    with open(filename, "r", encoding="utf-8") as f:
+        base_data = json.load(f)
+    return base_data
+
 def main():
     """전체 작업을 관리하는 메인 함수"""
     # 고속철도인지 확인
-
-    DESIGNSPEED = get_designspeed()
-
+    #커스텀모드인지 확인
+    iscustommode = get_iscustommode()
+    if iscustommode:
+        designspeed = 0 #커스텀모드는 속도 없음 기본값
+    else:
+        designspeed = get_designspeed()
     # 파일 읽기 및 데이터 처리
     data = read_file()
     last_block = find_last_block(data)
@@ -2102,10 +2020,11 @@ def main():
 
     # 전주번호 추가
     post_number_lst = generate_postnumbers(pole_positions)
-
+    #데이터셋 로드,
+    dataset = load_dataset(designspeed, iscustommode)
     # 데이터 저장
-    save_pole_data(pole_positions, structure_list, curvelist, pitchlist, DESIGNSPEED, airjoint_list, polyline)
-    save_wire_data(DESIGNSPEED, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
+    save_pole_data(pole_positions, structure_list, curvelist, pitchlist, dataset, airjoint_list, polyline)
+    save_wire_data(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
     # createtxt('c:/temp/airjoint_list.txt', airjoint_list)
     print("전주와 전차선 txt가 성공적으로 저장되었습니다.")
     print("도면 작성중.")
@@ -2118,15 +2037,15 @@ def main():
             # 전차선로평면도
             doc, msp = create_new_dxf()
             doc, msp = crate_pegging_plan_mast_and_bracket(doc, msp, polyline, pole_positions, structure_list,
-                                                           curvelist, pitchlist, airjoint_list, DESIGNSPEED)
+                                                           curvelist, pitchlist, airjoint_list, dataset)
             doc, msp = crate_pegging_plan_wire(doc, msp, polyline, pole_positions, structure_list, curvelist, pitchlist,
-                                               airjoint_list, DESIGNSPEED)
+                                               airjoint_list, dataset)
             # 전차선로종단면도
             doc1, msp1 = create_new_dxf()
             doc1, msp1 = create_pegging_profile_mast_and_bracket(doc1, msp1, polyline, pole_positions, structure_list,
-                                                                 curvelist, pitchlist, airjoint_list, DESIGNSPEED)
+                                                                 curvelist, pitchlist, airjoint_list, dataset)
             doc1, msp1 = create_pegging_profile_wire(doc1, msp1, polyline, pole_positions, structure_list,
-                                                     curvelist, pitchlist, airjoint_list, DESIGNSPEED)
+                                                     curvelist, pitchlist, airjoint_list, dataset)
             break
         except Exception as e:
             print(f'도면 생성중 에러 발생: {e}')
