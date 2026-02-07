@@ -1386,6 +1386,21 @@ def process_to_WIRE(dataset, positions, spans, structure_list, curve_list, pitch
             topdown_angle = calculate_slope(current_z + fpw_wire_y_offset, next_z + fpw_wire_y_offset_next, currentspan) - pitch_angle
             lines.append(
                 f"{pos},.freeobj 0;{fpw_index};{fpw_wire_x_offset};{fpw_wire_y_offset};{adjusted_angle};{topdown_angle};,;FPW\n")
+            #추가전선
+            extra_wires = dataset['extra_wires']
+            for wire_name, wire_info in extra_wires.items():
+                spanlist = dataset['span_list']
+                idx = spanlist.index(currentspan)
+                index = wire_info['index'][idx]
+                adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos,
+                                                       wire_info['offset'][0], wire_info['offset'][0])
+                topdown_angle = calculate_slope(current_z + wire_info['offset'][1],
+                                                next_z + wire_info['offset'][1],
+                                                currentspan) - pitch_angle
+                lines.append(
+                    f"{pos},.freeobj 0;{index};{wire_info['offset'][0]};{wire_info['offset'][1]};{adjusted_angle};{topdown_angle};,;{wire_name}\n"
+                )
+
         except Exception as e:
             print(f"process_to_WIRE 실행 중 에러 발생: {e}")
             continue
@@ -1447,10 +1462,6 @@ def get_wire_span_data(dataset, currentspan, current_structure):
 
     # DESIGNSPEED에 맞는 구조 선택 (기본값 250 사용)
     span_values = span_data.get(current_structure)
-
-    # currentspan이 유효한 값인지 확인
-    if currentspan not in span_index_mapping:
-        raise ValueError(f"Invalid span value '{currentspan}'. Valid values are 45, 50, 55, 60.")
 
     # currentspan에 해당하는 인덱스 및 주석 추출
     idx, comment, feeder_idx, fpw_idx = span_index_mapping[currentspan]
@@ -1946,7 +1957,7 @@ class AutoPole:
         last_block = find_last_block(data)
         start_km = 0
         end_km = last_block // 1000
-        spans, pole_positions = distribute_pole_spacing_flexible(start_km, end_km)
+
 
         # 구조물 정보 로드
         structure_list = load_structure_data()
@@ -1964,12 +1975,14 @@ class AutoPole:
         # BVE 좌표 로드
         polyline = load_coordinates()
 
+
+        #데이터셋 로드,
+        dataset = load_dataset(self.designspeed, self.iscustommode)
+        spans, pole_positions = distribute_pole_spacing_flexible(start_km, end_km, spans=dataset['span_list'])
         airjoint_list = define_airjoint_section(pole_positions)
 
         # 전주번호 추가
         post_number_lst = generate_postnumbers(pole_positions)
-        #데이터셋 로드,
-        dataset = load_dataset(self.designspeed, self.iscustommode)
         # 데이터 처리
         poledata = process_pole(pole_positions, structure_list, curvelist, pitchlist, dataset, airjoint_list, polyline)
         wire_data = process_to_WIRE(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
