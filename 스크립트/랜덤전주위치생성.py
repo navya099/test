@@ -1362,7 +1362,7 @@ def get_block_index(current_track_position, block_interval=25):
     return math.floor(current_track_position / block_interval + 0.001) * block_interval
 
 
-def process_to_WIRE(DESIGNSPEED, positions, spans, structure_list, curve_list, pitchlist, polyline, airjoint_list,
+def process_to_WIRE(dataset, positions, spans, structure_list, curve_list, pitchlist, polyline, airjoint_list,
                     filename="wire.txt"):
     """ 전주 위치에 wire를 배치하는 함수 """
     post_number_lst = generate_postnumbers(positions)
@@ -1392,14 +1392,15 @@ def process_to_WIRE(DESIGNSPEED, positions, spans, structure_list, curve_list, p
         current_airjoint = check_isairjoint(pos, airjoint_list)
         currnet_type = 'I' if i % 2 == 1 else 'O'
         post_number = find_post_number(post_number_lst, pos)
-        obj_index, comment, AF_wire, FPW_wire = get_wire_span_data(DESIGNSPEED, currentspan, current_structure)
+        #전차선 인덱스, 주석, af선 인덱스, fpw선 인덱스 얻기
+        cw_index, comment, af_index, fpw_index = get_wire_span_data(dataset, currentspan, current_structure)
 
         # AF와 FPW오프셋(X,Y)
-        AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset = get_wire_offsetanlge(DESIGNSPEED,
+        af_x_offset, af_y_offset, fpw_wire_x_offset, fpw_wire_y_offset = get_wire_offsetanlge(dataset,
                                                                                               current_structure)
         # 다음
-        AF_X_offset_Next, AF_y_offset_Next, fpw_wire_X_offset_Next, fpw_wire_y_offset_Next = get_wire_offsetanlge(
-            DESIGNSPEED, next_structure)
+        af_x_offset_next, af_y_offset_next, fpw_wire_x_offset_next, fpw_wire_y_offset_next = get_wire_offsetanlge(
+            dataset, next_structure)
 
         # 편위(0.2)와 직선구간 각도
         lateral_offset, adjusted_angle = get_lateral_offset_and_angle(i, currentspan)
@@ -1412,17 +1413,18 @@ def process_to_WIRE(DESIGNSPEED, positions, spans, structure_list, curve_list, p
             lines.extend([f'\n,;-----일반개소({current_structure})({current_curve})-----\n'])
 
         lines.extend(handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_sta, current_airjoint,
-                                                       obj_index, comment, currnet_type, current_structure,
-                                                       next_structure, param_z, DESIGNSPEED))
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, AF_X_offset, AF_X_offset_Next)
+                                                       cw_index, comment, currnet_type, current_structure,
+                                                       next_structure, param_z, dataset))
+
+        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, af_x_offset, af_x_offset_next)
         pitch_angle = change_permile_to_degree(pitch)
-        topdown_angle = calculate_slope(current_z + AF_y_offset, next_z + AF_y_offset_Next, currentspan) - pitch_angle  # 전차선 상하각도
-        lines.append(f"{pos},.freeobj 0;{AF_wire};{AF_X_offset};{AF_y_offset};{adjusted_angle};{topdown_angle};,;급전선\n")
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, fpw_wire_X_offset,
-                                               fpw_wire_X_offset_Next)
-        topdown_angle = calculate_slope(current_z + fpw_wire_y_offset, next_z + fpw_wire_y_offset_Next, currentspan) - pitch_angle
+        topdown_angle = calculate_slope(current_z + af_y_offset, next_z + af_y_offset_next, currentspan) - pitch_angle  # 전차선 상하각도
+        lines.append(f"{pos},.freeobj 0;{af_index};{af_x_offset};{af_y_offset};{adjusted_angle};{topdown_angle};,;급전선\n")
+        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, fpw_wire_x_offset,
+                                               fpw_wire_x_offset_next)
+        topdown_angle = calculate_slope(current_z + fpw_wire_y_offset, next_z + fpw_wire_y_offset_next, currentspan) - pitch_angle
         lines.append(
-            f"{pos},.freeobj 0;{FPW_wire};{fpw_wire_X_offset};{fpw_wire_y_offset};{adjusted_angle};{topdown_angle};,;FPW\n")
+            f"{pos},.freeobj 0;{fpw_index};{fpw_wire_x_offset};{fpw_wire_y_offset};{adjusted_angle};{topdown_angle};,;FPW\n")
 
     buffered_write(filename, lines)
 
@@ -1448,29 +1450,15 @@ def calculate_height_at_new_distance(h1, h2, L, L_new):
     h3 = h1 + ((h2 - h1) / L) * L_new
     return h3
 
-def get_wire_offsetanlge(DESIGNSPEED, current_structure, filename="c:/temp/wire_offset.json"):
+def get_wire_offsetanlge(dataset, current_structure):
     """AF, FPW offset을 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    af_offset_values = dataset['wire_offset']['AF']
+    af_x_offset, af_y_offset = af_offset_values[current_structure]
 
-        # 키를 int로 변환, 리스트는 튜플로 변환
-        AF_offset_values = {int(k): {sk: tuple(sv) if isinstance(sv, list) else sv
-                                     for sk, sv in v.items()}
-                            for k, v in data["AF"].items()}
-        FPW_offset_values = {int(k): {sk: tuple(sv) if isinstance(sv, list) else sv
-                                      for sk, sv in v.items()}
-                             for k, v in data["FPW"].items()}
-    else:
-        raise FileNotFoundError("wire_offset_values.json 파일을 찾을 수 없습니다.")
+    fpw_offset_values = dataset['wire_offset']['FPW']
+    fpw_wire_x_offset, fpw_wire_y_offset = fpw_offset_values[current_structure]
 
-    AF_data = AF_offset_values.get(DESIGNSPEED, AF_offset_values[250])
-    AF_X_offset, AF_y_offset = AF_data[current_structure]
-
-    FPW_data = FPW_offset_values.get(DESIGNSPEED, FPW_offset_values[250])
-    fpw_wire_X_offset, fpw_wire_y_offset = FPW_data[current_structure]
-
-    return [AF_X_offset, AF_y_offset, fpw_wire_X_offset, fpw_wire_y_offset]
+    return af_x_offset, af_y_offset, fpw_wire_x_offset, fpw_wire_y_offset
 
 
 
@@ -1479,31 +1467,16 @@ def buffered_write(filename, lines):
     with open(filename, "w", encoding="utf-8") as f:
         f.writelines(lines)
 
-
-import json
-import os
-
-def get_wire_span_data(DESIGNSPEED, currentspan, current_structure, filename="c:/temp/wire_span_data.json"):
+def get_wire_span_data(dataset, currentspan, current_structure):
     """경간에 따른 wire 데이터 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    span_data = dataset['span_data']
+    span_index_mapping = dataset['span_index_mapping']
 
-        # span_data 키를 int로 변환, 리스트는 튜플로 변환
-        span_data = {int(k): {sk: tuple(sv) if isinstance(sv, list) else sv
-                              for sk, sv in v.items()}
-                     for k, v in data["span_data"].items()}
-
-        # span_index_mapping 키를 int로 변환
-        span_index_mapping = {int(k): tuple(v) for k, v in data["span_index_mapping"].items()}
-    else:
-        raise FileNotFoundError("wire_span_data.json 파일을 찾을 수 없습니다.")
+    #키 문자열을 int로 변환
+    span_index_mapping = {int(k): v for k, v in span_index_mapping.items()}
 
     # DESIGNSPEED에 맞는 구조 선택 (기본값 250 사용)
-    span_values = span_data.get(DESIGNSPEED, span_data[250])
-
-    # current_structure에 맞는 값 추출
-    current_structure_list = span_values[current_structure]
+    span_values = span_data.get(current_structure)
 
     # currentspan이 유효한 값인지 확인
     if currentspan not in span_index_mapping:
@@ -1513,7 +1486,7 @@ def get_wire_span_data(DESIGNSPEED, currentspan, current_structure, filename="c:
     idx, comment, feeder_idx, fpw_idx = span_index_mapping[currentspan]
 
     # idx 값을 current_structure_list에서 가져오기
-    idx_value = current_structure_list[idx]
+    idx_value = span_values[idx]
 
     return idx_value, comment, feeder_idx, fpw_idx
 
@@ -1524,19 +1497,19 @@ def get_lateral_offset_and_angle(index, currentspan):
     return sign * 0.2, -sign * math.degrees(0.4 / currentspan)
 
 
-def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_sta, current_airjoint, obj_index,
-                                      comment, currnet_type, current_structure, next_structure, param_z, DESIGNSPEED):
+def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_sta, current_airjoint, cw_index,
+                                      comment, currnet_type, current_structure, next_structure, param_z, dataset):
     """ 직선, 곡선 구간 wire 처리 """
     lines = []
     sign = -1 if currnet_type == 'I' else 1
 
     lateral_offset = sign * 0.2
-    x, y = get_bracket_coordinates(DESIGNSPEED, 'AJ형_시점')
-    x1, y1 = get_bracket_coordinates(DESIGNSPEED, 'F형_시점')
-    x2, y2 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_중간1')
-    x3, y3 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_중간2')
-    x4, y4 = get_bracket_coordinates(DESIGNSPEED, 'AJ형_끝')
-    x5, y5 = get_bracket_coordinates(DESIGNSPEED, 'F형_끝')
+    x, y = get_bracket_coordinates(dataset, 'AJ형_시점')
+    x1, y1 = get_bracket_coordinates(dataset, 'F형_시점')
+    x2, y2 = get_bracket_coordinates(dataset, 'AJ형_중간1')
+    x3, y3 = get_bracket_coordinates(dataset, 'AJ형_중간2')
+    x4, y4 = get_bracket_coordinates(dataset, 'AJ형_끝')
+    x5, y5 = get_bracket_coordinates(dataset, 'F형_끝')
 
     # z값 변수 언팩
     current_slope = param_z['current_slope']
@@ -1547,11 +1520,11 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
     next_z = param_z['next_z']
 
     # 구조물 OFFSET 가져오기
-    gauge = get_pole_gauge(DESIGNSPEED, current_structure)
-    next_gauge = get_pole_gauge(DESIGNSPEED, next_structure)
+    gauge = get_pole_gauge(dataset, current_structure)
+    next_gauge = get_pole_gauge(dataset, next_structure)
     # 전차선 정보 가져오기
     contact_object_index, messenger_object_index, system_heigh, contact_height = get_contact_wire_and_massanger_wire_info(
-        DESIGNSPEED, current_structure, currentspan)
+        dataset, current_structure, currentspan)
 
     # H1 전차선높이
     # H2 조가선 높이
@@ -1561,7 +1534,7 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
 
         # 본선
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, lateral_offset, x)
-        lines.append(f'{pos},.freeobj 0;{obj_index};{lateral_offset};0;{adjusted_angle};,;본선\n')
+        lines.append(f'{pos},.freeobj 0;{cw_index};{lateral_offset};0;{adjusted_angle};,;본선\n')
 
         # 무효선
 
@@ -1580,7 +1553,7 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
     elif current_airjoint == '에어조인트 (2호주)':
         # 본선 각도
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x, x3)
-        lines.append(f"{pos},.freeobj 0;{obj_index};{x};0;{adjusted_angle};,;본선\n")
+        lines.append(f"{pos},.freeobj 0;{cw_index};{x};0;{adjusted_angle};,;본선\n")
 
         # 무효선 하강
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x1, x2)  # 평면각도
@@ -1592,7 +1565,7 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         lines.append(f"{pos},.freeobj 0;{contact_object_index};{x1};{contact_height + y1};{adjusted_angle};{adjusted_angle_conatctwire};,;무효전차선\n")
         lines.append(f"{pos},.freeobj 0;{messenger_object_index};{x1};{contact_height + system_heigh};{adjusted_angle};{adjusted_angle_massangerwire};,;무효조가선\n")
         '''
-        lines.append(f"{pos},.freeobj 0;{obj_index};{x1};{y1};{adjusted_angle};{adjusted_angle_conatctwire};,;무효선\n")
+        lines.append(f"{pos},.freeobj 0;{cw_index};{x1};{y1};{adjusted_angle};{adjusted_angle_conatctwire};,;무효선\n")
     elif current_airjoint == '에어조인트 중간주 (3호주)':
         # 본선 >무효선 상승
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x3, x5)  # 평면각도
@@ -1603,15 +1576,15 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         lines.append(f"{pos},.freeobj 0;{contact_object_index};{x3};0;{adjusted_angle};{topdown_angle_conatctwire};,;본선전차선\n")
         lines.append(f"{pos},.freeobj 0;{messenger_object_index};{x3};0;{adjusted_angle};{topdown_angle_massangerwire};,;본선조가선\n")
         '''
-        lines.append(f"{pos},.freeobj 0;{obj_index};{x3};0;{adjusted_angle};{topdown_angle_conatctwire};,;무효선\n")
+        lines.append(f"{pos},.freeobj 0;{cw_index};{x3};0;{adjusted_angle};{topdown_angle_conatctwire};,;무효선\n")
         # 무효선 >본선
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x2, x4)
-        lines.append(f"{pos},.freeobj 0;{obj_index};{x2};0;{adjusted_angle};0;,;무효선\n")
+        lines.append(f"{pos},.freeobj 0;{cw_index};{x2};0;{adjusted_angle};0;,;무효선\n")
 
     elif current_airjoint == '에어조인트 (4호주)':
         # 본선 각도
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x4, -lateral_offset)
-        lines.append(f"{pos},.freeobj 0;{obj_index};{x4};0;{adjusted_angle};,;본선\n")
+        lines.append(f"{pos},.freeobj 0;{cw_index};{x4};0;{adjusted_angle};,;본선\n")
 
         # H1 전차선높이
         # H2 조가선 높이
@@ -1634,7 +1607,7 @@ def handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_
         adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, lateral_offset, -lateral_offset)
         pitch_angle = change_permile_to_degree(current_pitch)
         topdown_angle = calculate_slope(current_z, next_z, currentspan) - pitch_angle  # 전차선 상하각도
-        lines.append(f"{pos},.freeobj 0;{obj_index};{lateral_offset};;{adjusted_angle};{topdown_angle};,;{comment}\n")
+        lines.append(f"{pos},.freeobj 0;{cw_index};{lateral_offset};;{adjusted_angle};{topdown_angle};,;{comment}\n")
     return lines
 
 
@@ -1722,32 +1695,24 @@ def get_airjoint_angle(gauge, stagger, span):
 
     return S_angle, E_angle
 
+def casting_key_str_to_int(dic):
+    return {int(k): v for k, v in dic.items()}
 
 import json
 import os
 
-def get_contact_wire_and_massanger_wire_info(DESIGNSPEED, current_structure, span, filename="c:/temp/contact_wire_info.json"):
+def get_contact_wire_and_massanger_wire_info(dataset, current_structure, span):
     """경간에 따른 무효 전차선/조가선 인덱스와 높이정보 반환 (JSON 기반)"""
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        inactive_contact_wire = {int(k): v for k, v in data["inactive_contact_wire"].items()}
-        inactive_messenger_wire = {int(k): v for k, v in data["inactive_messenger_wire"].items()}
-        contact_height_dictionary = {
-            int(k): {sk: tuple(sv) if isinstance(sv, list) else sv for sk, sv in v.items()}
-            for k, v in data["contact_height_dictionary"].items()
-        }
-    else:
-        raise FileNotFoundError("contact_wire_info.json 파일을 찾을 수 없습니다.")
+    inactive_contact_wire = casting_key_str_to_int(dataset['inactive_contact_wire'])
+    inactive_messenger_wire = casting_key_str_to_int(dataset['inactive_messenger_wire'])
+    contact_height_dictionary = dataset['contact_height_dictionary']
 
     # 객체 인덱스 가져오기 (기본값 60)
     contact_object_index = inactive_contact_wire.get(span, inactive_contact_wire[60])
     messenger_object_index = inactive_messenger_wire.get(span, inactive_messenger_wire[60])
 
     # 가고와 전차선 높이정보
-    contact_data = contact_height_dictionary.get(DESIGNSPEED, contact_height_dictionary[250])
-    system_heigh, contact_height = contact_data.get(current_structure, (0, 0))
+    system_heigh, contact_height = contact_height_dictionary.get(current_structure, (0, 0))
 
     return contact_object_index, messenger_object_index, system_heigh, contact_height
 
@@ -1945,6 +1910,17 @@ def get_iscustommode():
         except ValueError:
             print("문자를 입력하세요.")
 
+def get_iscreatedxf():
+    """사용자로부터 설계 속도를 입력받아 반환"""
+    while True:
+        try:
+            iscustommode = input('도면 작성?: ')
+            if iscustommode not in ('y' , 'n'):
+                print('올바르지 않은 값: y/ n 입력')
+            else:
+                return True if iscustommode == 'y' else False
+        except ValueError:
+            print("문자를 입력하세요.")
 def get_dxf_scale(scale=None):
     """
     도면 축척을 반환하는 함수
@@ -2027,44 +2003,46 @@ def main():
     save_wire_data(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
     # createtxt('c:/temp/airjoint_list.txt', airjoint_list)
     print("전주와 전차선 txt가 성공적으로 저장되었습니다.")
-    print("도면 작성중.")
-    # 도면 스케일
-    global scale, H_scale, V_scale
-    H_scale, V_scale = get_dxf_scale()
-    # 도면 작성
-    while True:
-        try:
-            # 전차선로평면도
-            doc, msp = create_new_dxf()
-            doc, msp = crate_pegging_plan_mast_and_bracket(doc, msp, polyline, pole_positions, structure_list,
-                                                           curvelist, pitchlist, airjoint_list, dataset)
-            doc, msp = crate_pegging_plan_wire(doc, msp, polyline, pole_positions, structure_list, curvelist, pitchlist,
-                                               airjoint_list, dataset)
-            # 전차선로종단면도
-            doc1, msp1 = create_new_dxf()
-            doc1, msp1 = create_pegging_profile_mast_and_bracket(doc1, msp1, polyline, pole_positions, structure_list,
-                                                                 curvelist, pitchlist, airjoint_list, dataset)
-            doc1, msp1 = create_pegging_profile_wire(doc1, msp1, polyline, pole_positions, structure_list,
-                                                     curvelist, pitchlist, airjoint_list, dataset)
-            break
-        except Exception as e:
-            print(f'도면 생성중 에러 발생: {e}')
+    iscreatedxf = get_iscreatedxf()
+    if iscreatedxf:
+        print("도면 작성중.")
+        # 도면 스케일
+        global scale, H_scale, V_scale
+        H_scale, V_scale = get_dxf_scale()
+        # 도면 작성
 
-    # 도면 저장
-    while True:
-        try:
-            save_to_dxf(doc, file_name='c:/temp/pegging_plan.dxf')
-            save_to_dxf(doc1, file_name='c:/temp/pegging_profile.dxf')
-            print("도면이 성공적으로 저장되었습니다.")
-            break
-        except Exception as e:
-            print(f'도면 저장중 에러가 발생하였습니다. : {e}')
+        while True:
+            try:
+                # 전차선로평면도
+                doc, msp = create_new_dxf()
+                doc, msp = crate_pegging_plan_mast_and_bracket(doc, msp, polyline, pole_positions, structure_list,
+                                                               curvelist, pitchlist, airjoint_list, dataset)
+                doc, msp = crate_pegging_plan_wire(doc, msp, polyline, pole_positions, structure_list, curvelist, pitchlist,
+                                                   airjoint_list, dataset)
+                # 전차선로종단면도
+                doc1, msp1 = create_new_dxf()
+                doc1, msp1 = create_pegging_profile_mast_and_bracket(doc1, msp1, polyline, pole_positions, structure_list,
+                                                                     curvelist, pitchlist, airjoint_list, dataset)
+                doc1, msp1 = create_pegging_profile_wire(doc1, msp1, polyline, pole_positions, structure_list,
+                                                         curvelist, pitchlist, airjoint_list, dataset)
+                break
+            except Exception as e:
+                print(f'도면 생성중 에러 발생: {e}')
+
+        # 도면 저장
+        while True:
+            try:
+                save_to_dxf(doc, file_name='c:/temp/pegging_plan.dxf')
+                save_to_dxf(doc1, file_name='c:/temp/pegging_profile.dxf')
+                print("도면이 성공적으로 저장되었습니다.")
+                break
+            except Exception as e:
+                print(f'도면 저장중 에러가 발생하였습니다. : {e}')
 
     # 최종 출력
     print(f"전주 개수: {len(pole_positions)}")
     print(f"마지막 전주 위치: {pole_positions[-1]}m (종점: {int(end_km * 1000)}m)")
     print('모든 작업 완료')
-
 
 # 실행
 if __name__ == "__main__":
