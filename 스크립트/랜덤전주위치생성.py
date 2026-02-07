@@ -929,45 +929,6 @@ def isslope(cur_sta, curve_list):
 
     return '수평', 0  # 목록에 없으면 기본적으로 직선 처리
 
-
-def get_pole_data(filename="c:/temp/pole_data.json"):
-    import json, os
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # key를 int로 변환
-        return {int(k): v for k, v in data.items()}
-    else:
-        raise FileNotFoundError("치명적 에러: pole_data.json 파일을 찾을 수 없습니다.")
-
-def format_pole_data(design_speed):
-    """설계 속도에 따른 전주 데이터를 특정 형식으로 변환"""
-    base_data = get_pole_data()
-
-    if design_speed not in base_data:
-        raise ValueError("올바른 DESIGNSPEED 값을 입력하세요 (150, 250, 350)")
-
-    data = base_data[design_speed]
-    prefix = data['prefix']
-
-    def create_pole_types(i_type, o_type, bracket_suffix):
-        return {
-            'I_type': i_type,
-            'O_type': o_type,
-            'I_bracket': f'{prefix}_{bracket_suffix}-I',
-            'O_bracket': f'{prefix}_{bracket_suffix}-O',
-        }
-
-    return {
-        '교량': {
-            '직선': create_pole_types(*data['straight_bridge'], 'OpG3.5'),
-            '곡선': create_pole_types(*data['curve_bridge'], 'OpG3.5'),
-        },
-        '터널': create_pole_types(*data['tunnel'], 'Tn'),
-        '토공': create_pole_types(*data['earthwork'], 'OpG3.0'),
-    }
-
-
 def define_airjoint_section(positions):
     airjoint_list = []  # 결과 리스트
     airjoint_span = 1600  # 에어조인트 설치 간격(m)
@@ -1428,7 +1389,7 @@ def process_to_WIRE(dataset, positions, spans, structure_list, curve_list, pitch
         except Exception as e:
             print(f"process_to_WIRE 실행 중 에러 발생: {e}")
             continue
-        return lines
+    return lines
 
 elevation_cache = {}
 
@@ -1752,7 +1713,7 @@ def interpolate_coordinates(polyline, target_sta):
         sta2, x2, y2, z2 = polyline[i + 1]
         v1 = calculate_bearing(x1, y1, x2, y2)
         # target_sta가 두 점 사이에 있는 경우 보간 수행
-        if sta1 <= target_sta <= sta2:
+        if sta1 <= target_sta < sta2:
             t = abs(target_sta - sta1)
             x, y = calculate_destination_coordinates(x1, y1, v1, t)
             z = z1 + t * (z2 - z1)
@@ -2015,7 +1976,7 @@ class AutoPole:
         pole_path = asksaveasfilename(title='전주 데이터 저장')
         write_to_file(pole_path, poledata)
         wire_path =  asksaveasfilename(title='전차선 데이터 저장')
-        write_to_file(wire_path, wire_data)
+        buffered_write(wire_path, wire_data)
 
         self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
         if self.is_create_dxf:
