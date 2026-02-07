@@ -1,5 +1,6 @@
 import random
 from functools import lru_cache
+from tkinter.filedialog import asksaveasfilename
 
 import pandas as pd
 import tkinter as tk
@@ -1291,8 +1292,7 @@ def find_post_number(lst, pos):
             return arg[1]
 
 
-def save_to_txt(positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline,
-                filename="C:/TEMP/pole_positions.txt", mode=''):
+def process_pole(positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline):
     """전주 위치 데이터를 가공하여 .txt 파일로 저장하는 함수"""
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
     # 전주 데이터 구성
@@ -1303,48 +1303,47 @@ def save_to_txt(positions, structure_list, curve_list, pitchlist, dataset, airjo
     post_number_lst = generate_postnumbers(positions)
 
     for i in range(len(positions) - 1):
-        pos, next_pos = positions[i], positions[i + 1]
-        if pos > positions[-1]:
-            continue
-        currentspan = next_pos - pos  # 전주 간 거리 계산
-        # 현재 위치의 구조물 및 곡선 정보 가져오기
-        current_structure = isbridge_tunnel(pos, structure_list)
-        next_structure = isbridge_tunnel(next_pos, structure_list)
-        current_curve, R, c = iscurve(pos, curve_list)
-        current_slope, pitch = isslope(pos, pitchlist)
-        current_airjoint = check_isairjoint(pos, airjoint_list)
-        post_number = find_post_number(post_number_lst, pos)
+        try:
+            pos, next_pos = positions[i], positions[i + 1]
+            currentspan = next_pos - pos  # 전주 간 거리 계산
+            # 현재 위치의 구조물 및 곡선 정보 가져오기
+            current_structure = isbridge_tunnel(pos, structure_list)
+            next_structure = isbridge_tunnel(next_pos, structure_list)
+            current_curve, R, c = iscurve(pos, curve_list)
+            current_slope, pitch = isslope(pos, pitchlist)
+            current_airjoint = check_isairjoint(pos, airjoint_list)
+            post_number = find_post_number(post_number_lst, pos)
 
-        #구조물에 따른 인덱스 가져오기ㅏ
-        if current_structure == '토공':
-            i_type_index, o_type_index = pole_data['토공']
-        elif current_structure == '교량':
-            if current_curve == '직선':
-                i_type_index, o_type_index = pole_data['교량']['직선']
+            #구조물에 따른 인덱스 가져오기ㅏ
+            if current_structure == '토공':
+                i_type_index, o_type_index = pole_data['토공']
+            elif current_structure == '교량':
+                if current_curve == '직선':
+                    i_type_index, o_type_index = pole_data['교량']['직선']
+                else:
+                    i_type_index, o_type_index = pole_data['교량']['곡선']
+            elif current_structure == '터널':
+                i_type_index, o_type_index = pole_data['터널']
             else:
-                i_type_index, o_type_index = pole_data['교량']['곡선']
-        elif current_structure == '터널':
-            i_type_index, o_type_index = pole_data['터널']
-        else:
-            raise ValueError(f'지원하지 않는 구조물입니다. {current_structure}')
+                raise ValueError(f'지원하지 않는 구조물입니다. {current_structure}')
 
 
-        # 홀수/짝수에 맞는 전주 데이터 생성
-        current_type = 'I' if i % 2 == 1 else 'O'
-        pole_type = i_type_index if i % 2 == 1 else o_type_index
-        bracket_name =  f"{pole_data['prefix']}-{current_type}"
+            # 홀수/짝수에 맞는 전주 데이터 생성
+            current_type = 'I' if i % 2 == 1 else 'O'
+            pole_type = i_type_index if i % 2 == 1 else o_type_index
+            bracket_name =  f"{pole_data['prefix']}-{current_type}"
 
-        if current_airjoint:
-            lines.extend(f'\n,;{post_number}')
-            lines.extend(get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, pole_type, current_structure,
-                                            next_structure, dataset, currentspan, polyline_with_sta))
-        else:
-            lines.append(f'\n,;{post_number}')
-            lines.append(f'\n,;-----일반개소({current_structure})({current_curve})-----\n')
-            lines.append(f"{pos},.freeobj 0;{pole_type};,;{bracket_name}\n")
-
-    # 파일 저장 함수 호출
-    write_to_file(filename, lines)
+            if current_airjoint:
+                lines.extend(f'\n,;{post_number}')
+                lines.extend(get_airjoint_lines(pos, next_pos, current_airjoint, pole_type, pole_type, current_structure,
+                                                next_structure, dataset, currentspan, polyline_with_sta))
+            else:
+                lines.append(f'\n,;{post_number}')
+                lines.append(f'\n,;-----일반개소({current_structure})({current_curve})-----\n')
+                lines.append(f"{pos},.freeobj 0;{pole_type};,;{bracket_name}\n")
+        except Exception as e:
+            print(f"process_pole 실행 중 에러 발생: {e}")
+    return lines
 
 def open_excel_file():
     """파일 선택 대화 상자를 열고, 엑셀 파일 경로를 반환하는 함수"""
@@ -1363,72 +1362,73 @@ def get_block_index(current_track_position, block_interval=25):
     return math.floor(current_track_position / block_interval + 0.001) * block_interval
 
 
-def process_to_WIRE(dataset, positions, spans, structure_list, curve_list, pitchlist, polyline, airjoint_list,
-                    filename="wire.txt"):
+def process_to_WIRE(dataset, positions, spans, structure_list, curve_list, pitchlist, polyline, airjoint_list):
     """ 전주 위치에 wire를 배치하는 함수 """
     post_number_lst = generate_postnumbers(positions)
     polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
     lines = []
     for i in range(len(positions) - 1):
-        pos, next_pos = positions[i], positions[i + 1]
-        currentspan = next_pos - pos  # 전주 간 거리 계산
-        current_structure = isbridge_tunnel(pos, structure_list)
-        next_structure = isbridge_tunnel(next_pos, structure_list)
-        current_curve, R, c = iscurve(pos, curve_list)
-        current_slope, pitch = isslope(pos, pitchlist)  # 현재 측점의 구배
-        next_slope, next_pitch = isslope(next_pos, pitchlist)  # 다음 측점의 구배
-        current_z = get_elevation_pos(pos, polyline_with_sta)  # 현재 측점의 z값
-        next_z = get_elevation_pos(next_pos, polyline_with_sta)  # 다음 측점의 z값
-        # z값 param
-        param_z = {
-            'current_slope': current_slope,
-            'pitch': pitch,
-            'next_slope': next_slope,
-            'next_pitch': next_pitch,
-            'current_z': current_z,
-            'next_z': next_z
-        }
+        try:
+            pos, next_pos = positions[i], positions[i + 1]
+            currentspan = next_pos - pos  # 전주 간 거리 계산
+            current_structure = isbridge_tunnel(pos, structure_list)
+            next_structure = isbridge_tunnel(next_pos, structure_list)
+            current_curve, R, c = iscurve(pos, curve_list)
+            current_slope, pitch = isslope(pos, pitchlist)  # 현재 측점의 구배
+            next_slope, next_pitch = isslope(next_pos, pitchlist)  # 다음 측점의 구배
+            current_z = get_elevation_pos(pos, polyline_with_sta)  # 현재 측점의 z값
+            next_z = get_elevation_pos(next_pos, polyline_with_sta)  # 다음 측점의 z값
+            # z값 param
+            param_z = {
+                'current_slope': current_slope,
+                'pitch': pitch,
+                'next_slope': next_slope,
+                'next_pitch': next_pitch,
+                'current_z': current_z,
+                'next_z': next_z
+            }
 
-        current_sta = get_block_index(pos)
-        current_airjoint = check_isairjoint(pos, airjoint_list)
-        currnet_type = 'I' if i % 2 == 1 else 'O'
-        post_number = find_post_number(post_number_lst, pos)
-        #전차선 인덱스, 주석, af선 인덱스, fpw선 인덱스 얻기
-        cw_index, comment, af_index, fpw_index = get_wire_span_data(dataset, currentspan, current_structure)
+            current_sta = get_block_index(pos)
+            current_airjoint = check_isairjoint(pos, airjoint_list)
+            currnet_type = 'I' if i % 2 == 1 else 'O'
+            post_number = find_post_number(post_number_lst, pos)
+            #전차선 인덱스, 주석, af선 인덱스, fpw선 인덱스 얻기
+            cw_index, comment, af_index, fpw_index = get_wire_span_data(dataset, currentspan, current_structure)
 
-        # AF와 FPW오프셋(X,Y)
-        af_x_offset, af_y_offset, fpw_wire_x_offset, fpw_wire_y_offset = get_wire_offsetanlge(dataset,
-                                                                                              current_structure)
-        # 다음
-        af_x_offset_next, af_y_offset_next, fpw_wire_x_offset_next, fpw_wire_y_offset_next = get_wire_offsetanlge(
-            dataset, next_structure)
+            # AF와 FPW오프셋(X,Y)
+            af_x_offset, af_y_offset, fpw_wire_x_offset, fpw_wire_y_offset = get_wire_offsetanlge(dataset,
+                                                                                                  current_structure)
+            # 다음
+            af_x_offset_next, af_y_offset_next, fpw_wire_x_offset_next, fpw_wire_y_offset_next = get_wire_offsetanlge(
+                dataset, next_structure)
 
-        # 편위(0.2)와 직선구간 각도
-        lateral_offset, adjusted_angle = get_lateral_offset_and_angle(i, currentspan)
+            # 편위(0.2)와 직선구간 각도
+            lateral_offset, adjusted_angle = get_lateral_offset_and_angle(i, currentspan)
 
-        lines.extend([f'\n,;{post_number}'])
-        if current_airjoint in ['에어조인트 시작점 (1호주)', '에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)', '에어조인트 끝점 (5호주)']:
-            lines.extend([f'\n,;-----{current_airjoint}({current_structure})-----\n'])
-        else:
+            lines.extend([f'\n,;{post_number}'])
+            if current_airjoint in ['에어조인트 시작점 (1호주)', '에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)', '에어조인트 끝점 (5호주)']:
+                lines.extend([f'\n,;-----{current_airjoint}({current_structure})-----\n'])
+            else:
 
-            lines.extend([f'\n,;-----일반개소({current_structure})({current_curve})-----\n'])
+                lines.extend([f'\n,;-----일반개소({current_structure})({current_curve})-----\n'])
 
-        lines.extend(handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_sta, current_airjoint,
-                                                       cw_index, comment, currnet_type, current_structure,
-                                                       next_structure, param_z, dataset))
+            lines.extend(handle_curve_and_straight_section(pos, next_pos, currentspan, polyline_with_sta, current_airjoint,
+                                                           cw_index, comment, currnet_type, current_structure,
+                                                           next_structure, param_z, dataset))
 
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, af_x_offset, af_x_offset_next)
-        pitch_angle = change_permile_to_degree(pitch)
-        topdown_angle = calculate_slope(current_z + af_y_offset, next_z + af_y_offset_next, currentspan) - pitch_angle  # 전차선 상하각도
-        lines.append(f"{pos},.freeobj 0;{af_index};{af_x_offset};{af_y_offset};{adjusted_angle};{topdown_angle};,;급전선\n")
-        adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, fpw_wire_x_offset,
-                                               fpw_wire_x_offset_next)
-        topdown_angle = calculate_slope(current_z + fpw_wire_y_offset, next_z + fpw_wire_y_offset_next, currentspan) - pitch_angle
-        lines.append(
-            f"{pos},.freeobj 0;{fpw_index};{fpw_wire_x_offset};{fpw_wire_y_offset};{adjusted_angle};{topdown_angle};,;FPW\n")
-
-    buffered_write(filename, lines)
-
+            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, af_x_offset, af_x_offset_next)
+            pitch_angle = change_permile_to_degree(pitch)
+            topdown_angle = calculate_slope(current_z + af_y_offset, next_z + af_y_offset_next, currentspan) - pitch_angle  # 전차선 상하각도
+            lines.append(f"{pos},.freeobj 0;{af_index};{af_x_offset};{af_y_offset};{adjusted_angle};{topdown_angle};,;급전선\n")
+            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, fpw_wire_x_offset,
+                                                   fpw_wire_x_offset_next)
+            topdown_angle = calculate_slope(current_z + fpw_wire_y_offset, next_z + fpw_wire_y_offset_next, currentspan) - pitch_angle
+            lines.append(
+                f"{pos},.freeobj 0;{fpw_index};{fpw_wire_x_offset};{fpw_wire_y_offset};{adjusted_angle};{topdown_angle};,;FPW\n")
+        except Exception as e:
+            print(f"process_to_WIRE 실행 중 에러 발생: {e}")
+            continue
+        return lines
 
 elevation_cache = {}
 
@@ -1436,20 +1436,22 @@ def get_elevation_pos(pos, polyline_with_sta):
     if pos in elevation_cache:
         return elevation_cache[pos]
 
-    new_z = None
+    # 범위 체크
+    if pos < polyline_with_sta[0][0] or pos > polyline_with_sta[-1][0]:
+        raise ValueError(f"pos {pos}가 polyline 범위({polyline_with_sta[0][0]} ~ {polyline_with_sta[-1][0]})를 벗어났습니다.")
+
     for i in range(len(polyline_with_sta) - 1):
         sta1, x1, y1, z1 = polyline_with_sta[i]
         sta2, x2, y2, z2 = polyline_with_sta[i + 1]
         L = sta2 - sta1
         L_new = pos - sta1
 
-        if sta1 <= pos < sta2:
+        if sta1 <= pos <= sta2:
             new_z = calculate_height_at_new_distance(z1, z2, L, L_new)
             elevation_cache[pos] = new_z
             return new_z
 
-    elevation_cache[pos] = new_z
-    return new_z
+    raise ValueError(f"pos {pos}에 대한 고도 값을 찾을 수 없습니다.")
 
 
 def calculate_height_at_new_distance(h1, h2, L, L_new):
@@ -1750,13 +1752,14 @@ def interpolate_coordinates(polyline, target_sta):
         sta2, x2, y2, z2 = polyline[i + 1]
         v1 = calculate_bearing(x1, y1, x2, y2)
         # target_sta가 두 점 사이에 있는 경우 보간 수행
-        if sta1 <= target_sta < sta2:
+        if sta1 <= target_sta <= sta2:
             t = abs(target_sta - sta1)
             x, y = calculate_destination_coordinates(x1, y1, v1, t)
             z = z1 + t * (z2 - z1)
             return (x, y, z), (x1, y1, z1), v1
 
-    return None  # 범위를 벗어난 sta 값에 대한 처리
+    raise ValueError(f"target_sta {target_sta}가 polyline 범위({polyline[0][0]} ~ {polyline[-1][0]})를 벗어났습니다.")
+
 
 
 # 폴리선 좌표 읽기
@@ -1880,20 +1883,6 @@ def load_coordinates():
     coord_filepath = 'c:/temp/bve_coordinates.txt'
     return read_polyline(coord_filepath)
 
-
-def save_pole_data(pole_positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline, filename="c:/temp/전주.txt"):
-    """전주 데이터를 텍스트 파일로 저장하는 함수"""
-    save_to_txt(pole_positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline,
-                filename)
-    print(f"✅ 전주 데이터가 {filename} 파일로 저장되었습니다!")
-
-
-def save_wire_data(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list, filename="c:/temp/전차선.txt"):
-    """전차선 데이터를 텍스트 파일로 저장하는 함수"""
-    process_to_WIRE(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list,filename)
-    print(f"✅ 전차선 데이터가 {filename} 파일로 저장되었습니다!")
-
-
 def createtxt(filename, data):
     with open(filename, "w", encoding="utf-8") as f:
         for line in data:
@@ -1974,95 +1963,157 @@ def load_dataset(designspeed, iscustommode):
         base_data = json.load(f)
     return base_data
 
+class AutoPole:
+    def __init__(self, log_widget):
+        self.designspeed = 0
+        self.iscustommode = False
+        self.is_create_dxf = False
+        self.log_widget = log_widget
+
+    def log(self, msg):
+        if self.log_widget:
+            self.log_widget.insert("end", msg + "\n")
+            self.log_widget.see("end")
+        else:
+            print(msg)
+
+    def run(self):
+        """전체 작업을 관리하는 메인 함수"""
+
+        # 파일 읽기 및 데이터 처리
+        data = read_file()
+        last_block = find_last_block(data)
+        start_km = 0
+        end_km = last_block // 1000
+        spans, pole_positions = distribute_pole_spacing_flexible(start_km, end_km)
+
+        # 구조물 정보 로드
+        structure_list = load_structure_data()
+        if structure_list:
+            print("구조물 정보가 성공적으로 로드되었습니다.")
+
+        # 곡선 정보 로드
+        curvelist = load_curve_data()
+        if curvelist:
+            print("곡선 정보가 성공적으로 로드되었습니다.")
+        # 기울기 정보 로드
+        pitchlist = load_pitch_data()
+        if pitchlist:
+            print("기울기선 정보가 성공적으로 로드되었습니다.")
+        # BVE 좌표 로드
+        polyline = load_coordinates()
+
+        airjoint_list = define_airjoint_section(pole_positions)
+
+        # 전주번호 추가
+        post_number_lst = generate_postnumbers(pole_positions)
+        #데이터셋 로드,
+        dataset = load_dataset(self.designspeed, self.iscustommode)
+        # 데이터 처리
+        poledata = process_pole(pole_positions, structure_list, curvelist, pitchlist, dataset, airjoint_list, polyline)
+        wire_data = process_to_WIRE(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
+        pole_path = asksaveasfilename(title='전주 데이터 저장')
+        write_to_file(pole_path, poledata)
+        wire_path =  asksaveasfilename(title='전차선 데이터 저장')
+        write_to_file(wire_path, wire_data)
+
+        self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
+        if self.is_create_dxf:
+            print("도면 작성중.")
+            # 도면 스케일
+            global scale, H_scale, V_scale
+            H_scale, V_scale = get_dxf_scale()
+            # 도면 작성
+
+            while True:
+                try:
+                    # 전차선로평면도
+                    doc, msp = create_new_dxf()
+                    doc, msp = crate_pegging_plan_mast_and_bracket(doc, msp, polyline, pole_positions, structure_list,
+                                                                   curvelist, pitchlist, airjoint_list, dataset)
+                    doc, msp = crate_pegging_plan_wire(doc, msp, polyline, pole_positions, structure_list, curvelist, pitchlist,
+                                                       airjoint_list, dataset)
+                    # 전차선로종단면도
+                    doc1, msp1 = create_new_dxf()
+                    doc1, msp1 = create_pegging_profile_mast_and_bracket(doc1, msp1, polyline, pole_positions, structure_list,
+                                                                         curvelist, pitchlist, airjoint_list, dataset)
+                    doc1, msp1 = create_pegging_profile_wire(doc1, msp1, polyline, pole_positions, structure_list,
+                                                             curvelist, pitchlist, airjoint_list, dataset)
+                    break
+                except Exception as e:
+                    self.log(f'도면 생성중 에러 발생: {e}')
+
+            # 도면 저장
+            while True:
+                try:
+                    save_to_dxf(doc, file_name='c:/temp/pegging_plan.dxf')
+                    save_to_dxf(doc1, file_name='c:/temp/pegging_profile.dxf')
+                    self.log("도면이 성공적으로 저장되었습니다.")
+                    break
+                except Exception as e:
+                    self.log(f'도면 저장중 에러가 발생하였습니다. : {e}')
+
+        # 최종 출력
+        self.log(f"전주 개수: {len(pole_positions)}")
+        self.log(f"마지막 전주 위치: {pole_positions[-1]}m (종점: {int(end_km * 1000)}m)")
+        self.log('모든 작업 완료')
+
+def update_inputs(runner, entry_speed, entry_iscustommode, is_create_dxf):
+    try:
+        runner.designspeed = int(entry_speed.get())
+        runner.iscustommode = int(entry_iscustommode.get())
+        runner.is_create_dxf = int(is_create_dxf.get())
+        if runner.iscustommode:
+            runner.log(f"현재 모드: 커스텀모드")
+            return
+        runner.log(f"현재 모드: 일반모드")
+        runner.log(f"설계속도={runner.designspeed}km/h")
+    except ValueError:
+        runner.log("⚠️ 숫자를 입력하세요")
+
+def clear_log(log_box):
+    log_box.delete("1.0", tk.END)  # 텍스트 전체 삭제
+
 def main():
-    """전체 작업을 관리하는 메인 함수"""
-    # 고속철도인지 확인
-    #커스텀모드인지 확인
-    iscustommode = get_iscustommode()
-    if iscustommode:
-        designspeed = 0 #커스텀모드는 속도 없음 기본값
-    else:
-        designspeed = get_designspeed()
-    # 파일 읽기 및 데이터 처리
-    data = read_file()
-    last_block = find_last_block(data)
-    start_km = 0
-    end_km = last_block // 1000
-    spans, pole_positions = distribute_pole_spacing_flexible(start_km, end_km)
+    root = tk.Tk()
+    root.title("AutoPOLE")
 
-    # 구조물 정보 로드
-    structure_list = load_structure_data()
-    if structure_list:
-        print("구조물 정보가 성공적으로 로드되었습니다.")
+    log_box = tk.Text(root, height=15, width=60)
+    log_box.pack()
 
-    # 곡선 정보 로드
-    curvelist = load_curve_data()
-    if curvelist:
-        print("곡선 정보가 성공적으로 로드되었습니다.")
-    # 기울기 정보 로드
-    pitchlist = load_pitch_data()
-    if pitchlist:
-        print("기울기선 정보가 성공적으로 로드되었습니다.")
-    # BVE 좌표 로드
-    polyline = load_coordinates()
+    # 설계속도 입력
+    tk.Label(root, text="설계속도").pack()
+    entry_speed_var = tk.IntVar(value=150)
+    entry_speed = tk.Entry(root, width=20, textvariable=entry_speed_var)
+    entry_speed.pack()
 
-    airjoint_list = define_airjoint_section(pole_positions)
+    # 커스텀 모드 체크박스
+    is_custom_mode = tk.BooleanVar(value=False)
+    entry_iscustommode = tk.Checkbutton(root, width=20, text="커스텀 모드", variable=is_custom_mode)
+    entry_iscustommode.pack()
 
-    # 전주번호 추가
-    post_number_lst = generate_postnumbers(pole_positions)
-    #데이터셋 로드,
-    dataset = load_dataset(designspeed, iscustommode)
-    # 데이터 저장
-    save_pole_data(pole_positions, structure_list, curvelist, pitchlist, dataset, airjoint_list, polyline)
-    save_wire_data(dataset, pole_positions, spans, structure_list, curvelist, pitchlist, polyline, airjoint_list)
-    # createtxt('c:/temp/airjoint_list.txt', airjoint_list)
-    print("전주와 전차선 txt가 성공적으로 저장되었습니다.")
-    iscreatedxf = get_iscreatedxf()
-    if iscreatedxf:
-        print("도면 작성중.")
-        # 도면 스케일
-        global scale, H_scale, V_scale
-        H_scale, V_scale = get_dxf_scale()
-        # 도면 작성
+    # 도면작성 모드 체크박스
+    is_create_dxf = tk.BooleanVar(value=False)
+    entry_is_create_dxf = tk.Checkbutton(root, width=20, text="도면 작성", variable=is_create_dxf)
+    entry_is_create_dxf.pack()
 
-        while True:
-            try:
-                # 전차선로평면도
-                doc, msp = create_new_dxf()
-                doc, msp = crate_pegging_plan_mast_and_bracket(doc, msp, polyline, pole_positions, structure_list,
-                                                               curvelist, pitchlist, airjoint_list, dataset)
-                doc, msp = crate_pegging_plan_wire(doc, msp, polyline, pole_positions, structure_list, curvelist, pitchlist,
-                                                   airjoint_list, dataset)
-                # 전차선로종단면도
-                doc1, msp1 = create_new_dxf()
-                doc1, msp1 = create_pegging_profile_mast_and_bracket(doc1, msp1, polyline, pole_positions, structure_list,
-                                                                     curvelist, pitchlist, airjoint_list, dataset)
-                doc1, msp1 = create_pegging_profile_wire(doc1, msp1, polyline, pole_positions, structure_list,
-                                                         curvelist, pitchlist, airjoint_list, dataset)
-                break
-            except Exception as e:
-                print(f'도면 생성중 에러 발생: {e}')
+    runner = AutoPole(log_box)
 
-        # 도면 저장
-        while True:
-            try:
-                save_to_dxf(doc, file_name='c:/temp/pegging_plan.dxf')
-                save_to_dxf(doc1, file_name='c:/temp/pegging_profile.dxf')
-                print("도면이 성공적으로 저장되었습니다.")
-                break
-            except Exception as e:
-                print(f'도면 저장중 에러가 발생하였습니다. : {e}')
+    # 버튼들
+    tk.Button(root, text="실행",
+              command=lambda: (update_inputs(runner, entry_speed_var, is_custom_mode, is_create_dxf), runner.run())
+              ).pack()
 
-    # 최종 출력
-    print(f"전주 개수: {len(pole_positions)}")
-    print(f"마지막 전주 위치: {pole_positions[-1]}m (종점: {int(end_km * 1000)}m)")
-    print('모든 작업 완료')
+    tk.Button(root, text="로그 클리어",
+              command=lambda: clear_log(log_box)
+              ).pack()
+
+    tk.Button(root, text="종료", command=root.destroy).pack()
+
+    root.mainloop()
+
+
 
 # 실행
 if __name__ == "__main__":
     main()
-    #profiler = cProfile.Profile()
-    #profiler.enable()
-    #profiler.disable()
-    #stats = pstats.Stats(profiler).sort_stats("cumtime")
-    #stats.print_stats(20)  # 상위 20개 함수 출력
