@@ -1,15 +1,16 @@
 import random
-import os
+from functools import lru_cache
+
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog
 import math
-import re
-import numpy as np
 from enum import Enum
-from shapely.geometry import Point, LineString
 import ezdxf  # Import ezdxf for saving to DXF
 import json
+import cProfile
+import pstats
+
 '''
 ver 2025.03.19
 종단면도작성기능 추가(진행중)
@@ -1429,19 +1430,25 @@ def process_to_WIRE(dataset, positions, spans, structure_list, curve_list, pitch
     buffered_write(filename, lines)
 
 
-def get_elevation_pos(pos, polyline_with_sta):
-    new_z = None
+elevation_cache = {}
 
+def get_elevation_pos(pos, polyline_with_sta):
+    if pos in elevation_cache:
+        return elevation_cache[pos]
+
+    new_z = None
     for i in range(len(polyline_with_sta) - 1):
-        sta1, x1, y1, z1 = polyline_with_sta[i]  # 현재값
-        sta2, x2, y2, z2 = polyline_with_sta[i + 1]  # 다음값
+        sta1, x1, y1, z1 = polyline_with_sta[i]
+        sta2, x2, y2, z2 = polyline_with_sta[i + 1]
         L = sta2 - sta1
         L_new = pos - sta1
 
         if sta1 <= pos < sta2:
             new_z = calculate_height_at_new_distance(z1, z2, L, L_new)
+            elevation_cache[pos] = new_z
             return new_z
 
+    elevation_cache[pos] = new_z
     return new_z
 
 
@@ -1666,21 +1673,28 @@ def return_new_point(x, y, L):
 
     return d1 * sign, d2
 
+interpolation_cache = {}
+def interpolate_cached(polyline_with_sta, pos):
+
+
+    if pos not in interpolation_cache:
+        interpolation_cache[pos] = interpolate_coordinates(polyline_with_sta, pos)
+    return interpolation_cache[pos]
 
 def calculate_curve_angle(polyline_with_sta, pos, next_pos, stagger1, stagger2):
-    point_a, P_A, vector_a = interpolate_coordinates(polyline_with_sta, pos)
-    point_b, P_B, vector_b = interpolate_coordinates(polyline_with_sta, next_pos)
+    # 캐싱된 보간 사용
+    point_a, P_A, vector_a = interpolate_cached(polyline_with_sta, pos)
+    point_b, P_B, vector_b = interpolate_cached(polyline_with_sta, next_pos)
 
     if point_a and point_b:
         offset_point_a = calculate_offset_point(vector_a, point_a, stagger1)
         offset_point_b = calculate_offset_point(vector_b, point_b, stagger2)
 
-        offset_point_a_z = (offset_point_a[0], offset_point_a[1], 0)  # Z값 0추가
-        offset_point_b_z = (offset_point_b[0], offset_point_b[1], 0)  # Z값 0추가
-
-        a_b_angle = calculate_bearing(offset_point_a[0], offset_point_a[1], offset_point_b[0], offset_point_b[1])
-        finale_anlge = vector_a - a_b_angle
-    return finale_anlge
+        # bearing 계산 (캐싱 적용)
+        a_b_angle = calculate_bearing(offset_point_a[0], offset_point_a[1],
+                                      offset_point_b[0], offset_point_b[1])
+        return vector_a - a_b_angle
+    return 0.0
 
 
 def get_pole_gauge(dataset, current_structure):
@@ -1822,12 +1836,12 @@ def calculate_offset_point(vector, point_a, offset_distance):
     return offset_a_xy
 
 
+@lru_cache(maxsize=None)
 def calculate_bearing(x1, y1, x2, y2):
-    # Calculate the bearing (direction) between two points in Cartesian coordinates
     dx = x2 - x1
     dy = y2 - y1
-    bearing = math.degrees(math.atan2(dy, dx))
-    return bearing
+    return math.degrees(math.atan2(dy, dx))
+
 
 
 # 실행
@@ -2047,3 +2061,8 @@ def main():
 # 실행
 if __name__ == "__main__":
     main()
+    #profiler = cProfile.Profile()
+    #profiler.enable()
+    #profiler.disable()
+    #stats = pstats.Stats(profiler).sort_stats("cumtime")
+    #stats.print_stats(20)  # 상위 20개 함수 출력
