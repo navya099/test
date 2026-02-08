@@ -11,6 +11,8 @@ from tkinter import filedialog
 import math
 from enum import Enum
 
+from pymupdf.mupdf import fz_pwg_options
+
 '''
 ver 2026.02.08
 0319버전에서 일부 개량진행
@@ -26,6 +28,7 @@ interpolation_cache = {}
 class Mast:
     name: str
     index: int
+    offset: float
 
 @dataclass
 class FittingDATA:
@@ -46,6 +49,7 @@ class EquipmentDATA:
     name: str
     index: int
     offset: tuple[float, float] = (0, 0)
+    rotation: float = 0.0
 
 @dataclass
 class PoleDATA:
@@ -200,21 +204,24 @@ class DatasetGetter:
     def get_wire_span_data(self, currentspan, current_structure):
         """경간에 따른 wire 데이터 반환 (JSON 기반)"""
         span_data = self.dataset['span_data']
-        span_index_mapping = self.dataset['span_index_mapping']
+        span_list = self.dataset['span_list']
+        #구조물에 맞는 전차선 가져오기
+        cw_span_values = span_data['전차선'][current_structure]
+        af_span_valuse = span_data['급전선']
+        fpw_span_values = span_data['보호선']
 
-        # 키 문자열을 int로 변환
-        span_index_mapping = {int(k): v for k, v in span_index_mapping.items()}
-
-        # DESIGNSPEED에 맞는 구조 선택 (기본값 250 사용)
-        span_values = span_data.get(current_structure)
+        #길이검사
+        expected_len = len(self.dataset['span_list'])
+        if not all(len(lst) == expected_len for lst in [cw_span_values, af_span_valuse, fpw_span_values]):
+            raise ValueError('스판 인덱스와 정의된 LIST의 길이가 맞지 않습니다. 파일을 확인해주세요')
 
         # currentspan에 해당하는 인덱스 및 주석 추출
-        idx, comment, feeder_idx, fpw_idx = span_index_mapping[currentspan]
+        idx = span_list.index(currentspan)
+        cw_index = cw_span_values[idx]
+        af_index = af_span_valuse[idx]
+        fpw_index = fpw_span_values[idx]
 
-        # idx 값을 current_structure_list에서 가져오기
-        idx_value = span_values[idx]
-
-        return idx_value, comment, feeder_idx, fpw_idx
+        return cw_index, af_index, fpw_index
 
     def get_wire_offset(self, current_structure):
         """AF, FPW offset을 반환 (JSON 기반)"""
@@ -225,6 +232,147 @@ class DatasetGetter:
         fpw_wire_x_offset, fpw_wire_y_offset = fpw_offset_values[current_structure]
 
         return af_x_offset, af_y_offset, fpw_wire_x_offset, fpw_wire_y_offset
+
+    def get_contact_wire_and_massanger_wire_info(self, current_structure, span):
+        """경간에 따른 무효 전차선/조가선 인덱스와 높이정보 반환 (JSON 기반)"""
+        inactive_contact_wire = casting_key_str_to_int(self.dataset['inactive_contact_wire'])
+        inactive_messenger_wire = casting_key_str_to_int(self.dataset['inactive_messenger_wire'])
+        contact_height_dictionary = self.dataset['contact_height_dictionary']
+
+        # 객체 인덱스 가져오기 (기본값 60)
+        contact_object_index = inactive_contact_wire.get(span, inactive_contact_wire[60])
+        messenger_object_index = inactive_messenger_wire.get(span, inactive_messenger_wire[60])
+
+        # 가고와 전차선 높이정보
+        system_heigh, contact_height = contact_height_dictionary.get(current_structure, (0, 0))
+
+        return contact_object_index, messenger_object_index, system_heigh, contact_height
+
+class BVECSV:
+    """BVE CSV 구문을 생성하는 클래스
+    Attributes:
+        poledata (PoleDATAManager): PoleDATAManager.poledata 인스턴스
+        wiredata (WireDataManager): WireDataManager.wiredata 인스턴스
+        lines (list[str]]): 구문 정보를 저장할 문자열 리스트
+    """
+
+    def __init__(self, poledata=None, wiredata=None):
+        self.poledata = poledata  # ✅ PoleDATAManager.poledata 인스턴스를 가져옴
+        self.wiredata = wiredata
+        self.lines = []
+
+    def create_pole_csv(self):
+        """전주 구문 생성 메서드"""
+        self.lines = []
+
+        for pole in self.poledata:
+            try:
+                pos = pole.pos
+                post_number = pole.post_number
+                section = pole.section
+                structure = pole.structure
+                curve = '직선' if pole.radius == 0.0 else '곡선'
+                gauge = pole.gauge
+                equipments = pole.equipments
+
+                section_label = section if section else '일반개소'
+
+                # 구문 작성
+                self.lines.append(f',;{post_number}\n')
+                self.lines.append(f',;-----{section_label}({structure})({curve})-----\n')
+
+                if section is None:
+                    # 일반개소
+                    br = pole.brackets[0]
+                    self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
+
+                elif section in ['에어조인트 시작점 (1호주)', '에어조인트 끝점 (5호주)']:
+                    br = pole.brackets[0]
+                    eq = equipments[0]
+                    self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
+                    self.lines.append(
+                        f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
+
+                elif section in ['에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)']:
+                    mast = pole.mast
+                    eqs = pole.equipments
+                    brs = pole.brackets
+                    self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
+                    for eq in eqs:
+                        self.lines.append(
+                            f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
+                    for br in brs:
+                        self.lines.append(',;가동브래킷구문\n')
+                        self.lines.append(f'{pos},.freeobj 0;{br.index};{br.offset[0]};{br.offset[1]};0;,;{br.bracket_name}\n')
+                        for fit in br.fittings:
+                            self.lines.append(
+                                f'{pos},.freeobj 0;{fit.index};{fit.offset[0]};{fit.offset[1]};0;,;{fit.label}\n')
+            except AttributeError as e:
+                print(f"poledata 데이터 누락: {pos}, 오류: {e}")
+            except Exception as e:
+                print(f"예상치 못한 오류: {pos}, 오류: {e}")
+
+        print('create_pole_csv 실행이 완료됐습니다.')
+        return self.lines
+
+    def create_wire_csv(self):
+        """
+        전선 구문 생성 메서드
+        """
+        self.lines = []  # 코드 실행전 초기화
+        self.lines.append(',;전차선구문\n')
+        data = self.poledata
+        wiredata = self.wiredata
+        for i in range(len(data.poles) - 1):
+            try:
+                pos = data.poles[i].pos
+                post_number = data.poles[i].post_number
+                current_airjoint = data.poles[i].current_airjoint
+                current_structure = data.poles[i].current_structure
+                current_curve = data.poles[i].current_curve
+                contact_index = wiredata.wires[i].contactwire.index
+                af_index = wiredata.wires[i].afwire.index
+                af_x = wiredata.wires[i].afwire.positionx
+                af_y = wiredata.wires[i].afwire.positiony
+                af_yaw = wiredata.wires[i].afwire.yaw
+                af_pitch = wiredata.wires[i].afwire.pitch
+                af_name = wiredata.wires[i].afwire.name.upper()
+
+                fpw_index = wiredata.wires[i].fpwwire.index
+                fpw_x = wiredata.wires[i].fpwwire.positionx
+                fpw_y = wiredata.wires[i].fpwwire.positiony
+                fpw_yaw = wiredata.wires[i].fpwwire.yaw
+                fpw_pitch = wiredata.wires[i].fpwwire.pitch
+                fpw_name = wiredata.wires[i].fpwwire.name.upper()
+
+                stagger = wiredata.wires[i].contactwire.stagger
+                contact_yaw = wiredata.wires[i].contactwire.yaw
+                contact_name = wiredata.wires[i].contactwire.name
+                contact_pitch = wiredata.wires[i].contactwire.pitch
+
+                # 구문 작성
+                self.lines.append(f',;{post_number}\n')
+                self.lines.append(f',;-----{current_airjoint}({current_structure})({current_curve})-----\n')
+                self.lines.append(f'{pos},.freeobj 0;'
+                                  f'{contact_index};{stagger};0;{contact_yaw};{contact_pitch};,;{contact_name}\n\n')
+                self.lines.append(f'{pos},.freeobj 0;{af_index};{af_x};{af_y};{af_yaw};{af_pitch};,;{af_name}\n\n')
+                self.lines.append(f'{pos},.freeobj 0;'
+                                  f'{fpw_index};{fpw_x};{fpw_y};{fpw_yaw};{fpw_pitch};,;{fpw_name}\n\n')
+
+                if len(data.poles[i].Brackets) > 1:
+                    self.lines.append(f',;상선\n')
+                    self.lines.append(f'{pos},.freeobj 1;'
+                                      f'{contact_index};{stagger};0;{contact_yaw};{contact_pitch};,;{contact_name}\n\n')
+                    self.lines.append(f'{pos},.freeobj 1;{af_index};{-af_x};{af_y};{af_yaw};{af_pitch};,;{af_name}\n\n')
+                    self.lines.append(f'{pos},.freeobj 1;'
+                                      f'{fpw_index};{-fpw_x};{fpw_y};{fpw_yaw};{fpw_pitch};,;{fpw_name}\n\n')
+
+            except AttributeError as e:
+                logger.warning(f"Wire 데이터 누락: index {i}, 오류: {e}")
+            except Exception as e:
+                logger.error(f"예상치 못한 오류: index {i}, 오류: {e}")
+
+        logger.info(f'create_wire_csv실행이 완료됐습니다.')
 
 def distribute_pole_spacing_flexible(start_km, end_km, spans=(45, 50, 55, 60)):
     """
@@ -472,26 +620,31 @@ class AirjointBracketAdder:
         """에어조인트 각 구간별 브래킷 추가"""
         if pole.section == AirJoint.START.value:
             # START 구간 처리
-            pole.equipments = [EquipmentDATA('스프링식 장력조절장치', 1247)]
+            x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
+            start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
+            pole.equipments.append(EquipmentDATA(name='스프링식 장력조절장치', index=1247, offset=(pole.gauge,0),rotation=start_angle))
 
         elif pole.section == AirJoint.POINT_2.value:
             # POINT_2 구간 처리
-            pole.mast = Mast(self.params.mast_name, self.params.mast_type)
+            self.add_common_equipts(pole)
             self.add_F_and_AJ_brackets(pole)
 
         elif pole.section == AirJoint.MIDDLE.value:
             # MIDDLE 구간 처리
-            pole.mast = Mast(self.params.mast_name, self.params.mast_type)
+            self.add_common_equipts(pole)
             self.add_AJ_brackets_middle(pole)
 
         elif pole.section == AirJoint.POINT_4.value:
             # POINT_4 구간 처리
-            pole.mast = Mast(self.params.mast_name, self.params.mast_type)
+            self.add_common_equipts(pole)
             self.add_F_and_AJ_brackets(pole, end=True)
 
         elif pole.section == AirJoint.END.value:
             # END 구간 처리
-            pole.equipments = [EquipmentDATA('스프링식 장력조절장치', 1247)]
+            x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
+            end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge)
+            pole.equipments.append(EquipmentDATA(name='스프링식 장력조절장치', index=1247, offset=(pole.gauge,0),rotation=180 + end_angle))
+
 
 
     def add_F_and_AJ_brackets(self, pole, end=False):
@@ -547,6 +700,9 @@ class AirjointBracketAdder:
 
     def add_AJ_brackets_middle(self, pole):
         """MIDDLE 구간에서 AJ형 브래킷 추가"""
+        # 기본 브래킷 제거
+        pole.brackets.clear()
+
         aj_i, aj_o = self.params.aj_bracket_values
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간1')
@@ -555,6 +711,15 @@ class AirjointBracketAdder:
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간2')
         self.add_AJ_bracket(pole, aj_o, '가동브래킷 AJ형', x1, y1)
+
+    def add_common_equipts(self, pole):
+        pole.mast = Mast(self.params.mast_name, self.params.mast_type, pole.gauge)
+        feederidx = self.params.feeder_idx
+        spreaderidx = self.params.spreader_idx
+        pole.equipments.append(
+            EquipmentDATA(name='급전선 현수 조립체', index=feederidx, offset=(pole.gauge, 0)))
+        pole.equipments.append(
+            EquipmentDATA(name='평행틀', index=spreaderidx, offset=(pole.gauge, 0)))
 
 def find_post_number(lst, pos):
     for arg in lst:
@@ -614,7 +779,7 @@ class PoleProcessor:
                     post_number=post_number,
                     brackets=[bracket],
                     mast=None,
-                    equipments=None,
+                    equipments=[],
                     z=z,
                     next_z=next_z)
 
@@ -715,107 +880,50 @@ class WireSectionHandler:
         self.compros = commonprocessor
         self.datapro = dataprocseor
         self.al = polyline_with_sta
+        self.airpro = AirjointWireProcessor(self.compros, self.datapro, self.al)
 
     def run(self, pole, wire, pitch_angle):
         """일반개소 및 에어조인트개소 구분처리"""
-        if pole.section is None:
-            self.process_normal_section(pole, wire, pitch_angle)
-        else:
-            self.process_airjoint_section(pole, wire)
-
-    def process_normal_section(self, pole, wire, pitch_angle):
         sign = -1 if pole.brackets[0].bracket_type == 'I' else 1
         lateral_offset = sign * 0.2
         # 전차선 인덱스 얻기
-        cw_index, _, _, _ = self.datapro.get_wire_span_data(wire.span, pole.structure)
-        wire.add_wire(
-            self.compros.run(self.al, cw_index ,pole.pos, pole.next_pos ,pole.z, pole.next_z, start=(lateral_offset,0),end=(-lateral_offset,0), pitch_angle=pitch_angle, label='전차선'))
+        cw_index,_,_ = self.datapro.get_wire_span_data(wire.span, pole.structure)
 
-    def process_airjoint_section(self, pole, wire):
-        pass
+        if pole.section is None:
+            self.process_normal_section(pole, wire, pitch_angle, lateral_offset, cw_index)
+        else:
+            self.process_airjoint_section(pole, wire, pitch_angle, lateral_offset, cw_index)
 
-class AirjointWireProcessor:
-    def run(self):
-        # 에어조인트 구간 처리
-        if current_airjoint == '에어조인트 시작점 (1호주)':
+    def process_normal_section(self, pole, wire, pitch_angle ,offset , index):
 
-            # 본선
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, lateral_offset, x)
-            lines.append(f'{pos},.freeobj 0;{cw_index};{lateral_offset};0;{adjusted_angle};,;본선\n')
+        wire.add_wire(self.compros.run(self.al, index ,
+            pole.pos, pole.next_pos ,pole.z, pole.next_z, start=(offset,0)
+            ,end=(-offset,0), pitch_angle=pitch_angle, label='전차선'))
 
-            # 무효선
-
-            slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(pos, gauge,
-                                                                                                 currentspan,
-                                                                                                 contact_height,
-                                                                                                 system_heigh,
-                                                                                                 adjusted_angle, y1)
-            slope_degree2 = calculate_slope(h2, contact_height + system_heigh, currentspan)  # 조가선 상하각도
-            slope_degree1 = calculate_slope(h1, contact_height + y1, currentspan)  # 전차선 상하각도
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, gauge, x1)  # 평면각도
-            lines.append(
-                f'{sta2},.freeobj 0;{messenger_object_index};{pererall_d};{h2};{adjusted_angle};{slope_degree2},;무효조가선\n')
-            lines.append(
-                f'{sta2},.freeobj 0;{contact_object_index};{pererall_d};{h1};{adjusted_angle};{slope_degree1},;무효전차선\n')
-
-        elif current_airjoint == '에어조인트 (2호주)':
-            # 본선 각도
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x, x3)
-            lines.append(f"{pos},.freeobj 0;{cw_index};{x};0;{adjusted_angle};,;본선\n")
-
-            # 무효선 하강
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x1, x2)  # 평면각도
-
-            adjusted_angle_conatctwire = calculate_slope(contact_height + y1, contact_height, currentspan)  # 전차선상하각도
-            adjusted_angle_massangerwire = calculate_slope(contact_height + system_heigh, contact_height + system_heigh,
-                                                           currentspan)  # 조가선 상하각도
-            '''
-            lines.append(f"{pos},.freeobj 0;{contact_object_index};{x1};{contact_height + y1};{adjusted_angle};{adjusted_angle_conatctwire};,;무효전차선\n")
-            lines.append(f"{pos},.freeobj 0;{messenger_object_index};{x1};{contact_height + system_heigh};{adjusted_angle};{adjusted_angle_massangerwire};,;무효조가선\n")
-            '''
-            lines.append(f"{pos},.freeobj 0;{cw_index};{x1};{y1};{adjusted_angle};{adjusted_angle_conatctwire};,;무효선\n")
-        elif current_airjoint == '에어조인트 중간주 (3호주)':
-            # 본선 >무효선 상승
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x3, x5)  # 평면각도
-            topdown_angle_conatctwire = calculate_slope(contact_height, contact_height + y1, currentspan)  # 전차선 상하각도
-            topdown_angle_massangerwire = calculate_slope(contact_height + system_heigh, contact_height + system_heigh,
-                                                          currentspan)  # 조가선 상하각도
-            '''
-            lines.append(f"{pos},.freeobj 0;{contact_object_index};{x3};0;{adjusted_angle};{topdown_angle_conatctwire};,;본선전차선\n")
-            lines.append(f"{pos},.freeobj 0;{messenger_object_index};{x3};0;{adjusted_angle};{topdown_angle_massangerwire};,;본선조가선\n")
-            '''
-            lines.append(f"{pos},.freeobj 0;{cw_index};{x3};0;{adjusted_angle};{topdown_angle_conatctwire};,;무효선\n")
-            # 무효선 >본선
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x2, x4)
-            lines.append(f"{pos},.freeobj 0;{cw_index};{x2};0;{adjusted_angle};0;,;무효선\n")
-
-        elif current_airjoint == '에어조인트 (4호주)':
-            # 본선 각도
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x4, -lateral_offset)
-            lines.append(f"{pos},.freeobj 0;{cw_index};{x4};0;{adjusted_angle};,;본선\n")
-
-            # H1 전차선높이
-            # H2 조가선 높이
-
-            # 무효선
-
-            slope_degree1, slope_degree2, h1, h2, pererall_d, _ = initialrize_tenstion_device(pos, gauge, currentspan,
-                                                                                              contact_height,
-                                                                                              system_heigh,
-                                                                                              adjusted_angle, y1)
-            topdown_angle_conatctwire = calculate_slope(contact_height + y1, h1, currentspan)  # 전차선 상하각도
-            topdown_angle_massangerwire = calculate_slope(contact_height + system_heigh, h2, currentspan)  # 조가선 상하각도
-            adjusted_angle = calculate_curve_angle(polyline_with_sta, pos, next_pos, x5, next_gauge)  # 평면각도
-            lines.append(
-                f'{pos},.freeobj 0;{messenger_object_index};{x5};{contact_height + system_heigh};{adjusted_angle};{topdown_angle_massangerwire};,;무효조가선\n')
-            lines.append(
-                f'{pos},.freeobj 0;{contact_object_index};{x5};{contact_height + y1};{adjusted_angle};{topdown_angle_conatctwire};,;무효전차선\n')
+    def process_airjoint_section(self, pole, wire, pitch_angle ,offset , index):
+        self.airpro.run(pole, wire, pitch_angle, offset , index)
 
 class CommonWireProcessor:
     def __init__(self):
         pass
     def run(self, polyline_with_sta, index ,
             pos, next_pos ,current_z, next_z, start: tuple[float, float], end: tuple[float, float], pitch_angle, label):
+        """공통 전선 생성기
+        Args:
+            polyline_with_sta: 폴리선
+            index: 인덱스
+            pos: 시작 측점
+            next_pos: 끝 측점
+            current_z: 현재 z
+            next_z: 다음 z
+            start: 시작 좌표
+            end: 끝 좌표
+            pitch_angle: 구배 각도
+            label: 라벨
+        Returns:
+            SingleWire: 전선 객체
+        """
+
         x1, y1 = start
         x2, y2 = end
         currentspan = next_pos - pos
@@ -824,6 +932,92 @@ class CommonWireProcessor:
         topdown_angle = calculate_slope(current_z + y1,next_z + y2, currentspan) - pitch_angle
 
         return SingleWire(index=index, offset=start,adjusted_angle=adjusted_angle,topdown_angle=topdown_angle, label=label)
+
+class AirjointWireProcessor:
+    def __init__(self, compros: CommonWireProcessor, datap, al):
+        self.common = compros
+        self.datap = datap
+        self.al = al
+
+    def run(self, pole, wire, pitch_angle, offset , index):
+        # 에어조인트 구간 처리
+        # 전차선 정보 가져오기
+        (contact_object_index, messenger_object_index,
+         system_heigh, contact_height) = self.datap.get_contact_wire_and_massanger_wire_info(pole.structure, pole.span)
+
+        # 평행구간 전차선 오프셋
+        aj_start_x, aj_start_y = self.datap.get_bracket_coordinates('AJ형_시점')
+        f_start_x, f_start_y = self.datap.get_bracket_coordinates('F형_시점')
+        aj_middle1_x, aj_middle1_y = self.datap.get_bracket_coordinates('AJ형_중간1')
+        aj_middle2_x, aj_middle2_y = self.datap.get_bracket_coordinates('AJ형_중간2')
+        aj_end_x, aj_end_y = self.datap.get_bracket_coordinates('AJ형_끝')
+        f_end_x, f_end_y = self.datap.get_bracket_coordinates('F형_끝')
+
+        if pole.section == '에어조인트 시작점 (1호주)':
+            # 본선
+            wire.add_wire(self.common.run(
+                self.al, index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (offset,0),(-offset,0), pitch_angle, label='본선전차선')
+            )
+            # 무효선
+            adjusted_angle = calculate_curve_angle(self.al, pole.pos, pole.next_pos, offset, aj_start_x)#평면각도
+            #slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
+            slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(
+                pole.pos, pole.gauge, pole.span,contact_height,system_heigh, adjusted_angle, f_start_y)
+
+            wire.add_wire(self.common.run(
+                self.al, messenger_object_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (pole.gauge,h2),(aj_start_x,contact_height + system_heigh), pitch_angle, label='무효조가선')
+            )
+            wire.add_wire(self.common.run(
+                self.al, messenger_object_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (pole.gauge, h1), (aj_start_x, contact_height + f_start_y), pitch_angle, label='무효전차선')
+            )
+
+        elif pole.section == '에어조인트 (2호주)':
+            # 본선
+            wire.add_wire(self.common.run(
+                self.al, index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (aj_start_x, 0), (aj_middle2_x, 0), pitch_angle, label='본선전차선')
+            )
+            # 무효선
+            wire.add_wire(self.common.run(
+                self.al, index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (f_start_x, contact_height + f_start_y), (aj_middle1_x, contact_height), pitch_angle, label='무효전차선')
+            )
+
+        elif pole.section == '에어조인트 중간주 (3호주)':
+            # 본선 >무효선 상승
+            wire.add_wire(self.common.run(
+                self.al, index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (aj_middle2_y, contact_height), (f_end_x, contact_height + f_start_y), pitch_angle, label='본선->무효전차선')
+            )
+            # 무효선 > 본선
+            wire.add_wire(self.common.run(
+                self.al, index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (aj_middle1_x, 0), (aj_end_x, 0), pitch_angle, label='무효->본선전차선')
+            )
+
+        elif pole.section == '에어조인트 (4호주)':
+            # 본선
+            wire.add_wire(self.common.run(
+                self.al, index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (aj_end_x, 0), (-offset, 0), pitch_angle, label='본선전차선')
+            )
+            # 무효선
+            adjusted_angle = calculate_curve_angle(self.al, pole.pos, pole.next_pos, aj_end_x, -offset)  # 평면각도
+            # slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
+            slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(
+                pole.pos, pole.gauge, pole.span, contact_height, system_heigh, adjusted_angle, f_start_y)
+
+            wire.add_wire(self.common.run(
+                self.al, messenger_object_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (f_end_x, contact_height + system_heigh), (pole.next_gauge, h2), pitch_angle, label='무효조가선')
+            )
+            wire.add_wire(self.common.run(
+                self.al, messenger_object_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (f_end_x, contact_height + f_start_y), (pole.next_gauge, h1), pitch_angle, label='무효전차선')
+            )
 
 class BaseWireProcessor:
     def __init__(self, dataprocessor):
@@ -847,7 +1041,7 @@ class AFWireProcessor(BaseWireProcessor):
     def collect_data(self, pole: PoleDATA):
         x_offset, y_offset, _, _ = self.pro.get_wire_offset(pole.structure)
         x_offset_next, y_offset_next, _, _ = self.pro.get_wire_offset(pole.next_structure)
-        _, _, idx, _ = self.pro.get_wire_span_data(pole.span, pole.structure)
+        _,idx,_ = self.pro.get_wire_span_data(pole.span, pole.structure)
         return idx, (x_offset, y_offset), (x_offset_next, y_offset_next), "AF"
 
 
@@ -855,7 +1049,7 @@ class FPWWireProcessor(BaseWireProcessor):
     def collect_data(self, pole: PoleDATA):
         _, _, x_offset, y_offset = self.pro.get_wire_offset(pole.structure)
         _, _, x_offset_next, y_offset_next = self.pro.get_wire_offset(pole.next_structure)
-        _, _, _, idx = self.pro.get_wire_span_data(pole.span, pole.structure)
+        _, _, idx = self.pro.get_wire_span_data(pole.span, pole.structure)
         return idx, (x_offset, y_offset), (x_offset_next, y_offset_next), "FPW"
 
 class ExtraWireProcessor(BaseWireProcessor):
@@ -877,6 +1071,7 @@ def calculate_slope(h1, h2, gauge):
     return math.degrees(math.atan(slope))  # 아크탄젠트 적용 후 degree 변환
 
 def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, adjusted_angle=0, y=0):
+    """장력장치구간 전차선과 조가선 각도 높이를 반환"""
     # 장력장치 치수
     tension_device_length = 7.28
 
@@ -946,20 +1141,7 @@ def get_airjoint_angle(gauge, stagger, span):
 def casting_key_str_to_int(dic):
     return {int(k): v for k, v in dic.items()}
 
-def get_contact_wire_and_massanger_wire_info(dataset, current_structure, span):
-    """경간에 따른 무효 전차선/조가선 인덱스와 높이정보 반환 (JSON 기반)"""
-    inactive_contact_wire = casting_key_str_to_int(dataset['inactive_contact_wire'])
-    inactive_messenger_wire = casting_key_str_to_int(dataset['inactive_messenger_wire'])
-    contact_height_dictionary = dataset['contact_height_dictionary']
 
-    # 객체 인덱스 가져오기 (기본값 60)
-    contact_object_index = inactive_contact_wire.get(span, inactive_contact_wire[60])
-    messenger_object_index = inactive_messenger_wire.get(span, inactive_messenger_wire[60])
-
-    # 가고와 전차선 높이정보
-    system_heigh, contact_height = contact_height_dictionary.get(current_structure, (0, 0))
-
-    return contact_object_index, messenger_object_index, system_heigh, contact_height
 
 
 def calculate_distance(x1, y1, x2, y2):
@@ -1217,9 +1399,11 @@ class AutoPole:
         wire_processor = WireProcessor(dataprocessor, polyline_with_sta, poledata)
         wire_data = wire_processor.process_to_wire()
         pole_path = asksaveasfilename(title='전주 데이터 저장')
-        write_to_file(pole_path, poledata)
-        wire_path =  asksaveasfilename(title='전차선 데이터 저장')
-        buffered_write(wire_path, wire_data)
+        wire_path = asksaveasfilename(title='전차선 데이터 저장')
+        polesaver = BVECSV(poledata, wire_data)
+        pole_text = polesaver.create_pole_csv()
+        #polesaver.create_wire_csv()
+        write_to_file(pole_path, pole_text)
 
         self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
         if self.is_create_dxf:
