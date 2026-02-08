@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import filedialog
 import math
 from enum import Enum
+from tkinter import ttk
 
 '''
 ver 2026.02.08
@@ -1341,10 +1342,13 @@ def load_dataset(designspeed, iscustommode):
 
 class AutoPole:
     def __init__(self, log_widget):
+        self.dataprocessor = None
         self.designspeed = 0
         self.iscustommode = False
         self.is_create_dxf = False
         self.log_widget = log_widget
+        self.poledata = None
+        self.wire_data = None
 
     def log(self, msg):
         if self.log_widget:
@@ -1388,19 +1392,19 @@ class AutoPole:
         # 전주번호 추가
         post_number_lst = generate_postnumbers(pole_positions)
         # 데이터 처리
-        dataprocessor = DatasetGetter(dataset)
+        self.dataprocessor = DatasetGetter(dataset)
 
-        pole_processor = PoleProcessor()
-        poledata = pole_processor.process_pole(pole_positions, structure_list, curvelist, pitchlist, dataset, airjoint_list, polyline_with_sta)
-        wire_processor = WireProcessor(dataprocessor, polyline_with_sta, poledata)
-        wire_data = wire_processor.process_to_wire()
-        pole_path = asksaveasfilename(title='전주 데이터 저장')
-        wire_path = asksaveasfilename(title='전차선 데이터 저장')
-        polesaver = BVECSV(poledata, wire_data)
-        pole_text = polesaver.create_pole_csv()
-        wire_text = polesaver.create_wire_csv()
-        write_to_file(pole_path, pole_text)
-        write_to_file(wire_path, wire_text)
+        self.pole_processor = PoleProcessor()
+        self.poledata = self.pole_processor.process_pole(pole_positions, structure_list, curvelist, pitchlist, dataset, airjoint_list, polyline_with_sta)
+        self.wire_processor = WireProcessor(self.dataprocessor, polyline_with_sta, self.poledata)
+        self.wire_data = self.wire_processor.process_to_wire()
+        self.pole_path = asksaveasfilename(title='전주 데이터 저장')
+        self.wire_path = asksaveasfilename(title='전차선 데이터 저장')
+        self.polesaver = BVECSV(self.poledata, self.wire_data)
+        pole_text = self.polesaver.create_pole_csv()
+        wire_text = self.polesaver.create_wire_csv()
+        write_to_file(self.pole_path, pole_text)
+        write_to_file(self.wire_path, wire_text)
 
         self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
         if self.is_create_dxf:
@@ -1411,56 +1415,187 @@ class AutoPole:
         self.log(f"마지막 전주 위치: {pole_positions[-1]}m (종점: {int(end_km * 1000)}m)")
         self.log('모든 작업 완료')
 
-def update_inputs(runner, entry_speed, entry_iscustommode, is_create_dxf):
-    try:
-        runner.designspeed = int(entry_speed.get())
-        runner.iscustommode = int(entry_iscustommode.get())
-        runner.is_create_dxf = int(is_create_dxf.get())
-        if runner.iscustommode:
-            runner.log(f"현재 모드: 커스텀모드")
+class AutoPoleApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("AutoPOLE")
+
+        # 로그 박스
+        self.log_box = tk.Text(self, height=15, width=60)
+        self.log_box.pack()
+        self.runner = AutoPole(self.log_box)  # log_box는 클래스 내부에서 관리
+
+        # 입력 영역
+        self.entry_speed_var = tk.IntVar(value=150)
+        tk.Label(self, text="설계속도").pack()
+        self.entry_speed = tk.Entry(self, width=20, textvariable=self.entry_speed_var)
+        self.entry_speed.pack()
+
+        self.is_custom_mode = tk.BooleanVar(value=False)
+        tk.Checkbutton(self, text="커스텀 모드", variable=self.is_custom_mode).pack()
+
+        self.is_create_dxf = tk.BooleanVar(value=False)
+        tk.Checkbutton(self, text="도면 작성", variable=self.is_create_dxf).pack()
+
+        # 버튼 영역
+        tk.Button(self, text="실행", command=self.run_and_open_editor).pack()
+        tk.Button(self, text="로그 클리어", command=self.clear_log).pack()
+        tk.Button(self, text="종료", command=self.destroy).pack()
+
+        self.runner = AutoPole(self.log_box)
+        self.editor = AutoPoleEditor(self.runner)
+
+    def clear_log(self):
+        self.log_box.delete("1.0", tk.END)
+
+    def update_inputs(self):
+        try:
+            self.runner.designspeed = int(self.entry_speed.get())
+            self.runner.iscustommode = int(self.is_custom_mode.get())
+            self.runner.is_create_dxf = int(self.is_create_dxf.get())
+            if self.runner.iscustommode:
+                self.runner.log(f"현재 모드: 커스텀모드")
+                return
+            self.runner.log(f"현재 모드: 일반모드")
+            self.runner.log(f"설계속도={self.runner.designspeed}km/h")
+
+        except ValueError:
+            self.runner.log("⚠️ 숫자를 입력하세요")
+
+    def run_and_open_editor(self):
+        # 입력값 반영 후 실행
+        self.update_inputs()
+        self.runner.run()
+        self.editor.refresh_tree()
+
+class AutoPoleEditor(tk.Toplevel):
+    def __init__(self, runner):
+        super().__init__()
+        self.runner = runner
+        self.title("전주 편집기")
+        self.geometry("600x400")
+
+        # Treeview + Scrollbar 프레임
+        frame = tk.Frame(self)
+        frame.pack(fill="both", expand=True)
+
+        # Treeview 생성
+        self.tree = ttk.Treeview(
+            frame,
+            columns=("전주번호", "측점", '경간', "건식게이지", "구조물", "구간", "기본 타입", '곡선반경','구배','캔트','계획고'),
+            show="headings"
+        )
+        for col in ("전주번호", "측점", '경간', "건식게이지", "구조물", "구간", "기본 타입", '곡선반경','구배','캔트','계획고'):
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100, anchor="center")  # 기본 폭 지정
+
+        # 가로 스크롤바 추가
+        xscroll = tk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(xscrollcommand=xscroll.set)
+
+        # 배치
+        self.tree.pack(side="top", fill="both", expand=True)
+        xscroll.pack(side="bottom", fill="x")
+
+        # Entry widgets + Label
+        frame_post_number = tk.Frame(self)
+        tk.Label(frame_post_number, text="전주번호").pack(side="left")
+        self.entry_post_number = tk.Entry(frame_post_number)
+        self.entry_post_number.pack(side="left")
+        frame_post_number.pack()
+
+        frame_pos = tk.Frame(self)
+        tk.Label(frame_pos, text="측점").pack(side="left")
+        self.entry_pos = tk.Entry(frame_pos)
+        self.entry_pos.pack(side="left")
+        frame_pos.pack()
+
+        frame_gauge = tk.Frame(self)
+        tk.Label(frame_gauge, text="건식게이지").pack(side="left")
+        self.entry_gauge = tk.Entry(frame_gauge)
+        self.entry_gauge.pack(side="left")
+        frame_gauge.pack()
+
+        frame_structure = tk.Frame(self)
+        tk.Label(frame_structure, text="구조물").pack(side="left")
+        self.entry_structure = tk.Entry(frame_structure)
+        self.entry_structure.pack(side="left")
+        frame_structure.pack()
+
+        frame_section = tk.Frame(self)
+        tk.Label(frame_section, text="구간").pack(side="left")
+        self.entry_section = tk.Entry(frame_section)
+        self.entry_section.pack(side="left")
+        frame_section.pack()
+
+        frame_base_type = tk.Frame(self)
+        tk.Label(frame_base_type, text="기본 타입").pack(side="left")
+        self.entry_base_type = tk.Entry(frame_base_type)
+        self.entry_base_type.pack(side="left")
+        frame_base_type.pack()
+
+        for e in (self.entry_post_number, self.entry_pos, self.entry_gauge,
+                  self.entry_structure, self.entry_section, self.entry_base_type):
+            e.pack()
+
+        # 버튼
+        tk.Button(self, text="선택 불러오기", command=self.load_selected).pack()
+        tk.Button(self, text="수정 저장", command=self.save_edit).pack()
+
+    def refresh_tree(self):
+        if not self.runner.poledata:
             return
-        runner.log(f"현재 모드: 일반모드")
-        runner.log(f"설계속도={runner.designspeed}km/h")
-    except ValueError:
-        runner.log("⚠️ 숫자를 입력하세요")
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        for pole in self.runner.poledata:
+            self.tree.insert("", "end", values=(pole.post_number, pole.pos, pole.span, pole.gauge, pole.structure, pole.section, pole.base_type , pole.radius,pole.pitch ,pole.cant, pole.z))
+    def load_selected(self):
+        selected = self.tree.selection()
+        if selected:
+            item = self.tree.item(selected[0])
+            post_number, pos, span, gauge, structure, section, base_type, radius, pitch, cant ,z = item["values"]
+            self.original_pos = pos
+            self.entry_post_number.delete(0, tk.END)
+            self.entry_post_number.insert(0, post_number)
+            self.entry_pos.delete(0, tk.END)
+            self.entry_pos.insert(0, pos)
+            self.entry_gauge.delete(0, tk.END)
+            self.entry_gauge.insert(0, gauge)
+            self.entry_structure.delete(0, tk.END)
+            self.entry_structure.insert(0, structure)
+            self.entry_section.delete(0, tk.END)
+            self.entry_section.insert(0, section)
+            self.entry_base_type.delete(0, tk.END)
+            self.entry_base_type.insert(0, base_type)
 
-def clear_log(log_box):
-    log_box.delete("1.0", tk.END)  # 텍스트 전체 삭제
 
-def main():
-    root = tk.Tk()
-    root.title("AutoPOLE")
+    def save_edit(self):
+        new_post_number = self.entry_post_number.get()
+        new_pos = int(self.entry_pos.get())
+        new_gauge = float(self.entry_gauge.get())
+        new_structure = self.entry_structure.get()
+        new_section = self.entry_section.get()
+        new_base_type = self.entry_base_type.get()
 
-    log_box = tk.Text(root, height=15, width=60)
-    log_box.pack()
+        for pole in self.runner.poledata:
+            if pole.pos == self.original_pos:
+                pole.post_number = new_post_number
+                pole.pos = new_pos
+                pole.gauge = new_gauge
+                pole.structure = new_structure
+                pole.section = new_section
+                pole.base_type = new_base_type
+                # radius, cant, pitch, z, span, next_pos 등은 자동 재계산 예정
+        self.refresh_tree()
 
-    # 설계속도 입력
-    tk.Label(root, text="설계속도").pack()
-    entry_speed_var = tk.IntVar(value=150)
-    entry_speed = tk.Entry(root, width=20, textvariable=entry_speed_var)
-    entry_speed.pack()
 
-    # 커스텀 모드 체크박스
-    is_custom_mode = tk.BooleanVar(value=False)
-    entry_iscustommode = tk.Checkbutton(root, width=20, text="커스텀 모드", variable=is_custom_mode)
-    entry_iscustommode.pack()
-
-    # 도면작성 모드 체크박스
-    is_create_dxf = tk.BooleanVar(value=False)
-    entry_is_create_dxf = tk.Checkbutton(root, width=20, text="도면 작성", variable=is_create_dxf)
-    entry_is_create_dxf.pack()
-    runner = AutoPole(log_box)
-
-    # 버튼들
-    tk.Button(root, text="실행",
-              command=lambda: (update_inputs(runner, entry_speed_var, is_custom_mode, is_create_dxf), runner.run())
-              ).pack()
-    tk.Button(root, text="로그 클리어",
-              command=lambda: clear_log(log_box)
-              ).pack()
-    tk.Button(root, text="종료", command=root.destroy).pack()
-    root.mainloop()
+    def open_equipment_editor(self):
+        top = tk.Toplevel(self)
+        top.title("장비 편집")
+        tk.Label(top, text="mast, brackets, equipments 편집 예정").pack()
 
 # 실행
 if __name__ == "__main__":
-    main()
+
+    app = AutoPoleApp()
+    app.mainloop()
