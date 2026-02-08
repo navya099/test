@@ -11,12 +11,9 @@ from tkinter import filedialog
 import math
 from enum import Enum
 
-from pymupdf.mupdf import fz_pwg_options
-
 '''
 ver 2026.02.08
-0319버전에서 일부 개량진행
-도면 관련내용 완전제거
+클래스화리팩토링 준공
 '''
 
 #전역변수
@@ -320,59 +317,29 @@ class BVECSV:
         전선 구문 생성 메서드
         """
         self.lines = []  # 코드 실행전 초기화
-        self.lines.append(',;전차선구문\n')
-        data = self.poledata
-        wiredata = self.wiredata
-        for i in range(len(data.poles) - 1):
+        for pole, wire in zip(self.poledata, self.wiredata):
             try:
-                pos = data.poles[i].pos
-                post_number = data.poles[i].post_number
-                current_airjoint = data.poles[i].current_airjoint
-                current_structure = data.poles[i].current_structure
-                current_curve = data.poles[i].current_curve
-                contact_index = wiredata.wires[i].contactwire.index
-                af_index = wiredata.wires[i].afwire.index
-                af_x = wiredata.wires[i].afwire.positionx
-                af_y = wiredata.wires[i].afwire.positiony
-                af_yaw = wiredata.wires[i].afwire.yaw
-                af_pitch = wiredata.wires[i].afwire.pitch
-                af_name = wiredata.wires[i].afwire.name.upper()
-
-                fpw_index = wiredata.wires[i].fpwwire.index
-                fpw_x = wiredata.wires[i].fpwwire.positionx
-                fpw_y = wiredata.wires[i].fpwwire.positiony
-                fpw_yaw = wiredata.wires[i].fpwwire.yaw
-                fpw_pitch = wiredata.wires[i].fpwwire.pitch
-                fpw_name = wiredata.wires[i].fpwwire.name.upper()
-
-                stagger = wiredata.wires[i].contactwire.stagger
-                contact_yaw = wiredata.wires[i].contactwire.yaw
-                contact_name = wiredata.wires[i].contactwire.name
-                contact_pitch = wiredata.wires[i].contactwire.pitch
+                pos = pole.pos
+                post_number = pole.post_number
+                section = pole.section
+                structure = pole.structure
+                curve = '직선' if pole.radius == 0.0 else '곡선'
+                section_label = section if section else '일반개소'
 
                 # 구문 작성
                 self.lines.append(f',;{post_number}\n')
-                self.lines.append(f',;-----{current_airjoint}({current_structure})({current_curve})-----\n')
-                self.lines.append(f'{pos},.freeobj 0;'
-                                  f'{contact_index};{stagger};0;{contact_yaw};{contact_pitch};,;{contact_name}\n\n')
-                self.lines.append(f'{pos},.freeobj 0;{af_index};{af_x};{af_y};{af_yaw};{af_pitch};,;{af_name}\n\n')
-                self.lines.append(f'{pos},.freeobj 0;'
-                                  f'{fpw_index};{fpw_x};{fpw_y};{fpw_yaw};{fpw_pitch};,;{fpw_name}\n\n')
+                self.lines.append(f',;-----{section_label}({structure})({curve})-----\n')
 
-                if len(data.poles[i].Brackets) > 1:
-                    self.lines.append(f',;상선\n')
-                    self.lines.append(f'{pos},.freeobj 1;'
-                                      f'{contact_index};{stagger};0;{contact_yaw};{contact_pitch};,;{contact_name}\n\n')
-                    self.lines.append(f'{pos},.freeobj 1;{af_index};{-af_x};{af_y};{af_yaw};{af_pitch};,;{af_name}\n\n')
-                    self.lines.append(f'{pos},.freeobj 1;'
-                                      f'{fpw_index};{-fpw_x};{fpw_y};{fpw_yaw};{fpw_pitch};,;{fpw_name}\n\n')
+                for wr in wire.wires:
+                    self.lines.append(f'{pos},.freeobj 0;{wr.index};{wr.offset[0]};{wr.offset[1]};{wr.adjusted_angle};{wr.topdown_angle};0;,;{wr.label}\n')
 
             except AttributeError as e:
-                logger.warning(f"Wire 데이터 누락: index {i}, 오류: {e}")
+                print(f"Wire 데이터 누락: index {pos}, 오류: {e}")
             except Exception as e:
-                logger.error(f"예상치 못한 오류: index {i}, 오류: {e}")
+                print(f"예상치 못한 오류: index {pos}, 오류: {e}")
 
-        logger.info(f'create_wire_csv실행이 완료됐습니다.')
+        print(f'create_wire_csv실행이 완료됐습니다.')
+        return self.lines
 
 def distribute_pole_spacing_flexible(start_km, end_km, spans=(45, 50, 55, 60)):
     """
@@ -1402,8 +1369,9 @@ class AutoPole:
         wire_path = asksaveasfilename(title='전차선 데이터 저장')
         polesaver = BVECSV(poledata, wire_data)
         pole_text = polesaver.create_pole_csv()
-        #polesaver.create_wire_csv()
+        wire_text = polesaver.create_wire_csv()
         write_to_file(pole_path, pole_text)
+        write_to_file(wire_path, wire_text)
 
         self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
         if self.is_create_dxf:
