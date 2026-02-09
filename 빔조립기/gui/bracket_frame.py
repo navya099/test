@@ -10,16 +10,17 @@ from model.tkraildata import TKRailData
 
 
 class BracketFrame(ttk.LabelFrame):
-    def __init__(self, master ,event):
+    def __init__(self, master ,event, lib_manager):
         super().__init__(master, text="선로 정보")
         self.bracket_vars = None
         self.master = master  # 명시적으로 잡아두는 게 좋음
         self.event = event
-        self.lib_manager = LibraryManager()
-        self.lib_manager.scan_library()
+        self.lib_manager = lib_manager
         self.build_bracket_frame()
 
         self.event.bind("basic.changed", self._rebuild_brackets)
+        # 🔹 초기 rails 업데이트 이벤트
+        self._on_rail_changed()
 
     def open_bracket_config(self, rail: TKRailData):
         def refresh_preview():

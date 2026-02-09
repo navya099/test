@@ -7,10 +7,12 @@ from adapter.tkinstalladpater import TkInstallAdapter
 from bve.bveserializer import BVETextBuilder
 from controller.event_controller import EventController
 from controller.main_controller import MainProcess
+from library import LibraryManager
 from preview.preview_sevice import PreviewService
 from serializer.poleinstallserializer import PoleInstallSerializer
 from .basic_frame import BasicInfoFrame
 from .bracket_frame import BracketFrame
+from .equipment_window import EquipMentWindow
 from .preview import PreviewViewer
 from .structure_frame import StructureFrame
 
@@ -24,7 +26,8 @@ class PoleInstallGUI(tk.Tk):
         self.installadaptor = TkInstallAdapter()
         self.mp = MainProcess()
         self.event = EventController()
-
+        self.lib_manager = LibraryManager()
+        self.lib_manager.scan_library()
         # 상태 변수들
         self.station = tk.DoubleVar(value=87943.0)
         self.pole_number = tk.StringVar(value="47-27")
@@ -46,7 +49,9 @@ class PoleInstallGUI(tk.Tk):
         self.basic_frame.pack(fill="x", padx=10, pady=5)
         self.structure_frame = StructureFrame(self, self.event)
         self.structure_frame.pack(fill="x", padx=10, pady=5)
-        self.bracket_frame = BracketFrame(self, self.event)
+        self.eq_frame = EquipMentWindow(self, self.event, self.lib_manager)
+        self.eq_frame.pack(fill="x", padx=10, pady=5)
+        self.bracket_frame = BracketFrame(self, self.event, self.lib_manager)
         self.bracket_frame.pack(fill="x", padx=10, pady=5)
 
         # 버튼 생성
@@ -58,18 +63,13 @@ class PoleInstallGUI(tk.Tk):
         result = PreviewService.build_from_install(self.result)
         for obj in result.objects:
             self.viewer.add_object(obj)
-
+        if result.missing:
+            messagebox.showwarning(
+            '일부 파일 누락',
+            '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(result.missing)
+        )
         self.viewer.draw()
         self.show_bvesyntac()
-
-    # ✅ 딜레이 방식: 값 변경 시 바로 실행하지 않고 일정 시간 후 실행
-    def _schedule_preview(self, *args):
-        # 기존 예약된 실행이 있으면 취소
-        if self._preview_after_id is not None:
-            self.after_cancel(self._preview_after_id)
-
-        # 300ms 후에 plot_preview 실행 예약
-        self._preview_after_id = self.after(50, self.plot_preview)
 
     # =============================
     # 버튼
