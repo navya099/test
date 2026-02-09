@@ -1,8 +1,10 @@
 import pandas as pd
 from controller.library_controller import IndexLibrary
+from model.equipment import EquipmentDTO
 from model.pole_install import PoleInstall
 from resolver.beam_resolver import BeamResolver
 from resolver.bracket_resolver import BracketResolver
+from resolver.equip_resolver import EquipmentResolver
 from resolver.pole_resolver import PoleResolver
 
 SHEET_ID = "1z0aUcuZCxOQp2St3icbQMbOkrSPfJK_8iZ2JKFDbW8c"
@@ -32,5 +34,6 @@ class MainProcess:
         BracketResolver.resolve(all_brackets, idxlib)
         PoleResolver.resolve(dto.poles, idxlib, rail_map)
         BeamResolver.resolve(dto.beams, idxlib, rail_map, pole_map)
+        EquipmentResolver.resolve(dto.equips, idxlib, rail_map, pole_map)
         return dto
 

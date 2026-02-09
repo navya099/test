@@ -87,6 +87,21 @@ class PreviewService:
                     category=PreviewCategory.TRACK
                 )
             )
+
+        #5 장비들
+        for equip in install.equips:
+            items.append(
+                PreviewItem(
+                    path=locator.find(equip.name),
+                    transform=Transform(
+                        x=equip.xoffset,
+                        z=equip.yoffset,
+                        rotation=equip.rotation,
+                        pivot=equip.base_rail.coord
+                    ),
+                    category=PreviewCategory.FEEDER
+                )
+            )
         objects = PreviewAssembler.load_items(items)
 
         return PreviewBuildResult(objects=objects, missing=missing)

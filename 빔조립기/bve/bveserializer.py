@@ -7,12 +7,6 @@ class BVETextBuilder:
 
         text += f',;{dto.pole_number}\n'
         text += f'{dto.station}\n'
-        text += ',;급전선지지설비\n'
-
-        # 고정 오브젝트
-        text += '.freeobj 0;1119;0;,;전주대용물1선\n'
-        text += '.freeobj 1;1119;0;,;전주대용물1선\n'
-
         # ----------------
         # 기둥
         # ----------------
@@ -56,6 +50,12 @@ class BVETextBuilder:
                     f'.freeobj {br.rail_no};{br.index};'
                     f'{br.xoffset};{br.yoffset};{br.rotation};,;{br.type}\n'
                 )
+        #장비
+        text += ',;기타설비\n'
+        for eq in dto.equips:
+            text += (
+                f'.freeobj {eq.base_rail_index};{eq.objindex};{eq.xoffset};{eq.yoffset};{eq.rotation};,;{eq.name}\n'
+            )
 
         return text
 
