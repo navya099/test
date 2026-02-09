@@ -1,5 +1,6 @@
 from Electric.Overhead.Pole.poletype import PoleType
 from adapter.tk_beam_adapter import TkBeamAdapter
+from adapter.tk_equipment_adapter import TkEquipmentAdapter
 from adapter.tk_pole_adapter import TkPoleAdapter
 from adapter.tk_raildata_adapter import TKRaildataAdapter
 from model.pole_install import PoleInstall
@@ -19,6 +20,7 @@ class TkInstallAdapter:
         beams = TkBeamAdapter.collect(
             master.structure_frame.beam_vars  # beam도 rail 참조하면 동일
         )
+        equips = TkEquipmentAdapter.collect(master.eq_frame.equips)
 
         return PoleInstall(
             station=master.station.get(),
@@ -29,6 +31,7 @@ class TkInstallAdapter:
             rails=rails,
             poles=poles,
             beams=beams,
+            equips=equips
         )
 
 
@@ -41,8 +44,10 @@ class TkInstallAdapter:
         master.bracket_frame.rebuild_from_install(install.rails)
 
         sf = master.structure_frame
+        ef = master.eq_frame
 
         sf.rebuild_from_install(install.beams, install.poles)
+        ef.load_from_dto(install.equips)
         master.isloading = False
         # 🔥 로드 완료 후 1회 sync
         master.event.emit("rails.updated",

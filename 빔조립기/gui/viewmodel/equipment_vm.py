@@ -8,4 +8,4 @@ class EquipmentVM:
     x_var: tk.DoubleVar
     y_var: tk.DoubleVar
     rotation_var: tk.DoubleVar
-    base_rail_var: tk.IntVar
+    base_rail_index_var: tk.IntVar

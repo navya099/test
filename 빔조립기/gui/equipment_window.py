@@ -33,8 +33,10 @@ class EquipMentWindow(ttk.LabelFrame):
         self.build_equip_frame()
 
     def _on_rails_updated(self, rails):
-        # rails: BracketFrame.bracket_vars
         self.rails = rails
+        if self.equips:
+            # UI 갱신만
+            self.build_equip_frame()
 
     def build_equip_frame(self):
         # 기존 UI 제거
@@ -48,16 +50,10 @@ class EquipMentWindow(ttk.LabelFrame):
             )
 
         for i, equip in enumerate(self.equips):
+
             row = i + 1
 
-            # 기존 값 그대로 유지
-            equip.name_var = tk.StringVar(value=equip.name_var.get())
-            equip.x_var = tk.DoubleVar(value=equip.x_var.get())
-            equip.y_var = tk.DoubleVar(value=equip.y_var.get())
-            equip.rotation_var = tk.DoubleVar(value=equip.rotation_var.get())
-            equip.base_rail_var = tk.IntVar(value=equip.base_rail_var.get())
-
-            # 🟢 장비명 Combobox
+            # 🔹 장비명 Combobox
             name_cb = ttk.Combobox(
                 self.equip_frame,
                 textvariable=equip.name_var,
@@ -67,12 +63,13 @@ class EquipMentWindow(ttk.LabelFrame):
             )
             name_cb.grid(row=row, column=0)
 
+            # 위치/회전 Entry
             ttk.Entry(self.equip_frame, textvariable=equip.x_var, width=6).grid(row=row, column=1)
             ttk.Entry(self.equip_frame, textvariable=equip.y_var, width=6).grid(row=row, column=2)
             ttk.Entry(self.equip_frame, textvariable=equip.rotation_var, width=6).grid(row=row, column=3)
 
             # 🔹 레일 콤보박스
-            if hasattr(self, "rails") and self.rails:
+            if self.rails:
                 rail_labels = [f"{r.name_var.get()} ({r.index_var.get()})" for r in self.rails]
                 rail_cb = ttk.Combobox(
                     self.equip_frame,
@@ -80,23 +77,30 @@ class EquipMentWindow(ttk.LabelFrame):
                     width=18,
                     state="readonly"
                 )
-                # 선택된 레일 설정
+
+                # 현재 VM 값과 일치하는 index 찾기
                 selected_idx = next(
-                    (idx for idx, r in enumerate(self.rails) if r.index_var.get() == equip.base_rail_var.get()),
+                    (idx for idx, r in enumerate(self.rails) if r.index_var.get() == equip.base_rail_index_var.get()),
                     0
                 )
                 rail_cb.current(selected_idx)
 
+                # VM에도 확실히 초기 값 설정
+                equip.base_rail_index_var.set(self.rails[selected_idx].index_var.get())
+
+                # 콤보박스 선택 시 VM 업데이트
                 def on_rail_selected(event, eq=equip, cb=rail_cb):
                     idx = cb.current()
                     if idx >= 0:
-                        eq.base_rail_var.set(self.rails[idx].index_var.get())
+                        new_val = self.rails[idx].index_var.get()
+                        eq.base_rail_index_var.set(new_val)
+                        print(f"[DEBUG] {eq.name_var.get()} rail index updated to {new_val}")
 
                 rail_cb.bind("<<ComboboxSelected>>", on_rail_selected)
                 rail_cb.grid(row=row, column=4)
 
+            # 편집 버튼
             ttk.Button(self.equip_frame, text="편집", command=lambda e=equip: self.edit_equip(e)).grid(row=row, column=5)
-
 
     def add_equip(self):
         # 새 장비 DTO 생성
@@ -105,7 +109,7 @@ class EquipMentWindow(ttk.LabelFrame):
             x_var=tk.DoubleVar(value=0),
             y_var=tk.DoubleVar(value=0),
             rotation_var=tk.DoubleVar(value=0),
-            base_rail_var=tk.IntVar(value=0))
+            base_rail_index_var=tk.IntVar(value=0))
         self.equips.append(new_equip)
         self.build_equip_frame()
         self.event.emit("equips.updated", self.equips)
@@ -139,10 +143,10 @@ class EquipMentWindow(ttk.LabelFrame):
         for dto in dto_list:
             vm = EquipmentVM(
                 name_var=tk.StringVar(value=dto.get("name", "장비1")),
-                x_var=tk.DoubleVar(value=dto.get("x", 0.0)),
-                y_var=tk.DoubleVar(value=dto.get("y", 0.0)),
+                x_var=tk.DoubleVar(value=dto.get("xoffset", 0.0)),
+                y_var=tk.DoubleVar(value=dto.get("yoffset", 0.0)),
                 rotation_var=tk.DoubleVar(value=dto.get("rotation", 0.0)),
-                base_rail_var=tk.IntVar(value=dto.get("base_rail", 0)),
+                base_rail_index_var=tk.IntVar(value=dto.get("base_rail_index", 0)),
             )
             self.equips.append(vm)
 
