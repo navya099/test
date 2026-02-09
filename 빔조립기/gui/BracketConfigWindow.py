@@ -10,7 +10,7 @@ from model.tkraildata import TKRailData
 class BracketConfigWindow(tk.Toplevel):
     def __init__(self, master, rail: TKRailData, libmanager: LibraryManager, on_close=None, on_change=None):
         super().__init__(master)
-
+        self._preview_after = None
         self._bracket_cache = {}  # ✅ 반드시 먼저
         self._isloading = False  # ✅ 이것도 같이
         self.title(f"브래킷 설정 - {rail.name}")
@@ -85,10 +85,15 @@ class BracketConfigWindow(tk.Toplevel):
 
         def update_brackets(*_):
             if self._isloading:
-                return  # 🚫 로드 중이면 아무것도 하지 않음
+                return
+
             self._sync_to_raildata()
+
             if self.on_change:
-                self.on_change()  # ✅ Preview 갱신
+                if self._preview_after:
+                    self.after_cancel(self._preview_after)
+
+                self._preview_after = self.after(200, self.on_change)
 
         bracket_combo = ttk.Combobox(
             self.table,
