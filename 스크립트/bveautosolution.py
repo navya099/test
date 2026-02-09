@@ -12,8 +12,8 @@ import random
 from 기울기표이미지생성기 import process_bve_profile, create_pitch_post_txt, create_pitch_index_txt
 from 랜덤신호위치생성 import save_signal_data
 from 랜덤전주위치생성 import distribute_pole_spacing_flexible, load_curve_data, load_pitch_data, \
-    load_coordinates, define_airjoint_section, generate_postnumbers, process_pole, process_to_WIRE, write_to_file, \
-    load_dataset
+    load_coordinates, define_airjoint_section, generate_postnumbers, write_to_file, \
+    load_dataset, PoleProcessor, WireProcessor, DatasetGetter, BVECSV
 from 자동통신구문생성 import create_transmisson_data
 
 from file_io_utils import copy_files
@@ -28,6 +28,7 @@ def get_float_input(prompt):
 
 class SolutionRunner:
     def __init__(self, log_widget=None, designspeed=150, linecount=1):
+        self.dataprocessor = None
         self.iscustommode = False
         self.offset = None
         self.brokenchain = None
@@ -37,7 +38,8 @@ class SolutionRunner:
         self.structure_list = None
         self.linecount = linecount
         self.log_widget = log_widget
-
+        self.pole_processor = PoleProcessor()
+        self.wire_procseeor = None
         self.designspeed = designspeed
         self.railtype_map = {120: '도시철도', 150: '일반철도', 250: '준고속철도', 350: '고속철도'}
         self.alignment_type = ''
@@ -139,20 +141,25 @@ class SolutionRunner:
             end_km = last_block // 1000
             spans, pole_positions = distribute_pole_spacing_flexible(start_km, end_km)
 
-            airjoint_list = define_airjoint_section(pole_positions)
-
+            airjoint_list = define_airjoint_section(pole_positions ,airjoint_span=1600)
+            polyline_with_sta = [(i * 25, *values) for i, values in enumerate(self.bve_coord)]
             # 전주번호 추가
             post_number_lst = generate_postnumbers(pole_positions)
             # 데이터셋 로드,
             dataset = load_dataset(self.designspeed, self.iscustommode)
+            self.dataprocessor = DatasetGetter(dataset)
             # 데이터 저장
             #전주파일
             polefile = os.path.join(self.path, '전주.txt')
             wirefile = os.path.join(self.path, '전차선.txt')
-            poledata = process_pole(pole_positions, self.structure_list, self.curve_info, self.pitch_info, dataset, airjoint_list, self.bve_coord)
-            wire_data = process_to_WIRE(dataset, pole_positions, spans, self.structure_list,self.curve_info, self.pitch_info, self.bve_coord, airjoint_list)
-            write_to_file(polefile, poledata)
-            write_to_file(wirefile, wire_data)
+            poledata = self.pole_processor.process_pole(pole_positions, self.structure_list, self.curve_info, self.pitch_info, dataset, airjoint_list, polyline_with_sta)
+            self.wire_procseeor = WireProcessor(self.dataprocessor, polyline_with_sta, poledata)
+            wire_data = self.wire_procseeor.process_to_wire()
+            self.polesaver = BVECSV(poledata, wire_data)
+            pole_text = self.polesaver.create_pole_csv()
+            wire_text = self.polesaver.create_wire_csv()
+            write_to_file(polefile, pole_text)
+            write_to_file(wirefile, wire_text)
             # 최종 출력
             self.log(f"생성된 전주 개수: {len(pole_positions)}, 에어조인트 구간 갯수: {len(airjoint_list)}")
             self.log("전주와 전차선 생성이 완료됐습니다.")
