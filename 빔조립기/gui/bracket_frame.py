@@ -128,13 +128,59 @@ class BracketFrame(ttk.LabelFrame):
     def _on_rail_changed(self, *_):
         self.event.emit("rails.updated", self.bracket_vars)
 
-
     def rebuild_from_install(self, rails):
+        """DTO 기준으로 UI를 강제로 맞추고 값 적용"""
         self.master.isloading = True
 
-        self._rebuild_brackets()
-        self._apply_rail_values(rails)
+        # 1️⃣ 기존 UI 모두 제거
+        for w in self.bracket_frame.winfo_children():
+            w.destroy()
+        self.bracket_vars.clear()
+
+        # 2️⃣ DTO rail 개수만큼 UI 생성
+        headers = ["NO", "선로명", "선로 인덱스", "선로 좌표 X", "선로 좌표 Y"]
+        for col, text in enumerate(headers):
+            ttk.Label(self.bracket_frame, text=text, font=("맑은 고딕", 9, "bold")).grid(row=0, column=col, padx=5, pady=2,
+                                                                                     sticky="w")
+
+        import string
+        for i, rail_dict in enumerate(rails):
+            row = i + 1
+
+            ttk.Label(self.bracket_frame, text=f"선로 {i + 1}").grid(row=row, column=0, padx=5, sticky="w")
+
+            # 기본 rail 이름
+            rail_name_var = tk.StringVar(value=rail_dict["name"])
+            rail_idx_var = tk.IntVar(value=rail_dict["index"])
+            rail_coordx_var = tk.DoubleVar(value=rail_dict["coord"].x)
+            rail_coordy_var = tk.DoubleVar(value=rail_dict["coord"].y)
+            rail_coordz_var = tk.DoubleVar(value=rail_dict["coord"].z)
+
+            ttk.Entry(self.bracket_frame, textvariable=rail_name_var, width=6).grid(row=row, column=1)
+            ttk.Entry(self.bracket_frame, textvariable=rail_idx_var, width=6).grid(row=row, column=2)
+            tk.Entry(self.bracket_frame, textvariable=rail_coordx_var, width=6).grid(row=row, column=3)
+            tk.Entry(self.bracket_frame, textvariable=rail_coordy_var, width=6).grid(row=row, column=4)
+
+            rail_ui = TKRailData(
+                index_var=rail_idx_var,
+                name_var=rail_name_var,
+                brackets=[TKBracketAdapter.from_dict(br) for br in rail_dict.get("brackets", [])],
+                coordx=rail_coordx_var,
+                coordy=rail_coordy_var,
+                coordz=rail_coordz_var,
+            )
+
+            ttk.Button(self.bracket_frame, text="브래킷 설정", command=lambda r=rail_ui: self.open_bracket_config(r)).grid(
+                row=row, column=5, padx=5)
+
+            self.bracket_vars.append(rail_ui)
+
+            # rail 변경 이벤트
+            rail_name_var.trace_add("write", self._on_rail_changed)
+            rail_idx_var.trace_add("write", self._on_rail_changed)
+
         self.master.isloading = False
+
     def _apply_rail_values(self, rails):
         for rail_ui, rail_dict in zip(self.bracket_vars, rails):
             rail_ui.index_var.set(rail_dict["index"])
