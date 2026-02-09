@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import scrolledtext
-
+import time
 from adapter.tk_raildata_adapter import TKRaildataAdapter
 from adapter.tkinstalladpater import TkInstallAdapter
 from bve.bveserializer import BVETextBuilder
@@ -21,7 +21,8 @@ class PoleInstallGUI(tk.Tk):
         self.title("전주 설치 입력기")
         self.geometry("900x650")
         self.isloading = False
-
+        self.installadaptor = TkInstallAdapter()
+        self.mp = MainProcess()
         self.event = EventController()
 
         # 상태 변수들
@@ -40,10 +41,6 @@ class PoleInstallGUI(tk.Tk):
         # 딜레이 타이머 ID 저장용
         self._preview_after_id = None
 
-        # 변수 변경 시 자동 업데이트 (딜레이 방식)
-        for var in [self.left_x, self.right_x]:
-            var.trace_add("write", self._schedule_preview)
-
         # 프레임 생성
         self.basic_frame = BasicInfoFrame(self, self.event)
         self.basic_frame.pack(fill="x", padx=10, pady=5)
@@ -57,21 +54,14 @@ class PoleInstallGUI(tk.Tk):
 
     def plot_preview(self):
         self._generate()
-
-        # 기존 객체 초기화 후 다시 추가
         self.viewer.objects.clear()
         result = PreviewService.build_from_install(self.result)
         for obj in result.objects:
             self.viewer.add_object(obj)
 
-        if result.missing:
-            messagebox.showwarning(
-                '일부 파일 누락',
-                '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(result.missing)
-            )
-
         self.viewer.draw()
         self.show_bvesyntac()
+
     # ✅ 딜레이 방식: 값 변경 시 바로 실행하지 않고 일정 시간 후 실행
     def _schedule_preview(self, *args):
         # 기존 예약된 실행이 있으면 취소
@@ -79,7 +69,7 @@ class PoleInstallGUI(tk.Tk):
             self.after_cancel(self._preview_after_id)
 
         # 300ms 후에 plot_preview 실행 예약
-        self._preview_after_id = self.after(300, self.plot_preview)
+        self._preview_after_id = self.after(50, self.plot_preview)
 
     # =============================
     # 버튼
@@ -94,9 +84,8 @@ class PoleInstallGUI(tk.Tk):
         ttk.Button(frame, text="저장", command=self.save).pack(side="right", padx=10)
 
     def _generate(self):
-        dto = TkInstallAdapter.collect(self)
-        mp = MainProcess()
-        self.result = mp.run(dto)
+        self.result = self.installadaptor.collect(self)
+        self.mp.run(self.result)
 
     def destyoy(self):
         self.destroy()
@@ -131,7 +120,7 @@ class PoleInstallGUI(tk.Tk):
             messagebox.showwarning('에러', '아직 개체가 생성되지 않았습니다.')
 
     def save(self):
-        install = TkInstallAdapter.collect(self)
+        install = self.installadaptor.collect(self)
         path = r'c:/temp/saved_beam_assembler_data.json' #임시 경로 및 파일명
         PoleInstallSerializer.save(install, path)
         messagebox.showinfo('데이터 저장', '저장이 완료됐습니다.')
@@ -147,7 +136,7 @@ class PoleInstallGUI(tk.Tk):
                 if not self.show_warnings(error_result.warnings):
                     return
 
-            TkInstallAdapter.apply(self, install)
+            self.installadaptor.apply(self, install)
             messagebox.showinfo('데이터 로드', '로드가 완료됐습니다.')
         except Exception as e:
             messagebox.showerror('에러', f'로드에 실패했습니다. {e}')

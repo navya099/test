@@ -7,8 +7,7 @@ from model.tkraildata import TKRailData
 
 
 class TkInstallAdapter:
-    @staticmethod
-    def collect(master) -> PoleInstall:
+    def collect(self, master) -> PoleInstall:
         rails = TKRaildataAdapter.collect(
             master.bracket_frame.bracket_vars
         )
@@ -32,8 +31,8 @@ class TkInstallAdapter:
             beams=beams,
         )
 
-    @staticmethod
-    def apply(master, install: PoleInstall):
+
+    def apply(self, master, install: PoleInstall):
         master.isloading = True
         master.station.set(install.station)
         master.pole_number.set(install.pole_number)
