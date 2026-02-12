@@ -13,6 +13,7 @@ from enum import Enum
 from tkinter import ttk, messagebox
 import copy
 from matplotlib import pyplot as plt
+from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 '''
@@ -72,6 +73,7 @@ class PoleDATA:
     brackets: list[BracketDATA] = field(default_factory=list)
     equipments: list[EquipmentDATA] = field(default_factory=list)
     base_type: str = ''
+    coord: tuple[float, float] = (0, 0)
 
 @dataclass
 class AirjointDataContext:
@@ -739,11 +741,14 @@ class PoleProcessor:
                 next_z = get_elevation_pos(next_pos, polyline_with_sta)  # 다음 측점의 z값
                 current_airjoint = check_isairjoint(pos, airjoint_list)
                 post_number = find_post_number(post_number_lst, pos)
+                coord, _, v1 = interpolate_cached(polyline_with_sta, pos)
 
                 i_type_index, o_type_index = dataprocessor.get_bracket_type(current_structure, current_curve)
 
                 gauge = dataprocessor.get_pole_gauge(current_structure)
                 next_gauge = dataprocessor.get_pole_gauge(next_structure)
+                pos_coord_with_offset = calculate_offset_point(v1, coord, gauge)
+
                 # 홀수/짝수에 맞는 전주 데이터 생성
                 current_type = 'I' if i % 2 == 1 else 'O'
                 pole_type = i_type_index if i % 2 == 1 else o_type_index
@@ -768,7 +773,9 @@ class PoleProcessor:
                     equipments=[],
                     z=z,
                     next_z=next_z,
-                    base_type=current_type)
+                    base_type=current_type,
+                    coord=pos_coord_with_offset
+                )
 
                 if not current_airjoint is None:
                     airjoint_processor.process_airjoint(pole, polyline_with_sta, dataprocessor)
@@ -1432,32 +1439,60 @@ class AutoPoleApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("AutoPOLE")
+        self.events = EventController()
 
         # 로그 박스
-        self.log_box = tk.Text(self, height=15, width=60)
-        self.log_box.pack()
-        self.runner = AutoPole(self.log_box)  # log_box는 클래스 내부에서 관리
+        self.log_box = tk.Text(self, height=10, width=80)
+        self.log_box.pack(side="bottom", fill="x")
+        self.runner = AutoPole(self.log_box)
 
         # 입력 영역
+        input_frame = tk.Frame(self)
+        input_frame.pack(side="top", fill="x")
+        tk.Label(input_frame, text="설계속도").pack(side="left")
         self.entry_speed_var = tk.IntVar(value=150)
-        tk.Label(self, text="설계속도").pack()
-        self.entry_speed = tk.Entry(self, width=20, textvariable=self.entry_speed_var)
-        self.entry_speed.pack()
+        self.entry_speed = tk.Entry(input_frame, width=10, textvariable=self.entry_speed_var)
+        self.entry_speed.pack(side="left")
 
         self.is_custom_mode = tk.BooleanVar(value=False)
-        tk.Checkbutton(self, text="커스텀 모드", variable=self.is_custom_mode).pack()
-
+        tk.Checkbutton(input_frame, text="커스텀 모드", variable=self.is_custom_mode).pack(side="left")
         self.is_create_dxf = tk.BooleanVar(value=False)
-        tk.Checkbutton(self, text="도면 작성", variable=self.is_create_dxf).pack()
+        tk.Checkbutton(input_frame, text="도면 작성", variable=self.is_create_dxf).pack(side="left")
 
         # 버튼 영역
-        tk.Button(self, text="실행", command=self.run_and_open_editor).pack()
-        tk.Button(self, text="로그 클리어", command=self.clear_log).pack()
-        tk.Button(self, text="저장", command=self.save).pack()
-        tk.Button(self, text="종료", command=self.destroy).pack()
+        button_frame = tk.Frame(self)
+        button_frame.pack(side="top", fill="x")
+        tk.Button(button_frame, text="실행", command=self.run_and_open_editor).pack(side="left")
+        tk.Button(button_frame, text="로그 클리어", command=self.clear_log).pack(side="left")
+        tk.Button(button_frame, text="저장", command=self.save).pack(side="left")
+        tk.Button(button_frame, text="종료", command=self.destroy).pack(side="left")
 
-        self.runner = AutoPole(self.log_box)
-        self.editor = AutoPoleEditor(self.runner)
+        # 메인 영역 (좌우 분할)
+        main_frame = tk.PanedWindow(self, orient="horizontal")
+        main_frame.pack(fill="both", expand=True)
+
+        # 좌측: Editor
+        editor_frame = tk.Frame(main_frame)
+        self.editor = AutoPoleEditor(self.runner, self.events, master=editor_frame)
+        self.editor.pack(fill="both", expand=True)   # 추가
+
+        main_frame.add(editor_frame)
+
+        # 우측: Plotter
+        plotter_frame = tk.Frame(main_frame)
+        self.plotter = PlotPoleMap(self.runner, self.events, master=plotter_frame)
+        self.plotter.pack(fill="both", expand=True)  # 추가
+
+        main_frame.add(plotter_frame)
+
+        # 이벤트 바인딩
+        self.events.bind("pole_selected", self.plotter.highlight_pole)
+        self.events.bind("pole_saved", self.refresh_editor)
+
+    def refresh_editor(self):
+        self.editor.refresh_tree()
+        self.plotter.update_plot()
+
 
     def clear_log(self):
         self.log_box.delete("1.0", tk.END)
@@ -1482,6 +1517,8 @@ class AutoPoleApp(tk.Tk):
         self.runner.run()
         self.editor.create_epoles()
         self.editor.refresh_tree()
+        self.plotter.update_plot()
+
 
     def save(self):
         t = self.runner.polesaver.create_pole_csv()
@@ -1490,12 +1527,23 @@ class AutoPoleApp(tk.Tk):
         write_to_file(self.runner.wire_path, t2)
         self.runner.log(f"저장 성공!")
 
-class AutoPoleEditor(tk.Toplevel):
-    def __init__(self, runner):
-        super().__init__()
+# event_controller.py
+class EventController:
+    def __init__(self):
+        self._listeners = {}
+
+    def bind(self, event_name, callback):
+        self._listeners.setdefault(event_name, []).append(callback)
+
+    def emit(self, event_name, *args, **kwargs):
+        for cb in self._listeners.get(event_name, []):
+            cb(*args, **kwargs)
+
+class AutoPoleEditor(tk.Frame):
+    def __init__(self, runner, events=None, master=None):
+        super().__init__(master)
         self.runner = runner
-        self.title("전주 편집기")
-        self.geometry("600x500")
+        self.events = events
         self.editable_poles = []
 
         # Treeview + Scrollbar 프레임
@@ -1572,11 +1620,16 @@ class AutoPoleEditor(tk.Toplevel):
             self.tree.delete(row)
         for pole in self.runner.poledata:
             self.tree.insert("", "end", values=(pole.post_number, pole.pos, pole.span, pole.gauge, pole.structure, pole.section, pole.base_type , pole.radius,pole.pitch ,pole.cant, pole.z))
+
     def load_selected(self):
         selected = self.tree.selection()
         if selected:
+
             item = self.tree.item(selected[0])
             post_number, pos, span, gauge, structure, section, base_type, radius, pitch, cant ,z = item["values"]
+            if self.events:
+                self.events.emit("pole_selected", pos)
+
             self.original_pos = pos
             self.entry_post_number.delete(0, tk.END)
             self.entry_post_number.insert(0, post_number)
@@ -1590,6 +1643,8 @@ class AutoPoleEditor(tk.Toplevel):
             self.entry_section.insert(0, section)
             self.entry_base_type.delete(0, tk.END)
             self.entry_base_type.insert(0, base_type)
+
+
 
     def create_epoles(self):
         # EditablePole 리스트 생성
@@ -1626,6 +1681,9 @@ class AutoPoleEditor(tk.Toplevel):
                     return
             # radius, cant, pitch, z, span, next_pos 등은 자동 재계산 예정
         self.refresh_tree()
+        if self.events:
+            self.events.emit("pole_saved")
+
         self.runner.log(f'전주 편집 성공 {new_pos}')
 
     def open_equipment_editor(self):
@@ -1740,36 +1798,68 @@ class Transaction:
         self._active = False
         print("Transaction aborted.")
 
-class PlotPoleMap(tk.Toplevel):
-    def __init__(self, poles):
-        super().__init__()
-        self.poles = poles
-        self.title("전주 맵")
-        self.geometry("1024x1024")
+class PlotPoleMap(tk.Frame):
+    def __init__(self, runner, events=None, master=None):
+        super().__init__(master)
+        self.runner = runner
+        self.events = events
 
         # Matplotlib Figure/Axes 생성
+        plt.rcParams['font.family'] = 'Malgun Gothic'
+        plt.rcParams['axes.unicode_minus'] = False
 
         self.fig, self.ax = plt.subplots(figsize=(8,8))
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
-        # 초기 플롯
-        self.update_plot()
+        # 툴바 추가
+        toolbar = NavigationToolbar2Tk(self.canvas, self)
+        toolbar.update()
+        toolbar.pack(side="bottom", fill="x")
+
 
     def update_plot(self):
         self.ax.clear()
+        # polyline 좌표 꺼내기
+        sta_list, x_list, y_list, z_list = zip(*self.runner.polyline_with_sta)
+
+        # 선형 그리기 (예: x vs z)
+        self.ax.plot(x_list, y_list, color="gray", label="선형")
 
         # 전주 위치(pos)를 x축에 표시
-        positions = [pole.pos for pole in self.poles]
-        z_values = [pole.z for pole in self.poles]
+        poles = self.runner.poledata
+        x_val = [pole.coord[0] for pole in poles]
+        y_val = [pole.coord[1] for pole in poles]
 
-        self.ax.scatter(positions, z_values, c="blue", marker="o", label="전주")
+        self.ax.scatter(x_val, y_val, c="blue", marker="o", label="전주")
         self.ax.set_title("전주 위치 맵")
         self.ax.set_xlabel("측점 (pos)")
         self.ax.set_ylabel("계획고 (z)")
         self.ax.legend()
 
         self.canvas.draw()
+
+    def highlight_pole(self, pos):
+        self.ax.clear()
+        sta_list, x_list, y_list, z_list = zip(*self.runner.polyline_with_sta)
+        self.ax.plot(x_list, y_list, color="gray", label="선형")
+
+        poles = self.runner.poledata
+        x_val = [pole.coord[0] for pole in poles]
+        y_val = [pole.coord[1] for pole in poles]
+        self.ax.scatter(x_val, y_val, c="blue", marker="o", label="전주")
+
+        # 선택된 전주 강조
+        for pole in poles:
+            if pole.pos == pos:
+                sel_x, sel_y = pole.coord[0], pole.coord[1]
+                self.ax.scatter(sel_x, sel_y, c="red", s=100, label="선택된 전주")
+                self.ax.set_xlim(sel_x - 50, sel_x + 50)
+                self.ax.set_ylim(sel_y - 50, sel_y + 50)
+
+        self.ax.legend()
+        self.canvas.draw()
+
 
 # 실행
 if __name__ == "__main__":
