@@ -10,7 +10,10 @@ import tkinter as tk
 from tkinter import filedialog
 import math
 from enum import Enum
-from tkinter import ttk
+from tkinter import ttk, messagebox
+import copy
+from matplotlib import pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 '''
 ver 2026.02.08
@@ -1342,6 +1345,16 @@ def load_dataset(designspeed, iscustommode):
 
 class AutoPole:
     def __init__(self, log_widget):
+        self.airjoint_list = None
+        self.pitchlist = None
+        self.curvelist = None
+        self.structure_list = None
+        self.polyline_with_sta = None
+        self.pole_processor = None
+        self.wire_processor = None
+        self.polesaver = None
+        self.wire_path = None
+        self.pole_path = None
         self.dataprocessor = None
         self.designspeed = 0
         self.iscustommode = False
@@ -1368,26 +1381,26 @@ class AutoPole:
 
 
         # 구조물 정보 로드
-        structure_list = load_structure_data()
-        if structure_list:
+        self.structure_list = load_structure_data()
+        if self.structure_list:
             print("구조물 정보가 성공적으로 로드되었습니다.")
 
         # 곡선 정보 로드
-        curvelist = load_curve_data()
-        if curvelist:
+        self.curvelist = load_curve_data()
+        if self.curvelist:
             print("곡선 정보가 성공적으로 로드되었습니다.")
         # 기울기 정보 로드
-        pitchlist = load_pitch_data()
-        if pitchlist:
+        self.pitchlist = load_pitch_data()
+        if self.pitchlist:
             print("기울기선 정보가 성공적으로 로드되었습니다.")
         # BVE 좌표 로드
         polyline = load_coordinates()
-        polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
+        self.polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
         #데이터셋 로드,
         dataset = load_dataset(self.designspeed, self.iscustommode)
         spans, pole_positions = distribute_pole_spacing_flexible(start_km, end_km, spans=dataset['span_list'])
-        airjoint_list = define_airjoint_section(pole_positions ,airjoint_span=1600)
+        self.airjoint_list = define_airjoint_section(pole_positions ,airjoint_span=1600)
 
         # 전주번호 추가
         post_number_lst = generate_postnumbers(pole_positions)
@@ -1395,8 +1408,8 @@ class AutoPole:
         self.dataprocessor = DatasetGetter(dataset)
 
         self.pole_processor = PoleProcessor()
-        self.poledata = self.pole_processor.process_pole(pole_positions, structure_list, curvelist, pitchlist, dataset, airjoint_list, polyline_with_sta)
-        self.wire_processor = WireProcessor(self.dataprocessor, polyline_with_sta, self.poledata)
+        self.poledata = self.pole_processor.process_pole(pole_positions, self.structure_list, self.curvelist, self.pitchlist, dataset, self.airjoint_list, self.polyline_with_sta)
+        self.wire_processor = WireProcessor(self.dataprocessor, self.polyline_with_sta, self.poledata)
         self.wire_data = self.wire_processor.process_to_wire()
         self.pole_path = asksaveasfilename(title='전주 데이터 저장')
         self.wire_path = asksaveasfilename(title='전차선 데이터 저장')
@@ -1440,6 +1453,7 @@ class AutoPoleApp(tk.Tk):
         # 버튼 영역
         tk.Button(self, text="실행", command=self.run_and_open_editor).pack()
         tk.Button(self, text="로그 클리어", command=self.clear_log).pack()
+        tk.Button(self, text="저장", command=self.save).pack()
         tk.Button(self, text="종료", command=self.destroy).pack()
 
         self.runner = AutoPole(self.log_box)
@@ -1466,14 +1480,23 @@ class AutoPoleApp(tk.Tk):
         # 입력값 반영 후 실행
         self.update_inputs()
         self.runner.run()
+        self.editor.create_epoles()
         self.editor.refresh_tree()
+
+    def save(self):
+        t = self.runner.polesaver.create_pole_csv()
+        t2 = self.runner.polesaver.create_wire_csv()
+        write_to_file(self.runner.pole_path, t)
+        write_to_file(self.runner.wire_path, t2)
+        self.runner.log(f"저장 성공!")
 
 class AutoPoleEditor(tk.Toplevel):
     def __init__(self, runner):
         super().__init__()
         self.runner = runner
         self.title("전주 편집기")
-        self.geometry("600x400")
+        self.geometry("600x500")
+        self.editable_poles = []
 
         # Treeview + Scrollbar 프레임
         frame = tk.Frame(self)
@@ -1568,31 +1591,185 @@ class AutoPoleEditor(tk.Toplevel):
             self.entry_base_type.delete(0, tk.END)
             self.entry_base_type.insert(0, base_type)
 
+    def create_epoles(self):
+        # EditablePole 리스트 생성
+
+        for i, pole in enumerate(self.runner.poledata):
+            prev_epole = self.editable_poles[i - 1] if i > 0 else None
+            epole = EditablePole(pole, self.runner.structure_list,self.runner.curvelist,self.runner.pitchlist, self.runner.polyline_with_sta, prev_pole=prev_epole)
+            self.editable_poles.append(epole)
+            if prev_epole:
+                prev_epole.next_pole = epole
 
     def save_edit(self):
         new_post_number = self.entry_post_number.get()
         new_pos = int(self.entry_pos.get())
         new_gauge = float(self.entry_gauge.get())
-        new_structure = self.entry_structure.get()
-        new_section = self.entry_section.get()
+        new_section = self.entry_section.get() if not self.entry_section.get() == 'None' else None
         new_base_type = self.entry_base_type.get()
 
-        for pole in self.runner.poledata:
-            if pole.pos == self.original_pos:
-                pole.post_number = new_post_number
-                pole.pos = new_pos
-                pole.gauge = new_gauge
-                pole.structure = new_structure
-                pole.section = new_section
-                pole.base_type = new_base_type
-                # radius, cant, pitch, z, span, next_pos 등은 자동 재계산 예정
-        self.refresh_tree()
+        for epole in self.editable_poles:
+            if epole.pole.pos == self.original_pos:
+                try:
+                    with Transaction(epole.pole, epole.prev_pole.pole, epole.next_pole.pole):
+                        epole.update(
+                            post_number=new_post_number,
+                            pos=new_pos,
+                            gauge=new_gauge,
+                            section=new_section,
+                            base_type=new_base_type
+                        )
+                        BracketEditor.update(epole.pole, self.runner.dataprocessor)
 
+                except Exception as e:
+                    messagebox.showerror('전주 업데이트 실패', str(e))
+                    return
+            # radius, cant, pitch, z, span, next_pos 등은 자동 재계산 예정
+        self.refresh_tree()
+        self.runner.log(f'전주 편집 성공 {new_pos}')
 
     def open_equipment_editor(self):
         top = tk.Toplevel(self)
         top.title("장비 편집")
         tk.Label(top, text="mast, brackets, equipments 편집 예정").pack()
+
+class EditablePole:
+    def __init__(self, pole, structure_list, curve_list ,pitch_list, polyline_with_sta, prev_pole=None, next_pole=None):
+        self.pole = pole
+        self.structure_list = structure_list
+        self.curve_list = curve_list
+        self.pitch_list = pitch_list
+        self.polyline_with_sta = polyline_with_sta
+        self.prev_pole = prev_pole
+        self.next_pole = next_pole
+
+    def update(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(self.pole, key):
+                setattr(self.pole, key, value)
+
+        try:
+            # 현재 전주 재계산
+            self.recalculate()
+
+            # 인접 전주 pos/next_pos 동기화
+            if self.prev_pole:
+                self.prev_pole.pole.next_pos = self.pole.pos
+                self.prev_pole.recalculate()
+            if self.next_pole:
+                self.next_pole.pole.pos = self.pole.next_pos
+                self.next_pole.recalculate()
+        except Exception as e:
+            raise Exception(e)
+
+    def recalculate(self):
+        # span 갱신
+        self.pole.span = self.pole.next_pos - self.pole.pos
+
+        # z, next_z 갱신
+        self.pole.z = get_elevation_pos(self.pole.pos, self.polyline_with_sta)
+        self.pole.next_z = get_elevation_pos(self.pole.next_pos, self.polyline_with_sta)
+
+        # 구조물, 곡선, 구배 등 갱신
+        self.pole.structure = isbridge_tunnel(self.pole.pos, self.structure_list)
+        curve, R, c = iscurve(self.pole.pos, self.curve_list)
+        self.pole.radius, self.pole.cant = R, c
+        slope, pitch = isslope(self.pole.pos, self.pitch_list)
+        self.pole.pitch = pitch
+
+class BracketEditor:
+    @staticmethod
+    def update(pole ,dataprocseeor):
+        """일반구간용"""
+        current_type = pole.base_type
+        current_curve = '직선' if pole.radius == 0 else '곡선'
+        i, o  = dataprocseeor.get_bracket_type(pole.structure, current_curve)
+        if current_type == 'I':
+            index = i
+        else:
+            index = o
+        bracket_name = current_type
+        pole.brackets[0] = BracketDATA(bracket_type=current_type, index=index, bracket_name=bracket_name)
+
+class Transaction:
+    def __init__(self, *objs):
+        """
+        objs: 트랜잭션을 적용할 여러 객체 (PoleDATA, EditablePole 등)
+        """
+        self._originals = objs
+        self._backups = []
+        self._active = False
+
+    def __enter__(self):
+        if self._active:
+            raise RuntimeError("Transaction already started")
+        # 모든 객체 백업
+        self._backups = [copy.deepcopy(obj) for obj in self._originals]
+        self._active = True
+        print("Transaction started.")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self.commit()
+        else:
+            self.abort()
+
+    def commit(self):
+        if not self._active:
+            raise RuntimeError("No active transaction")
+        self._backups = []
+        self._active = False
+        print("Transaction committed.")
+
+    def abort(self):
+        if not self._active:
+            raise RuntimeError("No active transaction")
+        # 모든 객체를 백업 상태로 복원
+        for original, backup in zip(self._originals, self._backups):
+            if isinstance(original, dict):
+                original.clear()
+                original.update(backup)
+            elif isinstance(original, list):
+                original.clear()
+                original.extend(backup)
+            else:
+                for attr in vars(backup):
+                    setattr(original, attr, getattr(backup, attr))
+        self._backups = []
+        self._active = False
+        print("Transaction aborted.")
+
+class PlotPoleMap(tk.Toplevel):
+    def __init__(self, poles):
+        super().__init__()
+        self.poles = poles
+        self.title("전주 맵")
+        self.geometry("1024x1024")
+
+        # Matplotlib Figure/Axes 생성
+
+        self.fig, self.ax = plt.subplots(figsize=(8,8))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        # 초기 플롯
+        self.update_plot()
+
+    def update_plot(self):
+        self.ax.clear()
+
+        # 전주 위치(pos)를 x축에 표시
+        positions = [pole.pos for pole in self.poles]
+        z_values = [pole.z for pole in self.poles]
+
+        self.ax.scatter(positions, z_values, c="blue", marker="o", label="전주")
+        self.ax.set_title("전주 위치 맵")
+        self.ax.set_xlabel("측점 (pos)")
+        self.ax.set_ylabel("계획고 (z)")
+        self.ax.legend()
+
+        self.canvas.draw()
 
 # 실행
 if __name__ == "__main__":
