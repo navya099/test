@@ -73,6 +73,7 @@ class PoleDATA:
     brackets: list[BracketDATA] = field(default_factory=list)
     equipments: list[EquipmentDATA] = field(default_factory=list)
     base_type: str = ''
+    next_base_type: str = ''
     coord: tuple[float, float] = (0, 0)
 
 @dataclass
@@ -254,6 +255,9 @@ class DatasetGetter:
         return contact_object_index, messenger_object_index, system_heigh, contact_height
     def get_f_bracket_height(self):
         return self.dataset['f_bracket_height']
+
+    def get_span_list(self):
+        return self.dataset['span_list']
 
 class BVECSV:
     """BVE CSV 구문을 생성하는 클래스
@@ -751,6 +755,7 @@ class PoleProcessor:
 
                 # 홀수/짝수에 맞는 전주 데이터 생성
                 current_type = 'I' if i % 2 == 1 else 'O'
+                next_type = 'O' if current_type == 'I' else 'I'
                 pole_type = i_type_index if i % 2 == 1 else o_type_index
                 bracket_name =  f"{pole_data['prefix']}-{current_type}"
                 bracket = BracketDATA(bracket_type=current_type, index=pole_type, bracket_name=bracket_name)
@@ -774,6 +779,7 @@ class PoleProcessor:
                     z=z,
                     next_z=next_z,
                     base_type=current_type,
+                    next_base_type=next_type,
                     coord=pos_coord_with_offset
                 )
 
@@ -812,6 +818,7 @@ class WireProcessor:
 
     def process_to_wire(self):
         """ 전주 위치에 wire를 배치하는 함수 """
+        self.wires.clear()
         wirehandler = WireSectionHandler(self.com ,self.pro ,self.al)
         for pole in self.polelist:
             try:
@@ -879,20 +886,22 @@ class WireSectionHandler:
     def run(self, pole, wire, pitch_angle):
         """일반개소 및 에어조인트개소 구분처리"""
         sign = -1 if pole.base_type == 'I' else 1
-        lateral_offset = sign * 0.2
+        next_sign = -1 if pole.next_base_type == 'I' else 1
+        start_offset = sign * 0.2
+        end_offset = next_sign * 0.2
         # 전차선 인덱스 얻기
         cw_index,_,_ = self.datapro.get_wire_span_data(wire.span, pole.structure)
 
         if pole.section is None:
-            self.process_normal_section(pole, wire, pitch_angle, lateral_offset, cw_index)
+            self.process_normal_section(pole, wire, pitch_angle, start_offset, end_offset, cw_index)
         else:
-            self.process_airjoint_section(pole, wire, pitch_angle, lateral_offset, cw_index)
+            self.process_airjoint_section(pole, wire, pitch_angle, start_offset, cw_index)
 
-    def process_normal_section(self, pole, wire, pitch_angle ,offset , index):
+    def process_normal_section(self, pole, wire, pitch_angle ,offset1 ,offset2 , index):
 
         wire.add_wire(self.compros.run(self.al, index ,
-            pole.pos, pole.next_pos ,pole.z, pole.next_z, start=(offset,0)
-            ,end=(-offset,0), pitch_angle=pitch_angle, label='전차선'))
+            pole.pos, pole.next_pos ,pole.z, pole.next_z, start=(offset1,0)
+            ,end=(offset2,0), pitch_angle=pitch_angle, label='전차선'))
 
     def process_airjoint_section(self, pole, wire, pitch_angle , offset, index):
         self.airpro.run(pole, wire, pitch_angle ,offset, index)
@@ -1465,7 +1474,7 @@ class AutoPoleApp(tk.Tk):
         tk.Button(button_frame, text="실행", command=self.run_and_open_editor).pack(side="left")
         tk.Button(button_frame, text="로그 클리어", command=self.clear_log).pack(side="left")
         tk.Button(button_frame, text="저장", command=self.save).pack(side="left")
-        tk.Button(button_frame, text="종료", command=self.destroy).pack(side="left")
+        tk.Button(button_frame, text="종료", command=self.exit_app).pack(side="left")
 
         # 메인 영역 (좌우 분할)
         main_frame = tk.PanedWindow(self, orient="horizontal")
@@ -1487,12 +1496,10 @@ class AutoPoleApp(tk.Tk):
 
         # 이벤트 바인딩
         self.events.bind("pole_selected", self.plotter.highlight_pole)
-        self.events.bind("pole_saved", self.refresh_editor)
 
-    def refresh_editor(self):
-        self.editor.refresh_tree()
-        self.plotter.update_plot()
-
+    def exit_app(self):
+        self.quit()
+        self.destroy()
 
     def clear_log(self):
         self.log_box.delete("1.0", tk.END)
@@ -1662,25 +1669,37 @@ class AutoPoleEditor(tk.Frame):
         new_gauge = float(self.entry_gauge.get())
         new_section = self.entry_section.get() if not self.entry_section.get() == 'None' else None
         new_base_type = self.entry_base_type.get()
-
         for epole in self.editable_poles:
             if epole.pole.pos == self.original_pos:
                 try:
-                    with Transaction(epole.pole, epole.prev_pole.pole, epole.next_pole.pole):
-                        epole.update(
-                            post_number=new_post_number,
-                            pos=new_pos,
-                            gauge=new_gauge,
-                            section=new_section,
-                            base_type=new_base_type
-                        )
-                        BracketEditor.update(epole.pole, self.runner.dataprocessor)
+                    # 일반개소만 편집 허용
+                    if epole.pole.section is not None:
+                        messagebox.showerror('전주 업데이트 실패', f'지정한 {epole.pole.pos}는 일반 개소가 아닙니다.')
+                        return
+                    # 새 span 계산
+                    new_span = epole.pole.next_pos - new_pos
+                    if new_span not in self.runner.dataprocessor.get_span_list():
+                        messagebox.showerror('전주 업데이트 실패', f'경간 {new_span}은 지정된 spanlist에 없습니다.')
+                        return
 
+                    with Transaction(epole.pole, epole.prev_pole.pole, epole.next_pole.pole):
+                            epole.update(
+                                post_number=new_post_number,
+                                pos=new_pos,
+                                gauge=new_gauge,
+                                section=new_section,
+                                base_type=new_base_type
+                            )
+                            BracketEditor.update(epole.pole, self.runner.dataprocessor)
+                    break
                 except Exception as e:
                     messagebox.showerror('전주 업데이트 실패', str(e))
                     return
             # radius, cant, pitch, z, span, next_pos 등은 자동 재계산 예정
         self.refresh_tree()
+        # 와이어 전체 재계산
+        self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+
         if self.events:
             self.events.emit("pole_saved")
 
@@ -1713,6 +1732,7 @@ class EditablePole:
             # 인접 전주 pos/next_pos 동기화
             if self.prev_pole:
                 self.prev_pole.pole.next_pos = self.pole.pos
+                self.prev_pole.pole.next_base_type = self.pole.base_type
                 self.prev_pole.recalculate()
             if self.next_pole:
                 self.next_pole.pole.pos = self.pole.next_pos
@@ -1723,6 +1743,10 @@ class EditablePole:
     def recalculate(self):
         # span 갱신
         self.pole.span = self.pole.next_pos - self.pole.pos
+        #좌표갱신
+        coord, _, v1 = interpolate_cached(self.polyline_with_sta, self.pole.pos)
+        pos_coord_with_offset = calculate_offset_point(v1, coord, self.pole.gauge)
+        self.pole.coord = pos_coord_with_offset
 
         # z, next_z 갱신
         self.pole.z = get_elevation_pos(self.pole.pos, self.polyline_with_sta)
