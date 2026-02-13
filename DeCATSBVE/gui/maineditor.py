@@ -15,7 +15,7 @@ class AutoPoleEditor(tk.Frame):
         if self.events:
             # pole_moved 이벤트가 발생하면 on_pole_moved 실행
             self.events.bind('pole_moved', self.on_pole_moved)
-
+            self.events.bind('pole_modified', self.on_pole_modifeyed)
 
         self.editable_poles = []
 
@@ -90,6 +90,9 @@ class AutoPoleEditor(tk.Frame):
     def on_pole_moved(self):
         self.refresh_tree()
 
+    def on_pole_modifeyed(self):
+        self.refresh_tree()
+
     def refresh_tree(self):
         if not self.runner.poledata:
             return
@@ -111,7 +114,7 @@ class AutoPoleEditor(tk.Frame):
                     epole = e
                     break
 
-            if self.events and epole:
+            if self.events and epole is not None:
                 self.events.emit("pole_selected", epole)
 
             self.original_pos = pos
@@ -183,4 +186,5 @@ class AutoPoleEditor(tk.Frame):
         self.runner.log(f'전주 편집 성공 {new_pos}')
 
     def open_equipment_editor(self):
-        asemlbapp = PoleAssemblerApp()
+        asemlbapp = PoleAssemblerApp(self.runner, self.events)
+        asemlbapp.bind_events()

@@ -23,8 +23,11 @@ class BVECSV:
                 structure = pole.structure
                 curve = '직선' if pole.radius == 0.0 else '곡선'
                 gauge = pole.gauge
-                equipments = pole.equipments
-
+                eqs = pole.equipments
+                brs = pole.brackets
+                br = brs[0]
+                eq =eqs[0]
+                mast = pole.mast
                 section_label = section if section else '일반개소'
 
                 # 구문 작성
@@ -33,12 +36,14 @@ class BVECSV:
 
                 if section is None:
                     # 일반개소
-                    br = pole.brackets[0]
+
+                    for eq in eqs:
+                        self.lines.append(
+                            f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
+                    self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
                     self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
 
                 elif section in ['에어조인트 시작점 (1호주)', '에어조인트 끝점 (5호주)']:
-                    br = pole.brackets[0]
-                    eq = equipments[0]
                     self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
                     self.lines.append(
                         f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
@@ -49,9 +54,8 @@ class BVECSV:
                     elif section == '에어조인트 중간주 (3호주)':
                         poss = pos - 0.8, pos + 0.8
 
-                    mast = pole.mast
-                    eqs = pole.equipments
-                    brs = pole.brackets
+
+
                     self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
                     for eq in eqs:
                         self.lines.append(

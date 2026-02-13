@@ -1,5 +1,5 @@
 from tkinter.filedialog import asksaveasfilename
-
+import pandas as pd
 from bve.bvecsv import BVECSV
 from core.pole.pole_processor import PoleProcessor
 from core.wire.wire_processor import WireProcessor
@@ -9,10 +9,16 @@ from file_io.filemanager import read_file, load_structure_data, load_curve_data,
     write_to_file
 from utils.comom_util import find_last_block, distribute_pole_spacing_flexible, define_airjoint_section, \
     generate_postnumbers
+from xref_module.index_libmgr import IndexLibrary
+
+SHEET_ID = "1z0aUcuZCxOQp2St3icbQMbOkrSPfJK_8iZ2JKFDbW8c"
+SHEET_NAME = "freeobj"  # ← 원하는 시트 이름
+URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 
 
 class AutoPole:
     def __init__(self, log_widget):
+        self.idxlib = None
         self.airjoint_list = None
         self.pitchlist = None
         self.curvelist = None
@@ -30,6 +36,7 @@ class AutoPole:
         self.log_widget = log_widget
         self.poledata = None
         self.wire_data = None
+        self._cached_df = None
 
     def log(self, msg):
         if self.log_widget:
@@ -40,7 +47,10 @@ class AutoPole:
 
     def run(self):
         """전체 작업을 관리하는 메인 함수"""
-
+        if self._cached_df is None:
+            self._cached_df = pd.read_csv(URL)
+        df = self._cached_df
+        self.idxlib = IndexLibrary(df)
         # 파일 읽기 및 데이터 처리
 
         data = read_file()
@@ -77,7 +87,7 @@ class AutoPole:
         self.dataprocessor = DatasetGetter(dataset)
 
         self.pole_processor = PoleProcessor()
-        self.poledata = self.pole_processor.process_pole(pole_positions, self.structure_list, self.curvelist, self.pitchlist, dataset, self.airjoint_list, self.polyline_with_sta)
+        self.poledata = self.pole_processor.process_pole(pole_positions, self.structure_list, self.curvelist, self.pitchlist, self.dataprocessor, self.airjoint_list, self.polyline_with_sta, self.idxlib)
         self.wire_processor = WireProcessor(self.dataprocessor, self.polyline_with_sta, self.poledata)
         self.wire_data = self.wire_processor.process_to_wire()
         self.pole_path = asksaveasfilename(title='전주 데이터 저장')

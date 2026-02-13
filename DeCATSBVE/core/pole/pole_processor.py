@@ -2,6 +2,7 @@ from core.airjoint.airjoint_processor import AirJointProcessor
 from core.airjoint.aj_checker import check_isairjoint
 from core.alignment.define_funtion import iscurve, isslope
 from core.bracket.bracket_data import BracketDATA
+from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.poledata import PoleDATA
 from core.structure.define_structure import isbridge_tunnel
 from dataset.dataset_getter import DatasetGetter
@@ -13,16 +14,14 @@ class PoleProcessor:
     def __init__(self):
         self.poles = []
 
-    def process_pole(self, positions, structure_list, curve_list, pitchlist, dataset, airjoint_list, polyline_with_sta):
+    def process_pole(self, positions, structure_list, curve_list, pitchlist, dataprocessor, airjoint_list, polyline_with_sta, idxlib):
         """전주 위치 데이터를 가공 함수"""
-        # 전주 데이터 구성
-        pole_data = dataset['pole_data']
 
         # 전주번호
         post_number_lst = generate_postnumbers(positions)
-        #dataset처리기
-        dataprocessor = DatasetGetter(dataset)
         airjoint_processor = AirJointProcessor()
+        normal_processor = NormalSectionProcessor()
+
         for i in range(len(positions) - 1):
             try:
                 pos, next_pos = positions[i], positions[i + 1]
@@ -38,7 +37,6 @@ class PoleProcessor:
                 post_number = find_post_number(post_number_lst, pos)
                 coord, _, v1 = interpolate_cached(polyline_with_sta, pos)
 
-                i_type_index, o_type_index = dataprocessor.get_bracket_type(current_structure, current_curve)
 
                 gauge = dataprocessor.get_pole_gauge(current_structure)
                 next_gauge = dataprocessor.get_pole_gauge(next_structure)
@@ -47,9 +45,6 @@ class PoleProcessor:
                 # 홀수/짝수에 맞는 전주 데이터 생성
                 current_type = 'I' if i % 2 == 1 else 'O'
                 next_type = 'O' if current_type == 'I' else 'I'
-                pole_type = i_type_index if i % 2 == 1 else o_type_index
-                bracket_name =  f"{pole_data['prefix']}-{current_type}"
-                bracket = BracketDATA(bracket_type=current_type, index=pole_type, bracket_name=bracket_name)
 
                 pole = PoleDATA(
                     pos=pos,
@@ -64,7 +59,7 @@ class PoleProcessor:
                     pitch=pitch,
                     section=current_airjoint,
                     post_number=post_number,
-                    brackets=[bracket],
+                    brackets=[],
                     mast=None,
                     equipments=[],
                     z=z,
@@ -73,9 +68,10 @@ class PoleProcessor:
                     next_base_type=next_type,
                     coord=pos_coord_with_offset
                 )
-
+                if current_airjoint is None:
+                    normal_processor.process(pole, dataprocessor ,idxlib)
                 if not current_airjoint is None:
-                    airjoint_processor.process_airjoint(pole, polyline_with_sta, dataprocessor)
+                    airjoint_processor.process_airjoint(pole, polyline_with_sta, dataprocessor, normal_processor, idxlib)
                 self.poles.append(pole)
             except Exception as e:
                 print(f"process_pole 실행 중 에러 발생: {e}")

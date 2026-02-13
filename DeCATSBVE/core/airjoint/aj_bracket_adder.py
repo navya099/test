@@ -3,20 +3,23 @@ from core.bracket.bracket_data import BracketDATA
 from core.bracket.fitting_data import FittingDATA
 from core.equipment.equipment_data import EquipmentDATA
 from core.mast.mastdata import Mast
+from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.poledata import PoleDATA
 from enums.airjoint_section import AirJoint
 from utils.math_util import calculate_curve_angle
 
 
 class AirjointBracketAdder:
-    def __init__(self, params: AirjointDataContext ,dataprocessor):
+    def __init__(self, params: AirjointDataContext ,dataprocessor, normal_processor):
         self.params = params
         self.prosc = dataprocessor
-
-    def add_airjoint_brackets(self, pole: PoleDATA, polyline_with_sta):
+        self.nps = normal_processor
+    def add_airjoint_brackets(self, pole: PoleDATA, polyline_with_sta, idxlib):
         """에어조인트 각 구간별 브래킷 추가"""
         if pole.section == AirJoint.START.value:
             # START 구간 처리
+
+            self.nps.process(pole, self.prosc, idxlib)
             x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
             start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
             pole.equipments.append(EquipmentDATA(name='스프링식 장력조절장치', index=1247, offset=(pole.gauge,0),rotation=start_angle))
@@ -38,6 +41,7 @@ class AirjointBracketAdder:
 
         elif pole.section == AirJoint.END.value:
             # END 구간 처리
+            self.nps.process(pole, self.prosc, idxlib)
             x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge,start=False)
             pole.equipments.append(EquipmentDATA(name='스프링식 장력조절장치', index=1247, offset=(pole.gauge,0),rotation=180 + end_angle))
