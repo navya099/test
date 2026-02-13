@@ -22,33 +22,35 @@ class AirjointBracketAdder:
             self.nps.process(pole, self.prosc, idxlib)
             x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
             start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
-            pole.equipments.append(EquipmentDATA(name='스프링식 장력조절장치', index=1247, offset=(pole.gauge,0),rotation=start_angle))
+            en = idxlib.get_name(1247)
+            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=start_angle))
 
         elif pole.section == AirJoint.POINT_2.value:
             # POINT_2 구간 처리
             self.add_common_equipts(pole)
-            self.add_F_and_AJ_brackets(pole)
+            self.add_F_and_AJ_brackets(pole, idxlib=idxlib)
 
         elif pole.section == AirJoint.MIDDLE.value:
             # MIDDLE 구간 처리
             self.add_common_equipts(pole)
-            self.add_AJ_brackets_middle(pole)
+            self.add_AJ_brackets_middle(pole, idxlib)
 
         elif pole.section == AirJoint.POINT_4.value:
             # POINT_4 구간 처리
             self.add_common_equipts(pole)
-            self.add_F_and_AJ_brackets(pole, end=True)
+            self.add_F_and_AJ_brackets(pole, end=True, idxlib=idxlib)
 
         elif pole.section == AirJoint.END.value:
             # END 구간 처리
+            en = idxlib.get_name(1247)
             self.nps.process(pole, self.prosc, idxlib)
             x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge,start=False)
-            pole.equipments.append(EquipmentDATA(name='스프링식 장력조절장치', index=1247, offset=(pole.gauge,0),rotation=180 + end_angle))
+            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle))
 
 
 
-    def add_F_and_AJ_brackets(self, pole, end=False):
+    def add_F_and_AJ_brackets(self, pole, end=False, idxlib=None):
         """F형 및 AJ형 브래킷을 추가하는 공통 함수"""
         f_i, f_o = self.params.f_bracket_valuse
         aj_i,aj_o = self.params.aj_bracket_values
@@ -56,16 +58,19 @@ class AirjointBracketAdder:
         pole.brackets.clear()
         # F형 가동 브래킷 추가
         x1, y1 = self.prosc.get_bracket_coordinates('F형_시점' if not end else 'F형_끝')
-        self.add_F_bracket(pole, f_i,"가동브래킷 F형", x1, y1)
+        self.add_F_bracket(pole, f_i,idxlib, x1, y1)
 
         # AJ형 가동 브래킷 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_시점' if not end else 'AJ형_끝')
-        self.add_AJ_bracket(pole, aj_i, '가동브래킷 AJ형', x1, y1)
+        self.add_AJ_bracket(pole, aj_i, idxlib, x1, y1)
 
-    def add_F_bracket(self, pole: PoleDATA, bracket_code, bracket_name, x1, y1):
+    def add_F_bracket(self, pole: PoleDATA, bracket_code, idxlib, x1, y1):
         """F형 가동 브래킷 및 금구류 추가"""
         idx1, idx2 = self.params.flat_fitting
+        n1 = idxlib.get_name(idx1)
+        n2 = idxlib.get_name(idx2)
         h = self.params.f_bracket_height
+        bracket_name = idxlib.get_name(bracket_code)
         # 브래킷 추가
         bracket = BracketDATA(
             bracket_type='F',
@@ -74,34 +79,36 @@ class AirjointBracketAdder:
             offset=(0,h)
         )
         # 금구류 추가
-        bracket.fittings.append(FittingDATA(index=idx1, label='조가선지지금구-F용', offset=(x1, y1)))
-        bracket.fittings.append(FittingDATA(index=idx2, label='전차선지지금구-F용', offset=(x1, y1)))
+        bracket.fittings.append(FittingDATA(index=idx1, label=n1, offset=(x1, y1)))
+        bracket.fittings.append(FittingDATA(index=idx2, label=n2, offset=(x1, y1)))
 
         # PoleDATA에 브래킷 등록
         pole.brackets.append(bracket)
 
-    def add_AJ_bracket(self, pole: PoleDATA, bracket_code, bracket_name, x1, y1, end=False):
+    def add_AJ_bracket(self, pole: PoleDATA, bracket_code, idxlib, x1, y1, end=False):
         """AJ형 가동 브래킷 및 금구류 추가"""
 
         idx1 = self.params.airjoint_fitting
         idx2 = self.params.steady_arm_fitting[0] if not end else self.params.steady_arm_fitting[1]
-
+        n1 = idxlib.get_name(idx1)
+        n2 = idxlib.get_name(idx2)
+        bn = idxlib.get_name(bracket_code)
         # 브래킷 추가
         bracket = BracketDATA(
             bracket_type='AJ',
             index=bracket_code,
-            bracket_name=bracket_name,
+            bracket_name=bn,
             offset=(0, y1)
         )
         # 금구류 추가
-        bracket.fittings.append(FittingDATA(index=idx1, label='조가선지지금구-AJ용', offset=(x1, y1)))
-        bracket.fittings.append(FittingDATA(index=idx2, label='곡선당김금구', offset=(x1, y1)))
+        bracket.fittings.append(FittingDATA(index=idx1, label=n1, offset=(x1, y1)))
+        bracket.fittings.append(FittingDATA(index=idx2, label=n2, offset=(x1, y1)))
 
         # PoleDATA에 브래킷 등록
         pole.brackets.append(bracket)
 
 
-    def add_AJ_brackets_middle(self, pole):
+    def add_AJ_brackets_middle(self, pole, idxlib):
         """MIDDLE 구간에서 AJ형 브래킷 추가"""
         # 기본 브래킷 제거
         pole.brackets.clear()
@@ -109,17 +116,19 @@ class AirjointBracketAdder:
         aj_i, aj_o = self.params.aj_bracket_values
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간1')
-        self.add_AJ_bracket(pole, aj_i, '가동브래킷 AJ형', x1, y1)
+        self.add_AJ_bracket(pole, aj_i, idxlib, x1, y1)
 
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간2')
-        self.add_AJ_bracket(pole, aj_o, '가동브래킷 AJ형', x1, y1)
+        self.add_AJ_bracket(pole, aj_o, idxlib, x1, y1)
 
     def add_common_equipts(self, pole):
         pole.mast = Mast(self.params.mast_name, self.params.mast_type, pole.gauge)
         feederidx = self.params.feeder_idx
+        feeder_name = self.params.feeder_name
         spreaderidx = self.params.spreader_idx
+        spreader_name = self.params.spreader_name
         pole.equipments.append(
-            EquipmentDATA(name='급전선 현수 조립체', index=feederidx, offset=(pole.gauge, 0)))
+            EquipmentDATA(name=feeder_name, index=feederidx, offset=(pole.gauge, 0)))
         pole.equipments.append(
-            EquipmentDATA(name='평행틀', index=spreaderidx, offset=(pole.gauge, 0)))
+            EquipmentDATA(name=spreader_name, index=spreaderidx, offset=(pole.gauge, 0)))

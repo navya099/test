@@ -11,6 +11,7 @@ class AirjointDataContext:
     aj_bracket_values: list
     f_bracket_valuse: list
     feeder_idx: int
+    feeder_name: str
     spreader_name: str
     spreader_idx: int
     f_bracket_height: float

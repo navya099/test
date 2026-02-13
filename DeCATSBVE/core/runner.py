@@ -18,7 +18,7 @@ URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sh
 
 class AutoPole:
     def __init__(self, log_widget):
-        self.idxlib = None
+        self.idxlib = IndexLibrary(pd.read_csv(URL))
         self.airjoint_list = None
         self.pitchlist = None
         self.curvelist = None
@@ -47,10 +47,7 @@ class AutoPole:
 
     def run(self):
         """전체 작업을 관리하는 메인 함수"""
-        if self._cached_df is None:
-            self._cached_df = pd.read_csv(URL)
-        df = self._cached_df
-        self.idxlib = IndexLibrary(df)
+
         # 파일 읽기 및 데이터 처리
 
         data = read_file()

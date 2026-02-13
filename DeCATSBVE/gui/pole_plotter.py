@@ -5,6 +5,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import ttk, messagebox
 
 from utils.math_util import interpolate_cached, calculate_offset_point
+from xref_module.preview.preview_sevice import PreviewService
+from xref_module.preview.preview_viewer import PreviewViewer
 from xref_module.transaction import Transaction
 
 
@@ -38,6 +40,26 @@ class PlotPoleMap(tk.Frame):
         btn_right = tk.Button(self, text="+5m", command=self.move_right)
         btn_left.pack(side="left")
         btn_right.pack(side="right")
+        btn_preview = tk.Button(self, text="전주 미리보기", command=self.show_preview)
+        btn_preview.pack(side="bottom")
+
+        # ✅ 미리보기 뷰어를 한 번만 생성
+        self.viewer = PreviewViewer()
+        self.viewer.set_projection('front')
+
+        self.service = PreviewService()
+
+    def show_preview(self):
+        self.viewer.objects.clear()
+        result = self.service.build(self.selected_epole.pole)
+        for obj in result.objects:
+            self.viewer.add_object(obj)
+        if result.missing:
+            messagebox.showwarning(
+                '일부 파일 누락',
+                '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(result.missing)
+            )
+        self.viewer.draw()
 
     def draw_alignment(self):
         # polyline 좌표 꺼내기

@@ -44,9 +44,11 @@ class BVECSV:
                     self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
 
                 elif section in ['에어조인트 시작점 (1호주)', '에어조인트 끝점 (5호주)']:
+                    self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
                     self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
-                    self.lines.append(
-                        f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
+                    for eq in eqs:
+                        self.lines.append(
+                            f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
 
                 elif section in ['에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)']:
                     if section in ['에어조인트 (2호주)', '에어조인트 (4호주)']:
