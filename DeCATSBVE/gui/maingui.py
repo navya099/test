@@ -1,8 +1,10 @@
 import tkinter as tk
+from tkinter import ttk, messagebox
 
+from bve.bvecsv import BVECSV
 from core.runner import AutoPole
 from event.event_controller import EventController
-from file_io.filemanager import write_to_file
+from file_io.filemanager import write_to_file, load_poles, save_poles, save_runner, load_runner
 from gui.maineditor import AutoPoleEditor
 from gui.pole_plotter import PlotPoleMap
 
@@ -34,9 +36,11 @@ class AutoPoleApp(tk.Tk):
         # 버튼 영역
         button_frame = tk.Frame(self)
         button_frame.pack(side="top", fill="x")
-        tk.Button(button_frame, text="실행", command=self.run_and_open_editor).pack(side="left")
+        tk.Button(button_frame, text="새로 만들기", command=self.run_and_open_editor).pack(side="left")
         tk.Button(button_frame, text="로그 클리어", command=self.clear_log).pack(side="left")
-        tk.Button(button_frame, text="저장", command=self.save).pack(side="left")
+        tk.Button(button_frame, text="CSV저장", command=self.save).pack(side="left")
+        tk.Button(button_frame, text="데이터저장", command=self.save_pickle).pack(side="left")
+        tk.Button(button_frame, text="데이터로드", command=self.load_pickle).pack(side="left")
         tk.Button(button_frame, text="종료", command=self.exit_app).pack(side="left")
 
         # 메인 영역 (좌우 분할)
@@ -93,3 +97,15 @@ class AutoPoleApp(tk.Tk):
         write_to_file(self.runner.pole_path, t)
         write_to_file(self.runner.wire_path, t2)
         self.runner.log(f"저장 성공!")
+
+    def save_pickle(self):
+        save_runner(self.runner,'c:/temp/decatsbve.dat')
+        messagebox.showinfo('정보','데이터 저장이 완료됐습니다.')
+
+    def load_pickle(self):
+        load_runner(self.runner, 'c:/temp/decatsbve.dat')
+        self.runner.polesaver = BVECSV(self.runner.poledata, self.runner.wire_data)
+        self.editor.create_epoles()
+        self.editor.refresh_tree()
+        self.plotter.update_plot()
+        messagebox.showinfo('정보', '데이터 로드가 완료됐습니다.')

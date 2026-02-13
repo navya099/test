@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import filedialog
 from file_io.basedata_processor import find_structure_section, find_curve_section, find_pitch_section, read_polyline
 import os
+import pickle
+
 def read_file():
     root = tk.Tk()
     root.withdraw()  # Tkinter 창을 숨김
@@ -84,3 +86,61 @@ def write_to_file(filename, lines):
         print(f"✅ 파일 저장 완료: {filename}")
     except Exception as e:
         print(f"⚠️ 파일 저장 중 오류 발생: {e}")
+
+
+
+def save_poles(poles, filename="poles.dat"):
+    with open(filename, "wb") as f:
+        pickle.dump(poles, f)
+
+def load_poles(filename="poles.dat"):
+    with open(filename, "rb") as f:
+        return pickle.load(f)
+
+def save_runner(runner, filename="runner.dat", version=1):
+    state = {
+        "version": version,
+        "poledata": runner.poledata,
+        "wire_data": runner.wire_data,
+        "polyline_with_sta": runner.polyline_with_sta,
+        "idxlib": runner.idxlib,
+        "dataprocessor": runner.dataprocessor,
+        "airjoint_list": runner.airjoint_list,
+        "pitchlist": runner.pitchlist,
+        "curvelist" : runner.curvelist,
+        "structure_list": runner.structure_list,
+        "pole_processor" : runner.pole_processor,
+        "wire_processor" : runner.wire_processor,
+        "polesaver" : runner.polesaver,
+        "designspeed" : runner.designspeed,
+        "iscustommode" : runner.iscustommode,
+        "is_create_dxf" : runner.is_create_dxf,
+        "_cached_df" : runner._cached_df,
+        "pole_path": runner.pole_path,
+        "wire_path": runner.wire_path,
+        }
+    with open(filename, "wb") as f:
+        pickle.dump(state, f)
+
+def load_runner(runner, filename="runner.dat"):
+    with open(filename, "rb") as f:
+        state = pickle.load(f)
+    runner.poledata = state["poledata"]
+    runner.wire_data = state["wire_data"]
+    runner.polyline_with_sta = state["polyline_with_sta"]
+    runner.idxlib = state["idxlib"]
+    runner.dataprocessor = state["dataprocessor"]
+    runner.airjoint_list = state["airjoint_list"]
+    runner.pitchlist = state["pitchlist"]
+    runner.curvelist = state["curvelist"]
+    runner.structure_list = state["structure_list"]
+    runner.pole_processor = state["pole_processor"]
+    runner.wire_processor = state["wire_processor"]
+    runner.polesaver = state["polesaver"]
+    runner.designspeed = state["designspeed"]
+    runner.iscustommode = state["iscustommode"]
+    runner.is_create_dxf = state["is_create_dxf"]
+    runner._cached_df = state["_cached_df"]
+    runner.wire_path = state["wire_path"]
+    runner.pole_path = state["pole_path"]
+
