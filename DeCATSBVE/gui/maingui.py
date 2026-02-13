@@ -1,0 +1,95 @@
+import tkinter as tk
+
+from core.runner import AutoPole
+from event.event_controller import EventController
+from file_io.filemanager import write_to_file
+from gui.maineditor import AutoPoleEditor
+from gui.pole_plotter import PlotPoleMap
+
+
+class AutoPoleApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("AutoPOLE")
+        self.events = EventController()
+
+        # 로그 박스
+        self.log_box = tk.Text(self, height=10, width=80)
+        self.log_box.pack(side="bottom", fill="x")
+        self.runner = AutoPole(self.log_box)
+
+        # 입력 영역
+        input_frame = tk.Frame(self)
+        input_frame.pack(side="top", fill="x")
+        tk.Label(input_frame, text="설계속도").pack(side="left")
+        self.entry_speed_var = tk.IntVar(value=150)
+        self.entry_speed = tk.Entry(input_frame, width=10, textvariable=self.entry_speed_var)
+        self.entry_speed.pack(side="left")
+
+        self.is_custom_mode = tk.BooleanVar(value=False)
+        tk.Checkbutton(input_frame, text="커스텀 모드", variable=self.is_custom_mode).pack(side="left")
+        self.is_create_dxf = tk.BooleanVar(value=False)
+        tk.Checkbutton(input_frame, text="도면 작성", variable=self.is_create_dxf).pack(side="left")
+
+        # 버튼 영역
+        button_frame = tk.Frame(self)
+        button_frame.pack(side="top", fill="x")
+        tk.Button(button_frame, text="실행", command=self.run_and_open_editor).pack(side="left")
+        tk.Button(button_frame, text="로그 클리어", command=self.clear_log).pack(side="left")
+        tk.Button(button_frame, text="저장", command=self.save).pack(side="left")
+        tk.Button(button_frame, text="종료", command=self.exit_app).pack(side="left")
+
+        # 메인 영역 (좌우 분할)
+        main_frame = tk.PanedWindow(self, orient="horizontal")
+        main_frame.pack(fill="both", expand=True)
+
+        # 좌측: Editor
+        editor_frame = tk.Frame(main_frame)
+        self.editor = AutoPoleEditor(self.runner, self.events, master=editor_frame)
+        self.editor.pack(fill="both", expand=True)   # 추가
+
+        main_frame.add(editor_frame)
+
+        # 우측: Plotter
+        plotter_frame = tk.Frame(main_frame)
+        self.plotter = PlotPoleMap(self.runner, self.events, master=plotter_frame)
+        self.plotter.pack(fill="both", expand=True)  # 추가
+
+        main_frame.add(plotter_frame)
+
+    def exit_app(self):
+        self.quit()
+        self.destroy()
+
+    def clear_log(self):
+        self.log_box.delete("1.0", tk.END)
+
+    def update_inputs(self):
+        try:
+            self.runner.designspeed = int(self.entry_speed.get())
+            self.runner.iscustommode = int(self.is_custom_mode.get())
+            self.runner.is_create_dxf = int(self.is_create_dxf.get())
+            if self.runner.iscustommode:
+                self.runner.log(f"현재 모드: 커스텀모드")
+                return
+            self.runner.log(f"현재 모드: 일반모드")
+            self.runner.log(f"설계속도={self.runner.designspeed}km/h")
+
+        except ValueError:
+            self.runner.log("⚠️ 숫자를 입력하세요")
+
+    def run_and_open_editor(self):
+        # 입력값 반영 후 실행
+        self.update_inputs()
+        self.runner.run()
+        self.editor.create_epoles()
+        self.editor.refresh_tree()
+        self.plotter.update_plot()
+
+
+    def save(self):
+        t = self.runner.polesaver.create_pole_csv()
+        t2 = self.runner.polesaver.create_wire_csv()
+        write_to_file(self.runner.pole_path, t)
+        write_to_file(self.runner.wire_path, t2)
+        self.runner.log(f"저장 성공!")
