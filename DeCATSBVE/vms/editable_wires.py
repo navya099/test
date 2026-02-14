@@ -21,8 +21,14 @@ class EditableWire:
             for key, value in kwargs.items():
                 if key == "offset":  # 시작점
                     target.offset = value
+                    # 이전 wire의 끝점도 자동 갱신
+                    if self.prev_wire and index < len(self.prev_wire.wire.wires):
+                        self.prev_wire.wire.wires[index].end_point = value
                 elif key == "end_point":  # 끝점
                     target.end_point = value
+                    # 다음 wire의 시작점도 자동 갱신
+                    if self.next_wire and index < len(self.next_wire.wire.wires):
+                        self.next_wire.wire.wires[index].offset = value
                 elif hasattr(target, key):
                     setattr(target, key, value)
 
@@ -47,6 +53,16 @@ class EditableWire:
                 self.next_wire.wire.wires[i].offset if i < len(self.next_wire.wire.wires) else w.offset
             )
 
+            # --- 인접 wire 자동 연결 ---
+            # 다음 wire의 시작점(offset)을 현재 wire의 끝점으로 맞춤
+            if self.next_wire and i < len(self.next_wire.wire.wires):
+                self.next_wire.wire.wires[i].offset = end_point
+
+            # 이전 wire의 끝점(end_point)을 현재 wire의 시작점으로 맞춤
+            if self.prev_wire and i < len(self.prev_wire.wire.wires):
+                self.prev_wire.wire.wires[i].end_point = w.offset
+
+            # 현재 wire 재계산
             new_wire = processor.run(
                 polyline_with_sta=self.polyline_with_sta,
                 index=w.index,

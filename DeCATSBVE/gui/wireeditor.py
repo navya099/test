@@ -169,11 +169,25 @@ class WireEditor(tk.Toplevel):
         try:
             for i, entry in enumerate(self.wire_entries):
                 if entry:
+                    # 현재 wire의 데이터
                     wire_data = {
                         "label": entry["wire_name"],
-                        "end_point": (entry["next_xoffset"].get(), entry["next_height"].get())
+                        "offset": (entry["xoffset"].get(), entry["height"].get()),  # 시작점
+                        "end_point": (entry["next_xoffset"].get(), entry["next_height"].get())  # 끝점
                     }
+
                     if self.ewire:
                         self.ewire.update(index=i, **wire_data)
+
+                        # --- 인접 wire 자동 갱신 ---
+                        # 다음 wire의 시작점(offset)을 현재 wire의 끝점으로 맞춤
+                        if self.ewire.next_wire and i < len(self.ewire.next_wire.wire.wires):
+                            self.ewire.next_wire.wire.wires[i].offset = wire_data["end_point"]
+
+                        # 이전 wire의 끝점(end_point)을 현재 wire의 시작점으로 맞춤
+                        if self.ewire.prev_wire and i < len(self.ewire.prev_wire.wire.wires):
+                            self.ewire.prev_wire.wire.wires[i].end_point = wire_data["offset"]
+
+            self.runner.log(f'전선 편집 성공!')
         except Exception as e:
             messagebox.showerror('에러', f'전선 커밋 작업에 실패했습니다. {e}')
