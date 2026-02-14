@@ -9,40 +9,40 @@ from dataset.dataset_getter import DatasetGetter
 from utils.comom_util import generate_postnumbers, find_post_number
 from utils.math_util import get_elevation_pos, interpolate_cached, calculate_offset_point
 
-
 class PoleProcessor:
     def __init__(self):
         self.poles = []
 
-    def process_pole(self, positions, structure_list, curve_list, pitchlist, dataprocessor, airjoint_list, polyline_with_sta, idxlib):
-        """전주 위치 데이터를 가공 함수"""
-
-        # 전주번호
+    def _process_single_track(self, positions, structure_list, curve_list, pitchlist,
+                              dataprocessor, airjoint_list, polyline_with_sta, idxlib,
+                              track_name="main", side="L"):
+        """단일 트랙 처리 함수"""
         post_number_lst = generate_postnumbers(positions)
         airjoint_processor = AirJointProcessor()
         normal_processor = NormalSectionProcessor()
+        poles = []
 
         for i in range(len(positions) - 1):
             try:
                 pos, next_pos = positions[i], positions[i + 1]
-                currentspan = next_pos - pos  # 전주 간 거리 계산
-                # 현재 위치의 구조물 및 곡선 정보 가져오기
+                currentspan = next_pos - pos
                 current_structure = isbridge_tunnel(pos, structure_list)
                 next_structure = isbridge_tunnel(next_pos, structure_list)
                 current_curve, R, c = iscurve(pos, curve_list)
                 current_slope, pitch = isslope(pos, pitchlist)
-                z = get_elevation_pos(pos, polyline_with_sta)  # 현재 측점의 z값
-                next_z = get_elevation_pos(next_pos, polyline_with_sta)  # 다음 측점의 z값
+                z = get_elevation_pos(pos, polyline_with_sta)
+                next_z = get_elevation_pos(next_pos, polyline_with_sta)
                 current_airjoint = check_isairjoint(pos, airjoint_list)
                 post_number = find_post_number(post_number_lst, pos)
                 coord, _, v1 = interpolate_cached(polyline_with_sta, pos)
 
-
                 gauge = dataprocessor.get_pole_gauge(current_structure)
                 next_gauge = dataprocessor.get_pole_gauge(next_structure)
+                if side == 'L':
+                    gauge *= -1
+                    next_gauge *= -1
                 pos_coord_with_offset = calculate_offset_point(v1, coord, gauge)
 
-                # 홀수/짝수에 맞는 전주 데이터 생성
                 current_type = 'I' if i % 2 == 1 else 'O'
                 next_type = 'O' if current_type == 'I' else 'I'
 
@@ -66,13 +66,68 @@ class PoleProcessor:
                     next_z=next_z,
                     base_type=current_type,
                     next_base_type=next_type,
-                    coord=pos_coord_with_offset
+                    coord=pos_coord_with_offset,
+                    track=track_name,  # 추가
+                    side=side  # 추가
                 )
                 if current_airjoint is None:
-                    normal_processor.process(pole, dataprocessor ,idxlib)
-                if not current_airjoint is None:
-                    airjoint_processor.process_airjoint(pole, polyline_with_sta, dataprocessor, normal_processor, idxlib)
-                self.poles.append(pole)
+                    normal_processor.process(pole, dataprocessor, idxlib)
+                else:
+                    airjoint_processor.process_airjoint(pole, polyline_with_sta,
+                                                        dataprocessor, normal_processor, idxlib)
+                poles.append(pole)
             except Exception as e:
-                print(f"process_pole 실행 중 에러 발생: {e}")
-        return self.poles
+                print(f"[{track_name}] process_pole 실행 중 에러 발생: {e}")
+        return poles
+
+    def process_pole_multitrack(self, positions_by_track, structure_list_by_track,
+                                curve_list_by_track, pitchlist_by_track,
+                                dataprocessor, airjoint_list, polyline_with_sta,
+                                idxlib, track_mode="single", track_direction="L"):
+        """단일/이중 트랙 모두 지원"""
+        results = {}
+        if track_mode == "single":
+            results["main"] = self._process_single_track(
+                positions_by_track["main"],
+                structure_list_by_track["main"],
+                curve_list_by_track["main"],
+                pitchlist_by_track["main"],
+                dataprocessor, airjoint_list, polyline_with_sta['main'], idxlib,
+                track_name="main", side=track_direction
+            )
+        else:  # double track
+            if track_direction == "mainL_subR":
+                results["main"] = self._process_single_track(
+                    positions_by_track["main"],
+                    structure_list_by_track["main"],
+                    curve_list_by_track["main"],
+                    pitchlist_by_track["main"],
+                    dataprocessor, airjoint_list, polyline_with_sta['main'], idxlib,
+                    track_name="main", side="L"
+                )
+                results["sub"] = self._process_single_track(
+                    positions_by_track["sub"],
+                    structure_list_by_track["sub"],
+                    curve_list_by_track["sub"],
+                    pitchlist_by_track["sub"],
+                    dataprocessor, airjoint_list, polyline_with_sta['sub'], idxlib,
+                    track_name="sub", side="R"
+                )
+            else:  # mainR_subL
+                results["main"] = self._process_single_track(
+                    positions_by_track["main"],
+                    structure_list_by_track["main"],
+                    curve_list_by_track["main"],
+                    pitchlist_by_track["main"],
+                    dataprocessor, airjoint_list, polyline_with_sta, idxlib,
+                    track_name="main", side="R"
+                )
+                results["sub"] = self._process_single_track(
+                    positions_by_track["sub"],
+                    structure_list_by_track["sub"],
+                    curve_list_by_track["sub"],
+                    pitchlist_by_track["sub"],
+                    dataprocessor, airjoint_list, polyline_with_sta, idxlib,
+                    track_name="sub", side="L"
+                )
+        return results

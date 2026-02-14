@@ -27,3 +27,5 @@ class PoleDATA:
     base_type: str = ''
     next_base_type: str = ''
     coord: tuple[float, float] = (0, 0)
+    track: str = None,  # 추가: 트랙 구분 (main / sub)
+    side: str = None  # 추가: 좌/우 구분 (L / R)

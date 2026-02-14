@@ -6,3 +6,4 @@ class Mast:
     name: str
     index: int
     offset: float
+    rotation: float

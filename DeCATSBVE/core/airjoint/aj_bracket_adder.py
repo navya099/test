@@ -21,6 +21,8 @@ class AirjointBracketAdder:
 
             self.nps.process(pole, self.prosc, idxlib)
             x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
+            if pole.side == 'L':
+                x1 *= -1
             start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
             en = idxlib.get_name(1247)
             pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=start_angle, type='장력장치'))
@@ -45,6 +47,8 @@ class AirjointBracketAdder:
             en = idxlib.get_name(1247)
             self.nps.process(pole, self.prosc, idxlib)
             x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
+            if pole.side == 'R':
+                x5 *= -1
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge,start=False)
             pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle, type='장력장치'))
 
@@ -58,14 +62,19 @@ class AirjointBracketAdder:
         pole.brackets.clear()
         # F형 가동 브래킷 추가
         x1, y1 = self.prosc.get_bracket_coordinates('F형_시점' if not end else 'F형_끝')
+        if not end and pole.side == 'L':
+            x1 *= -1
         self.add_F_bracket(pole, f_i,idxlib, x1, y1)
 
         # AJ형 가동 브래킷 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_시점' if not end else 'AJ형_끝')
+        if not end and pole.side == 'L':
+            x1 *= -1
         self.add_AJ_bracket(pole, aj_i, idxlib, x1, y1)
 
     def add_F_bracket(self, pole: PoleDATA, bracket_code, idxlib, x1, y1):
         """F형 가동 브래킷 및 금구류 추가"""
+        rotation = 180 if pole.side == 'R' else 0
         idx1, idx2 = self.params.flat_fitting
         n1 = idxlib.get_name(idx1)
         n2 = idxlib.get_name(idx2)
@@ -76,18 +85,19 @@ class AirjointBracketAdder:
             bracket_type='F',
             index=bracket_code,
             bracket_name=bracket_name,
-            offset=(0,h)
+            offset=(0,h),
+            rotation=rotation
         )
         # 금구류 추가
-        bracket.fittings.append(FittingDATA(index=idx1, label=n1, offset=(x1, y1)))
-        bracket.fittings.append(FittingDATA(index=idx2, label=n2, offset=(x1, y1)))
+        bracket.fittings.append(FittingDATA(index=idx1, label=n1, offset=(x1, y1), rotation=rotation))
+        bracket.fittings.append(FittingDATA(index=idx2, label=n2, offset=(x1, y1), rotation=rotation))
 
         # PoleDATA에 브래킷 등록
         pole.brackets.append(bracket)
 
     def add_AJ_bracket(self, pole: PoleDATA, bracket_code, idxlib, x1, y1, end=False):
         """AJ형 가동 브래킷 및 금구류 추가"""
-
+        rotation = 180 if pole.side == 'R' else 0
         idx1 = self.params.airjoint_fitting
         idx2 = self.params.steady_arm_fitting[0] if not end else self.params.steady_arm_fitting[1]
         n1 = idxlib.get_name(idx1)
@@ -98,11 +108,12 @@ class AirjointBracketAdder:
             bracket_type='AJ',
             index=bracket_code,
             bracket_name=bn,
-            offset=(0, y1)
+            offset=(0, y1),
+            rotation=rotation
         )
         # 금구류 추가
-        bracket.fittings.append(FittingDATA(index=idx1, label=n1, offset=(x1, y1)))
-        bracket.fittings.append(FittingDATA(index=idx2, label=n2, offset=(x1, y1)))
+        bracket.fittings.append(FittingDATA(index=idx1, label=n1, offset=(x1, y1), rotation=rotation))
+        bracket.fittings.append(FittingDATA(index=idx2, label=n2, offset=(x1, y1),rotation=rotation))
 
         # PoleDATA에 브래킷 등록
         pole.brackets.append(bracket)
@@ -116,19 +127,24 @@ class AirjointBracketAdder:
         aj_i, aj_o = self.params.aj_bracket_values
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간1')
+        if pole.side == 'L':
+            x1 *= -1
         self.add_AJ_bracket(pole, aj_i, idxlib, x1, y1)
 
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간2')
+        if pole.side == 'R':
+            x1 *= -1
         self.add_AJ_bracket(pole, aj_o, idxlib, x1, y1)
 
     def add_common_equipts(self, pole):
-        pole.mast = Mast(self.params.mast_name, self.params.mast_type, pole.gauge)
+        rotation = 180 if pole.side == 'R' else 0
+        pole.mast = Mast(self.params.mast_name, self.params.mast_type, pole.gauge, rotation=rotation)
         feederidx = self.params.feeder_idx
         feeder_name = self.params.feeder_name
         spreaderidx = self.params.spreader_idx
         spreader_name = self.params.spreader_name
         pole.equipments.append(
-            EquipmentDATA(name=feeder_name, index=feederidx, offset=(pole.gauge, 0),type='급전선설비'))
+            EquipmentDATA(name=feeder_name, index=feederidx, offset=(pole.gauge, 0),rotation=rotation,type='급전선설비'))
         pole.equipments.append(
-            EquipmentDATA(name=spreader_name, index=spreaderidx, offset=(pole.gauge, 0),type='평행틀'))
+            EquipmentDATA(name=spreader_name, index=spreaderidx, offset=(pole.gauge, 0),rotation=rotation,type='평행틀'))

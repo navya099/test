@@ -9,6 +9,7 @@ class NormalSectionProcessor:
 
     def process(self, pole, dataprocessor, idxlib):
         """노말구간 데이터 생성"""
+        rotation = 180 if pole.side == 'R' else 0
         # MAST 데이터 가져오기
         mast_index, _ = dataprocessor.get_mast_type(pole.structure)
         mast_name = idxlib.get_name(mast_index)
@@ -22,9 +23,10 @@ class NormalSectionProcessor:
 
         bracket_index = i_type_index if pole.base_type == 'I' else o_type_index
         bracket_name = idxlib.get_name(bracket_index)
-        bracket = BracketDATA(bracket_type=pole.base_type, index=bracket_index, bracket_name=bracket_name)
-        mast = Mast(name=mast_name,index=mast_index, offset=pole.gauge)
-        equipment = EquipmentDATA(name=feeder_name,index=feeder_idx, offset=(pole.gauge,0),type='급전선설비')
+
+        bracket = BracketDATA(bracket_type=pole.base_type, index=bracket_index, bracket_name=bracket_name, rotation=rotation)
+        mast = Mast(name=mast_name,index=mast_index, offset=pole.gauge,rotation=rotation)
+        equipment = EquipmentDATA(name=feeder_name,index=feeder_idx, offset=(pole.gauge,0),rotation=rotation,type='급전선설비')
 
         #pole에 기록
         pole.mast = mast
