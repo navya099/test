@@ -38,6 +38,8 @@ class AutoPoleApp(tk.Tk):
         self.is_create_dxf = tk.BooleanVar(value=False)
         tk.Checkbutton(input_frame, text="도면 작성", variable=self.is_create_dxf).pack(side="left")
 
+
+
         # 버튼 영역
         button_frame = tk.Frame(self)
         button_frame.pack(side="top", fill="x")
@@ -48,6 +50,32 @@ class AutoPoleApp(tk.Tk):
         tk.Button(button_frame, text="데이터로드", command=self.load_pickle).pack(side="left")
         tk.Button(button_frame, text="라이브러리 갱신", command=self.refresh_library).pack(side="left")
         tk.Button(button_frame, text="종료", command=self.exit_app).pack(side="left")
+
+        options_frame = tk.LabelFrame(self, text="트랙 옵션")
+        options_frame.pack(side="top", fill="x", padx=5, pady=5)
+        self.track_mode = tk.StringVar(value="single")
+        tk.Radiobutton(options_frame, text="단일 트랙", variable=self.track_mode, value="single").pack(side="left")
+        tk.Radiobutton(options_frame, text="이중 트랙", variable=self.track_mode, value="double").pack(side="left")
+
+        single_frame = tk.LabelFrame(self, text="단일 트랙 방향")
+        single_frame.pack(side="top", fill="x", padx=5, pady=5)
+
+        self.single_direction = tk.StringVar(value="L")
+        tk.Radiobutton(single_frame, text="본선 좌측", variable=self.single_direction, value="L").pack(anchor="w")
+        tk.Radiobutton(single_frame, text="본선 우측", variable=self.single_direction, value="R").pack(anchor="w")
+
+        double_frame = tk.LabelFrame(self, text="이중 트랙 방향")
+        double_frame.pack(side="top", fill="x", padx=5, pady=5)
+
+        self.double_direction = tk.StringVar(value="mainL_subR")
+        tk.Radiobutton(double_frame, text="본선 L / 상선 R", variable=self.double_direction, value="mainL_subR").pack(
+            anchor="w")
+        tk.Radiobutton(double_frame, text="본선 R / 상선 L", variable=self.double_direction, value="mainR_subL").pack(
+            anchor="w")
+        #트랙 간격(계산용)
+        self.track_distance = tk.DoubleVar(value=4.3)
+        tk.Label(double_frame, text="선로중심간격").pack(side="left")
+        tk.Entry(double_frame, width=10, textvariable=self.track_distance).pack(anchor="w")
 
         # 메인 영역 (좌우 분할)
         main_frame = tk.PanedWindow(self, orient="horizontal")
@@ -88,12 +116,15 @@ class AutoPoleApp(tk.Tk):
             self.runner.iscustommode = int(self.is_custom_mode.get())
             self.runner.is_create_dxf = int(self.is_create_dxf.get())
             self.runner.idxlib = self.idxlib
-            if self.runner.iscustommode:
-                self.runner.log(f"현재 모드: 커스텀모드")
-                return
-            self.runner.log(f"현재 모드: 일반모드")
-            self.runner.log(f"설계속도={self.runner.designspeed}km/h")
+            self.runner.track_mode = self.track_mode.get()
 
+            if self.runner.track_mode == "single":
+                self.runner.track_direction = self.single_direction.get()
+                self.runner.log(f"현재 모드: 단일 트랙 (본선 {self.runner.track_direction})")
+            else:
+                self.runner.track_direction = self.double_direction.get()
+                self.runner.track_distance = self.track_distance.get()
+                self.runner.log(f"현재 모드: 이중 트랙 ({self.runner.track_direction})")
         except ValueError:
             self.runner.log("⚠️ 숫자를 입력하세요")
 
