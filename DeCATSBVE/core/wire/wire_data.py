@@ -9,5 +9,6 @@ class WireData:
     pos: int
     span: int
     wires: list[SingleWire]
+    track_name: str
     def add_wire(self, wire: SingleWire):
         self.wires.append(wire)
