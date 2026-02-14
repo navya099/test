@@ -18,8 +18,7 @@ class PoleAssemblerApp(tk.Toplevel):
         # event가 None일 수 있으므로 초기화 시점에는 바인딩하지 않음
         if self.event:
             self.bind_events()
-        self.lib_manager = LibraryManager()  # 인스턴스 연결
-        self.lib_manager.scan_library()  # 라이브러리 생성
+        self.lib_manager = self.runner.idxlib  # 인스턴스 연결
         # 현재 선택 저장
         self.selection = {}
         #0 현재 전주 변수

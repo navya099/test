@@ -30,4 +30,4 @@ class CommonWireProcessor:
                                                x1, x2)
         topdown_angle = calculate_slope(current_z + y1,next_z + y2, currentspan) - pitch_angle
 
-        return SingleWire(index=index, offset=start,adjusted_angle=adjusted_angle,topdown_angle=topdown_angle, label=label)
+        return SingleWire(index=index, offset=start,end_point=end,adjusted_angle=adjusted_angle,topdown_angle=topdown_angle, label=label)

@@ -102,6 +102,7 @@ class AutoPoleApp(tk.Tk):
         self.update_inputs()
         self.runner.run()
         self.editor.create_epoles()
+        self.editor.create_ewires()
         self.editor.refresh_tree()
         self.plotter.update_plot()
 
@@ -121,6 +122,7 @@ class AutoPoleApp(tk.Tk):
         load_runner(self.runner, 'c:/temp/decatsbve.dat')
         self.runner.polesaver = BVECSV(self.runner.poledata, self.runner.wire_data)
         self.editor.create_epoles()
+        self.editor.create_ewires()
         self.editor.refresh_tree()
         self.plotter.update_plot()
         messagebox.showinfo('정보', '데이터 로드가 완료됐습니다.')

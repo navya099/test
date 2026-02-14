@@ -2,7 +2,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from gui.pole_assembler import PoleAssemblerApp
+from gui.wireeditor import WireEditor
 from vms.editable_pole import EditablePole
+from vms.editable_wires import EditableWire
 from vms.eidtable_bracket import BracketEditor
 from xref_module.transaction import Transaction
 
@@ -10,6 +12,7 @@ from xref_module.transaction import Transaction
 class AutoPoleEditor(tk.Frame):
     def __init__(self, runner, events=None, master=None):
         super().__init__(master)
+        self.editable_wires = []
         self.runner = runner
         self.events = events
         if self.events:
@@ -86,6 +89,7 @@ class AutoPoleEditor(tk.Frame):
         tk.Button(self, text="선택 불러오기", command=self.load_selected).pack()
         tk.Button(self, text="수정 저장", command=self.save_edit).pack()
         tk.Button(self, text="전주 상세 편집", command=self.open_equipment_editor).pack()
+        tk.Button(self, text="전선 상세 편집", command=self.open_wire_editor).pack()
 
     def on_pole_moved(self):
         self.refresh_tree()
@@ -113,9 +117,19 @@ class AutoPoleEditor(tk.Frame):
                 if e.pole.pos == pos:
                     epole = e
                     break
+            # ewire 객체 찾기
+            ewire = None
+            for w in self.editable_wires:
+                if w.wire.pos == pos:
+                    ewire = w
+                    break
 
-            if self.events and epole is not None:
-                self.events.emit("pole_selected", epole)
+            # 이벤트 발행
+            if self.events:
+                if epole is not None:
+                    self.events.emit("pole_selected", epole)
+                if ewire is not None:
+                    self.events.emit("wire_selected", ewire)
 
             self.original_pos = pos
             self.entry_post_number.delete(0, tk.END)
@@ -142,6 +156,17 @@ class AutoPoleEditor(tk.Frame):
             self.editable_poles.append(epole)
             if prev_epole:
                 prev_epole.next_pole = epole
+
+    def create_ewires(self):
+        # EditableWire 리스트 생성
+
+        for i, wire in enumerate(self.runner.wire_data):
+            prev_ewire = self.editable_wires[i - 1] if i > 0 else None
+            ewire = EditableWire(wire, self.runner.structure_list, self.runner.curvelist, self.runner.pitchlist,
+                                 self.runner.polyline_with_sta, prev_wire=prev_ewire)
+            self.editable_wires.append(ewire)
+            if prev_ewire:
+                prev_ewire.next_wire = ewire
 
     def save_edit(self):
         new_post_number = self.entry_post_number.get()
@@ -188,3 +213,7 @@ class AutoPoleEditor(tk.Frame):
     def open_equipment_editor(self):
         asemlbapp = PoleAssemblerApp(self.runner, self.events)
         asemlbapp.bind_events()
+
+    def open_wire_editor(self):
+        we = WireEditor(self.runner, self.events)
+        we.bind_events()

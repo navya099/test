@@ -10,3 +10,4 @@ class SingleWire:
     topdown_angle: float = 0.0            # 상하각도
     label: str = ""                       # 전선 이름 (급전선, FPW, 특고압 등)
     station: float = None
+    end_point: tuple[float, float] = (0, 0)  # 끝점 (x, y) 좌표
