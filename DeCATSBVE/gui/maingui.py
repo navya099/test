@@ -14,15 +14,17 @@ from xref_module.index_libmgr import IndexLibrary
 class AutoPoleApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.idxlib = None
         self.title("AutoPOLE")
         self.events = EventController()
-        #라이브러리 갱신
-        self.refresh_library()
+
+
         # 로그 박스
         self.log_box = tk.Text(self, height=10, width=80)
         self.log_box.pack(side="bottom", fill="x")
         self.runner = AutoPole(self.log_box)
-
+        # 라이브러리 갱신
+        self.refresh_library()
         # 입력 영역
         input_frame = tk.Frame(self)
         input_frame.pack(side="top", fill="x")
@@ -71,6 +73,7 @@ class AutoPoleApp(tk.Tk):
         URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 
         self.idxlib = IndexLibrary(pd.read_csv(URL))
+        self.runner.idxlib = self.idxlib
 
     def exit_app(self):
         self.quit()

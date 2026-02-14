@@ -47,11 +47,19 @@ class PoleAssemblerApp(tk.Toplevel):
 
         # 급전선
         row += 1
+        self.feeder_vars = []
         ttk.Label(self, text="급전선 종류:").grid(row=row, column=0, padx=5, pady=5, sticky="w")
         self.feeder_var = tk.StringVar()
-        self.feeder_combo = ttk.Combobox(self, textvariable=self.feeder_var, state="disabled")
+        self.feeder_xvar = tk.DoubleVar()
+        self.feeder_yvar = tk.DoubleVar()
+        self.feeder_rvar = tk.DoubleVar()
+        feeders = self.lib_manager.list_files_in_category(category='급전선설비', group='base')
+        self.feeder_combo = ttk.Combobox(self, textvariable=self.feeder_var,values=feeders, state="readonly")
         self.feeder_combo.grid(row=row, column=1, padx=5, pady=5)
-
+        ttk.Entry(self, textvariable=self.feeder_xvar, width=5).grid(row=row, column=2, padx=5, pady=5)
+        ttk.Entry(self, textvariable=self.feeder_yvar, width=5).grid(row=row, column=3, padx=5, pady=5)
+        ttk.Entry(self, textvariable=self.feeder_rvar, width=5).grid(row=row, column=4, padx=5, pady=5)
+        self.feeder_vars.append([self.feeder_var,self.feeder_xvar,self.feeder_yvar,self.feeder_rvar])
         # 보호선
         row += 1
         ttk.Label(self, text="보호선 지지물 종류:").grid(row=row, column=0, padx=5, pady=5, sticky="w")
@@ -252,7 +260,12 @@ class PoleAssemblerApp(tk.Toplevel):
 
             for equip in self.epole.pole.equipments:
                 if equip.type == '급전선설비':
+                    self.feeder_vars.clear()
                     self.feeder_var.set(equip.name)
+                    self.feeder_xvar.set(equip.offset[0])
+                    self.feeder_yvar.set(equip.offset[1])
+                    self.feeder_rvar.set(equip.rotation)
+                    self.feeder_vars.append([self.feeder_var, self.feeder_xvar, self.feeder_yvar, self.feeder_rvar])
                 else:
                     self.add_equip_entry(name=equip.name,
                                          offset=equip.offset,
@@ -263,7 +276,7 @@ class PoleAssemblerApp(tk.Toplevel):
     def apply_selection(self):
         self.selection["pole"] = self.pole_var.get()
         self.selection["brackets"] = self.bracket_entries
-        self.selection["feeder"] = self.feeder_var.get()
+        self.selection["feeder"] = self.feeder_vars
         self.selection["fpw"] = self.fpw_var.get()
         self.selection["equipments"] = self.equip_entries
         self.selection["gauge"] = self.gauge_var.get()
@@ -311,10 +324,13 @@ class PoleAssemblerApp(tk.Toplevel):
                     pole.brackets.append(bracket)
                 #급전선 장비 적용
                 pole.equipments.clear()
-                if self.selection["feeder"] != '':
-                    feeder_name = self.selection["feeder"].replace('.csv','')
+                if self.selection["feeder"]:
+                    feeder_name = self.selection["feeder"][0][0].get().replace('.csv','')
                     feeder_idx =  self.runner.idxlib.get_index(feeder_name)
-                    pole.equipments.append(EquipmentDATA(name=feeder_name,index=feeder_idx,offset=(pole.gauge,0),type='급전선설비'))
+                    feeder_xoffset = self.selection["feeder"][0][1].get()
+                    feeder_yoffset = self.selection["feeder"][0][2].get()
+                    feeder_roffset = self.selection["feeder"][0][3].get()
+                    pole.equipments.append(EquipmentDATA(name=feeder_name,index=feeder_idx,offset=(feeder_xoffset,feeder_yoffset),rotation=feeder_roffset,type='급전선설비'))
 
                 #보호선 금구 적용
                 if self.selection["fpw"] != '':
