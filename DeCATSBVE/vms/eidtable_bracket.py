@@ -3,7 +3,7 @@ from core.bracket.bracket_data import BracketDATA
 
 class BracketEditor:
     @staticmethod
-    def update(pole ,dataprocseeor):
+    def update(pole ,dataprocseeor, idxlib):
         """일반구간용"""
         current_type = pole.base_type
         current_curve = '직선' if pole.radius == 0 else '곡선'
@@ -12,5 +12,5 @@ class BracketEditor:
             index = i
         else:
             index = o
-        bracket_name = current_type
+        bracket_name = idxlib.get_name(index)
         pole.brackets[0] = BracketDATA(bracket_type=current_type, index=index, bracket_name=bracket_name)

@@ -1,3 +1,5 @@
+from core.bracket.bracket_data import BracketDATA
+from core.bracket.fitting_data import FittingDATA
 from core.equipment.equipment_data import EquipmentDATA
 from xref_module.object_libraymgr import LibraryManager
 import tkinter as tk
@@ -27,19 +29,6 @@ class PoleAssemblerApp(tk.Toplevel):
         ttk.Label(self, text="현재 전주:").grid(row=row, column=0, padx=5, pady=5, sticky="w")
         ttk.Entry(self, textvariable=self.current_pole_var, state='readonly').grid(row=row, column=1, padx=5, pady=5)
 
-        # 1. 선로 종류 선택
-        row += 1
-        ttk.Label(self, text="선로 종류 선택:").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        self.railtype_var = tk.StringVar()
-        self.railtype_combo = ttk.Combobox(
-            self,
-            textvariable=self.railtype_var,
-            values=['도시철도', '일반철도', '고속철도', '준고속철도'],
-            state="readonly"
-        )
-        self.railtype_combo.grid(row=row, column=1, padx=5, pady=5)
-        self.railtype_combo.bind("<<ComboboxSelected>>", self.update_options)
-
         # 2. 위젯 생성
         # 전주 형식
         row += 1
@@ -51,9 +40,10 @@ class PoleAssemblerApp(tk.Toplevel):
         # 브래킷
         row += 1
         ttk.Label(self, text="브래킷 종류:").grid(row=row, column=0, padx=5, pady=5, sticky="w")
-        self.bracket_var = tk.StringVar()
-        self.bracket_combo = ttk.Combobox(self, textvariable=self.bracket_var, state="disabled")
-        self.bracket_combo.grid(row=row, column=1, padx=5, pady=5)
+        self.bracket_frame = ttk.Frame(self)
+        self.bracket_frame.grid(row=row, column=1, padx=5, pady=5, sticky="w")
+        self.bracket_entries = []
+        tk.Button(self, text="+브래킷", command=self.add_bracket_entry).grid(row=row, column=2, padx=5, pady=5)
 
         # 급전선
         row += 1
@@ -119,62 +109,160 @@ class PoleAssemblerApp(tk.Toplevel):
                 break
         frame.destroy()
 
+    def add_bracket_entry(self, name='', offset=(0.0, 0.0), rotation=0.0, fittings_data=None):
+        frame = ttk.Frame(self.bracket_frame)
+        frame.pack(fill="x", pady=2)
+
+        # 선로 종류 선택
+        railtype_var = tk.StringVar()
+        railtype_combo = ttk.Combobox(
+            frame,
+            textvariable=railtype_var,
+            values=['도시철도', '일반철도', '고속철도', '준고속철도'],
+            state="readonly"
+        )
+        railtype_combo.pack(side="left")
+
+        # 브래킷 선택
+        bracket_var = tk.StringVar(value=name if name else "")
+        bracket_combo = ttk.Combobox(frame, textvariable=bracket_var, values=[], state="readonly")
+        bracket_combo.pack(side="left")
+
+        def update_brackets(event=None):
+            rail_type = railtype_var.get()
+            if rail_type:
+                group = self.lib_manager.define_group(rail_type)
+                # 브래킷 목록 갱신
+                brackets = self.lib_manager.list_files_in_category(category='브래킷', group=group)
+                bracket_combo.config(values=brackets)
+                # 피팅 목록 갱신
+
+                for f_var, fx, fy, fr, f_frame in fittings:
+                    # f_frame 안의 콤보박스 찾아서 갱신
+                    for child in f_frame.winfo_children():
+                        if isinstance(child, ttk.Combobox):
+                            child.config(values=brackets)
+
+        railtype_combo.bind("<<ComboboxSelected>>", update_brackets)
+
+        # offset, rotation 입력
+        offset_x = tk.DoubleVar(value=offset[0])
+        offset_y = tk.DoubleVar(value=offset[1])
+        rotation_var = tk.DoubleVar(value=rotation)
+        ttk.Entry(frame, textvariable=offset_x, width=5).pack(side="left", padx=2)
+        ttk.Entry(frame, textvariable=offset_y, width=5).pack(side="left", padx=2)
+        ttk.Entry(frame, textvariable=rotation_var, width=5).pack(side="left", padx=2)
+
+        # 피팅 영역
+        fitting_frame = ttk.Frame(frame)
+        fitting_frame.pack(side="left", padx=5)
+        fittings = []
+
+        def add_fitting_entry(name='', offset=(0.0, 0.0), rotation=0.0):
+            f_frame = ttk.Frame(fitting_frame)
+            f_frame.pack(fill="x", pady=1)
+
+            f_var = tk.StringVar(value=name)
+            rail_type = railtype_var.get()
+            group = self.lib_manager.define_group(rail_type) if rail_type else 'base'
+            f_combo = ttk.Combobox(f_frame, textvariable=f_var,
+                                   values=self.lib_manager.list_files_in_category('브래킷', group=group),
+                                   state="readonly")
+            f_combo.pack(side="left")
+
+            fx = tk.DoubleVar(value=offset[0])
+            fy = tk.DoubleVar(value=offset[1])
+            fr = tk.DoubleVar(value=rotation)
+            ttk.Entry(f_frame, textvariable=fx, width=5).pack(side="left")
+            ttk.Entry(f_frame, textvariable=fy, width=5).pack(side="left")
+            ttk.Entry(f_frame, textvariable=fr, width=5).pack(side="left")
+
+            tk.Button(f_frame, text="-피팅", command=lambda: remove_fitting_entry(f_frame)).pack(side="left")
+
+            fittings.append((f_var, fx, fy, fr, f_frame))
+
+        def remove_fitting_entry(f_frame):
+            for f in fittings:
+                if f[4] == f_frame:
+                    fittings.remove(f)
+                    break
+            f_frame.destroy()
+
+        tk.Button(frame, text="+피팅", command=lambda: add_fitting_entry()).pack(side="left")
+
+        # 삭제 버튼
+        remove_btn = tk.Button(frame, text="-브래킷", command=lambda: self.remove_bracket_entry(frame))
+        remove_btn.pack(side="left", padx=2)
+
+        entry = {
+            "bracket_var": bracket_var,
+            "offset_x": offset_x,
+            "offset_y": offset_y,
+            "rotation_var": rotation_var,
+            "frame": frame,
+            "fittings": fittings
+        }
+
+        self.bracket_entries.append(entry)
+
+        # 기존 피팅 데이터 복원
+        if fittings_data:
+            for f in fittings_data:
+                add_fitting_entry(name=f.label, offset=f.offset, rotation=f.rotation)
+
+    def remove_bracket_entry(self, frame):
+        for entry in self.equip_entries:
+            if entry[3] == frame:
+                self.equip_entries.remove(entry)
+                break
+        frame.destroy()
+
+
     # 초기화 이후에도 호출 가능
     def bind_events(self):
         self.event.bind("pole_selected", self.on_pole_selected)
 
-    # 전주 선택 시 옵션 업데이트
-    def update_options(self, event):
-        """
-        콤보상자 옵션 업데이트 메소드
-        :param event:
-        :return:
-        """
-        rail_type = self.railtype_var.get()
-        group = self.lib_manager.define_group(rail_type)
-
-        # 전주 목록 조회
-        poles = self.lib_manager.list_files_in_category('기둥', group='base')
-
-        self.pole_combo.config(values=poles)
-
-        # 브래킷 리스트 가져오기
-        brackets = self.lib_manager.list_files_in_category(category='브래킷', group=group)
-        self.bracket_combo.config(values=brackets, state="readonly")
-
-        # 급전선 세팅
-        feeders = self.lib_manager.list_files_in_category(category='급전선설비', group='base')
-        self.feeder_combo.config(values=feeders, state="readonly")
-
-        # 보호선 세팅
-        fpws = self.lib_manager.list_files_in_category(category='금구류', group='base')
-        self.fpw_combo.config(values=fpws, state="readonly")
-
     def on_pole_selected(self, epole):
         if not self.winfo_exists():
-            return  # 창이 이미 닫혔으면 무시
+            return
 
         self.epole = epole
         if self.epole is not None:
             self.current_pole_var.set(str(self.epole.pole.post_number))
 
-            for _, _, _,_, frame in self.equip_entries:
+            # 기존 엔트리 제거
+            for _, _, _, _, frame in self.equip_entries:
                 frame.destroy()
             self.equip_entries.clear()
 
-            # 기존 속성 반영
+            for entry in self.bracket_entries:
+                for f_var, fx, fy, fr, f_frame in entry["fittings"]:
+                    f_frame.destroy()
+                entry["fittings"].clear()
+                entry["frame"].destroy()
+            self.bracket_entries.clear()
+
+            # 속성 복원
             self.pole_var.set(self.epole.pole.mast.name)
-            self.bracket_var.set(self.epole.pole.brackets[0].bracket_name if self.epole.pole.brackets else "")
+            for br in self.epole.pole.brackets:
+                self.add_bracket_entry(name=br.bracket_name,
+                                       offset=br.offset,
+                                       rotation=br.rotation,
+                                       fittings_data=br.fittings)
+
             for equip in self.epole.pole.equipments:
                 if equip.type == '급전선설비':
                     self.feeder_var.set(equip.name)
-                else:#추가장비
-                    self.add_equip_entry(name=equip.name, offset=equip.offset, rotation=equip.rotation)
-            #건식게이지
+                else:
+                    self.add_equip_entry(name=equip.name,
+                                         offset=equip.offset,
+                                         rotation=equip.rotation)
+
             self.gauge_var.set(self.epole.pole.gauge)
+
     def apply_selection(self):
         self.selection["pole"] = self.pole_var.get()
-        self.selection["bracket"] = self.bracket_var.get()
+        self.selection["brackets"] = self.bracket_entries
         self.selection["feeder"] = self.feeder_var.get()
         self.selection["fpw"] = self.fpw_var.get()
         self.selection["equipments"] = self.equip_entries
@@ -200,11 +288,27 @@ class PoleAssemblerApp(tk.Toplevel):
                 pole.mast.index = self.runner.idxlib.get_index(mast_name)
                 pole.mast.offset = self.selection["gauge"]
                 #브래킷 적용
-                bracket_name = self.selection["bracket"].replace('.csv','')
-                pole.brackets[0].bracket_type = bracket_name
-                pole.brackets[0].index = self.runner.idxlib.get_index(bracket_name)
-                pole.brackets[0].bracket_name = self.selection["bracket"]
-
+                pole.brackets.clear()
+                for br in self.selection["brackets"]:
+                    bracket_name = br['bracket_var'].get().replace('.csv','')
+                    index = self.runner.idxlib.get_index(bracket_name)
+                    offset = br['offset_x'].get(), br['offset_y'].get()
+                    rotation = br['rotation_var'].get()
+                    bracket = BracketDATA(
+                        bracket_type=pole.base_type,
+                        index=index,
+                        offset=offset,
+                        rotation=rotation,
+                        bracket_name=bracket_name
+                    )
+                    for fit in br["fittings"]:
+                        name = fit[0].get().replace('.csv','')
+                        index = self.runner.idxlib.get_index(name)
+                        offset = fit[1].get(), fit[2].get()
+                        rotation = fit[3].get()
+                        fitting = FittingDATA(index, offset, rotation, name)
+                        bracket.fittings.append(fitting)
+                    pole.brackets.append(bracket)
                 #급전선 장비 적용
                 pole.equipments.clear()
                 if self.selection["feeder"] != '':

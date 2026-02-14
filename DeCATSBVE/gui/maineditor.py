@@ -170,7 +170,7 @@ class AutoPoleEditor(tk.Frame):
                                 section=new_section,
                                 base_type=new_base_type
                             )
-                            BracketEditor.update(epole.pole, self.runner.dataprocessor)
+                            BracketEditor.update(epole.pole, self.runner.dataprocessor, self.runner.idxlib)
                     break
                 except Exception as e:
                     messagebox.showerror('전주 업데이트 실패', str(e))

@@ -1,3 +1,6 @@
+from utils.comom_util import offsets
+
+
 class BVECSV:
     """BVE CSV 구문을 생성하는 클래스
     Attributes:
@@ -36,12 +39,24 @@ class BVECSV:
 
                 if section is None:
                     # 일반개소
-
+                    n = len(brs)
+                    s = 1
+                    offs = offsets(n, s)
+                    #장비
                     for eq in eqs:
                         self.lines.append(
                             f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
+                    #전주
                     self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
-                    self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
+                    #브래킷
+                    for i, br in enumerate(brs):
+                        offset = offs[i]
+                        station = pos + offset
+                        self.lines.append(f'{station},.freeobj 0;{br.index};{br.offset[0]};{br.offset[1]};{br.rotation},;{br.bracket_name}\n')
+                        for fit in br.fittings:
+                            self.lines.append(
+                                f'{station},.freeobj 0;{fit.index};{fit.offset[0]};{fit.offset[1]};{fit.rotation};,;{fit.label}\n')
+
 
                 elif section in ['에어조인트 시작점 (1호주)', '에어조인트 끝점 (5호주)']:
                     self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')

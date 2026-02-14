@@ -138,3 +138,10 @@ def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_
     slope_degree2 = math.degrees(slope_radian2)  # 조가선 각도(도)
 
     return slope_degree1, slope_degree2, h1, h2, pererall_d, sta2
+
+def offsets(n, s):
+    if n == 1:
+        return [0.0]
+    if n == 2:
+        return [-s * 0.5, s * 0.5]
+    return [(i - (n - 1) / 2) * s * 0.5 for i in range(n)]
