@@ -37,6 +37,13 @@ class PreviewViewer:
         self.plot.showGrid(x=True, y=True)
         self.plotter = PreviewPlotter(self.plot, projection=self.projection)
 
+        # 좌표 표시용 라벨 추가
+        self.label = pg.LabelItem(justify='right')
+        self.win.addItem(self.label)
+
+        # 마우스 이동 이벤트 연결
+        self.proxy = pg.SignalProxy(self.plot.scene().sigMouseMoved, rateLimit=60, slot=self._mouse_moved)
+
     def add_object(self, obj):
         self.objects.append(obj)
 
@@ -52,3 +59,13 @@ class PreviewViewer:
         self.projection = projection
         if self.plotter:
             self.plotter.set_projection(projection)
+
+
+
+    def _mouse_moved(self, evt):
+        pos = evt[0]  # QGraphicsSceneMouseEvent
+        if self.plot.sceneBoundingRect().contains(pos):
+            mousePoint = self.plot.vb.mapSceneToView(pos)
+            x, y = mousePoint.x(), mousePoint.y()
+            self.label.setText(f"x={x:.2f}, y={y:.2f}")
+
