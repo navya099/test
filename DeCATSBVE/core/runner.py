@@ -13,6 +13,12 @@ from shapely.geometry.linestring import LineString
 
 class AutoPole:
     def __init__(self, log_widget):
+        self.polesaver_sub = None
+        self.polesaver_main = None
+        self.wire_path_sub = None
+        self.pole_path_sub = None
+        self.pole_path_main = None
+        self.wire_path_main = None
         self.offset_line_with_25 = None
         self.pole_positions = None
         self.idxlib = None
@@ -128,21 +134,38 @@ class AutoPole:
             self.track_mode, self.track_direction,
         )
 
-        self.wire_processor = WireProcessor(self.dataprocessor, self.polyline_with_sta, self.poledata)
+        self.wire_processor = WireProcessor(self.dataprocessor, alignment_by_track, self.poledata)
         self.wire_data = self.wire_processor.process_to_wire()
-        self.pole_path = asksaveasfilename(title='전주 데이터 저장')
-        self.wire_path = asksaveasfilename(title='전차선 데이터 저장')
-        self.polesaver = BVECSV(self.poledata, self.wire_data)
-        pole_text = self.polesaver.create_pole_csv()
-        wire_text = self.polesaver.create_wire_csv()
-        write_to_file(self.pole_path, pole_text)
-        write_to_file(self.wire_path, wire_text)
+
+        # 본선 저장
+        self.polesaver_main = BVECSV(self.poledata["main"], self.wire_data["main"])
+        pole_text_main = self.polesaver_main.create_pole_csv()
+        wire_text_main = self.polesaver_main.create_wire_csv()
+        self.pole_path_main = asksaveasfilename(title='본선 전주 데이터 저장')
+        self.wire_path_main = asksaveasfilename(title='본선 전차선 데이터 저장')
+        write_to_file(self.pole_path_main, pole_text_main)
+        write_to_file(self.wire_path_main, wire_text_main)
+
+        # 상선 저장 (이중 트랙일 때만)
+        if self.track_mode == "double":
+            self.polesaver_sub = BVECSV(self.poledata["sub"], self.wire_data["sub"])
+            pole_text_sub = self.polesaver_sub.create_pole_csv()
+            wire_text_sub = self.polesaver_sub.create_wire_csv()
+            self.pole_path_sub = asksaveasfilename(title='상선 전주 데이터 저장')
+            self.wire_path_sub = asksaveasfilename(title='상선 전차선 데이터 저장')
+            write_to_file(self.pole_path_sub, pole_text_sub)
+            write_to_file(self.wire_path_sub, wire_text_sub)
 
         self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
         if self.is_create_dxf:
             print("도면 작성중.")
 
         # 최종 출력
-        self.log(f"전주 개수: {len(pole_positions)}")
-        self.log(f"마지막 전주 위치: {pole_positions[-1]}m (종점: {int(end_km * 1000)}m)")
+        main_count = len(self.poledata.get("main", []))
+        sub_count = len(self.poledata.get("sub", []))
+        if self.track_mode == "single":
+            self.log(f"전주 개수: 본선={main_count}개")
+        else:
+            self.log(f"전주 개수: 본선={main_count}개, 상선={sub_count}개")
+        self.log(f"마지막 전주 위치: {positions_by_track['main'][-1]}m (종점: {int(end_km * 1000)}m)")
         self.log('모든 작업 완료')
