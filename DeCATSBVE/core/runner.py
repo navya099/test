@@ -9,16 +9,10 @@ from file_io.filemanager import read_file, load_structure_data, load_curve_data,
     write_to_file
 from utils.comom_util import find_last_block, distribute_pole_spacing_flexible, define_airjoint_section, \
     generate_postnumbers
-from xref_module.index_libmgr import IndexLibrary
-
-SHEET_ID = "1z0aUcuZCxOQp2St3icbQMbOkrSPfJK_8iZ2JKFDbW8c"
-SHEET_NAME = "freeobj"  # ← 원하는 시트 이름
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
-
 
 class AutoPole:
     def __init__(self, log_widget):
-        self.idxlib = IndexLibrary(pd.read_csv(URL))
+        self.idxlib = None
         self.airjoint_list = None
         self.pitchlist = None
         self.curvelist = None

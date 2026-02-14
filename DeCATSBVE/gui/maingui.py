@@ -1,12 +1,14 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-
+import pandas as pd
 from bve.bvecsv import BVECSV
 from core.runner import AutoPole
 from event.event_controller import EventController
 from file_io.filemanager import write_to_file, load_poles, save_poles, save_runner, load_runner
 from gui.maineditor import AutoPoleEditor
 from gui.pole_plotter import PlotPoleMap
+from xref_module.index_libmgr import IndexLibrary
+
 
 
 class AutoPoleApp(tk.Tk):
@@ -14,7 +16,8 @@ class AutoPoleApp(tk.Tk):
         super().__init__()
         self.title("AutoPOLE")
         self.events = EventController()
-
+        #라이브러리 갱신
+        self.refresh_library()
         # 로그 박스
         self.log_box = tk.Text(self, height=10, width=80)
         self.log_box.pack(side="bottom", fill="x")
@@ -41,6 +44,7 @@ class AutoPoleApp(tk.Tk):
         tk.Button(button_frame, text="CSV저장", command=self.save).pack(side="left")
         tk.Button(button_frame, text="데이터저장", command=self.save_pickle).pack(side="left")
         tk.Button(button_frame, text="데이터로드", command=self.load_pickle).pack(side="left")
+        tk.Button(button_frame, text="라이브러리 갱신", command=self.refresh_library).pack(side="left")
         tk.Button(button_frame, text="종료", command=self.exit_app).pack(side="left")
 
         # 메인 영역 (좌우 분할)
@@ -61,6 +65,13 @@ class AutoPoleApp(tk.Tk):
 
         main_frame.add(plotter_frame)
 
+    def refresh_library(self):
+        SHEET_ID = "1z0aUcuZCxOQp2St3icbQMbOkrSPfJK_8iZ2JKFDbW8c"
+        SHEET_NAME = "freeobj"  # ← 원하는 시트 이름
+        URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
+
+        self.idxlib = IndexLibrary(pd.read_csv(URL))
+
     def exit_app(self):
         self.quit()
         self.destroy()
@@ -73,6 +84,7 @@ class AutoPoleApp(tk.Tk):
             self.runner.designspeed = int(self.entry_speed.get())
             self.runner.iscustommode = int(self.is_custom_mode.get())
             self.runner.is_create_dxf = int(self.is_create_dxf.get())
+            self.runner.idxlib = self.idxlib
             if self.runner.iscustommode:
                 self.runner.log(f"현재 모드: 커스텀모드")
                 return
