@@ -23,7 +23,7 @@ class AirjointBracketAdder:
             x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
             start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
             en = idxlib.get_name(1247)
-            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=start_angle))
+            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=start_angle, type='장력장치'))
 
         elif pole.section == AirJoint.POINT_2.value:
             # POINT_2 구간 처리
@@ -46,7 +46,7 @@ class AirjointBracketAdder:
             self.nps.process(pole, self.prosc, idxlib)
             x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge,start=False)
-            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle))
+            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle, type='장력장치'))
 
 
 
@@ -129,6 +129,6 @@ class AirjointBracketAdder:
         spreaderidx = self.params.spreader_idx
         spreader_name = self.params.spreader_name
         pole.equipments.append(
-            EquipmentDATA(name=feeder_name, index=feederidx, offset=(pole.gauge, 0)))
+            EquipmentDATA(name=feeder_name, index=feederidx, offset=(pole.gauge, 0),type='급전선설비'))
         pole.equipments.append(
-            EquipmentDATA(name=spreader_name, index=spreaderidx, offset=(pole.gauge, 0)))
+            EquipmentDATA(name=spreader_name, index=spreaderidx, offset=(pole.gauge, 0),type='평행틀'))

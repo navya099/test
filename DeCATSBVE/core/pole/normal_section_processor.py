@@ -24,7 +24,7 @@ class NormalSectionProcessor:
         bracket_name = idxlib.get_name(bracket_index)
         bracket = BracketDATA(bracket_type=pole.base_type, index=bracket_index, bracket_name=bracket_name)
         mast = Mast(name=mast_name,index=mast_index, offset=pole.gauge)
-        equipment = EquipmentDATA(name=feeder_name,index=feeder_idx, offset=(pole.gauge,0))
+        equipment = EquipmentDATA(name=feeder_name,index=feeder_idx, offset=(pole.gauge,0),type='급전선설비')
 
         #pole에 기록
         pole.mast = mast

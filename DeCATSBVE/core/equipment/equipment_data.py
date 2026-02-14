@@ -7,3 +7,4 @@ class EquipmentDATA:
     index: int
     offset: tuple[float, float] = (0, 0)
     rotation: float = 0.0
+    type:  str = ''
