@@ -56,7 +56,7 @@ class AirjointBracketAdder:
             if pole.side == 'R':
                 x5 *= -1
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge,start=False)
-            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle, type='장력장치'))
+            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 - end_angle, type='장력장치'))
 
     def add_f_and_aj_brackets(self, pole, end=False, idxlib=None):
         """F형 및 AJ형 브래킷을 추가하는 공통 함수"""

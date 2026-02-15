@@ -26,7 +26,8 @@ def calculate_curve_angle(polyline_with_sta, pos, next_pos, stagger1, stagger2 ,
         if start:
             return vector_a - a_b_angle
         else:
-            return vector_b - a_b_angle
+            return a_b_angle - vector_b
+
     return 0.0
 
 # offset 좌표 반환

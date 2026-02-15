@@ -45,20 +45,20 @@ class AirjointWireProcessor:
                 (offset,0),(aj_start_x,0), pitch_angle, label='본선전차선')
             )
             # 무효선
-            adjusted_angle = calculate_curve_angle(self.al, pole.pos, pole.next_pos, offset, aj_start_x)#평면각도
+            adjusted_angle = calculate_curve_angle(self.al, pole.pos, pole.next_pos, offset, f_start_x)#평면각도
             #slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
             slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(
                 pole.pos, pole.gauge, pole.span,contact_height,system_heigh, adjusted_angle, f_start_y)
 
             mw = self.common.run(
-                self.al, imw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (pole.gauge,h2),(f_start_x,contact_height + system_heigh +f_start_y), pitch_angle, label='무효조가선')
+                self.al, imw_index, sta2, pole.next_pos, pole.z, pole.next_z,
+                (pererall_d,h2),(f_start_x,contact_height + system_heigh +f_start_y), pitch_angle, label='무효조가선')
 
             mw.station = sta2
             wire.add_wire(mw)
             cw = self.common.run(
-                self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (pole.gauge, h1), (f_start_x, contact_height + f_start_y), pitch_angle, label='무효전차선')
+                self.al, icw_index, sta2, pole.next_pos, pole.z, pole.next_z,
+                (pererall_d, h1), (f_start_x, contact_height + f_start_y), pitch_angle, label='무효전차선')
             cw.station = sta2
             wire.add_wire(cw)
         elif pole.section == '에어조인트 (2호주)':
@@ -93,7 +93,7 @@ class AirjointWireProcessor:
                 (aj_end_x, 0), (-offset, 0), pitch_angle, label='본선전차선')
             )
             # 무효선
-            adjusted_angle = calculate_curve_angle(self.al, pole.pos, pole.next_pos, aj_end_x, -offset)  # 평면각도
+            adjusted_angle = calculate_curve_angle(self.al, pole.pos, pole.next_pos, f_end_x, pole.next_gauge)  # 평면각도
             # slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
             slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(
                 pole.pos, pole.gauge, pole.span, contact_height, system_heigh, adjusted_angle, f_start_y)
