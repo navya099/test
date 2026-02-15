@@ -9,25 +9,26 @@ class AirJointProcessor:
     def process_airjoint(self, pole, polyline_with_sta, dataprocessor, normal_processor ,idxlib):
         """에어조인트 구간별 전주 데이터 생성"""
         # 데이터 가져오기
-        airjoint_fitting, flat_fitting, steady_arm_fitting, mast_idx, _ = dataprocessor.get_fitting_and_mast_data(
-            pole.structure)
+        contact_wire_fitting, messenger_wire_fittings, steady_arm_fittings = dataprocessor.get_fittings()
+        mast_idx = dataprocessor.get_mast_index(pole.structure)
         mast_name = idxlib.get_name(mast_idx)
-        aj_bracket_values, f_bracket_valuse = dataprocessor.get_bracket_codes(pole.structure)
+        f_bracket_valuse = dataprocessor.get_bracket_codes(pole.structure, type='F')
+        aj_bracket_values = dataprocessor.get_bracket_codes(pole.structure, type='AJ')
 
         # 급전선 설비 인덱스 가져오기
         feeder_idx = dataprocessor.get_feeder_insulator_idx(pole.structure)
         feeder_name =idxlib.get_name(feeder_idx)
         # 평행틀 설비 인덱스 가져오기
-        _, spreader_idx = dataprocessor.get_spreader_idx(pole.structure, pole.section)
+        spreader_idx = dataprocessor.get_spreader_idx(pole.structure, pole.section)
         spreader_name = idxlib.get_name(spreader_idx)
         #F브래킷 인상높이
         f_bracket_height = dataprocessor.get_f_bracket_height()
 
         # 모든 필요한 값들을 전달
         context = AirjointDataContext(
-            airjoint_fitting=airjoint_fitting,
-            flat_fitting=flat_fitting,
-            steady_arm_fitting=steady_arm_fitting,
+            contact_wire_fitting=contact_wire_fitting,
+            messenger_wire_fittings=messenger_wire_fittings,
+            steady_arm_fitting=steady_arm_fittings,
             mast_type=mast_idx,
             mast_name=mast_name,
             aj_bracket_values=aj_bracket_values,

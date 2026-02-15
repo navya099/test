@@ -11,7 +11,7 @@ class NormalSectionProcessor:
         """노말구간 데이터 생성"""
         rotation = 180 if pole.side == 'R' else 0
         # MAST 데이터 가져오기
-        mast_index, _ = dataprocessor.get_mast_type(pole.structure)
+        mast_index = dataprocessor.get_mast_index(pole.structure)
         mast_name = idxlib.get_name(mast_index)
 
         # 급전선 설비 인덱스 가져오기

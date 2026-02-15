@@ -3,9 +3,9 @@ from dataclasses import dataclass
 
 @dataclass
 class AirjointDataContext:
-    airjoint_fitting: int
-    flat_fitting: list
-    steady_arm_fitting: list
+    contact_wire_fitting: int
+    messenger_wire_fittings: dict
+    steady_arm_fitting: dict
     mast_type: int
     mast_name: str
     aj_bracket_values: list

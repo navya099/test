@@ -37,7 +37,7 @@ class WireProcessor:
 
                     wires.append(wire)
                 except Exception as e:
-                    print(f"[{track_name}] process_to_wire 실행 중 에러 발생: {e}")
+                    print(f"[{track_name}] at {pole.pos} process_to_wire 실행 중 에러 발생: {e}")
                     continue
             results[track_name] = wires
         return results

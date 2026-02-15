@@ -19,8 +19,8 @@ class WireSectionHandler:
 
         start_offset = sign * 0.2
         end_offset = next_sign * 0.2
-        # 전차선 인덱스 얻기
-        cw_index,_,_ = self.datapro.get_wire_span_data(wire.span, pole.structure)
+        # 전선 인덱스 얻기
+        cw_index = self.datapro.get_contact_wire_span(wire.span, pole.structure)
 
         if pole.section is None:
             self.process_normal_section(pole, wire, pitch_angle, start_offset, end_offset, cw_index)
