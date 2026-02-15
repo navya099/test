@@ -4,6 +4,7 @@ from core.alignment.define_funtion import iscurve, isslope
 from core.bracket.bracket_data import BracketDATA
 from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.poledata import PoleDATA
+from core.pole.tunnel_section_processor import TunnelSectionProcessor
 from core.structure.define_structure import isbridge_tunnel
 from dataset.dataset_getter import DatasetGetter
 from utils.comom_util import generate_postnumbers, find_post_number
@@ -20,6 +21,8 @@ class PoleProcessor:
         post_number_lst = generate_postnumbers(positions)
         airjoint_processor = AirJointProcessor()
         normal_processor = NormalSectionProcessor()
+        tunnel_processor = TunnelSectionProcessor()
+        tunnel_airjoint_processor = None
         poles = []
 
         for i in range(len(positions) - 1):
@@ -73,10 +76,13 @@ class PoleProcessor:
                     side=side  # 추가
                 )
                 if current_airjoint is None:
-                    normal_processor.process(pole, dataprocessor, idxlib)
+                    if pole.structure == '터널':
+                        tunnel_processor.process(pole, dataprocessor, idxlib)
+                    else:
+                        normal_processor.process(pole, dataprocessor, idxlib)
                 else:
-                    airjoint_processor.process_airjoint(pole, polyline_with_sta,
-                                                        dataprocessor, normal_processor, idxlib)
+                    airjoint_processor.process(pole, polyline_with_sta, dataprocessor, normal_processor, idxlib)
+
                 poles.append(pole)
             except Exception as e:
                 print(f"[{track_name}] process_pole 실행 중 에러 발생: {e}")
@@ -121,7 +127,7 @@ class PoleProcessor:
                     structure_list_by_track["main"],
                     curve_list_by_track["main"],
                     pitchlist_by_track["main"],
-                    dataprocessor, airjoint_list, polyline_with_sta, idxlib,
+                    dataprocessor, airjoint_list, polyline_with_sta['main'], idxlib,
                     track_name="main", side="R"
                 )
                 results["sub"] = self._process_single_track(
@@ -129,7 +135,7 @@ class PoleProcessor:
                     structure_list_by_track["sub"],
                     curve_list_by_track["sub"],
                     pitchlist_by_track["sub"],
-                    dataprocessor, airjoint_list, polyline_with_sta, idxlib,
+                    dataprocessor, airjoint_list, polyline_with_sta['sub'], idxlib,
                     track_name="sub", side="L"
                 )
         return results

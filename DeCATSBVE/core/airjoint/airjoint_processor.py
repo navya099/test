@@ -6,7 +6,7 @@ class AirJointProcessor:
     def __init__(self):
         self.poles = []
 
-    def process_airjoint(self, pole, polyline_with_sta, dataprocessor, normal_processor ,idxlib):
+    def process(self, pole, polyline_with_sta, dataprocessor, normal_processor ,idxlib):
         """에어조인트 구간별 전주 데이터 생성"""
         # 데이터 가져오기
         contact_wire_fitting, messenger_wire_fittings, steady_arm_fittings = dataprocessor.get_fittings()

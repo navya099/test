@@ -110,10 +110,10 @@ class AirjointBracketAdder:
             rotation=rotation
         )
         # 금구류 추가
-        self.add_bracket_fittng(bracket, idx1, n1, (x1, y1), rotation)
-        self.add_bracket_fittng(bracket, idx2, n2, (x1, y1), rotation)
+        self.add_bracket_fittng(bracket, idx1, n1, (x1, h), rotation)
+        self.add_bracket_fittng(bracket, idx2, n2, (x1, h), rotation)
         if idx3:
-            self.add_bracket_fittng(bracket, idx3, n3, (x1, y1), rotation)
+            self.add_bracket_fittng(bracket, idx3, n3, (x1, h), rotation)
         # PoleDATA에 브래킷 등록
         pole.brackets.append(bracket)
 

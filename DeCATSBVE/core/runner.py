@@ -95,17 +95,17 @@ class AutoPole:
         #선형 오프셋
 
         # LineString 생성
-
-        line = LineString(polyline)
-        # 오프셋 적용
-        if self.track_direction == "본선 L / 상선 R":
-            direction = 'right'
-        else:
-            direction = 'left'
-        offset_line = line.parallel_offset(abs(self.track_distance), direction, join_style=2)
-        #다시 분해후 재결합
-        offset_polyline = offset_line.coords
-        self.offset_line_with_25 = [(i * 25, *values) for i, values in enumerate(offset_polyline)]
+        if self.track_mode == 'double':
+            line = LineString(polyline)
+            # 오프셋 적용
+            if self.track_direction == "본선 L / 상선 R":
+                direction = 'right'
+            else:
+                direction = 'left'
+            offset_line = line.parallel_offset(abs(self.track_distance), direction, join_style=2)
+            #다시 분해후 재결합
+            offset_polyline = offset_line.coords
+            self.offset_line_with_25 = [(i * 25, *values) for i, values in enumerate(offset_polyline)]
         positions_by_track = {
             "main": self.pole_positions,
             "sub": self.pole_positions  # double일 때만
