@@ -26,7 +26,9 @@ class AirjointWireProcessor:
         aj_end_x, aj_end_y = self.datap.get_bracket_coordinates('AJ형_끝')
         f_end_x, f_end_y = self.datap.get_bracket_coordinates('F형_끝')
 
-        # 방향(side)에 따라 X 좌표 반전
+        # 방향(side) + 터널 여부에 따라 X 좌표 반전
+
+        # 일반 구간
         if pole.side == 'L':
             aj_start_x *= -1
             f_start_x *= -1
@@ -50,13 +52,13 @@ class AirjointWireProcessor:
 
             mw = self.common.run(
                 self.al, imw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (pole.gauge,h2),(aj_start_x,contact_height + system_heigh), pitch_angle, label='무효조가선')
+                (pole.gauge,h2),(f_start_x,contact_height + system_heigh +f_start_y), pitch_angle, label='무효조가선')
 
             mw.station = sta2
             wire.add_wire(mw)
             cw = self.common.run(
                 self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (pole.gauge, h1), (aj_start_x, contact_height + f_start_y), pitch_angle, label='무효전차선')
+                (pole.gauge, h1), (f_start_x, contact_height + f_start_y), pitch_angle, label='무효전차선')
             cw.station = sta2
             wire.add_wire(cw)
         elif pole.section == '에어조인트 (2호주)':

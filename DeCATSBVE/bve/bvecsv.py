@@ -26,9 +26,10 @@ class BVECSV:
                 )
 
         def write_mast(pos, mast):
-            self.lines.append(
-                f'{pos},.freeobj {self.track_index};{mast.index};{mast.offset};0;{mast.rotation};,;{mast.name}\n'
-            )
+            if mast is not None:
+                self.lines.append(
+                    f'{pos},.freeobj {self.track_index};{mast.index};{mast.offset};0;{mast.rotation};,;{mast.name}\n'
+                )
 
         def write_brackets(pos, brs):
             for br in brs:

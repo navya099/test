@@ -6,7 +6,7 @@ class AirJointProcessor:
     def __init__(self):
         self.poles = []
 
-    def process(self, pole, polyline_with_sta, dataprocessor, normal_processor ,idxlib):
+    def process(self, pole, polyline_with_sta, dataprocessor, normal_processor ,tunnel_processor, idxlib):
         """에어조인트 구간별 전주 데이터 생성"""
         # 데이터 가져오기
         contact_wire_fitting, messenger_wire_fittings, steady_arm_fittings = dataprocessor.get_fittings()
@@ -40,5 +40,5 @@ class AirJointProcessor:
             f_bracket_height=f_bracket_height
         )
         # 에어조인트 구간별 처리(2호주 ,3호주, 4호주)
-        adder = AirjointBracketAdder(context, dataprocessor, normal_processor)
+        adder = AirjointBracketAdder(context, dataprocessor, normal_processor, tunnel_processor)
         adder.add_airjoint_brackets(pole, polyline_with_sta, idxlib)

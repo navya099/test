@@ -31,6 +31,7 @@ class TunnelSectionProcessor:
         gauge = pole.gauge
         #전주는 뒤집기
         pole.gauge *= -1
+        pole.next_gauge *= -1
         mast = Mast(name=mast_name, index=mast_index, offset=pole.gauge, rotation=rotation)
 
         # 급전선 설비는 게이지와 rotation 유지

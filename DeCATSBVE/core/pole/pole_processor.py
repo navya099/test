@@ -81,7 +81,7 @@ class PoleProcessor:
                     else:
                         normal_processor.process(pole, dataprocessor, idxlib)
                 else:
-                    airjoint_processor.process(pole, polyline_with_sta, dataprocessor, normal_processor, idxlib)
+                    airjoint_processor.process(pole, polyline_with_sta, dataprocessor, normal_processor, tunnel_processor, idxlib)
 
                 poles.append(pole)
             except Exception as e:
