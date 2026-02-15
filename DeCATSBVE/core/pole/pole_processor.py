@@ -41,10 +41,12 @@ class PoleProcessor:
                 if side == 'L':
                     gauge *= -1
                     next_gauge *= -1
+                    current_type = 'I' if i % 2 == 1 else 'O'
+                    next_type = 'O' if current_type == 'I' else 'I'
+                else:
+                    current_type = 'O' if i % 2 == 1 else 'I'
+                    next_type = 'I' if current_type == 'O' else 'O'
                 pos_coord_with_offset = calculate_offset_point(v1, coord, gauge)
-
-                current_type = 'I' if i % 2 == 1 else 'O'
-                next_type = 'O' if current_type == 'I' else 'I'
 
                 pole = PoleDATA(
                     pos=pos,

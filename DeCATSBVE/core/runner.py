@@ -138,21 +138,44 @@ class AutoPole:
         self.wire_data = self.wire_processor.process_to_wire()
 
         # 본선 저장
-        self.polesaver_main = BVECSV(self.poledata["main"], self.wire_data["main"])
+        self.polesaver_main = BVECSV(self.poledata["main"], self.wire_data["main"], 0)
         pole_text_main = self.polesaver_main.create_pole_csv()
         wire_text_main = self.polesaver_main.create_wire_csv()
-        self.pole_path_main = asksaveasfilename(title='본선 전주 데이터 저장')
-        self.wire_path_main = asksaveasfilename(title='본선 전차선 데이터 저장')
+        # 기본 파일명 지정
+        self.pole_path_main = asksaveasfilename(
+            title='본선 전주 데이터 저장',
+            defaultextension=".txt",
+            filetypes=[("TXT files", "*.txt")],
+            initialfile="전주.txt"
+        )
+        self.wire_path_main = asksaveasfilename(
+            title='본선 전차선 데이터 저장',
+            defaultextension=".txt",
+            filetypes=[("TXT files", "*.txt")],
+            initialfile="전차선.txt"
+        )
+
         write_to_file(self.pole_path_main, pole_text_main)
         write_to_file(self.wire_path_main, wire_text_main)
 
         # 상선 저장 (이중 트랙일 때만)
         if self.track_mode == "double":
-            self.polesaver_sub = BVECSV(self.poledata["sub"], self.wire_data["sub"])
+            self.polesaver_sub = BVECSV(self.poledata["sub"], self.wire_data["sub"], 1)
             pole_text_sub = self.polesaver_sub.create_pole_csv()
             wire_text_sub = self.polesaver_sub.create_wire_csv()
-            self.pole_path_sub = asksaveasfilename(title='상선 전주 데이터 저장')
-            self.wire_path_sub = asksaveasfilename(title='상선 전차선 데이터 저장')
+            # 기본 파일명 지정
+            self.pole_path_sub = asksaveasfilename(
+                title='상선 전주 데이터 저장',
+                defaultextension=".txt",
+                filetypes=[("TXT files", "*.txt")],
+                initialfile="상선전주.txt"
+            )
+            self.wire_path_sub = asksaveasfilename(
+                title='상선 전차선 데이터 저장',
+                defaultextension=".txt",
+                filetypes=[("TXT files", "*.txt")],
+                initialfile="상선전차선.txt"
+            )
             write_to_file(self.pole_path_sub, pole_text_sub)
             write_to_file(self.wire_path_sub, wire_text_sub)
 

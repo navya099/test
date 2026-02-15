@@ -10,8 +10,13 @@ class WireSectionHandler:
 
     def run(self, pole, wire, pitch_angle):
         """일반개소 및 에어조인트개소 구분처리"""
-        sign = -1 if pole.base_type == 'I' else 1
-        next_sign = -1 if pole.next_base_type == 'I' else 1
+        if pole.side == 'L':
+            sign = -1 if pole.base_type == 'I' else 1
+            next_sign = -1 if pole.next_base_type == 'I' else 1
+        else:
+            sign = 1 if pole.base_type == 'I' else -1
+            next_sign = 1 if pole.next_base_type == 'I' else -1
+
         start_offset = sign * 0.2
         end_offset = next_sign * 0.2
         # 전차선 인덱스 얻기

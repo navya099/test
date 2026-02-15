@@ -9,14 +9,39 @@ class BVECSV:
         lines (list[str]]): 구문 정보를 저장할 문자열 리스트
     """
 
-    def __init__(self, poledata=None, wiredata=None):
+    def __init__(self, poledata=None, wiredata=None, track_index=None):
         self.poledata = poledata  # ✅ PoleDATAManager.poledata 인스턴스를 가져옴
         self.wiredata = wiredata
+        self.track_index = track_index
         self.lines = []
 
     def create_pole_csv(self):
         """전주 구문 생성 메서드"""
         self.lines = []
+
+        def write_equipment(pos, eqs):
+            for eq in eqs:
+                self.lines.append(
+                    f'{pos},.freeobj {self.track_index};{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n'
+                )
+
+        def write_mast(pos, mast):
+            self.lines.append(
+                f'{pos},.freeobj {self.track_index};{mast.index};{mast.offset};0;{mast.rotation};,;{mast.name}\n'
+            )
+
+        def write_brackets(pos, brs):
+            for br in brs:
+                self.lines.append(
+                    f'{pos},.freeobj {self.track_index};{br.index};{br.offset[0]};{br.offset[1]};{br.rotation},;{br.bracket_name}\n'
+                )
+                write_fittings(pos, br.fittings)
+
+        def write_fittings(pos, fittings):
+            for fit in fittings:
+                self.lines.append(
+                    f'{pos},.freeobj {self.track_index};{fit.index};{fit.offset[0]};{fit.offset[1]};{fit.rotation};,;{fit.label}\n'
+                )
 
         for pole in self.poledata:
             try:
@@ -25,64 +50,33 @@ class BVECSV:
                 section = pole.section
                 structure = pole.structure
                 curve = '직선' if pole.radius == 0.0 else '곡선'
-                gauge = pole.gauge
                 eqs = pole.equipments
                 brs = pole.brackets
-                br = brs[0]
-                eq =eqs[0]
                 mast = pole.mast
                 section_label = section if section else '일반개소'
 
-                # 구문 작성
                 self.lines.append(f',;{post_number}\n')
                 self.lines.append(f',;-----{section_label}({structure})({curve})-----\n')
 
                 if section is None:
-                    # 일반개소
-                    n = len(brs)
-                    s = 1
-                    offs = offsets(n, s)
-                    #장비
-                    for eq in eqs:
-                        self.lines.append(
-                            f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
-                    #전주
-                    self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
-                    #브래킷
-                    for i, br in enumerate(brs):
-                        offset = offs[i]
-                        station = pos + offset
-                        self.lines.append(f'{station},.freeobj 0;{br.index};{br.offset[0]};{br.offset[1]};{br.rotation},;{br.bracket_name}\n')
-                        for fit in br.fittings:
-                            self.lines.append(
-                                f'{station},.freeobj 0;{fit.index};{fit.offset[0]};{fit.offset[1]};{fit.rotation};,;{fit.label}\n')
-
+                    write_equipment(pos, eqs)
+                    write_mast(pos, mast)
+                    write_brackets(pos, brs)
 
                 elif section in ['에어조인트 시작점 (1호주)', '에어조인트 끝점 (5호주)']:
-                    self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
-                    self.lines.append(f'{pos},.freeobj 0;{br.index};,;{br.bracket_name}\n')
-                    for eq in eqs:
-                        self.lines.append(
-                            f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
+                    write_mast(pos, mast)
+                    write_brackets(pos, [brs[0]])
+                    write_equipment(pos, eqs)
 
                 elif section in ['에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)']:
-                    if section in ['에어조인트 (2호주)', '에어조인트 (4호주)']:
-                        poss  =  pos - 0.528, pos + 0.528
-                    elif section == '에어조인트 중간주 (3호주)':
-                        poss = pos - 0.8, pos + 0.8
-
-
-
-                    self.lines.append(f'{pos},.freeobj 0;{mast.index};{mast.offset};,;{mast.name}\n')
-                    for eq in eqs:
-                        self.lines.append(
-                            f'{pos},.freeobj 0;{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n')
-                    for pos, br in zip(poss, brs):
+                    poss = (pos - 0.528, pos + 0.528) if section in ['에어조인트 (2호주)', '에어조인트 (4호주)'] else (
+                    pos - 0.8, pos + 0.8)
+                    write_mast(pos, mast)
+                    write_equipment(pos, eqs)
+                    for p, br in zip(poss, brs):
                         self.lines.append(',;가동브래킷구문\n')
-                        self.lines.append(f'{pos},.freeobj 0;{br.index};{br.offset[0]};{br.offset[1]};0;,;{br.bracket_name}\n')
-                        for fit in br.fittings:
-                            self.lines.append(
-                                f'{pos},.freeobj 0;{fit.index};{fit.offset[0]};{fit.offset[1]};0;,;{fit.label}\n')
+                        write_brackets(p, [br])
+
             except AttributeError as e:
                 print(f"poledata 데이터 누락: {pos}, 오류: {e}")
             except Exception as e:
@@ -111,7 +105,7 @@ class BVECSV:
 
                 for wr in wire.wires:
                     sta = wr.station if wr.station else pos
-                    self.lines.append(f'{sta},.freeobj 0;{wr.index};{wr.offset[0]};{wr.offset[1]};{wr.adjusted_angle};{wr.topdown_angle};0;,;{wr.label}\n')
+                    self.lines.append(f'{sta},.freeobj {self.track_index};{wr.index};{wr.offset[0]};{wr.offset[1]};{wr.adjusted_angle};{wr.topdown_angle};0;,;{wr.label}\n')
 
             except AttributeError as e:
                 print(f"Wire 데이터 누락: index {pos}, 오류: {e}")

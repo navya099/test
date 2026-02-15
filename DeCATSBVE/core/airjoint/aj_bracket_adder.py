@@ -52,25 +52,35 @@ class AirjointBracketAdder:
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge,start=False)
             pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle, type='장력장치'))
 
-
-
     def add_F_and_AJ_brackets(self, pole, end=False, idxlib=None):
         """F형 및 AJ형 브래킷을 추가하는 공통 함수"""
         f_i, f_o = self.params.f_bracket_valuse
-        aj_i,aj_o = self.params.aj_bracket_values
-        #기본 브래킷 제거
+        aj_i, aj_o = self.params.aj_bracket_values
         pole.brackets.clear()
-        # F형 가동 브래킷 추가
-        x1, y1 = self.prosc.get_bracket_coordinates('F형_시점' if not end else 'F형_끝')
-        if not end and pole.side == 'L':
-            x1 *= -1
-        self.add_F_bracket(pole, f_i,idxlib, x1, y1)
 
-        # AJ형 가동 브래킷 추가
-        x1, y1 = self.prosc.get_bracket_coordinates('AJ형_시점' if not end else 'AJ형_끝')
-        if not end and pole.side == 'L':
-            x1 *= -1
-        self.add_AJ_bracket(pole, aj_i, idxlib, x1, y1)
+        if not end:
+            # START 구간: F → AJ
+            x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
+            if pole.side == 'L':
+                x1 *= -1
+            self.add_F_bracket(pole, f_i, idxlib, x1, y1)
+
+            x1, y1 = self.prosc.get_bracket_coordinates('AJ형_시점')
+            if pole.side == 'L':
+                x1 *= -1
+            self.add_AJ_bracket(pole, aj_i, idxlib, x1, y1)
+
+        else:
+            # END 구간: AJ → F
+            x1, y1 = self.prosc.get_bracket_coordinates('AJ형_끝')
+            if pole.side == 'R':
+                x1 *= -1
+            self.add_AJ_bracket(pole, aj_i, idxlib, x1, y1, end=True)
+
+            x1, y1 = self.prosc.get_bracket_coordinates('F형_끝')
+            if pole.side == 'R':
+                x1 *= -1
+            self.add_F_bracket(pole, f_i, idxlib, x1, y1)
 
     def add_F_bracket(self, pole: PoleDATA, bracket_code, idxlib, x1, y1):
         """F형 가동 브래킷 및 금구류 추가"""

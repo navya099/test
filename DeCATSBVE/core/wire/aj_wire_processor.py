@@ -23,7 +23,15 @@ class AirjointWireProcessor:
         aj_end_x, aj_end_y = self.datap.get_bracket_coordinates('AJ형_끝')
         f_end_x, f_end_y = self.datap.get_bracket_coordinates('F형_끝')
 
-
+        # 방향(side)에 따라 X 좌표 반전
+        if pole.side == 'L':
+            aj_start_x *= -1
+            f_start_x *= -1
+            aj_middle1_x *= -1
+        else:
+            aj_middle2_x *= -1
+            aj_end_x *= -1
+            f_end_x *= -1
 
         if pole.section == '에어조인트 시작점 (1호주)':
             # 본선
@@ -64,7 +72,7 @@ class AirjointWireProcessor:
             # 본선 >무효선 상승
             wire.add_wire(self.common.run(
                 self.al, index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (aj_middle2_y, 0), (f_end_x, f_start_y), pitch_angle, label='본선->무효전차선')
+                (aj_middle2_x, 0), (f_end_x, f_start_y), pitch_angle, label='본선->무효전차선')
             )
             # 무효선 > 본선
             wire.add_wire(self.common.run(
