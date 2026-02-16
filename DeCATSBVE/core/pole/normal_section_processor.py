@@ -1,14 +1,14 @@
-from core.bracket.bracket_data import BracketDATA
 from core.equipment.equipment_data import EquipmentDATA
 from core.mast.mastdata import Mast
+from core.pole.curve_section_processor import CurveSectionProcessor
+from core.pole.straight_section_processor import StraightSectionProcessor
 
 
 class NormalSectionProcessor:
-    def __init__(self):
-        self.poles = []
-
-    def process(self, pole, dataprocessor, idxlib):
+    @staticmethod
+    def process(pole, dataprocessor, idxlib):
         """노말구간 데이터 생성"""
+        #공통변수
         rotation = 180 if pole.side == 'R' else 0
         # MAST 데이터 가져오기
         mast_index = dataprocessor.get_mast_index(pole.structure)
@@ -18,17 +18,16 @@ class NormalSectionProcessor:
         feeder_idx = dataprocessor.get_feeder_insulator_idx(pole.structure)
         feeder_name = idxlib.get_name(feeder_idx)
 
-        current_curve = '직선' if pole.radius == 0 else '곡선'
-        i_type_index, o_type_index = dataprocessor.get_bracket_type(pole.structure, current_curve)
+        if pole.radius == 0:
+            current_curve = '직선'
+            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation)
+        else:
+            current_curve ='곡선'
+            CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation)
 
-        bracket_index = i_type_index if pole.base_type == 'I' else o_type_index
-        bracket_name = idxlib.get_name(bracket_index)
-
-        bracket = BracketDATA(bracket_type=pole.base_type, index=bracket_index, bracket_name=bracket_name, rotation=rotation)
         mast = Mast(name=mast_name,index=mast_index, offset=pole.gauge,rotation=rotation)
         equipment = EquipmentDATA(name=feeder_name,index=feeder_idx, offset=(pole.gauge,0),rotation=rotation,type='급전선설비')
 
         #pole에 기록
         pole.mast = mast
         pole.equipments.append(equipment)
-        pole.brackets.append(bracket)

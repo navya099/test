@@ -134,7 +134,7 @@ class AutoPole:
             self.track_mode, self.track_direction,
         )
 
-        self.wire_processor = WireProcessor(self.dataprocessor, alignment_by_track, self.poledata)
+        self.wire_processor = WireProcessor(self.dataprocessor, alignment_by_track, self.poledata, self.curvelist)
         self.wire_data = self.wire_processor.process_to_wire()
 
         # 본선 저장

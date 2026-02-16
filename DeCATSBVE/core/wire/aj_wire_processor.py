@@ -1,6 +1,6 @@
 from core.wire.common_processor import CommonWireProcessor
 from utils.comom_util import initialrize_tenstion_device
-from utils.math_util import calculate_curve_angle
+from utils.math_util import calculate_curve_angle, calculate_curve_stagger
 
 
 class AirjointWireProcessor:
@@ -9,7 +9,7 @@ class AirjointWireProcessor:
         self.datap = datap
         self.al = al
 
-    def run(self, pole, wire, pitch_angle ,offset, cw_index):
+    def run(self, pole, next_pole, wire, pitch_angle ,offset, cw_index):
         # 에어조인트 구간 처리
         # 전차선 정보 가져오기,
         system_heigh, contact_height = self.datap.get_contact_wire_and_massanger_wire_info(pole.structure)
@@ -40,9 +40,10 @@ class AirjointWireProcessor:
 
         if pole.section == '에어조인트 시작점 (1호주)':
             # 본선
+            start_offset = pole.brackets[0].stagger
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (offset,0),(aj_start_x,0), pitch_angle, label='본선전차선')
+                (start_offset,0),(aj_start_x,0), pitch_angle, label='본선전차선')
             )
             # 무효선
             #slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
@@ -86,10 +87,10 @@ class AirjointWireProcessor:
 
         elif pole.section == '에어조인트 (4호주)':
             # 본선
-
+            end_offset = next_pole.brackets[0].stagger
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (aj_end_x, 0), (-offset, 0), pitch_angle, label='본선전차선')
+                (aj_end_x, 0), (end_offset, 0), pitch_angle, label='본선전차선')
             )
             # 무효선
             # slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
@@ -106,7 +107,9 @@ class AirjointWireProcessor:
             )
         elif pole.section == '에어조인트 끝점 (5호주)':
             # 본선
+            start_offset = pole.brackets[0].stagger
+            end_offset = next_pole.brackets[0].stagger
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (offset, 0), (-offset, 0), pitch_angle, label='본선전차선')
+                (start_offset, 0), (end_offset, 0), pitch_angle, label='본선전차선')
             )

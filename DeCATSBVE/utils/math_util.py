@@ -139,3 +139,28 @@ def change_permile_to_degree(permile):
         permile = float(permile)
 
     return math.degrees(math.atan(permile / 1000))  # 퍼밀을 비율로 변환 후 계산
+
+def calculate_curve_stagger(cant, gauge=1.5, contact_wire_height=5.0, offset=0.2, direction=1):
+    theta = math.atan(cant / gauge)
+
+    # 점 P
+    # 점 P
+    if direction == 1:
+        angle_p = math.radians(90) - theta
+    else:
+        angle_p = math.radians(90) + theta
+    p_x = contact_wire_height * math.cos(angle_p)
+    p_y = contact_wire_height * math.sin(angle_p)
+
+    # 점 S (offset 적용)
+    s_x = p_x + offset
+    s_y = p_y
+
+    # 점 T
+    angle_t = math.radians(90)
+    t_x = contact_wire_height * math.cos(angle_t)
+    t_y = contact_wire_height * math.sin(angle_t)
+
+    # 편위 거리
+    stagger = math.sqrt((s_x - t_x)**2 + (s_y - t_y)**2)
+    return stagger * direction

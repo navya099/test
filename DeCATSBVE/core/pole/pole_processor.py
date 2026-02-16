@@ -1,12 +1,10 @@
 from core.airjoint.airjoint_processor import AirJointProcessor
 from core.airjoint.aj_checker import check_isairjoint
 from core.alignment.define_funtion import iscurve, isslope
-from core.bracket.bracket_data import BracketDATA
 from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.poledata import PoleDATA
 from core.pole.tunnel_section_processor import TunnelSectionProcessor
 from core.structure.define_structure import isbridge_tunnel
-from dataset.dataset_getter import DatasetGetter
 from utils.comom_util import generate_postnumbers, find_post_number
 from utils.math_util import get_elevation_pos, interpolate_cached, calculate_offset_point
 
@@ -19,10 +17,6 @@ class PoleProcessor:
                               track_name="main", side="L"):
         """단일 트랙 처리 함수"""
         post_number_lst = generate_postnumbers(positions)
-        airjoint_processor = AirJointProcessor()
-        normal_processor = NormalSectionProcessor()
-        tunnel_processor = TunnelSectionProcessor()
-        tunnel_airjoint_processor = None
         poles = []
 
         for i in range(len(positions) - 1):
@@ -77,11 +71,11 @@ class PoleProcessor:
                 )
                 if current_airjoint is None:
                     if pole.structure == '터널':
-                        tunnel_processor.process(pole, dataprocessor, idxlib)
+                        TunnelSectionProcessor.process(pole, dataprocessor, idxlib)
                     else:
-                        normal_processor.process(pole, dataprocessor, idxlib)
+                        NormalSectionProcessor.process(pole, dataprocessor, idxlib)
                 else:
-                    airjoint_processor.process(pole, polyline_with_sta, dataprocessor, normal_processor, tunnel_processor, idxlib)
+                    AirJointProcessor.process(pole, polyline_with_sta, dataprocessor, idxlib)
 
                 poles.append(pole)
             except Exception as e:

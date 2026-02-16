@@ -10,4 +10,5 @@ class BracketDATA:
     offset: tuple[float, float] = (0, 0)
     rotation: float = 0.0
     bracket_name: str = ""
+    stagger: float = 0.0
     fittings: list[FittingDATA] = field(default_factory=list)

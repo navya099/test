@@ -3,26 +3,26 @@ from core.bracket.bracket_data import BracketDATA
 from core.bracket.fitting_data import FittingDATA
 from core.equipment.equipment_data import EquipmentDATA
 from core.mast.mastdata import Mast
+from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.poledata import PoleDATA
+from core.pole.tunnel_section_processor import TunnelSectionProcessor
 from enums.airjoint_section import AirJoint
 from utils.math_util import calculate_curve_angle
 
 
 class AirjointBracketAdder:
-    def __init__(self, params: AirjointDataContext ,dataprocessor, normal_processor, tunnel_processor):
+    def __init__(self, params: AirjointDataContext ,dataprocessor):
         self.params = params
         self.prosc = dataprocessor
-        self.nps = normal_processor
-        self.tps = tunnel_processor
 
     def add_airjoint_brackets(self, pole: PoleDATA, polyline_with_sta, idxlib):
         """에어조인트 각 구간별 브래킷 추가"""
         if pole.section == AirJoint.START.value:
             # START 구간 처리
             if pole.structure == '터널':
-                self.tps.process(pole, self.prosc, idxlib)
+                TunnelSectionProcessor.process(pole, self.prosc, idxlib)
             else:
-                self.nps.process(pole, self.prosc, idxlib)
+                NormalSectionProcessor.process(pole, self.prosc, idxlib)
             x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
             if pole.side == 'L':
                 x1 *= -1
@@ -49,9 +49,9 @@ class AirjointBracketAdder:
             # END 구간 처리
             en = idxlib.get_name(1247)
             if pole.structure == '터널':
-                self.tps.process(pole, self.prosc, idxlib)
+                TunnelSectionProcessor.process(pole, self.prosc, idxlib)
             else:
-                self.nps.process(pole, self.prosc, idxlib)
+                NormalSectionProcessor.process(pole, self.prosc, idxlib)
             x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
             if pole.side == 'R':
                 x5 *= -1
