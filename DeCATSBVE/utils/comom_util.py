@@ -118,8 +118,23 @@ def find_post_number(lst, pos):
         if arg[0] == pos:
             return arg[1]
 
-def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, adjusted_angle=0, y=0):
-    """장력장치구간 전차선과 조가선 각도 높이를 반환"""
+def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, y=0):
+    """장력장치구간 전차선과 조가선 각도 높이를 반환
+    Arguments:
+        pos: 현재 측점
+        gauge: 현재 건식게이지
+        currentspan: 현재 스판
+        contact_height: 전차선 높이
+        system_heigh: 가고
+        y: 보정 높이
+    Returns:
+        slope_degree1: 전차선 종단각도
+        slope_degree2: 조가선 종단각도
+        h1: 장력장치 전차선 높이
+        h2: 장력장치 조가선 높이
+        pererall_d: 보정 거리
+        sta2: 보정된 전선 측점
+    """
     # 장력장치 치수
     tension_device_length = 7.28
 

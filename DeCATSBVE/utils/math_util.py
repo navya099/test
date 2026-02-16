@@ -7,6 +7,7 @@ interpolation_cache = {}
 
 @lru_cache(maxsize=None)
 def calculate_bearing(x1, y1, x2, y2):
+    """도 반환 각도"""
     dx = x2 - x1
     dy = y2 - y1
     return math.degrees(math.atan2(dy, dx))
@@ -108,22 +109,24 @@ def calculate_slope(h1, h2, gauge):
 
 # 새로운 점 계산 함수
 def return_new_point(x, y, L):
-    A = (x, 0)  # A점 좌표
-    B = (0, 0)  # 원점 B
-    C = (0, y)  # C점 좌표
-    theta = math.degrees(abs(math.atan(y / x)))
-    D = calculate_destination_coordinates(A[0], A[1], theta, L)  # 이동한 D점 좌표
+    A = (x, 0)
+    B = (0, 0)
+    C = (0, y)
+    theta = calculate_bearing(A[0],A[1], C[0],C[1])
+    D = calculate_destination_coordinates(A[0], A[1], theta, L)
     E = B[0], B[1] + D[1]
+
     d1 = calculate_distance(D[0], D[1], E[0], E[1])
     d2 = calculate_distance(B[0], B[1], E[0], E[1])
 
-    # 외적을 이용해 좌우 판별
-    v_x, v_y = C[0] - B[0], C[1] - B[1]  # 선분 벡터
-    w_x, w_y = A[0] - B[0], A[1] - B[1]  # 점에서 선분 시작점까지의 벡터
-    cross = v_x * w_y - v_y * w_x  # 외적 계산
+    # 외적 좌우 판별
+    v_x, v_y = C[0] - B[0], C[1] - B[1]
+    w_x, w_y = A[0] - B[0], A[1] - B[1]
+    cross = v_x * w_y - v_y * w_x
     sign = -1 if cross > 0 else 1
 
-    return d1 * sign, d2
+    # abs(d1)로 거리값을 안정화하고 sign으로 좌우만 결정
+    return abs(d1) * sign, d2
 
 def calculate_distance(x1, y1, x2, y2):
     """두 점 (x1, y1)과 (x2, y2) 사이의 유클리드 거리 계산"""

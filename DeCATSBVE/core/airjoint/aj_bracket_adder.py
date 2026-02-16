@@ -55,8 +55,8 @@ class AirjointBracketAdder:
             x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
             if pole.side == 'R':
                 x5 *= -1
-            end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge,start=False)
-            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 - end_angle, type='장력장치'))
+            end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge)
+            pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle, type='장력장치'))
 
     def add_f_and_aj_brackets(self, pole, end=False, idxlib=None):
         """F형 및 AJ형 브래킷을 추가하는 공통 함수"""
@@ -125,7 +125,7 @@ class AirjointBracketAdder:
         )
         # 금구류 추가
         self.add_bracket_fittng(bracket, idx1, n1, (x1, cw_height + y1), rotation)#전차선 지지금구 F
-        self.add_bracket_fittng(bracket, idx2, n2, (x1, mw_height + y1), rotation)#조가선 지지금구 F
+        self.add_bracket_fittng(bracket, idx2, n2, (x1, mw_height + h), rotation)#조가선 지지금구 F
         if idx3:
             self.add_bracket_fittng(bracket, idx3, n3, (x1, y1 + cw_height), rotation)
         # 터널구간 추가 H하수강 설치
