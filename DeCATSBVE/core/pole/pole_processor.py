@@ -40,9 +40,20 @@ class PoleProcessor:
                     next_gauge *= -1
                     current_type = 'I' if i % 2 == 1 else 'O'
                     next_type = 'O' if current_type == 'I' else 'I'
+
                 else:
                     current_type = 'O' if i % 2 == 1 else 'I'
                     next_type = 'I' if current_type == 'O' else 'O'
+                if track_name == 'main':
+                    if side == 'L':
+                        post_number = f'{post_number}D'
+                    else:
+                        post_number = f'{post_number}U'
+                else:
+                    if side == 'L':
+                        post_number = f'{post_number}D'
+                    else:
+                        post_number = f'{post_number}U'
                 pos_coord_with_offset = calculate_offset_point(v1, coord, gauge)
 
                 pole = PoleDATA(
