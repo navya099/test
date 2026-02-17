@@ -107,14 +107,14 @@ def save_runner(runner, filename="runner.dat", version=1):
         "dataprocessor": runner.dataprocessor,
         "airjoint_list": runner.airjoint_list,
         "pitchlist": runner.pitchlist,
-        "curvelist" : runner.curvelist,
+        "curvelist": runner.curvelist,
         "structure_list": runner.structure_list,
-        "pole_processor" : runner.pole_processor,
-        "wire_processor" : runner.wire_processor,
-        "designspeed" : runner.designspeed,
-        "iscustommode" : runner.iscustommode,
-        "is_create_dxf" : runner.is_create_dxf,
-        "_cached_df" : runner._cached_df,
+        "pole_processor": runner.pole_processor,
+        "wire_processor": runner.wire_processor,
+        "designspeed": runner.designspeed,
+        "iscustommode": runner.iscustommode,
+        "is_create_dxf": runner.is_create_dxf,
+        "_cached_df": runner._cached_df,
         "wire_path_sub": runner.wire_path_sub,
         "wire_path_main": runner.wire_path_main,
         "polesaver_main": runner.polesaver_main,
@@ -125,37 +125,50 @@ def save_runner(runner, filename="runner.dat", version=1):
         "track_direction": runner.track_direction,
         "offset_line_with_25": runner.offset_line_with_25,
         "track_distance": runner.track_distance
-        }
+    }
+
+    # None 체크 및 경고 출력
+    for key, value in state.items():
+        if value is None:
+            print(f"[WARN] {key} 값이 None으로 저장됩니다. 기본값을 확인하세요.")
+
     with open(filename, "wb") as f:
         pickle.dump(state, f)
 
 def load_runner(runner, filename="runner.dat"):
     with open(filename, "rb") as f:
         state = pickle.load(f)
-    runner.poledata = state["poledata"]
-    runner.wire_data = state["wire_data"]
-    runner.polyline_with_sta = state["polyline_with_sta"]
-    runner.idxlib = state["idxlib"]
-    runner.dataprocessor = state["dataprocessor"]
-    runner.airjoint_list = state["airjoint_list"]
-    runner.pitchlist = state["pitchlist"]
-    runner.curvelist = state["curvelist"]
-    runner.structure_list = state["structure_list"]
-    runner.pole_processor = state["pole_processor"]
-    runner.wire_processor = state["wire_processor"]
 
-    runner.designspeed = state["designspeed"]
-    runner.iscustommode = state["iscustommode"]
-    runner.is_create_dxf = state["is_create_dxf"]
-    runner._cached_df = state["_cached_df"]
+    # None 체크 및 출력
+    for key, value in state.items():
+        if value is None:
+            print(f"[WARN] {key} 값이 None입니다. 기본값으로 초기화하세요.")
 
-    runner.wire_path_sub = state["wire_path_sub"]
-    runner.wire_path_main = state["wire_path_main"]
-    runner.polesaver_main = state["polesaver_main"]
-    runner.polesaver_sub = state["polesaver_sub"]
-    runner.pole_path_main = state["pole_path_main"]
-    runner.pole_path_sub = state["pole_path_sub"]
-    runner.track_mode = state["track_mode"]
-    runner.track_direction = state["track_direction"]
-    runner.offset_line_with_25 = state["offset_line_with_25"]
-    runner.track_distance = state["track_distance"]
+    # 안전한 기본값 적용
+    runner.poledata = state.get("poledata")
+    runner.wire_data = state.get("wire_data")
+    runner.polyline_with_sta = state.get("polyline_with_sta")
+    runner.idxlib = state.get("idxlib")
+    runner.dataprocessor = state.get("dataprocessor")
+    runner.airjoint_list = state.get("airjoint_list")
+    runner.pitchlist = state.get("pitchlist")
+    runner.curvelist = state.get("curvelist")
+    runner.structure_list = state.get("structure_list")
+    runner.pole_processor = state.get("pole_processor")
+    runner.wire_processor = state.get("wire_processor")
+
+    runner.designspeed = state.get("designspeed", 0)
+    runner.iscustommode = state.get("iscustommode", 0)
+    runner.is_create_dxf = state.get("is_create_dxf", 0)
+    runner._cached_df = state.get("_cached_df")
+
+    runner.wire_path_sub = state.get("wire_path_sub")
+    runner.wire_path_main = state.get("wire_path_main")
+    runner.polesaver_main = state.get("polesaver_main")
+    runner.polesaver_sub = state.get("polesaver_sub")
+    runner.pole_path_main = state.get("pole_path_main")
+    runner.pole_path_sub = state.get("pole_path_sub")
+    runner.track_mode = state.get("track_mode", "single")
+    runner.track_direction = state.get("track_direction", "mainL_subR")
+    runner.offset_line_with_25 = state.get("offset_line_with_25")
+    runner.track_distance = state.get("track_distance", 4.3)

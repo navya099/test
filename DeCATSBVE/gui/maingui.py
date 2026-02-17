@@ -155,10 +155,15 @@ class AutoPoleApp(tk.Tk):
         messagebox.showinfo('정보','데이터 저장이 완료됐습니다.')
 
     def load_pickle(self):
+        self.runner = AutoPole(log_widget=None)
         load_runner(self.runner, 'c:/temp/decatsbve.dat')
         self.runner.polesaver_main = BVECSV(self.runner.poledata["main"], self.runner.wire_data["main"], 0)
         if self.runner.track_mode == "double":
             self.runner.polesaver_sub = BVECSV(self.runner.poledata["sub"], self.runner.wire_data["sub"], 1)
+        #절대안정장치
+        self.editor.runner = self.runner
+        self.plotter.runner = self.runner
+
         self.editor.create_epoles()
         self.editor.create_ewires()
         self.editor.refresh_tree()
