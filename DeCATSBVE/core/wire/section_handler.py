@@ -25,6 +25,7 @@ class WireSectionHandler:
         cw_index = self.datapro.get_contact_wire_span(wire.span, pole.structure)
 
 
+
         if pole.section is None:
             self.process_normal_section(pole,next_pole, wire, pitch_angle, start_offset, end_offset, cw_index)
         else:
@@ -34,20 +35,22 @@ class WireSectionHandler:
         # 브래킷에서 stagger 직접 가져오기
         if pole.brackets and hasattr(pole.brackets[0], "stagger"):
             start_offset = pole.brackets[0].stagger
+            start_cw_height = self.datapro.get_contact_wire_height(pole.structure)
         else:
             # fallback: 기본값
             start_offset = offset1
-
+            start_cw_height = self.datapro.get_contact_wire_height(pole.structure)
         # 다음 pole도 동일하게 처리
         if next_pole.brackets and hasattr(next_pole.brackets[0], "stagger"):
             end_offset = next_pole.brackets[0].stagger
+            end_cw_height = self.datapro.get_contact_wire_height(next_pole.structure)
         else:
             end_offset = offset2
-
+            end_cw_height = self.datapro.get_contact_wire_height(next_pole.structure)
         wire.add_wire(self.compros.run(
             self.al, index,
             pole.pos, pole.next_pos, pole.z, pole.next_z,
-            start=(start_offset, 0), end=(end_offset, 0),
+            start=(start_offset, start_cw_height), end=(end_offset, end_cw_height),
             pitch_angle=pitch_angle, label='전차선'
         ))
 

@@ -150,6 +150,14 @@ class DatasetGetter:
 
         return system_heigh, contact_height
 
+    def get_contact_wire_height(self, current_structure):
+        """전차선 높이 반환"""
+        return self.dataset['contact_height_dictionary'][current_structure][1]
+
+    def get_system_height(self, current_structure):
+        """가고 정보 반환"""
+        return self.dataset['contact_height_dictionary'][current_structure][0]
+
     def get_f_bracket_height(self):
         return self.dataset['f_bracket_height']
 

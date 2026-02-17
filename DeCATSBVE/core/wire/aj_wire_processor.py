@@ -41,9 +41,11 @@ class AirjointWireProcessor:
         if pole.section == '에어조인트 시작점 (1호주)':
             # 본선
             start_offset = pole.brackets[0].stagger
+            start_cw_height = self.datap.get_contact_wire_height(pole.structure)
+            end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (start_offset,0),(aj_start_x,0), pitch_angle, label='본선전차선')
+                (start_offset,start_cw_height),(aj_start_x,end_cw_height), pitch_angle, label='본선전차선')
             )
             # 무효선
             #slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
@@ -63,34 +65,40 @@ class AirjointWireProcessor:
             wire.add_wire(cw)
         elif pole.section == '에어조인트 (2호주)':
             # 본선
+            start_cw_height = self.datap.get_contact_wire_height(pole.structure)
+            end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (aj_start_x, 0), (aj_middle2_x, 0), pitch_angle, label='본선전차선')
+                (aj_start_x, start_cw_height), (aj_middle2_x, end_cw_height), pitch_angle, label='본선전차선')
             )
             # 무효선
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (f_start_x, f_start_y), (aj_middle1_x, 0), pitch_angle, label='무효전차선')
+                (f_start_x, start_cw_height + f_start_y), (aj_middle1_x, end_cw_height), pitch_angle, label='무효전차선')
             )
 
         elif pole.section == '에어조인트 중간주 (3호주)':
             # 본선 >무효선 상승
+            start_cw_height = self.datap.get_contact_wire_height(pole.structure)
+            end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (aj_middle2_x, 0), (f_end_x, f_start_y), pitch_angle, label='본선->무효전차선')
+                (aj_middle2_x, start_cw_height), (f_end_x, end_cw_height + f_start_y), pitch_angle, label='본선->무효전차선')
             )
             # 무효선 > 본선
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (aj_middle1_x, 0), (aj_end_x, 0), pitch_angle, label='무효->본선전차선')
+                (aj_middle1_x, start_cw_height), (aj_end_x, end_cw_height), pitch_angle, label='무효->본선전차선')
             )
 
         elif pole.section == '에어조인트 (4호주)':
             # 본선
             end_offset = next_pole.brackets[0].stagger
+            start_cw_height = self.datap.get_contact_wire_height(pole.structure)
+            end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (aj_end_x, 0), (end_offset, 0), pitch_angle, label='본선전차선')
+                (aj_end_x, start_cw_height), (end_offset, end_cw_height), pitch_angle, label='본선전차선')
             )
             # 무효선
             # slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
@@ -99,17 +107,20 @@ class AirjointWireProcessor:
 
             wire.add_wire(self.common.run(
                 self.al, imw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (f_end_x, contact_height + system_heigh), (pole.next_gauge, h2), pitch_angle, label='무효조가선')
+                (f_end_x, start_cw_height + system_heigh), (pole.next_gauge, h2), pitch_angle, label='무효조가선')
             )
             wire.add_wire(self.common.run(
                 self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (f_end_x, contact_height + f_start_y), (pole.next_gauge, h1), pitch_angle, label='무효전차선')
+                (f_end_x, start_cw_height + f_start_y), (pole.next_gauge, h1), pitch_angle, label='무효전차선')
             )
         elif pole.section == '에어조인트 끝점 (5호주)':
             # 본선
             start_offset = pole.brackets[0].stagger
             end_offset = next_pole.brackets[0].stagger
+            start_cw_height = self.datap.get_contact_wire_height(pole.structure)
+            end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
+
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (start_offset, 0), (end_offset, 0), pitch_angle, label='본선전차선')
+                (start_offset, start_cw_height), (end_offset, end_cw_height), pitch_angle, label='본선전차선')
             )
