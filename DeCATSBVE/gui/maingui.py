@@ -8,7 +8,7 @@ from file_io.filemanager import write_to_file, load_poles, save_poles, save_runn
 from gui.maineditor import AutoPoleEditor
 from gui.pole_plotter import PlotPoleMap
 from xref_module.index_libmgr import IndexLibrary
-
+from xref_module.object_libraymgr import LibraryManager
 
 
 class AutoPoleApp(tk.Tk):
@@ -17,8 +17,8 @@ class AutoPoleApp(tk.Tk):
         self.idxlib = None
         self.title("AutoPOLE")
         self.events = EventController()
-
-
+        self.objlib = LibraryManager()
+        self.objlib.scan_library()
         # 로그 박스
         self.log_box = tk.Text(self, height=10, width=80)
         self.log_box.pack(side="bottom", fill="x")
@@ -83,7 +83,7 @@ class AutoPoleApp(tk.Tk):
 
         # 좌측: Editor
         editor_frame = tk.Frame(main_frame)
-        self.editor = AutoPoleEditor(self.runner, self.events, master=editor_frame)
+        self.editor = AutoPoleEditor(self.runner, self.objlib,self.events, master=editor_frame)
         self.editor.pack(fill="both", expand=True)   # 추가
 
         main_frame.add(editor_frame)
@@ -139,10 +139,15 @@ class AutoPoleApp(tk.Tk):
 
 
     def save(self):
-        t = self.runner.polesaver.create_pole_csv()
-        t2 = self.runner.polesaver.create_wire_csv()
-        write_to_file(self.runner.pole_path, t)
-        write_to_file(self.runner.wire_path, t2)
+        t = self.runner.polesaver_main.create_pole_csv() #본선 저장
+        t2 = self.runner.polesaver_main.create_wire_csv()
+        write_to_file(self.runner.pole_path_main, t)
+        write_to_file(self.runner.wire_path_main, t2)
+        if self.runner.track_mode == "double":
+            s = self.runner.polesaver_sub.create_pole_csv()  # 본선 저장
+            s2 = self.runner.polesaver_sub.create_wire_csv()
+            write_to_file(self.runner.pole_path_sub, s)
+            write_to_file(self.runner.wire_path_sub, s2)
         self.runner.log(f"저장 성공!")
 
     def save_pickle(self):
@@ -151,7 +156,9 @@ class AutoPoleApp(tk.Tk):
 
     def load_pickle(self):
         load_runner(self.runner, 'c:/temp/decatsbve.dat')
-        self.runner.polesaver = BVECSV(self.runner.poledata, self.runner.wire_data)
+        self.runner.polesaver_main = BVECSV(self.runner.poledata["main"], self.runner.wire_data["main"], 0)
+        if self.runner.track_mode == "double":
+            self.runner.polesaver_sub = BVECSV(self.runner.poledata["sub"], self.runner.wire_data["sub"], 1)
         self.editor.create_epoles()
         self.editor.create_ewires()
         self.editor.refresh_tree()

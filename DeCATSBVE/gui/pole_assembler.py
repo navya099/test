@@ -7,7 +7,7 @@ from tkinter import ttk, messagebox
 from xref_module.transaction import Transaction
 
 class PoleAssemblerApp(tk.Toplevel):
-    def __init__(self, runner, event= None):
+    def __init__(self, runner, objlib, event= None):
         super().__init__()
         self.equip_combo = None
         self.epole = None
@@ -19,6 +19,7 @@ class PoleAssemblerApp(tk.Toplevel):
         if self.event:
             self.bind_events()
         self.lib_manager = self.runner.idxlib  # 인스턴스 연결
+        self.objlib = objlib
         # 현재 선택 저장
         self.selection = {}
         #0 현재 전주 변수
@@ -52,7 +53,7 @@ class PoleAssemblerApp(tk.Toplevel):
         self.feeder_xvar = tk.DoubleVar()
         self.feeder_yvar = tk.DoubleVar()
         self.feeder_rvar = tk.DoubleVar()
-        feeders = self.lib_manager.list_files_in_category(category='급전선설비', group='base')
+        feeders = self.objlib.list_files_in_category(category='급전선설비', group='base')
         self.feeder_combo = ttk.Combobox(self, textvariable=self.feeder_var,values=feeders, state="readonly")
         self.feeder_combo.grid(row=row, column=1, padx=5, pady=5)
         ttk.Entry(self, textvariable=self.feeder_xvar, width=5).grid(row=row, column=2, padx=5, pady=5)

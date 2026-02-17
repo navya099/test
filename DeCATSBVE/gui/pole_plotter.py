@@ -25,6 +25,7 @@ class PlotPoleMap(tk.Frame):
         self.events = events
         if self.events:
             self.events.bind("pole_selected", self.on_pole_selected)
+            self.events.bind("poles_selected", self.on_poles_selected)
 
         # Matplotlib Figure/Axes 생성
         plt.rcParams['font.family'] = 'Malgun Gothic'
@@ -55,13 +56,22 @@ class PlotPoleMap(tk.Frame):
 
     def show_preview(self):
         self.viewer.objects.clear()
-        result = self.service.build(self.selected_epole.pole)
-        for obj in result.objects:
-            self.viewer.add_object(obj)
-        if result.missing:
+        missing_all = []
+        # 오프셋 적용
+        if self.runner.track_direction == "mainL_subR":
+            direction = 1
+        else:
+            direction = -1
+
+        for i, lis in enumerate(self.selected_epoles):
+            result = self.service.build(lis.pole, i, self.runner.track_distance, direction, mode=self.runner.track_mode)
+            for obj in result.objects:
+                self.viewer.add_object(obj)
+            missing_all.extend(result.missing)
+        if missing_all:
             messagebox.showwarning(
                 '일부 파일 누락',
-                '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(result.missing)
+                '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(missing_all)
             )
         self.viewer.draw()
 
@@ -118,7 +128,8 @@ class PlotPoleMap(tk.Frame):
     def highlight_pole(self, pos):
         # 기존 선택 마커 삭제
         if hasattr(self, "selected_pole_scatter") and self.selected_pole_scatter:
-            self.selected_pole_scatter.remove()
+            self.selected_pole_scatter.remove()  # PathCollection은 remove() 지원
+            self.selected_pole_scatter = None
 
         # 선택된 전주 찾기
         for track_name, poles in self.runner.poledata.items():
@@ -127,7 +138,7 @@ class PlotPoleMap(tk.Frame):
                     self.selected_pole = pole
                     self.sel_xy = pole.coord[0], pole.coord[1]
 
-                    # 새로운 강조 마커만 추가
+                    # 새로운 강조 마커 추가
                     self.selected_pole_scatter = self.ax.scatter(
                         self.sel_xy[0], self.sel_xy[1],
                         c="red", s=100, zorder=5
@@ -142,6 +153,9 @@ class PlotPoleMap(tk.Frame):
     def on_pole_selected(self, epole):
         self.selected_epole = epole
         self.highlight_pole(epole.pole.pos)
+
+    def on_poles_selected(self, epoles):
+        self.selected_epoles = epoles
 
     def move_left(self):
         self._move_pole(-5)

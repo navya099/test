@@ -10,25 +10,25 @@ from xref_module.transaction import Transaction
 
 
 class AutoPoleEditor(tk.Frame):
-    def __init__(self, runner, events=None, master=None):
+    def __init__(self, runner, objlib, events=None, master=None):
         super().__init__(master)
         self.runner = runner
         self.events = events
         self.editable_poles = {"main": [], "sub": []}
         self.editable_wires = {"main": [], "sub": []}
-
+        self.objlib = objlib
         # 이벤트 바인딩
         if self.events:
             self.events.bind('pole_moved', self.on_pole_moved)
             self.events.bind('pole_modified', self.on_pole_modifeyed)
 
         # Notebook 생성 (본선/상선 탭)
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True)
 
         # 본선 탭
-        frame_main = tk.Frame(notebook)
-        notebook.add(frame_main, text="본선")
+        frame_main = tk.Frame(self.notebook)
+        self.notebook.add(frame_main, text="본선")
         self.tree_main = ttk.Treeview(
             frame_main,
             columns=("전주번호", "측점", '경간', "건식게이지", "구조물", "구간",
@@ -42,8 +42,8 @@ class AutoPoleEditor(tk.Frame):
             self.tree_main.column(col, width=100, anchor="center")
 
         # 상선 탭
-        frame_sub = tk.Frame(notebook)
-        notebook.add(frame_sub, text="상선")
+        frame_sub = tk.Frame(self.notebook)
+        self.notebook.add(frame_sub, text="상선")
         self.tree_sub = ttk.Treeview(
             frame_sub,
             columns=("전주번호", "측점", '경간', "건식게이지", "구조물", "구간",
@@ -149,56 +149,78 @@ class AutoPoleEditor(tk.Frame):
             ))
 
     def load_selected(self):
-        # 본선 탭에서 선택
-        selected_main = self.tree_main.selection()
-        if selected_main:
-            item = self.tree_main.item(selected_main[0])
-            self._handle_selection(item, track="main")
+        selected_epoles = []
+        selected_ewires = []
 
-        # 상선 탭에서 선택
-        selected_sub = self.tree_sub.selection()
-        if selected_sub:
-            item = self.tree_sub.item(selected_sub[0])
-            self._handle_selection(item, track="sub")
+        # 현재 탭 확인
+        current_tab = self.notebook.select()
+        tab_text = self.notebook.tab(current_tab, "text")
 
-    def _handle_selection(self, item, track):
-        post_number, pos, span, gauge, structure, section, base_type, radius, pitch, cant, z = item["values"]
+        if tab_text == "본선":
+            for sel in self.tree_main.selection():
+                item = self.tree_main.item(sel)
+                epole, ewire = self._handle_selection(item, track="main")
+                if epole:
+                    self.selected_pole = epole
+                    selected_epoles.append(epole)
+                    # 같은 pos의 상선 전주도 찾기
+                    sub_epole = next((e for e in self.editable_poles.get("sub", []) if e.pole.pos == epole.pole.pos),
+                                     None)
+                    if sub_epole:
+                        selected_epoles.append(sub_epole)
+                if ewire:
+                    self.selected_wire = ewire
+                    selected_ewires.append(ewire)
 
-        # epole 객체 찾기
-        epole = None
-        for e in self.editable_poles.get(track, []):
-            if e.pole.pos == pos:
-                epole = e
-                break
-
-        # ewire 객체 찾기
-        ewire = None
-        for w in self.editable_wires.get(track, []):
-            if w.wire.pos == pos:
-                ewire = w
-                break
+        elif tab_text == "상선":
+            for sel in self.tree_sub.selection():
+                item = self.tree_sub.item(sel)
+                epole, ewire = self._handle_selection(item, track="sub")
+                if epole:
+                    self.selected_pole = epole
+                    selected_epoles.append(epole)
+                    # 같은 pos의 본선 전주도 찾기
+                    main_epole = next((e for e in self.editable_poles.get("main", []) if e.pole.pos == epole.pole.pos),
+                                      None)
+                    if main_epole:
+                        selected_epoles.append(main_epole)
+                if ewire:
+                    self.selected_wire = ewire
+                    selected_ewires.append(ewire)
 
         # 이벤트 발행
-        if self.events:
-            if epole is not None:
-                self.events.emit("pole_selected", epole)
-            if ewire is not None:
-                self.events.emit("wire_selected", ewire)
+        if self.events and selected_epoles:
+            # 1. 단일 전주 이벤트 (현재 탭에서 선택된 epole)
+            self.events.emit("pole_selected", self.selected_pole)
+            # 2. 복수 전주 이벤트 (본선+상선 두 개 epole)
+            self.events.emit("poles_selected", selected_epoles)
+            #전선 선택 이벤트
+            self.events.emit("wire_selected", self.selected_wire)
 
-        # Entry 채우기
-        self.original_pos = pos
-        self.entry_post_number.delete(0, tk.END)
-        self.entry_post_number.insert(0, post_number)
-        self.entry_pos.delete(0, tk.END)
-        self.entry_pos.insert(0, pos)
-        self.entry_gauge.delete(0, tk.END)
-        self.entry_gauge.insert(0, gauge)
-        self.entry_structure.delete(0, tk.END)
-        self.entry_structure.insert(0, structure)
-        self.entry_section.delete(0, tk.END)
-        self.entry_section.insert(0, section)
-        self.entry_base_type.delete(0, tk.END)
-        self.entry_base_type.insert(0, base_type)
+
+    def _handle_selection(self, item, track, fill_entry=True):
+        post_number, pos, span, gauge, structure, section, base_type, radius, pitch, cant, z = item["values"]
+
+        epole = next((e for e in self.editable_poles.get(track, []) if e.pole.pos == pos), None)
+        ewire = next((w for w in self.editable_wires.get(track, []) if w.wire.pos == pos), None)
+
+        if fill_entry and epole:
+            # 단일 선택일 때만 Entry 채우기
+            self.original_pos = pos
+            self.entry_post_number.delete(0, tk.END)
+            self.entry_post_number.insert(0, post_number)
+            self.entry_pos.delete(0, tk.END)
+            self.entry_pos.insert(0, pos)
+            self.entry_gauge.delete(0, tk.END)
+            self.entry_gauge.insert(0, gauge)
+            self.entry_structure.delete(0, tk.END)
+            self.entry_structure.insert(0, structure)
+            self.entry_section.delete(0, tk.END)
+            self.entry_section.insert(0, section)
+            self.entry_base_type.delete(0, tk.END)
+            self.entry_base_type.insert(0, base_type)
+
+        return epole, ewire
 
     def create_epoles(self):
         # EditablePole 리스트 생성
@@ -291,7 +313,7 @@ class AutoPoleEditor(tk.Frame):
         self.runner.log(f'전주 편집 성공 {new_pos}')
 
     def open_equipment_editor(self):
-        asemlbapp = PoleAssemblerApp(self.runner, self.events)
+        asemlbapp = PoleAssemblerApp(self.runner, self.objlib ,self.events)
         asemlbapp.bind_events()
 
     def open_wire_editor(self):
