@@ -112,7 +112,7 @@ def get_earthwork_embank_index(DESIGNSPEED, LINECOUNT):
     OBJECT_DICTIONARY = {
         150: {'토공압성토': (480,480), '터널시점갱문': (60, 77), '터널종점갱문': (61, 77)},
         250: {'토공압성토': (480,480), '터널시점갱문': (60, 77), '터널종점갱문': (61, 77)},
-        350: {'토공압성토': (32,125), '터널시점갱문': (174, 174), '터널종점갱문': (174, 174)},
+        350: {'토공압성토': (480,480), '터널시점갱문': (0, 174), '터널종점갱문': (0, 174)},
     }
 
     # 유효한 설계 속도 확인
@@ -125,54 +125,88 @@ def get_earthwork_embank_index(DESIGNSPEED, LINECOUNT):
     idx_tn = OBJECT_DICTIONARY[DESIGNSPEED]['터널종점갱문'][0] if LINECOUNT == 1 else OBJECT_DICTIONARY[DESIGNSPEED]['터널종점갱문'][1]
 
     return idx_E, idx_br, idx_tn
+def create_wall_syntax(idx, mode="start"):
+    """
+    벽체(wall) 구문 생성 함수
+    :param idx: 벽체 인덱스 (교량/터널 구분)
+    :param mode: "start" 또는 "end"
+    :return: 문자열 구문
+    """
+    if mode == "start":
+        return f".wall 0;-1;{idx};\n"
+    elif mode == "end":
+        return f".wallend 0;\n"
+    return ""
 
-def create_network_data(structure_list, designspeed,line_count):
+def create_dike_syntax(e_idx, line_count, designspeed=None, mode="start"):
+    if mode == "start":
+        if designspeed == 150:
+            return f".dike 0;-1;{e_idx};,.dike 1;-1;{e_idx}\n"
+        else:
+            return f".dike 0;-1;{e_idx};\n"
+    elif mode == "end":
+        if line_count == 1:
+            return f".dikeend 0;\n"
+        else:
+            return ".dikeend 0;,.dikeend 1;\n"
+    return ""
+
+def create_network_data(structure_list, designspeed, line_count):
     result = []
-    e_idx , br_idx,tn_idx = get_obj_index(designspeed, line_count)
+    e_idx, br_idx, tn_idx = get_obj_index(designspeed, line_count)
     idx_E, idx_tns, idx_tne = get_earthwork_embank_index(designspeed, line_count)
-    #시점부토공
-    result.append(f'0,.dike 0;-1;{e_idx};\n')
+
+    # 시점부 토공
+    result.append(create_dike_syntax(e_idx, line_count, designspeed, mode="start"))
+
+    # 교량 처리
     for name, start, end in structure_list['bridge']:
         start = get_block_index(start)
         end = get_block_index(end)
-        br_start_data =''
-        br_start_data += f',;{name}\n'#교량명
-        br_start_data += f'{start}\n'#시작
-        br_start_data += f'.wall 0;-1;{br_idx};\n' #교량
-        br_start_data += f'.dikeend 0;\n' #토공
-        br_start_data += f'.freeobj 0;{idx_E};0;0;180;\n' #압성토
-        
-        
-        br_end_data = ''
-        br_end_data += f'{end}\n'#끝
-        br_end_data += f'.wallend 0;\n' #교량
-        br_end_data += f'.dike 0;-1;{e_idx};\n' #토공
-        br_end_data += f'.freeobj 0;{idx_E};\n' #압성토
-        
+
+        br_start_data = (
+            f",;{name}\n"
+            f"{start}\n"
+            f"{create_wall_syntax(br_idx, mode='start')}"
+            f"{create_dike_syntax(e_idx, line_count, designspeed, mode='end')}\n"
+            f'.freeobj 0;{idx_E};0;0;'
+        )
+
+        br_end_data = (
+            f"{end}\n"
+            f"{create_wall_syntax(br_idx, mode='end')}"
+            f"{create_dike_syntax(e_idx, line_count, designspeed, mode='start')}"
+            f'.freeobj 0;{idx_E};0;0;180;\n'
+        )
+
         result.append(br_start_data)
         result.append(br_end_data)
-    for name , start, end in structure_list['tunnel']:
+
+    # 터널 처리
+    for name, start, end in structure_list['tunnel']:
         start = get_block_index(start)
         end = get_block_index(end)
-        tn_start_data =''
-        tn_start_data += f',;{name}\n'#터널명
-        tn_start_data += f'{start}\n'#시작
-        tn_start_data += f'.wall 0;-1;{tn_idx};\n' #터널
-        tn_start_data += f'.dikeend 0;\n' #토공
-        tn_start_data += f'.freeobj 0;{idx_tns};\n' #갱문
-        
-        
-        tn_end_data = ''
-        tn_end_data += f'{end}\n'#끝
-        tn_end_data += f'.wallend 0;\n' #터널
-        tn_end_data += f'.dike 0;-1;{e_idx};\n' #토공
-        tn_end_data += f'.freeobj 0;{idx_tne};0;0;180;\n' #갱문
 
+        tn_start_data = (
+            f",;{name}\n"
+            f"{start}\n"
+            f"{create_wall_syntax(tn_idx, mode='start')}"
+            f"{create_dike_syntax(e_idx, line_count, designspeed, mode='end')}\n"
+            f".freeobj 0;{idx_tns};\n"
+        )
 
-        
+        tn_end_data = (
+            f"{end}\n"
+            f"{create_wall_syntax(tn_idx, mode='end')}"
+            f"{create_dike_syntax(e_idx, line_count, designspeed, mode='start')}"
+            f".freeobj {0 if line_count == 1 else 1};{idx_tne};0;0;180;\n"
+        )
+
         result.append(tn_start_data)
         result.append(tn_end_data)
+
     return result
+
 
 def create_txt(output_file, data):
     with open(output_file, 'w', encoding='utf-8') as file:
@@ -223,7 +257,7 @@ def generate_bridge_data():
 
 def main():
     result = generate_bridge_data()
-    output_file = 'c:/temp/교량터널.txt'
+    output_file = 'c:/temp/구조물.txt'
     create_txt(output_file, result)
     print('구문 생성이 완료되었습니다.')
 
