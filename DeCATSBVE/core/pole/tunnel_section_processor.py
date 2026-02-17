@@ -18,7 +18,7 @@ class TunnelSectionProcessor:
 
         current_curve = '직선' if pole.radius == 0 else '곡선'
         if pole.radius == 0:
-            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation, flip=True)
+            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation, bracket_flip=True, stagger_flip=True)
         else:
             CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation ,True)
 

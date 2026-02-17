@@ -10,6 +10,7 @@ class NormalSectionProcessor:
         """노말구간 데이터 생성"""
         #공통변수
         rotation = 180 if pole.side == 'R' else 0
+        filp = True if pole.side == 'R' else False
         # MAST 데이터 가져오기
         mast_index = dataprocessor.get_mast_index(pole.structure)
         mast_name = idxlib.get_name(mast_index)
@@ -20,7 +21,7 @@ class NormalSectionProcessor:
 
         if pole.radius == 0:
             current_curve = '직선'
-            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation)
+            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation, stagger_flip=filp)
         else:
             current_curve ='곡선'
             CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation)
