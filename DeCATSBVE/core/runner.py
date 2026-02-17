@@ -81,7 +81,7 @@ class AutoPole:
 
         #데이터셋 로드,
         dataset = load_dataset(self.designspeed, self.iscustommode)
-        spans, self.pole_positions = distribute_pole_spacing_flexible(start_km, end_km, spans=dataset['span_list'])
+        self.pole_positions = distribute_pole_spacing_flexible(start_km, end_km, curvelist=self.curvelist,structure_list=self.structure_list)
         self.airjoint_list = define_airjoint_section(self.pole_positions ,airjoint_span=1600)
 
         # 전주번호 추가

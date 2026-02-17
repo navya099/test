@@ -1,6 +1,8 @@
 import re
 import random
 import math
+
+
 from enums.airjoint_section import AirJoint
 from utils.math_util import return_new_point
 
@@ -21,41 +23,46 @@ def find_last_block(data):
 
     return last_block
 
-def distribute_pole_spacing_flexible(start_km, end_km, spans=(45, 50, 55, 60)):
+def get_max_span_by_radius(radius):
+    """곡선 반경(R)에 따른 설계상 최대 경간 제한 (KR CODE 기준 예시)"""
+    if radius == 0: return 60      # 직선 구간
+    if radius >= 1500: return 60
+    if radius >= 1000: return 55
+    if radius >= 800: return 50
+    if radius >= 600: return 45
+    if radius >= 400: return 40
+    return 35 # 급곡선
+
+def distribute_pole_spacing_flexible(start_km, end_km, curvelist=None,structure_list=None):
     """
     45, 50, 55, 60m 범위에서 전주 간격을 균형 있게 배분하여 전체 구간을 채우는 함수
     마지막 전주는 종점보다 약간 앞에 위치할 수도 있음.
 
     :param start_km: 시작점 (km 단위)
     :param end_km: 끝점 (km 단위)
-    :param spans: 사용 가능한 전주 간격 리스트 (기본값: 45, 50, 55, 60)
     :return: 전주 간격 리스트, 전주 위치 리스트
     """
     start_m = int(start_km * 1000)  # km → m 변환
     end_m = int(end_km * 1000)
 
     positions = [start_m]
-    selected_spans = []
     current_pos = start_m
-
+    from core.alignment.define_funtion import iscurve
+    from core.structure.define_structure import isbridge_tunnel
     while current_pos < end_m:
-        possible_spans = list(spans)  # 사용 가능한 간격 리스트 (45, 50, 55, 60)
-        random.shuffle(possible_spans)  # 랜덤 배치
-
-        for span in possible_spans:
-            if current_pos + span > end_m:
-                continue  # 종점을 넘어서면 다른 간격을 선택
-
-            positions.append(current_pos + span)
-            selected_spans.append(span)
-            current_pos += span
-            break  # 하나 선택하면 다음으로 이동
-
-        # 더 이상 배치할 간격이 없으면 종료
-        if current_pos + min(spans) > end_m:
+        curve_type, r, c = iscurve(current_pos, curvelist)
+        structure = isbridge_tunnel(current_pos, structure_list)
+        if structure == '터널':
+            current_span = 40
+        elif curve_type == '곡선':
+            current_span = get_max_span_by_radius(abs(r))
+        else:
+            current_span = 60
+        if current_pos + current_span > end_m:
             break
-
-    return selected_spans, positions
+        current_pos += current_span
+        positions.append(current_pos)
+    return positions
 
 def define_airjoint_section(positions, airjoint_span):
     airjoint_list = []  # 결과 리스트
