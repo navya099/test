@@ -9,7 +9,19 @@ from core.pole.straight_section_processor import StraightSectionProcessor
 class TunnelSectionProcessor:
     @staticmethod
     def process(pole, dataprocessor, idxlib):
-        rotation = 180 if pole.side == 'L' else 0
+        flip = True
+        if flip:
+
+            if pole.base_type == 'I':
+                pole.base_type = 'O'
+            else:
+                pole.base_type = 'I'
+        if pole.side == 'L':
+            rotation = 180
+            stagger_flip = True
+        else:
+            rotation = 0
+            stagger_flip = False
         mast_index = dataprocessor.get_mast_index(pole.structure)
         mast_name = idxlib.get_name(mast_index)
 
@@ -18,9 +30,9 @@ class TunnelSectionProcessor:
 
         current_curve = '직선' if pole.radius == 0 else '곡선'
         if pole.radius == 0:
-            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation, bracket_flip=True, stagger_flip=True)
+            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation, stagger_flip=stagger_flip)
         else:
-            CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation ,True)
+            CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation)
 
         # 터널 특수 규칙 적용
         gauge = pole.gauge

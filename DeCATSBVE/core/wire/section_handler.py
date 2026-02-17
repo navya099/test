@@ -38,6 +38,7 @@ class WireSectionHandler:
             start_cw_height = self.datapro.get_contact_wire_height(pole.structure)
         else:
             # fallback: 기본값
+            print(f'[DEBUG]:return fallback start_offset at {pole.pos},{pole.section} in process_normal_section')
             start_offset = offset1
             start_cw_height = self.datapro.get_contact_wire_height(pole.structure)
         # 다음 pole도 동일하게 처리
@@ -45,6 +46,7 @@ class WireSectionHandler:
             end_offset = next_pole.brackets[0].stagger
             end_cw_height = self.datapro.get_contact_wire_height(next_pole.structure)
         else:
+            print(f'[DEBUG]:return fallback end_offset at {pole.pos},{pole.section} in process_normal_section')
             end_offset = offset2
             end_cw_height = self.datapro.get_contact_wire_height(next_pole.structure)
         wire.add_wire(self.compros.run(
