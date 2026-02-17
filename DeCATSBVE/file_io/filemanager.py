@@ -111,13 +111,20 @@ def save_runner(runner, filename="runner.dat", version=1):
         "structure_list": runner.structure_list,
         "pole_processor" : runner.pole_processor,
         "wire_processor" : runner.wire_processor,
-        "polesaver" : runner.polesaver,
         "designspeed" : runner.designspeed,
         "iscustommode" : runner.iscustommode,
         "is_create_dxf" : runner.is_create_dxf,
         "_cached_df" : runner._cached_df,
-        "pole_path": runner.pole_path,
-        "wire_path": runner.wire_path,
+        "wire_path_sub": runner.wire_path_sub,
+        "wire_path_main": runner.wire_path_main,
+        "polesaver_main": runner.polesaver_main,
+        "polesaver_sub": runner.polesaver_sub,
+        "pole_path_main": runner.pole_path_main,
+        "pole_path_sub": runner.pole_path_sub,
+        "track_mode": runner.track_mode,
+        "track_direction": runner.track_direction,
+        "offset_line_with_25": runner.offset_line_with_25,
+        "track_distance": runner.track_distance
         }
     with open(filename, "wb") as f:
         pickle.dump(state, f)
@@ -136,11 +143,19 @@ def load_runner(runner, filename="runner.dat"):
     runner.structure_list = state["structure_list"]
     runner.pole_processor = state["pole_processor"]
     runner.wire_processor = state["wire_processor"]
-    runner.polesaver = state["polesaver"]
+
     runner.designspeed = state["designspeed"]
     runner.iscustommode = state["iscustommode"]
     runner.is_create_dxf = state["is_create_dxf"]
     runner._cached_df = state["_cached_df"]
-    runner.wire_path = state["wire_path"]
-    runner.pole_path = state["pole_path"]
 
+    runner.wire_path_sub = state["wire_path_sub"]
+    runner.wire_path_main = state["wire_path_main"]
+    runner.polesaver_main = state["polesaver_main"]
+    runner.polesaver_sub = state["polesaver_sub"]
+    runner.pole_path_main = state["pole_path_main"]
+    runner.pole_path_sub = state["pole_path_sub"]
+    runner.track_mode = state["track_mode"]
+    runner.track_direction = state["track_direction"]
+    runner.offset_line_with_25 = state["offset_line_with_25"]
+    runner.track_distance = state["track_distance"]
