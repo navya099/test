@@ -3,8 +3,10 @@ from tkinter import ttk, messagebox
 import pandas as pd
 from bve.bvecsv import BVECSV
 from core.runner import AutoPole
+from dataset.dataset_manager import load_dataset
 from event.event_controller import EventController
 from file_io.filemanager import write_to_file, load_poles, save_poles, save_runner, load_runner
+from gui.dataset_gui import DataSetEditor
 from gui.maineditor import AutoPoleEditor
 from gui.pole_plotter import PlotPoleMap
 from xref_module.index_libmgr import IndexLibrary
@@ -14,6 +16,7 @@ from xref_module.object_libraymgr import LibraryManager
 class AutoPoleApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.dataset = None
         self.idxlib = None
         self.title("AutoPOLE")
         self.events = EventController()
@@ -49,6 +52,8 @@ class AutoPoleApp(tk.Tk):
         tk.Button(button_frame, text="데이터저장", command=self.save_pickle).pack(side="left")
         tk.Button(button_frame, text="데이터로드", command=self.load_pickle).pack(side="left")
         tk.Button(button_frame, text="라이브러리 갱신", command=self.refresh_library).pack(side="left")
+        tk.Button(button_frame, text="데이터셋 불러오기", command=self.load_dataset).pack(side="left")
+        tk.Button(button_frame, text="데이터셋 편집", command=self.edit_dataset).pack(side="left")
         tk.Button(button_frame, text="종료", command=self.exit_app).pack(side="left")
 
         options_frame = tk.LabelFrame(self, text="트랙 옵션")
@@ -169,3 +174,8 @@ class AutoPoleApp(tk.Tk):
         self.editor.refresh_tree()
         self.plotter.update_plot()
         messagebox.showinfo('정보', '데이터 로드가 완료됐습니다.')
+
+    def load_dataset(self):
+        self.dataset = load_dataset(int(self.entry_speed.get()),int(self.is_custom_mode.get()))
+    def edit_dataset(self):
+        de = DataSetEditor(self.dataset)
