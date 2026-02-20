@@ -1,3 +1,5 @@
+from bve.beam_builder import TempleteBeamBuilder
+from bve.pole_builder import TempletePoleBuilder
 from controller.filefinder import FileLocator
 from controller.path_resolver import PathResolver
 from preview.category import PreviewCategory
@@ -11,17 +13,26 @@ class PreviewService:
     def build_from_install(install):
         items = []
         missing = []
-
+        beam_cache = {}
+        pole_cache = {}
         locator = FileLocator(PathResolver.BASE_PATH)
 
         # 1. 빔
         for beam in install.beams:
-            beam_path = locator.find(beam.name)
-            if beam_path:
+            if beam.iscustom:
+
+                if beam.length not in beam_cache:
+                    builder = TempleteBeamBuilder(beam.length)
+                    beam_cache[beam.length] = builder.build()
+
+                path = beam_cache[beam.length]
+            else:
+                path = locator.find(beam.name)
+            if path:
 
                 items.append(
                     PreviewItem(
-                        path=beam_path,
+                        path=path,
                         transform=Transform(
                             x=beam.ref_start_pole.xoffset,
                             z=0,
@@ -37,7 +48,14 @@ class PreviewService:
 
         # 2. 기둥
         for col in install.poles:
-            path = locator.find(col.display_name)
+            if col.iscustom:
+                if col.length not in pole_cache:
+                    builder = TempletePoleBuilder(col.length, col.width)
+                    pole_cache[col.length] = builder.build()
+
+                path = pole_cache[col.length]
+            else:
+                path = locator.find(col.name)
             if path:
                 items.append(
                     PreviewItem(
