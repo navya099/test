@@ -29,3 +29,4 @@ class Beam:
     x: float | None = None
     y: float | None = None
     rotation: float | None = None
+    iscustom: bool | None = None
