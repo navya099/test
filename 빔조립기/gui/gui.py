@@ -173,9 +173,11 @@ class PoleInstallGUI(tk.Tk):
                 self.viewer.add_object(obj)
 
             filename= f'c:/temp/{self.result.pole_number}.dxf'
+            filename2 = f'c:/temp/{self.result.pole_number}_3d.dxf'
             from controller.dxf_controller import DXFController
             dxfmgr = DXFController()
-            dxfmgr.export_dxf(self.viewer.objects,filename)
+            dxfmgr.export_dxf(self.viewer.objects,filename,option='2d')
+            dxfmgr.export_dxf(self.viewer.objects, filename2,option='3d')
             messagebox.showinfo('완료','도면 저장이 완료됐습니다.')
         except Exception as e:
             messagebox.showerror('에러', f'도면 저장중 에러가 발생했습니다.\n{e}')
