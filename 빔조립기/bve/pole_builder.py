@@ -179,4 +179,4 @@ class TempletePoleBuilder:
     def save_text(self):
         self.path = f'c:/temp/custom_pole_{self.length}m.csv'
         with open(self.path, 'w', encoding='utf-8') as f:
-            f.writelines(self.text)
+            f.write("\n".join(self.text))

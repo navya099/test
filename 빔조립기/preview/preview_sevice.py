@@ -55,7 +55,7 @@ class PreviewService:
 
                 path = pole_cache[col.length]
             else:
-                path = locator.find(col.name)
+                path = locator.find(col.display_name)
             if path:
                 items.append(
                     PreviewItem(
