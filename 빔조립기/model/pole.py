@@ -28,3 +28,4 @@ class Pole:
     base_rail_uid: str | None = None
     # 배치 정보
     xoffset: float | None = None
+    iscustom: bool | None = None
