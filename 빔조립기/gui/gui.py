@@ -82,6 +82,7 @@ class PoleInstallGUI(tk.Tk):
         ttk.Button(frame, text="미리보기", command=self.plot_preview).pack(side="right", padx=10)
         ttk.Button(frame, text="로드", command=self.load).pack(side="right", padx=10)
         ttk.Button(frame, text="저장", command=self.save).pack(side="right", padx=10)
+        ttk.Button(frame, text="도면저장", command=self.save_dxf).pack(side="right", padx=10)
 
     def _generate(self):
         self.result = self.installadaptor.collect(self)
@@ -163,3 +164,18 @@ class PoleInstallGUI(tk.Tk):
             "경고",
             f"다음 경고가 있습니다:\n\n{msg}\n\n계속 로드하시겠습니까?"
         )
+    def save_dxf(self):
+        try:
+            self._generate()
+            self.viewer.objects.clear()
+            result = PreviewService.build_from_install(self.result)
+            for obj in result.objects:
+                self.viewer.add_object(obj)
+
+            filename= f'c:/temp/{self.result.pole_number}.dxf'
+            from controller.dxf_controller import DXFController
+            dxfmgr = DXFController()
+            dxfmgr.export_dxf(self.viewer.objects,filename)
+            messagebox.showinfo('완료','도면 저장이 완료됐습니다.')
+        except Exception as e:
+            messagebox.showerror('에러', f'도면 저장중 에러가 발생했습니다.\n{e}')
