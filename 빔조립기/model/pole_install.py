@@ -15,6 +15,7 @@ class PoleInstall:
             rails: 선로객체들
             equips: 장비들
     """
+    iid: str = ''
     station: float = 0.0
     pole_number: str = ''
     rail_count: int = 0

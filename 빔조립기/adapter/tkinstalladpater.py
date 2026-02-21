@@ -1,54 +1,81 @@
-from Electric.Overhead.Pole.poletype import PoleType
+import tkinter as tk
 from adapter.tk_beam_adapter import TkBeamAdapter
+from adapter.tk_bracket_adapter import TKBracketAdapter
 from adapter.tk_equipment_adapter import TkEquipmentAdapter
 from adapter.tk_pole_adapter import TkPoleAdapter
 from adapter.tk_raildata_adapter import TKRaildataAdapter
+from gui.viewmodel.tkinstalldata import TKInstallData
 from model.pole_install import PoleInstall
 from model.tkraildata import TKRailData
 
 
 class TkInstallAdapter:
-    def collect(self, master) -> PoleInstall:
-        rails = TKRaildataAdapter.collect(
-            master.bracket_frame.bracket_vars
-        )
+    def collect(self, sections) -> list[PoleInstall]:
+        result = []
+        for section in sections:
+            rails = TKRaildataAdapter.collect(
+                section.rails_var
+            )
 
-        poles = TkPoleAdapter.collect(
-            master.structure_frame.pole_vars
-        )
+            poles = TkPoleAdapter.collect(
+                section.poles_var
+            )
 
-        beams = TkBeamAdapter.collect(
-            master.structure_frame.beam_vars  # beam도 rail 참조하면 동일
-        )
-        equips = TkEquipmentAdapter.collect(master.eq_frame.equips)
+            beams = TkBeamAdapter.collect(
+                section.beams_var
+            )
+            equips = TkEquipmentAdapter.collect(section.equips_var)
 
-        return PoleInstall(
-            station=master.station.get(),
-            pole_number=master.pole_number.get(),
-            rail_count=master.rail_count.get(),
-            pole_count=master.pole_count.get(),
-            beam_count=master.beam_count.get(),
-            rails=rails,
-            poles=poles,
-            beams=beams,
-            equips=equips
-        )
+            poleinstall =  PoleInstall(
+                iid=section.iid,
+                station=section.station_var.get(),
+                pole_number=section.pole_number_var.get(),
+                rail_count=section.rail_count_var.get(),
+                pole_count=section.pole_count_var.get(),
+                beam_count=section.beam_count_var.get(),
+                rails=rails,
+                poles=poles,
+                beams=beams,
+                equips=equips
+            )
+            result.append(poleinstall)
+        return result
 
-
-    def apply(self, master, install: PoleInstall):
+    def apply(self, master, installs: list[PoleInstall]):
         master.isloading = True
-        master.station.set(install.station)
-        master.pole_number.set(install.pole_number)
-        master.rail_count.set(install.rail_count)
-        master.pole_count.set(install.pole_count)
-        master.bracket_frame.rebuild_from_install(install.rails)
-
-        sf = master.structure_frame
+        scf = master.section_frame
+        strf = master.structure_frame
         ef = master.eq_frame
+        bf = master.basic_frame
+        brkf = master.bracket_frame
+        vms = []
+        # 기존 구간 초기화
+        scf.section_list.delete(*scf.section_list.get_children())
+        scf.section_map.clear()
 
-        sf.rebuild_from_install(install.beams, install.poles)
-        ef.load_from_dto(install.equips)
+        for dto in installs:
+            # VM 생성
+            vm = TKInstallData(
+                station_var=tk.DoubleVar(value=dto.station),
+                pole_number_var=tk.StringVar(value=dto.pole_number),
+                rail_count_var=tk.IntVar(value=dto.rail_count),
+                pole_count_var=tk.IntVar(value=dto.pole_count),
+                beam_count_var=tk.IntVar(value=dto.beam_count),
+                poles_var=[], beams_var=[], rails_var=[], equips_var=[],
+                isbeaminstall_var=tk.BooleanVar(value=True),
+                iid=dto.iid
+            )
+
+            # 하위 데이터 복원
+            vm.rails_var = [TKRaildataAdapter.from_dto(r) for r in dto.rails]
+            # 각 rail의 brackets 복원
+            for rail_vm, rail_dto in zip(vm.rails_var, dto.rails):
+                rail_vm.brackets = [TKBracketAdapter.from_dto(b) for b in rail_dto.brackets]
+
+            vm.poles_var = [TkPoleAdapter.from_dto(p) for p in dto.poles]
+            vm.beams_var = [TkBeamAdapter.from_dto(b) for b in dto.beams]
+            vm.equips_var = [TkEquipmentAdapter.from_dto(e) for e in dto.equips]
+            vms.append(vm)
+        scf.sections = vms
+        scf.refresh_sections()
         master.isloading = False
-        # 🔥 로드 완료 후 1회 sync
-        master.event.emit("rails.updated",
-                          master.bracket_frame.bracket_vars)

@@ -14,10 +14,11 @@ from .equipment_window import EquipMentWindow
 from .preview import PreviewViewer
 from .section_frame import SectionFrame
 from .structure_frame import StructureFrame
-
+import pickle
 class PoleInstallGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.selected_dto = None
         self.bve_window = None
         self.title("전주 설치 입력기")
         self.geometry("900x1200")
@@ -53,14 +54,30 @@ class PoleInstallGUI(tk.Tk):
     def plot_preview(self):
         self._generate()
         self.viewer.objects.clear()
-        result = PreviewService.build_from_install(self.result)
+
+        selected_items = self.section_frame.section_list.selection()
+        if not selected_items:
+            messagebox.showinfo("알림", "구간을 먼저 선택하세요.")
+            return
+
+        iid = selected_items[0]
+
+        # ✅ DTO 리스트에서 iid로 매칭
+        self.selected_dto = next((dto for dto in self.result if dto.iid == iid), None)
+        if not self.selected_dto:
+            messagebox.showwarning("오류", "선택된 구간에 해당하는 DTO가 없습니다.")
+            return
+
+        result = PreviewService.build_from_install(self.selected_dto)
         for obj in result.objects:
             self.viewer.add_object(obj)
+
         if result.missing:
             messagebox.showwarning(
-            '일부 파일 누락',
-            '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(result.missing)
-        )
+                '일부 파일 누락',
+                '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(result.missing)
+            )
+
         self.viewer.draw()
         self.show_bvesyntac()
 
@@ -78,7 +95,7 @@ class PoleInstallGUI(tk.Tk):
         ttk.Button(frame, text="도면저장", command=self.save_dxf).pack(side="right", padx=10)
 
     def _generate(self):
-        self.result = self.installadaptor.collect(self)
+        self.result = self.installadaptor.collect(self.section_frame.sections)
         self.mp.run(self.result)
 
     def destyoy(self):
@@ -89,8 +106,8 @@ class PoleInstallGUI(tk.Tk):
         self.plot_preview()
 
     def show_bvesyntac(self):
-        if self.result:
-            text = BVETextBuilder.to_text(self.result)
+        if self.selected_dto:
+            text = BVETextBuilder.to_text(self.selected_dto)
 
             # ✅ 처음 호출 시에만 새창 생성
             if self.bve_window is None or not self.bve_window.winfo_exists():
@@ -113,24 +130,25 @@ class PoleInstallGUI(tk.Tk):
         else:
             messagebox.showwarning('에러', '아직 개체가 생성되지 않았습니다.')
 
+
+
     def save(self):
-        install = self.installadaptor.collect(self)
-        path = r'c:/temp/saved_beam_assembler_data.json' #임시 경로 및 파일명
-        PoleInstallSerializer.save(install, path)
+        # VM → DTO 변환
+        installs = self.installadaptor.collect(self.section_frame.sections)
+
+        path = r'c:/temp/saved_beam_assembler_data.pkl'  # pickle 파일
+        with open(path, "wb") as f:
+            pickle.dump(installs, f)
+
         messagebox.showinfo('데이터 저장', '저장이 완료됐습니다.')
+
     def load(self):
-        path = r'c:/temp/saved_beam_assembler_data.json'
-        try:# 임시 경로 및 파일명
-            install, error_result = PoleInstallSerializer.load(path, self.bracket_frame.lib_manager)
-            if error_result.errors:
-                self.show_errors("로드 실패 - 오류", error_result.errors)
-                return
+        path = r'c:/temp/saved_beam_assembler_data.pkl'
+        try:
+            with open(path, "rb") as f:
+                self.result = pickle.load(f)
+                self.installadaptor.apply(self, self.result)
 
-            if error_result.warnings:
-                if not self.show_warnings(error_result.warnings):
-                    return
-
-            self.installadaptor.apply(self, install)
             messagebox.showinfo('데이터 로드', '로드가 완료됐습니다.')
         except Exception as e:
             messagebox.showerror('에러', f'로드에 실패했습니다. {e}')
@@ -161,12 +179,12 @@ class PoleInstallGUI(tk.Tk):
         try:
             self._generate()
             self.viewer.objects.clear()
-            result = PreviewService.build_from_install(self.result)
+            result = PreviewService.build_from_install(self.selected_dto)
             for obj in result.objects:
                 self.viewer.add_object(obj)
 
-            filename= f'c:/temp/{self.result.pole_number}.dxf'
-            filename2 = f'c:/temp/{self.result.pole_number}_3d.dxf'
+            filename= f'c:/temp/{self.selected_dto.pole_number}.dxf'
+            filename2 = f'c:/temp/{self.selected_dto.pole_number}_3d.dxf'
             from controller.dxf_controller import DXFController
             dxfmgr = DXFController()
             dxfmgr.export_dxf(self.viewer.objects,filename,option='2d')

@@ -16,6 +16,7 @@ class TKInstallData:
         rails_var: 선로객체들
         equips_var: 장비들
         """
+    iid: str
     isbeaminstall_var: tk.BooleanVar
     station_var: tk.DoubleVar
     pole_number_var: tk.StringVar

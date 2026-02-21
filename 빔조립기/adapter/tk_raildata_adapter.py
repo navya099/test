@@ -31,12 +31,12 @@ class TKRaildataAdapter:
         return result
 
     @staticmethod
-    def from_dict(data: dict) -> TKRailData:
+    def from_dto(data: RailData) -> TKRailData:
         return TKRailData(
-            index_var=tk.IntVar(value=data["index"]),
-            name_var=tk.StringVar(value=data["name"]),
-            brackets=data.get("brackets", []),
-            coordx=tk.DoubleVar(value=data["coord"].x),
-            coordy=tk.DoubleVar(value=data["coord"].y),
-            coordz=tk.DoubleVar(value=data["coord"].z),
+            index_var=tk.IntVar(value=data.index),
+            name_var=tk.StringVar(value=data.name),
+            brackets=data.brackets,
+            coordx=tk.DoubleVar(value=data.coord.x),
+            coordy=tk.DoubleVar(value=data.coord.y),
+            coordz=tk.DoubleVar(value=data.coord.z),
         )

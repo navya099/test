@@ -1,7 +1,7 @@
 from Electric.Overhead.Structure.beamtype import BeamType
 from gui.viewmodel.beam_vm import BeamVM
 from model.beam import Beam
-
+import tkinter as tk
 
 class TkBeamAdapter:
     @staticmethod
@@ -17,3 +17,12 @@ class TkBeamAdapter:
                 )
             )
         return beams
+
+    @staticmethod
+    def from_dto(data: Beam) -> BeamVM:
+        return BeamVM(
+            index=tk.IntVar(value=data.index),
+            beamtype=tk.StringVar(value=data.type.value),
+            start_pole=tk.IntVar(value=data.start_pole),
+            end_pole=tk.IntVar(value=data.end_pole),
+        )

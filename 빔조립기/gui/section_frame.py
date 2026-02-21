@@ -52,12 +52,13 @@ class SectionFrame(ttk.LabelFrame):
             rails_var=[],
             equips_var =[],
             isbeaminstall_var=tk.BooleanVar(value=True),
-        )
+            iid='')
 
         # Treeview에 추가하고 iid를 받아옴
         iid = self.section_list.insert("", "end",
                                        values=(new_install.station_var.get(),
                                                new_install.pole_number_var.get()))
+        new_install.iid = iid
         # 매핑 저장
         self.section_list.set(iid, "station", new_install.station_var.get())
         self.section_list.set(iid, "pole_number", new_install.pole_number_var.get())
@@ -66,7 +67,7 @@ class SectionFrame(ttk.LabelFrame):
         if not hasattr(self, "section_map"):
             self.section_map = {}
         self.section_map[iid] = new_install
-
+        self.sections.append(new_install)
         if self.event:
             self.event.emit("section.added", new_install)
 
@@ -109,3 +110,16 @@ class SectionFrame(ttk.LabelFrame):
                 self.section_list.item(iid,
                                        values=(section.station_var.get(), section.pole_number_var.get()))
                 break
+
+    def refresh_sections(self):
+        # Treeview 초기화
+        self.section_list.delete(*self.section_list.get_children())
+
+        # VM 리스트를 다시 Treeview에 반영
+        for section in self.sections:
+            iid = self.section_list.insert(
+                "", "end",
+                values=(section.station_var.get(), section.pole_number_var.get())
+            )
+            section.iid = iid
+            self.section_map[iid] = section

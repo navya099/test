@@ -20,13 +20,13 @@ class TKBracketAdapter:
         )
 
     @staticmethod
-    def from_dict(data: dict) -> BracketViewModel:
+    def from_dto(data: Bracket) -> BracketViewModel:
         """역변환 도메인으로부터 뷰 모델 생성"""
         return BracketViewModel(
-            rail_no=tk.IntVar(value=data["rail_no"]),
-            xoffset=tk.DoubleVar(value=data["xoffset"]),
-            yoffset=tk.DoubleVar(value=data["yoffset"]),
-            rotation=tk.DoubleVar(value=data["rotation"]),
-            rail_type=tk.StringVar(value=data.get("rail_type", "")),
-            bracket_type=tk.StringVar(value=data.get("type", "")),
+            rail_no=tk.IntVar(value=data.rail_no),
+            xoffset=tk.DoubleVar(value=data.xoffset),
+            yoffset=tk.DoubleVar(value=data.yoffset),
+            rotation=tk.DoubleVar(value=data.rotation),
+            rail_type=tk.StringVar(value=data.rail_type),
+            bracket_type=tk.StringVar(value=data.type),
         )

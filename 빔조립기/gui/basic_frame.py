@@ -43,11 +43,11 @@ class BasicInfoFrame(ttk.LabelFrame):
 
     def _build(self):
         # 기본값용 tk.Variable 생성 (section이 없을 때 대비)
-        default_station = tk.DoubleVar(value=0.0)
-        default_pole_number = tk.StringVar(value="")
-        default_rail_count = tk.IntVar(value=0)
-        default_pole_count = tk.IntVar(value=0)
-        default_beam_count = tk.IntVar(value=0)
+        default_station = tk.DoubleVar(value=45876)
+        default_pole_number = tk.StringVar(value="43-11")
+        default_rail_count = tk.IntVar(value=2)
+        default_pole_count = tk.IntVar(value=2)
+        default_beam_count = tk.IntVar(value=1)
         default_isbeaminstall = tk.BooleanVar(value=True)
 
         # 라벨 + Entry 위젯 생성
