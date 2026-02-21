@@ -1,8 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import scrolledtext
-import time
-from adapter.tk_raildata_adapter import TKRaildataAdapter
 from adapter.tkinstalladpater import TkInstallAdapter
 from bve.bveserializer import BVETextBuilder
 from controller.event_controller import EventController
@@ -14,6 +12,7 @@ from .basic_frame import BasicInfoFrame
 from .bracket_frame import BracketFrame
 from .equipment_window import EquipMentWindow
 from .preview import PreviewViewer
+from .section_frame import SectionFrame
 from .structure_frame import StructureFrame
 
 class PoleInstallGUI(tk.Tk):
@@ -21,21 +20,13 @@ class PoleInstallGUI(tk.Tk):
         super().__init__()
         self.bve_window = None
         self.title("전주 설치 입력기")
-        self.geometry("900x650")
+        self.geometry("900x1200")
         self.isloading = False
         self.installadaptor = TkInstallAdapter()
         self.mp = MainProcess()
         self.event = EventController()
         self.lib_manager = LibraryManager()
         self.lib_manager.scan_library()
-        # 상태 변수들
-        self.station = tk.DoubleVar(value=87943.0)
-        self.pole_number = tk.StringVar(value="47-27")
-        self.left_x = tk.DoubleVar(value=-12.0)
-        self.right_x = tk.DoubleVar(value=9.0)
-        self.rail_count = tk.IntVar(value=2)
-        self.pole_count = tk.IntVar(value=2)
-        self.beam_count = tk.IntVar(value=1)
 
         # ✅ 미리보기 뷰어를 한 번만 생성
         self.viewer = PreviewViewer()
@@ -45,6 +36,8 @@ class PoleInstallGUI(tk.Tk):
         self._preview_after_id = None
 
         # 프레임 생성
+        self.section_frame = SectionFrame(self, self.event)
+        self.section_frame.pack(fill="x", padx=10, pady=5)
         self.basic_frame = BasicInfoFrame(self, self.event)
         self.basic_frame.pack(fill="x", padx=10, pady=5)
         self.structure_frame = StructureFrame(self, self.event)

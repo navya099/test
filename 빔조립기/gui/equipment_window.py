@@ -7,12 +7,13 @@ from gui.viewmodel.equipment_vm import EquipmentVM
 class EquipMentWindow(ttk.LabelFrame):
     def __init__(self, master ,event, lib_manager):
         super().__init__(master, text="추가 장비 정보")
-        self.equips: list[EquipmentVM] = []  # 리스트로 장비 DTO 관리
         self.master = master
         self.event = event
+        self.current_section = None
         self.lib_manager = lib_manager
-        self.rails = []  # TKRailData 목록
-        self.event.bind("rails.updated", self._on_rails_updated)
+        if self.event:
+            self.event.bind("section.selected", self._on_section_selected)
+            self.event.bind("rails.updated", self._on_rails_updated)
         #장비 리스트
         self.equip_name_list = self.lib_manager.list_all_files(group='base')
         # 파일명 .csv제거
@@ -30,15 +31,52 @@ class EquipMentWindow(ttk.LabelFrame):
         ttk.Button(self.button_frame, text="+", width=3, command=self.add_equip).grid(row=0, column=0, padx=2)
         ttk.Button(self.button_frame, text="-", width=3, command=self.remove_equip).grid(row=0, column=1, padx=2)
 
-        self.build_equip_frame()
+    def _on_section_selected(self, section):
+        self.current_section = section
+        if section:
+            if self.current_section.equips_var:
+                self.refresh_equips() #기존 객체 UI갱신
+            else:
+                self.rebuild_equips() #새 객세 생성
+        else:
+            return
 
-    def _on_rails_updated(self, rails):
-        self.rails = rails
-        if self.equips:
+    def _on_rails_updated(self):
+        if self.current_section.equips_var:
             # UI 갱신만
-            self.build_equip_frame()
+            self.refresh_equips()
 
-    def build_equip_frame(self):
+    def rebuild_equips(self, *_):
+        """
+        - 구간이 처음 생성되었을 때만 호출해서 EquipVM들을 새로 만들어줍니다.
+        - 데이터 모델 초기화 역할만 담당합니다.
+        """
+        # 기존 UI 제거
+        for w in self.equip_frame.winfo_children():
+            w.destroy()
+
+        # ✅ equips 초기화는 rebuild에서만
+        self.current_section.equips_var.clear()
+
+        # EquipVM 새로 생성
+        for i in self.current_section.equips_var:
+            equip_vm = EquipmentVM(
+                name_var=tk.StringVar(value="기본장비"),
+                x_var=tk.DoubleVar(value=0.0),
+                y_var=tk.DoubleVar(value=0.0),
+                rotation_var=tk.DoubleVar(value=0.0),
+                base_rail_index_var=tk.IntVar(value=0)
+            )
+            self.current_section.equips_var.append(equip_vm)
+
+        # ✅ UI는 refresh에서 따로 그림
+        self.refresh_equips()
+
+    def refresh_equips(self):
+        """
+        - 이미 존재하는 EquipVM들을 그대로 사용해서 UI만 다시 그려줍니다.
+        - 상태 보존 + UI 갱신 역할을 담당합니다.
+        """
         # 기존 UI 제거
         for w in self.equip_frame.winfo_children():
             w.destroy()
@@ -49,17 +87,16 @@ class EquipMentWindow(ttk.LabelFrame):
                 row=0, column=col, padx=5, pady=2
             )
 
-        for i, equip in enumerate(self.equips):
+        for i, equip in enumerate(self.current_section.equips_var, start=1):
+            row = i
 
-            row = i + 1
-
-            # 🔹 장비명 Combobox
+            # 장비명 Combobox
             name_cb = ttk.Combobox(
                 self.equip_frame,
                 textvariable=equip.name_var,
                 values=self.equip_name_list,
                 width=20,
-                state="readonly"  # 입력 불가, 목록에서만 선택
+                state="readonly"
             )
             name_cb.grid(row=row, column=0)
 
@@ -68,9 +105,9 @@ class EquipMentWindow(ttk.LabelFrame):
             ttk.Entry(self.equip_frame, textvariable=equip.y_var, width=6).grid(row=row, column=2)
             ttk.Entry(self.equip_frame, textvariable=equip.rotation_var, width=6).grid(row=row, column=3)
 
-            # 🔹 레일 콤보박스
-            if self.rails:
-                rail_labels = [f"{r.name_var.get()} ({r.index_var.get()})" for r in self.rails]
+            # 레일 콤보박스
+            if self.current_section.rails_var:
+                rail_labels = [f"{r.name_var.get()} ({r.index_var.get()})" for r in self.current_section.rails_var]
                 rail_cb = ttk.Combobox(
                     self.equip_frame,
                     values=rail_labels,
@@ -78,21 +115,18 @@ class EquipMentWindow(ttk.LabelFrame):
                     state="readonly"
                 )
 
-                # 현재 VM 값과 일치하는 index 찾기
                 selected_idx = next(
-                    (idx for idx, r in enumerate(self.rails) if r.index_var.get() == equip.base_rail_index_var.get()),
+                    (idx for idx, r in enumerate(self.current_section.rails_var)
+                     if r.index_var.get() == equip.base_rail_index_var.get()),
                     0
                 )
                 rail_cb.current(selected_idx)
+                equip.base_rail_index_var.set(self.current_section.rails_var[selected_idx].index_var.get())
 
-                # VM에도 확실히 초기 값 설정
-                equip.base_rail_index_var.set(self.rails[selected_idx].index_var.get())
-
-                # 콤보박스 선택 시 VM 업데이트
                 def on_rail_selected(event, eq=equip, cb=rail_cb):
                     idx = cb.current()
                     if idx >= 0:
-                        new_val = self.rails[idx].index_var.get()
+                        new_val = self.current_section.rails_var[idx].index_var.get()
                         eq.base_rail_index_var.set(new_val)
                         print(f"[DEBUG] {eq.name_var.get()} rail index updated to {new_val}")
 
@@ -101,7 +135,6 @@ class EquipMentWindow(ttk.LabelFrame):
 
             # 편집 버튼
             ttk.Button(self.equip_frame, text="편집", command=lambda e=equip: self.edit_equip(e)).grid(row=row, column=5)
-
     def add_equip(self):
         # 새 장비 DTO 생성
         new_equip = EquipmentVM(
@@ -110,15 +143,15 @@ class EquipMentWindow(ttk.LabelFrame):
             y_var=tk.DoubleVar(value=0),
             rotation_var=tk.DoubleVar(value=0),
             base_rail_index_var=tk.IntVar(value=0))
-        self.equips.append(new_equip)
-        self.build_equip_frame()
-        self.event.emit("equips.updated", self.equips)
+        self.current_section.equips_var.append(new_equip)
+        self.refresh_equips()
+        self.event.emit("equips.updated")
 
     def remove_equip(self):
-        if self.equips:
-            self.equips.pop()  # 마지막 장비 제거
-            self.build_equip_frame()
-            self.event.emit("equips.updated", self.equips)
+        if self.current_section.equips_var:
+            self.current_section.equips_var.pop()  # 마지막 장비 제거
+            self.rebuild_equips()
+            self.event.emit("equips.updated")
 
     def edit_equip(self, equip):
         # 장비 편집 창 열기
@@ -151,5 +184,5 @@ class EquipMentWindow(ttk.LabelFrame):
             self.equips.append(vm)
 
         # UI 갱신
-        self.build_equip_frame()
+        self.refresh_equips()
         self.event.emit("equips.updated", self.equips)
