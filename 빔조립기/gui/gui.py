@@ -177,20 +177,33 @@ class PoleInstallGUI(tk.Tk):
             "경고",
             f"다음 경고가 있습니다:\n\n{msg}\n\n계속 로드하시겠습니까?"
         )
+
     def save_dxf(self):
         try:
             self._generate()
             self.viewer.objects.clear()
-            result = PreviewService.build_from_install(self.selected_dto)
-            for obj in result.objects:
-                self.viewer.add_object(obj)
 
-            filename= f'c:/temp/{self.selected_dto.pole_number}.dxf'
-            filename2 = f'c:/temp/{self.selected_dto.pole_number}_3d.dxf'
             from controller.dxf_controller import DXFController
             dxfmgr = DXFController()
-            dxfmgr.export_dxf(self.viewer.objects,filename,option='2d')
-            dxfmgr.export_dxf(self.viewer.objects, filename2,option='3d')
-            messagebox.showinfo('완료','도면 저장이 완료됐습니다.')
+
+            # ✅ 2D: 단일 선택된 구간만 저장
+            result2d = PreviewService.build_from_install(self.selected_dto)
+            for obj in result2d.objects:
+                self.viewer.add_object(obj)
+
+            filename2d = f'c:/temp/{self.selected_dto.pole_number}.dxf'
+            dxfmgr.export_dxf(self.viewer.objects, filename2d, option='2d')
+
+            # ✅ 3D: 모든 구간을 합쳐서 하나의 파일로 저장
+            all_objects = []
+            for dto in self.result:  # self.result = 전체 DTO 리스트
+                result3d = PreviewService.build_from_install(dto)
+                all_objects.extend(result3d.objects)
+
+            filename3d = 'c:/temp/all_sections_3d.dxf'
+            dxfmgr.export_dxf(all_objects, filename3d, option='3d')
+
+            messagebox.showinfo('완료', '도면 저장이 완료됐습니다.')
+
         except Exception as e:
             messagebox.showerror('에러', f'도면 저장중 에러가 발생했습니다.\n{e}')

@@ -35,6 +35,7 @@ class PreviewService:
                         path=path,
                         transform=Transform(
                             x=beam.ref_start_pole.xoffset,
+                            y=install.station,
                             z=0,
                             rotation=0,
                             pivot=beam.ref_start_pole.base_rail.coord
@@ -62,6 +63,7 @@ class PreviewService:
                         path=path,
                         transform=Transform(
                             x=col.xoffset,
+                            y=install.station,
                             z=0,
                             rotation=0,
                             pivot=col.base_rail.coord
@@ -82,6 +84,7 @@ class PreviewService:
                             path=path,
                             transform=Transform(
                                 x=br.xoffset,
+                                y=install.station,
                                 z=br.yoffset,
                                 rotation=br.rotation,
                                 pivot=rail.coord
@@ -98,6 +101,7 @@ class PreviewService:
                     path=r'D:/BVE/루트/Railway/Object/철도표준라이브러리/궤도/표준단면/자갈도상/일반철도/5M레일_신선_전차선X.csv',#현재 임시로 하드코딩
                     transform=Transform(
                         x=0,
+                        y=install.station,
                         z=0,
                         rotation=0,
                         pivot=rail.coord
@@ -113,6 +117,7 @@ class PreviewService:
                     path=locator.find(equip.name),
                     transform=Transform(
                         x=equip.xoffset,
+                        y=install.station,
                         z=equip.yoffset,
                         rotation=equip.rotation,
                         pivot=equip.base_rail.coord
