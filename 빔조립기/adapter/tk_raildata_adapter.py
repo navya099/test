@@ -26,6 +26,7 @@ class TKRaildataAdapter:
                     name=name,
                     coord=coord,
                     brackets=brackets,
+                    uid=rail.uid
                 )
             )
         return result
@@ -39,4 +40,5 @@ class TKRaildataAdapter:
             coordx=tk.DoubleVar(value=data.coord.x),
             coordy=tk.DoubleVar(value=data.coord.y),
             coordz=tk.DoubleVar(value=data.coord.z),
+            uid=data.uid
         )

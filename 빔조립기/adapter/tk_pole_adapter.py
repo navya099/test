@@ -16,7 +16,7 @@ class TkPoleAdapter:
                     length=vm.pole_length.get(),
                     xoffset=vm.gauge.get(),
                     width=vm.polespec.get(),
-                    uid=uuid.uuid4().hex,
+                    uid=vm.base_rail_uid.get(),
                     base_rail_index=vm.base_rail_index.get(),
                 )
             )

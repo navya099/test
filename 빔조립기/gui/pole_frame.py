@@ -109,14 +109,10 @@ class PoleFrame(ttk.LabelFrame):
         self.refresh_poles()
 
     def refresh_poles(self):
-        """
-        - 이미 존재하는 PoleVM들을 그대로 사용해서 UI만 다시 그려줍니다.
-        - 상태 보존 + UI 갱신 역할을 담당
-        """
         for w in self.winfo_children():
             w.destroy()
 
-        headers = ["NO", '설치 레일',"전주 타입", '전주 규격', '전주 길이','건식게이지']
+        headers = ["NO", '설치 레일', "전주 타입", '전주 규격', '전주 길이', '건식게이지']
         for col, text in enumerate(headers):
             ttk.Label(self, text=text, font=("맑은 고딕", 9, "bold")).grid(row=0, column=col, padx=5, pady=2)
 
@@ -124,17 +120,36 @@ class PoleFrame(ttk.LabelFrame):
             row = i
             ttk.Label(self, text=str(i)).grid(row=row, column=0)
 
-            rail_labels = [f"{rail.name_var.get()} ({rail.index_var.get()})" for rail in self.current_section.rails_var]
+            rail_labels = [rail.index for rail in self.current_section.rails_var]
+            rail_uid_map = [rail.uid for rail in self.current_section.rails_var]
+
+            # 🔥 디버그 출력
+            print(f"[DEBUG] Pole {i}")
+            print("  rail_labels:", rail_labels)
+            print("  rail_uid_map:", rail_uid_map)
+            print("  pole_vm.base_rail_uid:", pole_vm.base_rail_uid.get())
+            print("  pole_vm.base_rail_index:", pole_vm.base_rail_index.get())
 
             base_rail_cb = ttk.Combobox(
                 self,
-                textvariable=pole_vm.base_rail_index,  # ✅ 기존 변수 사용
+                textvariable=pole_vm.base_rail_index,
                 values=rail_labels,
                 state="readonly",
                 width=18
             )
             base_rail_cb.grid(row=row, column=1)
             base_rail_cb._pole_vm = pole_vm
+
+            # ✅ 선택값 복원 시도
+            uid = pole_vm.base_rail_uid.get()
+            if uid in rail_uid_map:
+                idx = rail_uid_map.index(uid)
+                base_rail_cb.current(idx)
+                pole_vm.base_rail_index.set(self.current_section.rails_var[idx].index_var.get())
+                print(f"  -> matched uid {uid}, set combobox to index {idx}")
+            else:
+                base_rail_cb.set("")
+                print(f"  -> uid {uid} not found in rail_uid_map")
 
             ttk.Combobox(self, textvariable=pole_vm.poletype,
                          values=["강관주", "H형강주", "조립철주"],
@@ -148,6 +163,8 @@ class PoleFrame(ttk.LabelFrame):
             tk.Entry(self, textvariable=pole_vm.gauge, width=6).grid(row=row, column=5)
 
             self._bind_base_rail(base_rail_cb, pole_vm)
+
+        self._refresh_pole_rail_combos()
 
     def _bind_base_rail(self, cb, pole_vm):
         def on_select(_):

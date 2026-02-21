@@ -8,4 +8,5 @@ class RailData:
     name: str
     brackets: list
     coord: Vector3
+    uid: str
 
