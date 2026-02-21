@@ -42,17 +42,7 @@ class TkInstallAdapter:
         return result
 
     def apply(self, master, installs: list[PoleInstall]):
-        master.isloading = True
-        scf = master.section_frame
-        strf = master.structure_frame
-        ef = master.eq_frame
-        bf = master.basic_frame
-        brkf = master.bracket_frame
         vms = []
-        # 기존 구간 초기화
-        scf.section_list.delete(*scf.section_list.get_children())
-        scf.section_map.clear()
-
         for dto in installs:
             # VM 생성
             vm = TKInstallData(
@@ -76,6 +66,6 @@ class TkInstallAdapter:
             vm.beams_var = [TkBeamAdapter.from_dto(b) for b in dto.beams]
             vm.equips_var = [TkEquipmentAdapter.from_dto(e) for e in dto.equips]
             vms.append(vm)
-        scf.sections = vms
-        scf.refresh_sections()
-        master.isloading = False
+
+        return vms
+

@@ -112,8 +112,9 @@ class SectionFrame(ttk.LabelFrame):
                 break
 
     def refresh_sections(self):
-        # Treeview 초기화
+        # 기존 구간 초기화
         self.section_list.delete(*self.section_list.get_children())
+        self.section_map.clear()
 
         # VM 리스트를 다시 Treeview에 반영
         for section in self.sections:

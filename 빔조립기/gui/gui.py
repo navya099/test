@@ -143,12 +143,14 @@ class PoleInstallGUI(tk.Tk):
         messagebox.showinfo('데이터 저장', '저장이 완료됐습니다.')
 
     def load(self):
+        self.isloading = True
         path = r'c:/temp/saved_beam_assembler_data.pkl'
         try:
             with open(path, "rb") as f:
                 self.result = pickle.load(f)
-                self.installadaptor.apply(self, self.result)
-
+                self.section_frame.sections = self.installadaptor.apply(self, self.result)
+                self.section_frame.refresh_sections()
+            self.isloading = False
             messagebox.showinfo('데이터 로드', '로드가 완료됐습니다.')
         except Exception as e:
             messagebox.showerror('에러', f'로드에 실패했습니다. {e}')
