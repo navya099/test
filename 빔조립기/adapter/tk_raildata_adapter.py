@@ -1,4 +1,5 @@
 from adapter.tk_bracket_adapter import TKBracketAdapter
+from adapter.tk_bracket_fitting_adapter import TKBracketFittngAdapter
 from model.rail import RailData
 from model.tkraildata import TKRailData
 from vector3 import Vector3
@@ -17,8 +18,11 @@ class TKRaildataAdapter:
             )
             brackets = []
             for b in rail.brackets:
+                fittngs = []
+                for f in b.fittings:
+                    fittngs.append(TKBracketFittngAdapter.from_vm(f))
                 brackets.append(
-                    TKBracketAdapter.from_vm(b, rail.index)
+                    TKBracketAdapter.from_vm(b, rail.index, fittngs)
                 )
             result.append(
                 RailData(

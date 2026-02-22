@@ -10,3 +10,4 @@ class BracketViewModel:
     yoffset: tk.DoubleVar
     rotation: tk.DoubleVar
     rail_type: tk.StringVar
+    fittings: list

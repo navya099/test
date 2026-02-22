@@ -1,22 +1,18 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
 
-from gui.bracket_fittng_gui import BracketFittingConfigWindow
+from gui.viewmodel.bracket_fitting_vm import BracketFittingViewModel
 from gui.viewmodel.bracket_input import BracketViewModel
 from library import LibraryManager
-from model.bracket import Bracket
-from model.tkraildata import TKRailData
+from tkinter import ttk, messagebox
 
-
-class BracketConfigWindow(tk.Toplevel):
-    def __init__(self, master, rail: TKRailData, libmanager: LibraryManager, on_close=None, on_change=None):
+class BracketFittingConfigWindow(tk.Toplevel):
+    def __init__(self, master, bracket: BracketViewModel, libmanager: LibraryManager, on_close=None, on_change=None):
         super().__init__(master)
-        self._preview_after = None
+        self.bracket = bracket
         self._bracket_cache = {}  # ✅ 반드시 먼저
         self._isloading = False  # ✅ 이것도 같이
-        self.title(f"브래킷 설정 - {rail.name}")
+        self.title("브래킷 금구류 설정")
         self.geometry("850x300")
-        self.rail = rail
         self.on_close = on_close
         self.libmanager = libmanager
         self.vars = []  # 각 브래킷 행의 변수 저장
@@ -31,7 +27,7 @@ class BracketConfigWindow(tk.Toplevel):
         frame = ttk.Frame(self)
         frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        headers = ["NO","선로구분", "브래킷 종류", "X offset", "Y offset", "ROT", ""]
+        headers = ["NO","선로구분", "금구류 종류", "X offset", "Y offset", "ROT", ""]
         for c, h in enumerate(headers):
             ttk.Label(frame, text=h, font=("맑은 고딕", 9, "bold")).grid(
                 row=0, column=c, padx=5, pady=3
@@ -43,36 +39,38 @@ class BracketConfigWindow(tk.Toplevel):
         btns = ttk.Frame(self)
         btns.pack(fill="x", pady=5)
 
-        ttk.Button(btns, text="＋ 브래킷 추가", command=self.add_row).pack(side="left")
+        ttk.Button(btns, text="＋ 금구류 추가", command=self.add_row).pack(side="left")
         ttk.Button(btns, text="확인", command=self.apply).pack(side="right")
         ttk.Button(btns, text="취소", command=self.destroy).pack(side="right", padx=5)
 
-    def open_fitting_setting_ui(self, b):
-        BracketFittingConfigWindow(self, b, self.libmanager)
     # =============================
     # 데이터 로드
     # =============================
     def _load_existing(self):
-        self._isloading = True
-        if not self.rail.brackets:
-            self.add_row()
+        self.master.isloading = True
+        if self.bracket:
+            if not self.bracket.fittings:
+                self.add_row()
+            else:
+                for f in self.bracket.fittings:
+                    self.add_row(f)
         else:
-            for b in self.rail.brackets:
-                self.add_row(b)
-        self._isloading = False
+            messagebox.showinfo('정보','선택된 브래킷이 없습니다. 먼저 브래킷을 선택해주세요')
+            return
+        self.master.isloading = False
 
         if self.on_change:
             self.on_change()
             # =============================
     # 행 추가
     # =============================
-    def add_row(self, bracket: BracketViewModel | None = None):
+    def add_row(self, fitting: BracketFittingViewModel | None = None):
         row = len(self.vars) + 1
 
         ttk.Label(self.table, text=str(row)).grid(row=row, column=0)
 
         # ── 선로 타입 (행별)
-        rail_type_var = tk.StringVar(value=bracket.rail_type.get() if bracket else "일반철도")
+        rail_type_var = tk.StringVar(value=self.bracket.rail_type.get() if self.bracket else "일반철도")
 
         rail_combo = ttk.Combobox(
             self.table,
@@ -83,11 +81,12 @@ class BracketConfigWindow(tk.Toplevel):
         )
         rail_combo.grid(row=row, column=1)
 
-        # ── 브래킷 타입
-        bracket_type_var = tk.StringVar(value=bracket.bracket_type.get() if bracket else "")
+        # ── 금구류 이름
+        fitting_type_var = tk.StringVar(value=fitting.name_var.get() if fitting else "")
+
 
         def update_brackets(*_):
-            if self._isloading:
+            if self.master.isloading:
                 return
 
             self._sync_to_raildata()
@@ -98,15 +97,13 @@ class BracketConfigWindow(tk.Toplevel):
 
                 self._preview_after = self.after(200, self.on_change)
 
-        bracket_combo = ttk.Combobox(
+        fitting_combo = ttk.Combobox(
             self.table,
-            textvariable=bracket_type_var,
+            textvariable=fitting_type_var,
             state="readonly",
             width=30
         )
-        bracket_combo.grid(row=row, column=2, padx=5)
-
-
+        fitting_combo.grid(row=row, column=2, padx=5)
 
         # ── 갱신 함수 (이 행 전용)
         def reload_brackets(*_):
@@ -120,23 +117,23 @@ class BracketConfigWindow(tk.Toplevel):
                 )
 
             values = self._bracket_cache[group]
-            bracket_combo["values"] = values
+            fitting_combo["values"] = values
 
-            current = bracket_type_var.get()
+            current = fitting_type_var.get()
             if current in values:
-                bracket_combo.set(current)
+                fitting_combo.set(current)
             elif values:
-                bracket_combo.current(0)
+                fitting_combo.current(0)
 
         rail_type_var.trace_add("write", reload_brackets)
         reload_brackets()
 
         # ── 기타 값
-        x = tk.DoubleVar(value=bracket.xoffset.get() if bracket else 0.0)
-        y = tk.DoubleVar(value=bracket.yoffset.get() if bracket else 0.0)
-        r = tk.DoubleVar(value=bracket.rotation.get() if bracket else 0.0)
+        x = tk.DoubleVar(value=fitting.xoffset.get() if fitting else 0.0)
+        y = tk.DoubleVar(value=fitting.yoffset.get() if fitting else 0.0)
+        r = tk.DoubleVar(value=fitting.rotation.get() if fitting else 0.0)
 
-        for var in [rail_type_var, bracket_type_var, x, y, r]:
+        for var in [rail_type_var, fitting_type_var, x, y, r]:
             var.trace_add("write", update_brackets)
 
         ttk.Entry(self.table, textvariable=x, width=8).grid(row=row, column=3)
@@ -149,29 +146,17 @@ class BracketConfigWindow(tk.Toplevel):
             command=lambda idx=row - 1: self.remove_row(idx)
         ).grid(row=row, column=6)
 
-        ttk.Button(
-            self.table,
-            text="금구류 설정",
-            command=lambda b=bracket: self.open_fitting_setting_ui(b)
-        ).grid(row=row, column=7)
-
         self.vars.append({
             "rail_type": rail_type_var,
-            "bracket_type": bracket_type_var,
+            "fitting_type": fitting_type_var,
             "x": x,
             "y": y,
-            "r": r,
-            "fittings": bracket.fittings if bracket else []
+            "r": r
         })
-
     # =============================
     # 행 삭제
     # =============================
     def remove_row(self, index):
-        if len(self.vars) <= 1:
-            messagebox.showwarning("경고", "브래킷은 최소 1개 이상 필요합니다.")
-            return
-
         # 해당 행의 변수 제거
         self.vars.pop(index)
 
@@ -197,17 +182,14 @@ class BracketConfigWindow(tk.Toplevel):
         self.destroy()
 
     def _sync_to_raildata(self):
-        """tkRAILDATA에 저장"""
-        self.rail.brackets.clear()
+        """tkBracketmodel에 저장"""
+        self.bracket.fittings.clear()
         for row in self.vars:
-            self.rail.brackets.append(
-                BracketViewModel(
-                    rail_no=self.rail.index_var,
-                    bracket_type=row["bracket_type"],
+            self.bracket.fittings.append(
+                BracketFittingViewModel(
+                    name_var=row["fitting_type"],
                     xoffset=row["x"],
                     yoffset=row["y"],
                     rotation=row["r"],
-                    rail_type=row["rail_type"],
-                    fittings=row['fittings']
                 )
             )

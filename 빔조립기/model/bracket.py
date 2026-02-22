@@ -20,3 +20,4 @@ class Bracket:
     rotation: float
     index: int
     rail_type: str
+    fittings: list

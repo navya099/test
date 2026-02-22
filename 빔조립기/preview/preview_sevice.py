@@ -94,6 +94,27 @@ class PreviewService:
                     )
                 else:
                     missing.append(br.type)
+                #3-1 브래킷 피팅
+                # 브래킷 하위 피팅들
+                for f in getattr(br, "fittings", []):  # 기존 데이터 호환 위해 getattr 사용
+                    fpath = locator.find(f.label)
+                    if fpath:
+                        items.append(
+                            PreviewItem(
+                                path=fpath,
+                                transform=Transform(
+                                    x=f.xoffset,
+                                    y=install.station,
+                                    z=f.yoffset,
+                                    rotation=f.rotation,
+                                    pivot=rail.coord
+                                ),
+                                category=PreviewCategory.BRACKET
+                            )
+                        )
+                    else:
+                        missing.append(f.label)
+
         #4 레일
         for rail in install.rails:
             items.append(

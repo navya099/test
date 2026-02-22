@@ -50,6 +50,15 @@ class BVETextBuilder:
                     f'.freeobj {br.rail_no};{br.index};'
                     f'{br.xoffset};{br.yoffset};{br.rotation};,;{br.type}\n'
                 )
+                # --- 브래킷 하위 피팅들 ---
+                for f in getattr(br, "fittings", []):  # 호환성 위해 getattr 사용
+                    if f:
+                        text += ',;브래킷 금구류\n'
+                        text += (
+                            f'.freeobj {br.rail_no};{f.index};'
+                            f'{f.xoffset};{f.yoffset};{f.rotation};,;{f.label}\n'
+                        )
+
         #장비
         text += ',;기타설비\n'
         for eq in dto.equips:

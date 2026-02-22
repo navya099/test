@@ -15,9 +15,6 @@ class BasicInfoFrame(ttk.LabelFrame):
 
 
         self._build()
-
-        self.station_entry.bind("<KeyRelease>", self._on_changed)
-        self.pole_entry.bind("<KeyRelease>", self._on_changed)
         self.rail_entry.bind("<KeyRelease>", self._on_changed)
         self.pole_count_entry.bind("<KeyRelease>", self._on_changed)
         self.beam_count_entry.bind("<KeyRelease>", self._on_changed)

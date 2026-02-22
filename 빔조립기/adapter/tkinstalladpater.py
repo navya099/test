@@ -1,6 +1,7 @@
 import tkinter as tk
 from adapter.tk_beam_adapter import TkBeamAdapter
 from adapter.tk_bracket_adapter import TKBracketAdapter
+from adapter.tk_bracket_fitting_adapter import TKBracketFittngAdapter
 from adapter.tk_equipment_adapter import TkEquipmentAdapter
 from adapter.tk_pole_adapter import TkPoleAdapter
 from adapter.tk_raildata_adapter import TKRaildataAdapter
@@ -60,7 +61,13 @@ class TkInstallAdapter:
             vm.rails_var = [TKRaildataAdapter.from_dto(r) for r in dto.rails]
             # 각 rail의 brackets 복원
             for rail_vm, rail_dto in zip(vm.rails_var, dto.rails):
-                rail_vm.brackets = [TKBracketAdapter.from_dto(b) for b in rail_dto.brackets]
+                rail_vm.brackets = []
+                for b_dto in rail_dto.brackets:
+                    dto_fittings = getattr(b_dto, "fittings", []) # 기존 데이터에는 fittings 속성이 없을 수 있음=
+
+                    fittings = [TKBracketFittngAdapter.from_dto(f) for f in dto_fittings]
+                    bracket_vm = TKBracketAdapter.from_dto(b_dto, fittings=fittings)
+                    rail_vm.brackets.append(bracket_vm)
 
             vm.poles_var = [TkPoleAdapter.from_dto(p) for p in dto.poles]
             vm.beams_var = [TkBeamAdapter.from_dto(b) for b in dto.beams]
