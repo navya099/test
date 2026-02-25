@@ -41,7 +41,7 @@ class DXFController:
                 p3 = (v3.x, v3.y, v3.z)
                 self.msp.add_3dface([p1, p2, p3], dxfattribs={'layer': layer_name, 'color': color})
 
-    def export_dxf(self, layers, filename, option=''):
+    def export_dxf(self, layers, filename, option='', wires=None):
         self.doc = ezdxf.new()
         self.msp = self.doc.modelspace()
         for layer in layers:
@@ -56,6 +56,17 @@ class DXFController:
                     self._draw_3dmesh(layer.mesh, color=self._color_from_category(layer.category),layer_name=layer.category)
                 else:
                     raise ValueError('option must be "2d" or "3d"')
+        for wirelist in wires:
+            for wire in wirelist:
+                start = (wire.start.x, wire.start.y, wire.start.z)
+                end = (wire.end.x, wire.end.y, wire.end.z)
+
+                self.msp.add_line(start, end,
+                        dxfattribs={
+                            "layer": wire.name,
+                            "color": 0
+                        }
+                    )
         self.doc.saveas(filename)
 
     def _project(self, x, y, z):

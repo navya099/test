@@ -15,6 +15,10 @@ from .preview import PreviewViewer
 from .section_frame import SectionFrame
 from .structure_frame import StructureFrame
 import pickle
+
+from .wire_frame import WireFrame
+
+
 class PoleInstallGUI(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -47,7 +51,9 @@ class PoleInstallGUI(tk.Tk):
         self.eq_frame.pack(fill="x", padx=10, pady=5)
         self.bracket_frame = BracketFrame(self, self.event, self.lib_manager)
         self.bracket_frame.pack(fill="x", padx=10, pady=5)
-
+        self.wire_frame = WireFrame(self, self.event)
+        self.wire_frame.pack(fill="x", padx=10, pady=5)
+        
         # 버튼 생성
         self._build_buttons()
 
@@ -55,18 +61,7 @@ class PoleInstallGUI(tk.Tk):
         self._generate()
         self.viewer.objects.clear()
 
-        selected_items = self.section_frame.section_list.selection()
-        if not selected_items:
-            messagebox.showinfo("알림", "구간을 먼저 선택하세요.")
-            return
-
-        iid = selected_items[0]
-
-        # ✅ DTO 리스트에서 iid로 매칭
-        self.selected_dto = next((dto for dto in self.result if dto.iid == iid), None)
-        if not self.selected_dto:
-            messagebox.showwarning("오류", "선택된 구간에 해당하는 DTO가 없습니다.")
-            return
+        self.get_selected_dto()
 
         result = PreviewService.build_from_install(self.selected_dto)
         for obj in result.objects:
@@ -186,24 +181,42 @@ class PoleInstallGUI(tk.Tk):
             from controller.dxf_controller import DXFController
             dxfmgr = DXFController()
 
-            # ✅ 2D: 단일 선택된 구간만 저장
-            result2d = PreviewService.build_from_install(self.selected_dto)
-            for obj in result2d.objects:
-                self.viewer.add_object(obj)
+            if self.get_selected_dto():
 
-            filename2d = f'c:/temp/{self.selected_dto.pole_number}.dxf'
-            dxfmgr.export_dxf(self.viewer.objects, filename2d, option='2d')
+                # ✅ 2D: 단일 선택된 구간만 저장
+                result2d = PreviewService.build_from_install(self.selected_dto)
+                for obj in result2d.objects:
+                    self.viewer.add_object(obj)
+
+                filename2d = f'c:/temp/{self.selected_dto.pole_number}.dxf'
+                dxfmgr.export_dxf(self.viewer.objects, filename2d, option='2d')
 
             # ✅ 3D: 모든 구간을 합쳐서 하나의 파일로 저장
             all_objects = []
+            wires= []
             for dto in self.result:  # self.result = 전체 DTO 리스트
                 result3d = PreviewService.build_from_install(dto)
                 all_objects.extend(result3d.objects)
-
+                wires.append(dto.wires)
             filename3d = 'c:/temp/all_sections_3d.dxf'
-            dxfmgr.export_dxf(all_objects, filename3d, option='3d')
+            dxfmgr.export_dxf(all_objects, filename3d, option='3d', wires=wires)
+            #전선 도면작성
 
             messagebox.showinfo('완료', '도면 저장이 완료됐습니다.')
 
         except Exception as e:
             messagebox.showerror('에러', f'도면 저장중 에러가 발생했습니다.\n{e}')
+
+    def get_selected_dto(self):
+        selected_items = self.section_frame.section_list.selection()
+        if not selected_items:
+            messagebox.showinfo("알림", "구간을 먼저 선택하세요.")
+            return
+
+        iid = selected_items[0]
+
+        # ✅ DTO 리스트에서 iid로 매칭
+        self.selected_dto = next((dto for dto in self.result if dto.iid == iid), None)
+        if not self.selected_dto:
+            messagebox.showwarning("오류", "선택된 구간에 해당하는 DTO가 없습니다.")
+            return

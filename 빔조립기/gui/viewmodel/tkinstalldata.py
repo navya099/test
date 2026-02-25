@@ -15,6 +15,7 @@ class TKInstallData:
         beams_var: 빔 객체들
         rails_var: 선로객체들
         equips_var: 장비들
+        wires_var: 전선들
         """
     iid: str
     isbeaminstall_var: tk.BooleanVar
@@ -27,3 +28,4 @@ class TKInstallData:
     poles_var: list | None = None
     rails_var: list | None = None
     equips_var: list | None = None
+    wires_var: list | None = None

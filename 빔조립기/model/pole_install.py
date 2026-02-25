@@ -14,6 +14,7 @@ class PoleInstall:
             beams: 빔 객체들
             rails: 선로객체들
             equips: 장비들
+            wires: 전선들
     """
     iid: str = ''
     station: float = 0.0
@@ -25,3 +26,4 @@ class PoleInstall:
     poles: list | None = None
     rails: list | None = None
     equips: list | None = None
+    wires: list | None = None

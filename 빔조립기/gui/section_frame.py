@@ -51,6 +51,7 @@ class SectionFrame(ttk.LabelFrame):
             beams_var=[],
             rails_var=[],
             equips_var =[],
+            wires_var=[],
             isbeaminstall_var=tk.BooleanVar(value=True),
             iid='')
 

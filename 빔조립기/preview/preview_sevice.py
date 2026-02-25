@@ -18,34 +18,35 @@ class PreviewService:
         locator = FileLocator(PathResolver.BASE_PATH)
 
         # 1. 빔
-        for beam in install.beams:
-            if beam.iscustom:
+        if install.beams:
+            for beam in install.beams:
+                if beam.iscustom:
 
-                if beam.length not in beam_cache:
-                    builder = TempleteBeamBuilder(beam.length)
-                    beam_cache[beam.length] = builder.build()
+                    if beam.length not in beam_cache:
+                        builder = TempleteBeamBuilder(beam.length)
+                        beam_cache[beam.length] = builder.build()
 
-                path = beam_cache[beam.length]
-            else:
-                path = locator.find(beam.name)
-            if path:
+                    path = beam_cache[beam.length]
+                else:
+                    path = locator.find(beam.name)
+                if path:
 
-                items.append(
-                    PreviewItem(
-                        path=path,
-                        transform=Transform(
-                            x=beam.ref_start_pole.xoffset,
-                            y=install.station,
-                            z=0,
-                            rotation=0,
-                            pivot=beam.ref_start_pole.base_rail.coord
-                        ),
-                        category=PreviewCategory.BEAM
+                    items.append(
+                        PreviewItem(
+                            path=path,
+                            transform=Transform(
+                                x=beam.ref_start_pole.xoffset,
+                                y=install.station,
+                                z=0,
+                                rotation=0,
+                                pivot=beam.ref_start_pole.base_rail.coord
+                            ),
+                            category=PreviewCategory.BEAM
 
+                        )
                     )
-                )
-            else:
-                missing.append(beam.name)
+                else:
+                    missing.append(beam.name)
 
         # 2. 기둥
         for col in install.poles:

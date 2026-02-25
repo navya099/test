@@ -157,32 +157,3 @@ class EquipMentWindow(ttk.LabelFrame):
         # 장비 편집 창 열기
         print("Edit equip:", equip.name_var.get())
         # 필요하면 BracketConfigWindow처럼 편집 창 구현 가능
-
-    def load_from_dto(self, dto_list):
-        """
-        DTO 리스트로부터 VM 생성 후 UI 갱신
-        dto_list: list of dict
-            각 dict 구조:
-            {
-                "name": str,
-                "x": float,
-                "y": float,
-                "rotation": float,
-                "base_rail": int
-            }
-        """
-        self.equips.clear()
-
-        for dto in dto_list:
-            vm = EquipmentVM(
-                name_var=tk.StringVar(value=dto.get("name", "장비1")),
-                x_var=tk.DoubleVar(value=dto.get("xoffset", 0.0)),
-                y_var=tk.DoubleVar(value=dto.get("yoffset", 0.0)),
-                rotation_var=tk.DoubleVar(value=dto.get("rotation", 0.0)),
-                base_rail_index_var=tk.IntVar(value=dto.get("base_rail_index", 0)),
-            )
-            self.equips.append(vm)
-
-        # UI 갱신
-        self.refresh_equips()
-        self.event.emit("equips.updated", self.equips)

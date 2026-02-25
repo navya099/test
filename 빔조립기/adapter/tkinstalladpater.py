@@ -5,6 +5,7 @@ from adapter.tk_bracket_fitting_adapter import TKBracketFittngAdapter
 from adapter.tk_equipment_adapter import TkEquipmentAdapter
 from adapter.tk_pole_adapter import TkPoleAdapter
 from adapter.tk_raildata_adapter import TKRaildataAdapter
+from adapter.tk_wire_adapter import TKWireAdapter
 from gui.viewmodel.tkinstalldata import TKInstallData
 from model.pole_install import PoleInstall
 from model.tkraildata import TKRailData
@@ -26,6 +27,7 @@ class TkInstallAdapter:
                 section.beams_var
             )
             equips = TkEquipmentAdapter.collect(section.equips_var)
+            wires = TKWireAdapter.collect(section.wires_var)
 
             poleinstall =  PoleInstall(
                 iid=section.iid,
@@ -37,7 +39,8 @@ class TkInstallAdapter:
                 rails=rails,
                 poles=poles,
                 beams=beams,
-                equips=equips
+                equips=equips,
+                wires =wires
             )
             result.append(poleinstall)
         return result
@@ -52,7 +55,7 @@ class TkInstallAdapter:
                 rail_count_var=tk.IntVar(value=dto.rail_count),
                 pole_count_var=tk.IntVar(value=dto.pole_count),
                 beam_count_var=tk.IntVar(value=dto.beam_count),
-                poles_var=[], beams_var=[], rails_var=[], equips_var=[],
+                poles_var=[], beams_var=[], rails_var=[], equips_var=[],wires_var=[],
                 isbeaminstall_var=tk.BooleanVar(value=True),
                 iid=dto.iid
             )
@@ -72,6 +75,7 @@ class TkInstallAdapter:
             vm.poles_var = [TkPoleAdapter.from_dto(p) for p in dto.poles]
             vm.beams_var = [TkBeamAdapter.from_dto(b) for b in dto.beams]
             vm.equips_var = [TkEquipmentAdapter.from_dto(e) for e in dto.equips]
+            vm.wires_var = [TKWireAdapter.from_dto(w) for w in (dto.wires or [])]
             vms.append(vm)
 
         return vms
