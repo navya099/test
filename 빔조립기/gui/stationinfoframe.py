@@ -1,8 +1,10 @@
 from tkinter import ttk
 import tkinter as tk
 from tkinter.filedialog import askopenfilename
+
+from alignment_geometry.alignment_calculator import AlignmentCalculator
 from alignment_geometry.alignment_parser import AlignmentParser
-from alignment_geomtry import BVEAlignmentIntersapter
+from alignment_geometry.alignment_loader import BVEAlignmentIntersapter
 from tkinter import messagebox
 
 from controller.file_controler import FileController
@@ -14,6 +16,7 @@ class StationInfoFrame(ttk.LabelFrame):
         self.alignments = None
         self.event = event
         self.parser = AlignmentParser()
+        self.calculator = AlignmentCalculator()
         self.filepath = ''
         default_station_name_var = tk.StringVar(value="OO정거장")
         ttk.Label(self, text="정거장명").grid(row=1, column=0, sticky="w", padx=5)
@@ -35,7 +38,9 @@ class StationInfoFrame(ttk.LabelFrame):
             fc = FileController(self.filepath)
             fc.load()
 
-            alignments, forms, _, _, _ = self.parser.process_lines_to_alginment_data(fc.get_lines())
+            alignments, forms, _, minsta, maxsta = self.parser.process_lines_to_alginment_data(fc.get_lines())
+            mainal  = self.calculator.create_mainline(minsta, maxsta)
+            alignments.append(mainal)
             self.alignments = alignments
 
             messagebox.showinfo("완료", f"정거장 데이터 {len(self.alignments)}개 불러옴")

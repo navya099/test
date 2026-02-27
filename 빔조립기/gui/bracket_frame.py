@@ -59,21 +59,25 @@ class BracketFrame(ttk.LabelFrame):
 
         self.current_section.rails_var.clear()
         sta_target = self.current_section.station_var.get()
+        #자선 먼저
 
         for alignment in self.sub_line:
+            # ✅ 보간 클래스 호출
+            x,y = 0,0
+            result = RailInterpolator.get_point_at_station(sta_target, alignment.raildata)
+            if result:
+                print(f'[DEBUG]: 보간 성공! 측점: {sta_target}, 선로명: {alignment.name}, 인덱스: {alignment.index} ')
+                x, y = result
+            else:
+                print(f'[DEBUG]: 보간 실패! 측점: {sta_target}, 선로명: {alignment.name}, 인덱스: {alignment.index} ')
+                continue
             rail_name_var = tk.StringVar(value=alignment.name)
             rail_idx_var = tk.IntVar(value=alignment.index)
 
-            rail_coordx_var = tk.DoubleVar(value=0.0)
-            rail_coordy_var = tk.DoubleVar(value=0.0)
+            rail_coordx_var = tk.DoubleVar(value=x)
+            rail_coordy_var = tk.DoubleVar(value=y)
             rail_coordz_var = tk.DoubleVar(value=0.0)
 
-            # ✅ 보간 클래스 호출
-            result = RailInterpolator.get_point_at_station(sta_target, alignment.raildata)
-            if result:
-                x, y = result
-                rail_coordx_var.set(x)
-                rail_coordy_var.set(y)
 
             rail = TKRailData(
                 index_var=rail_idx_var,
@@ -107,10 +111,10 @@ class BracketFrame(ttk.LabelFrame):
             row = i
             ttk.Label(self.bracket_frame, text=f"선로 {i}").grid(row=row, column=0, padx=5, sticky="w")
 
-            ttk.Entry(self.bracket_frame, textvariable=rail.name_var, width=6).grid(row=row, column=1)
-            ttk.Entry(self.bracket_frame, textvariable=rail.index_var, width=6).grid(row=row, column=2)
-            tk.Entry(self.bracket_frame, textvariable=rail.coordx, width=6).grid(row=row, column=3)
-            tk.Entry(self.bracket_frame, textvariable=rail.coordy, width=6).grid(row=row, column=4)
+            ttk.Entry(self.bracket_frame, textvariable=rail.name_var, width=6, state="readonly", style="Readonly.TEntry").grid(row=row, column=1)
+            ttk.Entry(self.bracket_frame, textvariable=rail.index_var, width=6, state="readonly", style="Readonly.TEntry").grid(row=row, column=2)
+            ttk.Entry(self.bracket_frame, textvariable=rail.coordx, width=6, state="readonly", style="Readonly.TEntry").grid(row=row, column=3)
+            ttk.Entry(self.bracket_frame, textvariable=rail.coordy, width=6, state="readonly", style="Readonly.TEntry").grid(row=row, column=4)
 
             ttk.Button(
                 self.bracket_frame,

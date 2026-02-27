@@ -1,6 +1,6 @@
 from tkinter import ttk
 import tkinter as tk
-
+from tkinter import messagebox
 from gui.viewmodel.tkinstalldata import TKInstallData
 
 
@@ -47,6 +47,10 @@ class SectionFrame(ttk.LabelFrame):
         ttk.Button(btn_frame, text="구간 삭제", command=self.remove_section).pack(side="left", padx=5)
         # "구간 선택" 버튼은 필요 없음
     def add_section(self):
+        if not self.sub_line and not self.main_line:
+            messagebox.showerror('에러', '로드된 정거장정보가 없습니다. 먼저 정거장파일을 불러와주세요' )
+            return
+
         new_install = TKInstallData(
             station_var=tk.DoubleVar(value=0.0),
             pole_number_var=tk.StringVar(value='새 전주'),

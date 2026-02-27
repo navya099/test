@@ -1,6 +1,9 @@
 from tkinter import ttk
 import tkinter as tk
 
+from alignment_geometry.alignment_interpolator import RailInterpolator
+
+
 class BasicInfoFrame(ttk.LabelFrame):
     def __init__(self, master, event=None):
         super().__init__(master, text="기본 정보")
@@ -29,7 +32,6 @@ class BasicInfoFrame(ttk.LabelFrame):
 
     def on_section_selected(self, selected_section):
         self.current_section = selected_section
-
         # Entry의 textvariable을 구간 객체의 변수로 직접 연결
         self.station_entry.config(textvariable=self.current_section.station_var)
         self.pole_entry.config(textvariable=self.current_section.pole_number_var)
@@ -41,6 +43,19 @@ class BasicInfoFrame(ttk.LabelFrame):
 
     def _on_changed(self, *args):
         if self.event and self.current_section:
+            # ✅ rail count 자동 계산
+            sta_target = self.current_section.station_var.get()
+            valid_subline_count = 0
+            if self.subline_data:
+                for alignment in self.subline_data:
+                    result = RailInterpolator.get_point_at_station(sta_target, alignment.raildata)
+                    if result:  # 보간 성공
+                        print(f'DEBUG: at _on_changed {sta_target}, {alignment.name}')
+                        valid_subline_count += 1
+
+            self.current_section.rail_count_var.set(valid_subline_count)
+
+            # 이벤트 알림
             self.event.emit("basic.changed", self.current_section)
 
     def _build(self):

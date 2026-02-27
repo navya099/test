@@ -12,22 +12,23 @@ class BVETextBuilder:
         # ----------------
         text += ',;기둥\n'
         for pole in dto.poles:
-
-            text += (
-                f'.freeobj {pole.base_rail_index};{pole.obj_index};'
-                f'{pole.xoffset};0;0;,;{pole.display_name}\n'
-            )
+            if pole:
+                text += (
+                    f'.freeobj {pole.base_rail_index};{pole.obj_index};'
+                    f'{pole.xoffset};0;0;,;{pole.display_name}\n'
+                )
 
         # ----------------
         # 빔
         # ----------------
         text += ',;빔\n'
         for beam in dto.beams:
-            first_pole = dto.poles[0]
-            text += (
-                f'.freeobj 0;{beam.index};'
-                f'{first_pole.xoffset};0;0;,;{beam.name}\n'
-            )
+            if beam:
+                first_pole = dto.poles[0]
+                text += (
+                    f'.freeobj 0;{beam.index};'
+                    f'{first_pole.xoffset};0;0;,;{beam.name}\n'
+                )
 
         # ----------------
         # 브래킷
