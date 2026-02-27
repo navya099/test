@@ -15,3 +15,4 @@ class FileController:
 
     def get_lines(self) -> list[str]:
         return self.lines
+

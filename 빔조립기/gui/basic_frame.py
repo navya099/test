@@ -4,6 +4,8 @@ import tkinter as tk
 class BasicInfoFrame(ttk.LabelFrame):
     def __init__(self, master, event=None):
         super().__init__(master, text="기본 정보")
+        self.subline_data = None
+        self.mainline_data = None
         self.current_section = None
         self.event = event
 
@@ -11,16 +13,19 @@ class BasicInfoFrame(ttk.LabelFrame):
         if self.event:
             self.event.bind("section.added", self.on_section_added)
             self.event.bind("section.selected", self.on_section_selected)
-
-
+            self.event.bind('station.loaded', self.on_station_loaded)
 
         self._build()
-        self.rail_entry.bind("<KeyRelease>", self._on_changed)
         self.pole_count_entry.bind("<KeyRelease>", self._on_changed)
         self.beam_count_entry.bind("<KeyRelease>", self._on_changed)
+        self.station_entry.bind("<KeyRelease>", self._on_changed)
 
     def on_section_added(self, tkinstall):
         self.current_section = tkinstall
+
+    def on_station_loaded(self, als):
+        self.mainline_data = als[0]
+        self.subline_data = als[1]
 
     def on_section_selected(self, selected_section):
         self.current_section = selected_section

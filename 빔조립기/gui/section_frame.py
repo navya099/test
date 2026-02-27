@@ -7,16 +7,22 @@ from gui.viewmodel.tkinstalldata import TKInstallData
 class SectionFrame(ttk.LabelFrame):
     def __init__(self, master, event=None):
         super().__init__(master, text="구간 정보")
+        self.main_line = None
+        self.sub_line = None
         self.section_map = {}
         self.selected_items = None
         self.event = event
         if self.event:
             self.event.bind("basic.changed", self.on_basic_changed)
-
+            self.event.bind('station.loaded', self.on_station_loaded)
         self.section_list = None #TK트리뷰 리스트
         self.sections = [] #TK 뷰 모델 데이터 리스트
         self.selected_object = None #선택한 섹션 객체
         self._build()
+
+    def on_station_loaded(self, als):
+        self.main_line = als[0]
+        self.sub_line = als[1]
 
     def _build(self):
         # Treeview 생성
@@ -44,7 +50,7 @@ class SectionFrame(ttk.LabelFrame):
         new_install = TKInstallData(
             station_var=tk.DoubleVar(value=0.0),
             pole_number_var=tk.StringVar(value='새 전주'),
-            rail_count_var=tk.IntVar(value=0),
+            rail_count_var=tk.IntVar(value=len(self.sub_line)),
             pole_count_var=tk.IntVar(value=0),
             beam_count_var=tk.IntVar(value=0),
             poles_var=[],

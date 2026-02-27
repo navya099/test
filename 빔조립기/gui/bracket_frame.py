@@ -1,12 +1,16 @@
 import tkinter as tk
 from tkinter import ttk
 from adapter.tk_bracket_adapter import TKBracketAdapter
+from alignment_geometry.alignment_interpolator import RailInterpolator
+from alignment_geomtry import BVEAlignmentIntersapter
 from gui.BracketConfigWindow import BracketConfigWindow
 from model.tkraildata import TKRailData
 
 class BracketFrame(ttk.LabelFrame):
     def __init__(self, master ,event, lib_manager):
         super().__init__(master, text="선로 정보")
+        self.sub_line = None
+        self.main_line = None
         self.master = master  # 명시적으로 잡아두는 게 좋음
         self.event = event
         self.current_section = None
@@ -14,6 +18,8 @@ class BracketFrame(ttk.LabelFrame):
         if self.event:
             self.event.bind("section.selected", self._on_section_selected)
             self.event.bind("basic.changed", self._on_basic_changed)
+            self.event.bind('station.loaded', self.on_station_loaded)
+
         self.build_bracket_frame()
 
     def _on_basic_changed(self, *_):
@@ -33,6 +39,10 @@ class BracketFrame(ttk.LabelFrame):
         else:
             return
 
+    def on_station_loaded(self, als):
+        self.main_line = als[0]
+        self.sub_line = als[1]
+
     def open_bracket_config(self, rail: TKRailData):
         BracketConfigWindow(self, rail, self.lib_manager)
 
@@ -41,27 +51,30 @@ class BracketFrame(ttk.LabelFrame):
         self.bracket_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
     def rebuild_brackets(self, *_):
-        """
-        - 구간이 처음 생성되었을 때만 호출해서 TKRailData 객체들을 새로 만들어줍니다.
-        - 데이터 모델 초기화 역할만 담당
-        """
         if self.master.isloading:
             return
 
-        # 기존 UI 제거
         for w in self.bracket_frame.winfo_children():
             w.destroy()
 
-        # ✅ bracket_vars 초기화는 rebuild에서만
         self.current_section.rails_var.clear()
+        sta_target = self.current_section.station_var.get()
 
-        import string
-        for i in range(self.current_section.rail_count_var.get()):
-            rail_name_var = tk.StringVar(value=string.ascii_lowercase[i % 26])
-            rail_idx_var = tk.IntVar(value=i)
+        for alignment in self.sub_line:
+            rail_name_var = tk.StringVar(value=alignment.name)
+            rail_idx_var = tk.IntVar(value=alignment.index)
+
             rail_coordx_var = tk.DoubleVar(value=0.0)
             rail_coordy_var = tk.DoubleVar(value=0.0)
             rail_coordz_var = tk.DoubleVar(value=0.0)
+
+            # ✅ 보간 클래스 호출
+            result = RailInterpolator.get_point_at_station(sta_target, alignment.raildata)
+            if result:
+                x, y = result
+                rail_coordx_var.set(x)
+                rail_coordy_var.set(y)
+
             rail = TKRailData(
                 index_var=rail_idx_var,
                 name_var=rail_name_var,
@@ -72,7 +85,6 @@ class BracketFrame(ttk.LabelFrame):
             )
             self.current_section.rails_var.append(rail)
 
-        # ✅ UI는 refresh에서 따로 그림
         self.refresh_brackets()
 
     def refresh_brackets(self):

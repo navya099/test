@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import scrolledtext
 from adapter.tkinstalladpater import TkInstallAdapter
+from alignment_geomtry import BVEAlignmentIntersapter
 from bve.bveserializer import BVETextBuilder
 from controller.event_controller import EventController
 from controller.main_controller import MainProcess
@@ -13,6 +14,7 @@ from .bracket_frame import BracketFrame
 from .equipment_window import EquipMentWindow
 from .preview import PreviewViewer
 from .section_frame import SectionFrame
+from .stationinfoframe import StationInfoFrame
 from .structure_frame import StructureFrame
 import pickle
 
@@ -22,9 +24,10 @@ from .wire_frame import WireFrame
 class PoleInstallGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.al = None
         self.selected_dto = None
         self.bve_window = None
-        self.title("전주 설치 입력기")
+        self.title("정거장구간 전차선로 설계 프로그램")
         self.geometry("900x1200")
         self.isloading = False
         self.installadaptor = TkInstallAdapter()
@@ -41,6 +44,8 @@ class PoleInstallGUI(tk.Tk):
         self._preview_after_id = None
 
         # 프레임 생성
+        self.station_info_frame = StationInfoFrame(self, self.event)
+        self.station_info_frame.pack(fill="x", padx=10, pady=5)
         self.section_frame = SectionFrame(self, self.event)
         self.section_frame.pack(fill="x", padx=10, pady=5)
         self.basic_frame = BasicInfoFrame(self, self.event)
@@ -56,6 +61,7 @@ class PoleInstallGUI(tk.Tk):
         
         # 버튼 생성
         self._build_buttons()
+
 
     def plot_preview(self):
         self._generate()
