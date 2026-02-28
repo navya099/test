@@ -77,7 +77,7 @@ class BasicInfoFrame(ttk.LabelFrame):
         self.pole_entry.grid(row=1, column=1, padx=5)
 
         ttk.Label(self, text="선로 수").grid(row=2, column=0, sticky="w", padx=5)
-        self.rail_entry = ttk.Entry(self, textvariable=default_rail_count, width=15)
+        self.rail_entry = ttk.Entry(self, textvariable=default_rail_count, width=15, state="readonly", style="Readonly.TEntry")
         self.rail_entry.grid(row=2, column=1, padx=5)
 
         ttk.Label(self, text="전주 갯수").grid(row=3, column=0, sticky="w", padx=5)

@@ -24,10 +24,9 @@ class BVETextBuilder:
         text += ',;빔\n'
         for beam in dto.beams:
             if beam:
-                first_pole = dto.poles[0]
                 text += (
-                    f'.freeobj 0;{beam.index};'
-                    f'{first_pole.xoffset};0;0;,;{beam.name}\n'
+                    f'.freeobj {beam.ref_start_pole.base_rail_index};{beam.index};'
+                    f'{beam.ref_start_pole.xoffset};0;0;,;{beam.name}\n'
                 )
 
         # ----------------

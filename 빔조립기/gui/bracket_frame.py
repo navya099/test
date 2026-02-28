@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk
 from adapter.tk_bracket_adapter import TKBracketAdapter
 from alignment_geometry.alignment_interpolator import RailInterpolator
-from alignment_geomtry import BVEAlignmentIntersapter
 from gui.BracketConfigWindow import BracketConfigWindow
 from model.tkraildata import TKRailData
 

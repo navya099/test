@@ -2,13 +2,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import scrolledtext
 from adapter.tkinstalladpater import TkInstallAdapter
-from alignment_geomtry import BVEAlignmentIntersapter
+
 from bve.bveserializer import BVETextBuilder
 from controller.event_controller import EventController
+from controller.file_controler import FileController
+from controller.library_controller import IndexLibrary
 from controller.main_controller import MainProcess
 from library import LibraryManager
 from preview.preview_sevice import PreviewService
-from serializer.poleinstallserializer import PoleInstallSerializer
 from .basic_frame import BasicInfoFrame
 from .bracket_frame import BracketFrame
 from .equipment_window import EquipMentWindow
@@ -20,10 +21,14 @@ import pickle
 
 from .wire_frame import WireFrame
 
+SHEET_ID = "1z0aUcuZCxOQp2St3icbQMbOkrSPfJK_8iZ2JKFDbW8c"
+SHEET_NAME = "freeobj"  # ← 원하는 시트 이름
+URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 
 class PoleInstallGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self._cached_df = None
         self.al = None
         self.selected_dto = None
         self.bve_window = None
@@ -31,7 +36,12 @@ class PoleInstallGUI(tk.Tk):
         self.geometry("900x1200")
         self.isloading = False
         self.installadaptor = TkInstallAdapter()
-        self.mp = MainProcess()
+        if self._cached_df is None:
+            import pandas as pd
+            self._cached_df = pd.read_csv(URL)
+        df = self._cached_df
+        self.idxlib = IndexLibrary(df)
+        self.mp = MainProcess(self.idxlib)
         self.event = EventController()
         self.lib_manager = LibraryManager()
         self.lib_manager.scan_library()
@@ -94,6 +104,7 @@ class PoleInstallGUI(tk.Tk):
         ttk.Button(frame, text="로드", command=self.load).pack(side="right", padx=10)
         ttk.Button(frame, text="저장", command=self.save).pack(side="right", padx=10)
         ttk.Button(frame, text="도면저장", command=self.save_dxf).pack(side="right", padx=10)
+        ttk.Button(frame, text="bve구문저장", command=self.save_allbve).pack(side="right", padx=10)
 
     def _generate(self):
         self.result = self.installadaptor.collect(self.section_frame.sections)
@@ -226,3 +237,14 @@ class PoleInstallGUI(tk.Tk):
         if not self.selected_dto:
             messagebox.showwarning("오류", "선택된 구간에 해당하는 DTO가 없습니다.")
             return
+
+    def save_allbve(self):
+        path = r'c:/temp/extract_bve_synrax_data.txt'
+        all_text = ''
+        self._generate()
+        for dto in self.result:
+            all_text += BVETextBuilder.to_text(dto)
+            all_text += '\n'  # DTO 간 구분을 위해 빈 줄 추가
+
+        fc = FileController(path)
+        fc.save(all_text)

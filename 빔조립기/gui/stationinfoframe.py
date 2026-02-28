@@ -39,7 +39,7 @@ class StationInfoFrame(ttk.LabelFrame):
             fc.load()
 
             alignments, forms, _, minsta, maxsta = self.parser.process_lines_to_alginment_data(fc.get_lines())
-            mainal  = self.calculator.create_mainline(minsta, maxsta)
+            mainal  = self.calculator.create_mainline(minsta - 600, maxsta + 600)
             alignments.append(mainal)
             self.alignments = alignments
 

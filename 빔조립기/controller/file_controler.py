@@ -16,3 +16,7 @@ class FileController:
     def get_lines(self) -> list[str]:
         return self.lines
 
+    def save(self, data):
+        with open(self.path, 'w', encoding='utf-8') as f:
+            f.writelines(data)
+

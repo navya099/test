@@ -1,5 +1,6 @@
 from controller.library_controller import IndexLibrary
 from model.bracket import Bracket
+from resolver.fitting_resolver import BracketFittngResolver
 
 
 class BracketResolver:
@@ -9,3 +10,5 @@ class BracketResolver:
             name = b.type.replace(".csv", "")
             b.type = name
             b.index = idxlib.get_index(name)
+            for f in b.fittings:
+                BracketFittngResolver.resolve(f, idxlib)
