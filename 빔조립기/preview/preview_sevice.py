@@ -1,4 +1,5 @@
 from bve.beam_builder import TempleteBeamBuilder
+from bve.bveserializer import BVETextBuilder
 from bve.pole_builder import TempletePoleBuilder
 from controller.filefinder import FileLocator
 from controller.path_resolver import PathResolver
@@ -22,11 +23,11 @@ class PreviewService:
             for beam in install.beams:
                 if beam.iscustom:
 
-                    if beam.length not in beam_cache:
-                        builder = TempleteBeamBuilder(beam.length)
-                        beam_cache[beam.length] = builder.build()
+                    if beam.length_m not in beam_cache:
+                        builder = TempleteBeamBuilder(beam.length_m)
+                        beam_cache[beam.length_m] = builder.build()
 
-                    path = beam_cache[beam.length]
+                    path = beam_cache[beam.length_m]
                 else:
                     path = locator.find(beam.name)
                 if path:
@@ -77,7 +78,15 @@ class PreviewService:
 
         # 3. 브래킷
         for rail in install.rails:
-            for br in rail.brackets:
+            brackets = rail.brackets
+            n = len(brackets)
+            s = 1  # 간격 (필요시 조정)
+            offs = BVETextBuilder.offsets(n, s)
+
+            for i, br in enumerate(brackets):
+                offset = offs[i]
+                station = install.station + offset
+
                 path = locator.find(br.type)
                 if path:
                     items.append(
@@ -85,7 +94,7 @@ class PreviewService:
                             path=path,
                             transform=Transform(
                                 x=br.xoffset,
-                                y=install.station,
+                                y=station,  # ✅ offset 적용
                                 z=br.yoffset,
                                 rotation=br.rotation,
                                 pivot=rail.coord
@@ -95,9 +104,9 @@ class PreviewService:
                     )
                 else:
                     missing.append(br.type)
-                #3-1 브래킷 피팅
+
                 # 브래킷 하위 피팅들
-                for f in getattr(br, "fittings", []):  # 기존 데이터 호환 위해 getattr 사용
+                for f in getattr(br, "fittings", []):
                     fpath = locator.find(f.label)
                     if fpath:
                         items.append(
@@ -105,7 +114,7 @@ class PreviewService:
                                 path=fpath,
                                 transform=Transform(
                                     x=f.xoffset,
-                                    y=install.station,
+                                    y=station,  # ✅ 동일 offset 적용
                                     z=f.yoffset,
                                     rotation=f.rotation,
                                     pivot=rail.coord

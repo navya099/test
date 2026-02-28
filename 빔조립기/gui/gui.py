@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import scrolledtext
 from adapter.tkinstalladpater import TkInstallAdapter
+from bve.bve_structure_list import BVEStrurctureList
 
 from bve.bveserializer import BVETextBuilder
 from controller.event_controller import EventController
@@ -248,3 +249,9 @@ class PoleInstallGUI(tk.Tk):
 
         fc = FileController(path)
         fc.save(all_text)
+
+        path2 = r'c:/temp/bve_structure_list.txt'
+        lines = BVEStrurctureList.to_text()
+
+        fc.set_path(path2)
+        fc.save(lines)

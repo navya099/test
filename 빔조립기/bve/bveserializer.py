@@ -61,6 +61,7 @@ class BVETextBuilder:
 
         #장비
         text += ',;기타설비\n'
+        text += f'{dto.station}\n'
         for eq in dto.equips:
             text += (
                 f'.freeobj {eq.base_rail_index};{eq.objindex};{eq.xoffset};{eq.yoffset};{eq.rotation};,;{eq.name}\n'
