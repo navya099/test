@@ -126,11 +126,6 @@ class PlotPoleMap(tk.Frame):
         self.canvas.draw_idle()
 
     def highlight_pole(self, pos):
-        # 기존 선택 마커 삭제
-        if hasattr(self, "selected_pole_scatter") and self.selected_pole_scatter:
-            self.selected_pole_scatter.remove()  # PathCollection은 remove() 지원
-            self.selected_pole_scatter = None
-
         # 선택된 전주 찾기
         for track_name, poles in self.runner.poledata.items():
             for pole in poles:
@@ -138,12 +133,26 @@ class PlotPoleMap(tk.Frame):
                     self.selected_pole = pole
                     self.sel_xy = pole.coord[0], pole.coord[1]
 
-                    # 새로운 강조 마커 추가
-                    self.selected_pole_scatter = self.ax.scatter(
-                        self.sel_xy[0], self.sel_xy[1],
-                        c="red", s=100, zorder=5
-                    )
-                    self.ax.text(self.sel_xy[0], self.sel_xy[1], f'{pole.post_number}')
+                    if hasattr(self, "selected_pole_scatter") and self.selected_pole_scatter:
+                        # ✅ 기존 scatter 좌표 갱신
+                        self.selected_pole_scatter.set_offsets([self.sel_xy])
+                    else:
+                        # 처음 선택 시 scatter 생성
+                        self.selected_pole_scatter = self.ax.scatter(
+                            self.sel_xy[0], self.sel_xy[1],
+                            c="red", s=100, zorder=5
+                        )
+
+                    # 텍스트도 갱신하거나 새로 추가
+                    if hasattr(self, "selected_pole_text") and self.selected_pole_text:
+                        self.selected_pole_text.set_position(self.sel_xy)
+                        self.selected_pole_text.set_text(f'{pole.post_number}')
+                    else:
+                        self.selected_pole_text = self.ax.text(
+                            self.sel_xy[0], self.sel_xy[1], f'{pole.post_number}'
+                        )
+
+                    # 뷰포트 이동
                     self.ax.set_xlim(self.sel_xy[0] - 50, self.sel_xy[0] + 50)
                     self.ax.set_ylim(self.sel_xy[1] - 50, self.sel_xy[1] + 50)
                     break
