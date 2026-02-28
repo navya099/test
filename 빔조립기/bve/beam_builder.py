@@ -166,7 +166,7 @@ class TempleteBeamBuilder:
                 self.text.append(line)
 
     def save_text(self):
-        self.path = f'c:/temp/custom_beam_{self.length}m.csv'
+        self.path = f'c:/temp/트러스빔_{self.length}m.csv'
         with open(self.path, 'w', encoding='utf-8') as f:
             f.writelines(self.text)
 
