@@ -36,6 +36,21 @@ class AutoPoleApp(tk.Tk):
         self.entry_speed = tk.Entry(input_frame, width=10, textvariable=self.entry_speed_var)
         self.entry_speed.pack(side="left")
 
+        tk.Label(input_frame, text="시작측점").pack(side="left")
+        self.entry_start_sta_var = tk.DoubleVar(value=0.0)
+        self.entry_start_sta = tk.Entry(input_frame, width=10, textvariable=self.entry_start_sta_var)
+        self.entry_start_sta.pack(side="left")
+
+        tk.Label(input_frame, text="끝측점").pack(side="left")
+        self.entry_end_sta_var = tk.DoubleVar(value=0.0)
+        self.entry_end_sta = tk.Entry(input_frame, width=10, textvariable=self.entry_end_sta_var)
+        self.entry_end_sta.pack(side="left")
+
+        tk.Label(input_frame, text="파정").pack(side="left")
+        self.entry_brokenchain_var = tk.DoubleVar(value=0.0)
+        self.entry_brokenchain = tk.Entry(input_frame, width=10, textvariable=self.entry_brokenchain_var)
+        self.entry_brokenchain.pack(side="left")
+
         self.is_custom_mode = tk.BooleanVar(value=False)
         tk.Checkbutton(input_frame, text="커스텀 모드", variable=self.is_custom_mode).pack(side="left")
         self.is_create_dxf = tk.BooleanVar(value=False)
@@ -122,9 +137,12 @@ class AutoPoleApp(tk.Tk):
             self.runner.is_create_dxf = int(self.is_create_dxf.get())
             self.runner.idxlib = self.idxlib
             self.runner.track_mode = self.track_mode.get()
-
+            self.runner.start_station = self.entry_start_sta_var.get()
+            self.runner.end_station = self.entry_end_sta_var.get()
+            self.runner.brokenchain = self.entry_brokenchain_var.get()
             if self.runner.track_mode == "single":
                 self.runner.track_direction = self.single_direction.get()
+                self.runner.track_distance = 0.0
                 self.runner.log(f"현재 모드: 단일 트랙 (본선 {self.runner.track_direction})")
             else:
                 self.runner.track_direction = self.double_direction.get()

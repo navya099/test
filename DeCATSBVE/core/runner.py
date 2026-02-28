@@ -2,6 +2,7 @@ from tkinter.filedialog import asksaveasfilename
 import pandas as pd
 from bve.bvecsv import BVECSV
 from core.pole.pole_processor import PoleProcessor
+from core.structure.define_structure import apply_brokenchain_to_structure
 from core.wire.wire_processor import WireProcessor
 from dataset.dataset_getter import DatasetGetter
 from dataset.dataset_manager import load_dataset
@@ -38,12 +39,14 @@ class AutoPole:
         self.is_create_dxf = False
         self.track_mode = None
         self.track_direction = None
-        self.track_distance = None
+        self.track_distance = 0.0
         self.log_widget = log_widget
         self.poledata = None
         self.wire_data = None
         self._cached_df = None
-
+        self.start_station = 0.0
+        self.end_station = 0.0
+        self.brokenchain = 0.0
     def log(self, msg):
         if self.log_widget:
             self.log_widget.insert("end", msg + "\n")
@@ -58,15 +61,14 @@ class AutoPole:
 
         data = read_file()
         last_block = find_last_block(data)
-        start_km = 0
-        end_km = last_block // 1000
 
 
         # 구조물 정보 로드
         self.structure_list = load_structure_data()
+
         if self.structure_list:
             print("구조물 정보가 성공적으로 로드되었습니다.")
-
+            self.structure_list = apply_brokenchain_to_structure(self.structure_list, self.brokenchain)# 파정 적용
         # 곡선 정보 로드
         self.curvelist = load_curve_data()
         if self.curvelist:
@@ -81,7 +83,7 @@ class AutoPole:
 
         #데이터셋 로드,
         dataset = load_dataset(self.designspeed, self.iscustommode)
-        self.pole_positions = distribute_pole_spacing_flexible(start_km, end_km, curvelist=self.curvelist,structure_list=self.structure_list)
+        self.pole_positions = distribute_pole_spacing_flexible(self.start_station, self.end_station, curvelist=self.curvelist,structure_list=self.structure_list)
         self.airjoint_list = define_airjoint_section(self.pole_positions ,airjoint_span=1600)
 
         # 전주번호 추가
@@ -190,5 +192,5 @@ class AutoPole:
             self.log(f"전주 개수: 본선={main_count}개")
         else:
             self.log(f"전주 개수: 본선={main_count}개, 상선={sub_count}개")
-        self.log(f"마지막 전주 위치: {positions_by_track['main'][-1]}m (종점: {int(end_km * 1000)}m)")
+        self.log(f"마지막 전주 위치: {positions_by_track['main'][-1]}m (종점: {int(self.end_station)}m)")
         self.log('모든 작업 완료')

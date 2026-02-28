@@ -33,18 +33,19 @@ def get_max_span_by_radius(radius):
     if radius >= 400: return 40
     return 35 # 급곡선
 
-def distribute_pole_spacing_flexible(start_km, end_km, curvelist=None,structure_list=None):
+def distribute_pole_spacing_flexible(start_m, end_m, curvelist=None,structure_list=None):
     """
     45, 50, 55, 60m 범위에서 전주 간격을 균형 있게 배분하여 전체 구간을 채우는 함수
     마지막 전주는 종점보다 약간 앞에 위치할 수도 있음.
 
-    :param start_km: 시작점 (km 단위)
-    :param end_km: 끝점 (km 단위)
+    :param structure_list:
+    :param curvelist:
+    :param start_m: 시작점 (km 단위)
+    :param end_m: 끝점 (km 단위)
     :return: 전주 간격 리스트, 전주 위치 리스트
     """
-    start_m = int(start_km * 1000)  # km → m 변환
-    end_m = int(end_km * 1000)
-
+    start_m = int(start_m)
+    end_m = int(end_m)
     positions = [start_m]
     current_pos = start_m
     from core.alignment.define_funtion import iscurve
