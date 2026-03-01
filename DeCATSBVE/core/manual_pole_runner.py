@@ -1,4 +1,6 @@
+from bve.bvecsv import BVECSV
 from core.structure.define_structure import apply_brokenchain_to_structure
+from core.wire.wire_processor import WireProcessor
 from file_io.filemanager import load_structure_data, load_curve_data, load_pitch_data, load_coordinates
 from shapely.geometry.linestring import LineString
 class ManualPoleRunner:
@@ -15,6 +17,7 @@ class ManualPoleRunner:
         brokenchain: 파정
     """
     def __init__(self, brokenchain=0.0):
+        self.alignment_by_track = None
         self.log_widget = None
         self.offset_line_with_25 = []
         self.track_distance = 0.0
@@ -29,6 +32,7 @@ class ManualPoleRunner:
         self.wire_data = {'main':[], 'sub':[]}
         self.airjoint_list = []
         self.pole_processor = None
+        self.dataprocessor = None
         self.wire_processor = None
         self.wire_path_sub = ''
         self.wire_path_main = ''
@@ -46,6 +50,7 @@ class ManualPoleRunner:
             print(msg)
     def run(self):
         self.load_plugin()
+        self.init_bve_object()
 
     def load_plugin(self):
         """플러그인 로드"""
@@ -79,6 +84,12 @@ class ManualPoleRunner:
         offset_polyline = offset_line.coords
         self.offset_line_with_25 = [(i * 25, *values) for i, values in enumerate(offset_polyline)]
 
+        self.alignment_by_track = {
+            "main": self.polyline_with_sta,
+            "sub": self.offset_line_with_25
+        }
+
+        self.wire_processor = WireProcessor(self.dataprocessor, self.alignment_by_track, self.poledata, self.curvelist)
         self.log('플러그인 로드가 완료되었습니다. 이제 수동으로 전주를 배치하세요')
 
     def unload_plugin(self):
@@ -88,4 +99,10 @@ class ManualPoleRunner:
         self.curvelist = None
         self.structure_list = None
         self.brokenchain = 0.0
+
+    def init_bve_object(self):
+        self.polesaver_main = BVECSV(self.poledata["main"], self.wire_data["main"], 0)
+        # 상선 저장 (이중 트랙일 때만)
+        if self.track_mode == "double":
+            self.polesaver_sub = BVECSV(self.poledata["sub"], self.wire_data["sub"], 1)
 

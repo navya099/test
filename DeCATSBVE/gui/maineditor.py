@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from core.pole.manual_pole_processor import ManualPoleProcessor
+from gui.pole_add_ui import PoleADDUI
 from gui.pole_assembler import PoleAssemblerApp
 from gui.wireeditor import WireEditor
 from vms.editable_pole import EditablePole
@@ -13,6 +14,7 @@ from xref_module.transaction import Transaction
 class AutoPoleEditor(tk.Frame):
     def __init__(self, runner, objlib, events=None, master=None):
         super().__init__(master)
+        self.original_pos = None
         self.selected_wire = None
         self.runner = runner
         self.events = events
@@ -59,44 +61,69 @@ class AutoPoleEditor(tk.Frame):
             self.tree_sub.heading(col, text=col)
             self.tree_sub.column(col, width=100, anchor="center")
 
+        self.tree_main.bind("<Double-1>", lambda e: self.edit_tree_cell(e, "main"))
+        self.tree_sub.bind("<Double-1>", lambda e: self.edit_tree_cell(e, "sub"))
+
+        # 트리뷰 생성 후 바인딩
+        self.tree_main.bind("<ButtonRelease-1>", lambda e: self.on_tree_click(e, "main"))
+        self.tree_sub.bind("<ButtonRelease-1>", lambda e: self.on_tree_click(e, "sub"))
+
         # 데이터 로딩
         self.load_data()
 
         # Entry + 버튼 영역 (공통)
         frame_controls = tk.Frame(self)
         frame_controls.pack(fill="x", pady=5)
+        #tk변수
+        self.entry_post_number_var = tk.StringVar()
+        self.entry_pos_var = tk.DoubleVar()
+        self.entry_gauge_var = tk.DoubleVar()
+        self.entry_structure_var = tk.StringVar()
+        self.entry_section_var = tk.StringVar()
+        self.entry_base_type_var = tk.StringVar()
 
         tk.Label(frame_controls, text="전주번호").pack(side="left")
-        self.entry_post_number = tk.Entry(frame_controls, width=10)
+        self.entry_post_number = ttk.Entry(frame_controls, width=10, state="readonly", style="Readonly.TEntry", textvariable=self.entry_post_number_var)
         self.entry_post_number.pack(side="left")
 
         tk.Label(frame_controls, text="측점").pack(side="left")
-        self.entry_pos = tk.Entry(frame_controls, width=10)
+        self.entry_pos = ttk.Entry(frame_controls, width=10, state="readonly", style="Readonly.TEntry", textvariable=self.entry_pos_var)
         self.entry_pos.pack(side="left")
 
         tk.Label(frame_controls, text="건식게이지").pack(side="left")
-        self.entry_gauge = tk.Entry(frame_controls, width=10)
+        self.entry_gauge = ttk.Entry(frame_controls, width=10, state="readonly", style="Readonly.TEntry", textvariable=self.entry_gauge_var)
         self.entry_gauge.pack(side="left")
 
         tk.Label(frame_controls, text="구조물").pack(side="left")
-        self.entry_structure = tk.Entry(frame_controls, width=10)
+        self.entry_structure = ttk.Entry(frame_controls, width=10, state="readonly", style="Readonly.TEntry", textvariable=self.entry_structure_var)
         self.entry_structure.pack(side="left")
 
         tk.Label(frame_controls, text="구간").pack(side="left")
-        self.entry_section = tk.Entry(frame_controls, width=10)
+        self.entry_section = ttk.Entry(frame_controls, width=10, state="readonly", style="Readonly.TEntry", textvariable=self.entry_section_var)
         self.entry_section.pack(side="left")
 
         tk.Label(frame_controls, text="기본 타입").pack(side="left")
-        self.entry_base_type = tk.Entry(frame_controls, width=10)
+        self.entry_base_type = ttk.Entry(frame_controls, width=10, state="readonly", style="Readonly.TEntry", textvariable=self.entry_base_type_var)
         self.entry_base_type.pack(side="left")
 
         # 버튼
-        tk.Button(self, text="선택 불러오기", command=self.load_selected).pack()
-        tk.Button(self, text="수정 저장", command=self.save_edit).pack()
-        tk.Button(self, text="전주 상세 편집", command=self.open_equipment_editor).pack()
-        tk.Button(self, text="전선 상세 편집", command=self.open_wire_editor).pack()
-        tk.Button(self, text="전주 추가", command=self.add_pole).pack()
-        tk.Button(self, text="전주 삭제", command=self.delete_pole).pack()
+        tk.Button(self, text="전주 상세 편집", command=self.open_equipment_editor).pack(side="left")
+        tk.Button(self, text="전선 상세 편집", command=self.open_wire_editor).pack(side="left")
+        tk.Button(self, text="전주 추가", command=self.add_pole).pack(side="left")
+        tk.Button(self, text="전주 삭제", command=self.delete_pole).pack(side="left")
+
+    def on_tree_click(self, event, track):
+        tree = self.tree_main if track == "main" else self.tree_sub
+        selected_item = tree.selection()
+        if not selected_item:
+            return
+
+        # 선택된 행의 values 가져오기
+        item = tree.item(selected_item[0])
+        values = item["values"]
+
+        # load_selected 호출
+        self.load_selected()
 
     def load_data(self):
         if not self.runner:
@@ -212,20 +239,13 @@ class AutoPoleEditor(tk.Frame):
         ewire = next((w for w in self.editable_wires.get(track, []) if w.wire.pos == pos), None)
 
         if fill_entry and epole:
-            # 단일 선택일 때만 Entry 채우기
             self.original_pos = pos
-            self.entry_post_number.delete(0, tk.END)
-            self.entry_post_number.insert(0, post_number)
-            self.entry_pos.delete(0, tk.END)
-            self.entry_pos.insert(0, pos)
-            self.entry_gauge.delete(0, tk.END)
-            self.entry_gauge.insert(0, gauge)
-            self.entry_structure.delete(0, tk.END)
-            self.entry_structure.insert(0, structure)
-            self.entry_section.delete(0, tk.END)
-            self.entry_section.insert(0, section)
-            self.entry_base_type.delete(0, tk.END)
-            self.entry_base_type.insert(0, base_type)
+            self.entry_post_number_var.set(post_number)
+            self.entry_pos_var.set(pos)
+            self.entry_gauge_var.set(gauge)
+            self.entry_structure_var.set(structure)
+            self.entry_section_var.set(section)
+            self.entry_base_type_var.set(base_type)
 
         return epole, ewire
 
@@ -289,8 +309,7 @@ class AutoPoleEditor(tk.Frame):
                     try:
                         # 일반개소만 편집 허용
                         if epole.pole.section is not None:
-                            messagebox.showerror('전주 업데이트 실패', f'지정한 {epole.pole.pos}는 일반 개소가 아닙니다.')
-                            return
+                            raise Exception('NOT_NORMAL_SECTION')
 
                         # 마지막 전주 예외 처리
                         if epole.pole.next_pos is None:
@@ -307,8 +326,7 @@ class AutoPoleEditor(tk.Frame):
                             # 새 span 계산
                             new_span = epole.pole.next_pos - new_pos
                             if new_span not in self.runner.dataprocessor.get_span_list():
-                                messagebox.showerror('전주 업데이트 실패', f'경간 {new_span}은 지정된 spanlist에 없습니다.')
-                                return
+                                raise Exception('SPAN_OUT_OF_RANGE')
 
                             with Transaction(epole.pole, epole.prev_pole.pole, epole.next_pole.pole):
                                 epole.update(
@@ -321,8 +339,7 @@ class AutoPoleEditor(tk.Frame):
                                 BracketEditor.update(epole.pole, self.runner.dataprocessor, self.runner.idxlib)
                         break
                     except Exception as e:
-                        messagebox.showerror('전주 업데이트 실패', str(e))
-                        return
+                        raise Exception(e)
             if found:
                 break
 
@@ -334,8 +351,7 @@ class AutoPoleEditor(tk.Frame):
         if self.events:
             self.events.emit("pole_saved")
 
-        self.runner.log(f'전주 편집 성공 {new_pos}')
-
+        return True
     def open_equipment_editor(self):
         asemlbapp = PoleAssemblerApp(self.runner, self.objlib ,self.events)
         asemlbapp.bind_events()
@@ -354,22 +370,32 @@ class AutoPoleEditor(tk.Frame):
             tree = self.tree_sub
             poles = self.runner.poledata["sub"]
             al = self.runner.offset_line_with_25
+        #UI열기
+        addui = PoleADDUI()
+        self.wait_window(addui)  # 입력창 닫힐 때까지 대기
+        values = addui.comfirm()
 
-        # Entry 값 가져오기
-        post_number = self.entry_post_number.get()
-        pos = int(self.entry_pos.get()) if self.entry_pos.get() else 0.0
-        gauge = float(self.entry_gauge.get()) if self.entry_gauge.get() else 0.0
-        structure = self.entry_structure.get()
-        section = None if self.entry_section.get() == 'None' else self.entry_section.get()
-        base_type = self.entry_base_type.get()
+        if not values:  # 취소 시
+            return
 
+        poledict = addui.comfirm()
         # PoleDATA 객체 생성 (필수 속성만, 나머지는 기본값)
-        new_pole = ManualPoleProcessor.create_pole(al,self.runner.dataprocessor,self.runner.idxlib, self.runner.curvelist, self.runner.pitchlist, pos, post_number, gauge, structure, section, base_type)
+        new_pole = ManualPoleProcessor.create_pole(
+            al,self.runner.dataprocessor,self.runner.idxlib, self.runner.curvelist, self.runner.pitchlist,
+            int(poledict['pos']), poledict['post_number'], poledict['gauge'], poledict['structure'], poledict['section'], poledict['base_type'])
 
-        poles.append(new_pole)
+        # pos 기준으로 삽입 위치 찾기
+        insert_idx = len(poles)
+        for i, p in enumerate(poles):
+            if p.pos > new_pole.pos:
+                insert_idx = i
+                break
+
+        poles.insert(insert_idx, new_pole)
         #next 속성 채우기
-        if len(poles) > 1:
-            prev_pole = poles[-2]
+        # 앞쪽 전주 갱신
+        if insert_idx > 0:
+            prev_pole = poles[insert_idx - 1]
             prev_pole.next_pos = new_pole.pos
             prev_pole.span = new_pole.pos - prev_pole.pos
             prev_pole.next_gauge = new_pole.gauge
@@ -377,15 +403,35 @@ class AutoPoleEditor(tk.Frame):
             prev_pole.next_z = new_pole.z
             prev_pole.next_base_type = new_pole.base_type
 
+        # 뒤쪽 전주 갱신
+        if insert_idx < len(poles) - 1:
+            next_pole = poles[insert_idx + 1]
+            new_pole.next_pos = next_pole.pos
+            new_pole.span = next_pole.pos - new_pole.pos
+            new_pole.next_gauge = next_pole.gauge
+            new_pole.next_structure = next_pole.structure
+            new_pole.next_z = next_pole.z
+            new_pole.next_base_type = next_pole.base_type
+
+        self.runner.wire_data = self.runner.wire_processor.process_to_wire()
         self.create_epoles()
         self.create_ewires()
 
-        # Treeview 반영
-        tree.insert("", "end", values=(
+        # Treeview에 삽입할 때 위치를 찾아서 insert
+        children = tree.get_children()
+        insert_index = "end"
+        for idx, child in enumerate(children):
+            values = tree.item(child, "values")
+            if int(values[1]) > new_pole.pos:  # values[1] = pos
+                insert_index = idx
+                break
+
+        tree.insert("", insert_index, values=(
             new_pole.post_number, new_pole.pos, new_pole.span, new_pole.gauge,
             new_pole.structure, new_pole.section, new_pole.base_type,
             new_pole.radius, new_pole.pitch, new_pole.cant, new_pole.z
         ))
+
         self.refresh_tree()
 
     def delete_pole(self):
@@ -410,3 +456,65 @@ class AutoPoleEditor(tk.Frame):
             self.refresh_tree()
             self.create_epoles()
             self.create_ewires()
+
+    def edit_tree_cell(self, event, track):
+        tree = self.tree_main if track == "main" else self.tree_sub
+        region = tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
+        row_id = tree.identify_row(event.y)
+        col_id = tree.identify_column(event.x)
+        if not row_id or not col_id:
+            return
+
+        col_index = int(col_id.replace("#", "")) - 1
+        item = tree.item(row_id)
+        old_value = item["values"][col_index]
+
+        # 원래 값 저장
+        self._editing_info = {
+            "tree": tree,
+            "row_id": row_id,
+            "col_index": col_index,
+            "old_value": old_value
+        }
+
+        # 셀 위치 계산
+        x, y, width, height = tree.bbox(row_id, col_id)
+
+        # 임시 Entry 생성
+        edit_var = tk.StringVar(value=old_value)
+        entry = ttk.Entry(tree, textvariable=edit_var)
+        entry.place(x=x, y=y, width=width, height=height)
+
+        def save_and_validate(event=None):
+            new_value = edit_var.get()
+            values = list(item["values"])
+            values[col_index] = new_value
+            tree.item(row_id, values=values)
+
+            try:
+                # 검증 로직 호출
+                self.save_edit()
+            except Exception as e:
+                code = str(e)
+                # 에러코드별 메시지 분기
+                if code == "NOT_NORMAL_SECTION":
+                    messagebox.showerror("전주 업데이트 실패", "지정한 위치는 일반 개소가 아닙니다.")
+                elif code == "SPAN_OUT_OF_RANGE":
+                    messagebox.showerror("전주 업데이트 실패", "경간이 지정된 spanlist에 없습니다.")
+                else:
+                    messagebox.showerror("전주 업데이트 실패", f"다음과 같은 오류가 발생했습니다: {code}")
+                # 원래 값 복원
+                info = self._editing_info
+                values = list(info["tree"].item(info["row_id"], "values"))
+                values[info["col_index"]] = info["old_value"]
+                info["tree"].item(info["row_id"], values=values)
+
+            # Entry는 임시 객체 → 그냥 날려버림
+            entry.destroy()
+
+        entry.bind("<Return>", save_and_validate)
+        #entry.bind("<FocusOut>", save_and_validate)
+        entry.focus()
