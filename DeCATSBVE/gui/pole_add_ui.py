@@ -13,9 +13,12 @@ class PoleADDUI(tk.Toplevel):
         self.entry_post_number_var = tk.StringVar()
         self.entry_pos_var = tk.DoubleVar()
         self.entry_gauge_var = tk.DoubleVar()
-        self.entry_structure_var = tk.StringVar()
         self.entry_section_var = tk.StringVar()
         self.entry_base_type_var = tk.StringVar()
+
+        # 콤보박스 리스트
+        section_list = ['일반개소', '에어조인트 시작점 (1호주)', '에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)', '에어조인트 끝점 (5호주)']
+        base_type_list = ['I', 'O', 'F']
 
         # event가 None일 수 있으므로 초기화 시점에는 바인딩하지 않음
         tk.Label(self, text="전주번호").grid(row=0, column=0, padx=5, pady=5)
@@ -30,16 +33,12 @@ class PoleADDUI(tk.Toplevel):
         self.entry_gauge = ttk.Entry(self, width=10, textvariable=self.entry_gauge_var)
         self.entry_gauge.grid(row=2, column=1, padx=5, pady=5)
 
-        tk.Label(self, text="구조물").grid(row=3, column=0, padx=5, pady=5)
-        self.entry_structure = ttk.Combobox(self, width=10, values=['토공', '교량', '터널'], textvariable=self.entry_structure_var)
-        self.entry_structure.grid(row=3, column=1, padx=5, pady=5)
-
         tk.Label(self, text="구간").grid(row=4, column=0, padx=5, pady=5)
-        self.entry_section = ttk.Combobox(self, width=10, textvariable=self.entry_section_var ,values=['일반개소', '에어조인트 시작점 (1호주)', '에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)', '에어조인트 끝점 (5호주)'])
+        self.entry_section = ttk.Combobox(self, width=10, textvariable=self.entry_section_var ,values=section_list)
         self.entry_section.grid(row=4, column=1, padx=5, pady=5)
 
         tk.Label(self, text="기본 타입").grid(row=5, column=0, padx=5, pady=5)
-        self.entry_base_type = ttk.Combobox(self, width=10, values=['I', 'O', 'F'], textvariable=self.entry_base_type_var)
+        self.entry_base_type = ttk.Combobox(self, width=10, values=base_type_list, textvariable=self.entry_base_type_var)
         self.entry_base_type.grid(row=5, column=1, padx=5, pady=5)
 
         ttk.Button(self, text="확인", command=self.destroy).grid(row=6, column=0, padx=5, pady=5)
@@ -54,7 +53,6 @@ class PoleADDUI(tk.Toplevel):
             "post_number": self.entry_post_number_var.get(),
             "pos": self.entry_pos_var.get(),
             "gauge": self.entry_gauge_var.get(),
-            "structure": self.entry_structure_var.get(),
             "section": None if self.entry_section_var.get()== '일반개소' else self.entry_section_var.get(),
             "base_type": self.entry_base_type_var.get()
         }

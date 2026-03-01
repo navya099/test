@@ -182,7 +182,8 @@ class AutoPoleApp(tk.Tk):
         self.editor.create_ewires()
         self.editor.refresh_tree()
         self.plotter.update_plot()
-
+        self.plotter.selected_pole_scatter = None
+        self.plotter.selected_pole_text = None
 
     def save(self):
         t = self.runner.polesaver_main.create_pole_csv() #본선 저장
@@ -246,6 +247,8 @@ class AutoPoleApp(tk.Tk):
         self.editor.create_ewires()
         self.editor.refresh_tree()
         self.plotter.update_plot()
+        self.plotter.selected_pole_scatter = None
+        self.plotter.selected_pole_text = None
         messagebox.showinfo('정보', '데이터 로드가 완료됐습니다.')
 
     def load_dataset(self):

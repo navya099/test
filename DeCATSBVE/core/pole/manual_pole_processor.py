@@ -1,13 +1,14 @@
 from core.alignment.define_funtion import iscurve, isslope
 from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.poledata import PoleDATA
+from core.structure.define_structure import isbridge_tunnel
 from utils.math_util import get_elevation_pos, interpolate_cached, calculate_offset_point
 
 
 class ManualPoleProcessor:
     """단일 전주 생성기"""
     @staticmethod
-    def create_pole(alignment, db, idxlib ,curvelist, pitchlist, pos, post_number, gauge, structure, section, base_type, track="main", side="L"):
+    def create_pole(alignment, db, idxlib ,curvelist, pitchlist,structure_list, pos, post_number, gauge, section, base_type, track="main", side="L"):
         """단일 전주 생성 메서드
         Args:
             alignment: 선형객체
@@ -16,7 +17,6 @@ class ManualPoleProcessor:
             pos: 측점
             post_number: 전주번호
             gauge: 건식게이지
-            structure: 구조물 str
             section: 구간 str
             base_type: 기본타입 I, O ,F
             track: 트랙 구분 main or sub
@@ -30,7 +30,7 @@ class ManualPoleProcessor:
         current_slope, pitch = isslope(pos, pitchlist)
         coord, _, v1 = interpolate_cached(alignment, pos)
         pos_coord_with_offset = calculate_offset_point(v1, coord, gauge)
-
+        current_structure = isbridge_tunnel(pos, structure_list)
         # PoleDATA 객체 생성
         pole = PoleDATA(
             pos=pos,
@@ -38,7 +38,7 @@ class ManualPoleProcessor:
             span=None,
             gauge=gauge,
             next_gauge=None,
-            structure=structure,
+            structure=current_structure,
             next_structure=None,
             radius=R,
             cant=c,

@@ -366,10 +366,23 @@ class AutoPoleEditor(tk.Frame):
             tree = self.tree_main
             poles = self.runner.poledata["main"]
             al = self.runner.polyline_with_sta
+            track = 'main'
+            if self.runner.track_mode == 'single':
+                side = self.runner.track_direction
+            else:
+                if self.runner.track_direction == "mainL_subR":
+                    side = 'L'
+                else:
+                    side = 'R'
         else:
             tree = self.tree_sub
             poles = self.runner.poledata["sub"]
             al = self.runner.offset_line_with_25
+            track = 'sub'
+            if self.runner.track_direction == "mainL_subR":
+                side = 'R'
+            else:
+                side = 'L'
         #UI열기
         addui = PoleADDUI()
         self.wait_window(addui)  # 입력창 닫힐 때까지 대기
@@ -381,8 +394,8 @@ class AutoPoleEditor(tk.Frame):
         poledict = addui.comfirm()
         # PoleDATA 객체 생성 (필수 속성만, 나머지는 기본값)
         new_pole = ManualPoleProcessor.create_pole(
-            al,self.runner.dataprocessor,self.runner.idxlib, self.runner.curvelist, self.runner.pitchlist,
-            int(poledict['pos']), poledict['post_number'], poledict['gauge'], poledict['structure'], poledict['section'], poledict['base_type'])
+            al,self.runner.dataprocessor,self.runner.idxlib, self.runner.curvelist, self.runner.pitchlist,self.runner.structure_list,
+            int(poledict['pos']), poledict['post_number'], poledict['gauge'], poledict['section'], poledict['base_type'], track, side)
 
         # pos 기준으로 삽입 위치 찾기
         insert_idx = len(poles)
@@ -468,7 +481,12 @@ class AutoPoleEditor(tk.Frame):
         if not row_id or not col_id:
             return
 
+        # 편집 불가능한 열 제한
+        non_editable_cols = [2,4, 7,8,9,10]  # 전주번호, 측점은 수정 불가
         col_index = int(col_id.replace("#", "")) - 1
+        if col_index in non_editable_cols:
+            return
+
         item = tree.item(row_id)
         old_value = item["values"][col_index]
 
@@ -482,10 +500,29 @@ class AutoPoleEditor(tk.Frame):
 
         # 셀 위치 계산
         x, y, width, height = tree.bbox(row_id, col_id)
+        #콤보박스 리스트
+        section_list = ['일반개소', '에어조인트 시작점 (1호주)', '에어조인트 (2호주)', '에어조인트 중간주 (3호주)', '에어조인트 (4호주)', '에어조인트 끝점 (5호주)']
+        base_type_list = ['I', 'O', 'F']
 
         # 임시 Entry 생성
-        edit_var = tk.StringVar(value=old_value)
-        entry = ttk.Entry(tree, textvariable=edit_var)
+        col_index_dict = {
+            0: tk.StringVar(value=old_value),
+            1: tk.IntVar(value=old_value),
+            3: tk.DoubleVar(value=old_value),
+            5:tk.StringVar(value=old_value),
+            6:tk.StringVar(value=old_value)
+        }
+        edit_var = col_index_dict.get(col_index)
+        entry_dict = {
+            0: ttk.Entry(tree, textvariable=edit_var),
+            1: ttk.Entry(tree, textvariable=edit_var),
+            3: ttk.Entry(tree, textvariable=edit_var),
+            5: ttk.Combobox(tree, textvariable=edit_var,values=section_list),
+            6: ttk.Combobox(tree, textvariable=edit_var,values=base_type_list)
+        }
+
+
+        entry = entry_dict.get(col_index)
         entry.place(x=x, y=y, width=width, height=height)
 
         def save_and_validate(event=None):

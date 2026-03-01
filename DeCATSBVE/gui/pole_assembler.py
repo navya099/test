@@ -289,9 +289,9 @@ class PoleAssemblerApp(tk.Toplevel):
                 messagebox.showerror('에러', '전주가 선택되지 않았습니다. 먼저 전주를 선택하세요')
                 return
             pole = self.epole.pole
-            if pole.section is not None:
+            """if pole.section is not None:
                 messagebox.showerror('에러', '일반구간만 편집이 가능합니다. 다른 전주를 선택하세요')
-                return
+                return"""
             with Transaction(pole):
                 # 건식게이지 적용
                 pole.gauge = self.selection["gauge"]
