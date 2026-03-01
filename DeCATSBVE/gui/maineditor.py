@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from core.pole.manual_pole_processor import ManualPoleProcessor
 from gui.pole_assembler import PoleAssemblerApp
 from gui.wireeditor import WireEditor
 from vms.editable_pole import EditablePole
@@ -12,8 +13,10 @@ from xref_module.transaction import Transaction
 class AutoPoleEditor(tk.Frame):
     def __init__(self, runner, objlib, events=None, master=None):
         super().__init__(master)
+        self.selected_wire = None
         self.runner = runner
         self.events = events
+
         self.editable_poles = {"main": [], "sub": []}
         self.editable_wires = {"main": [], "sub": []}
         self.objlib = objlib
@@ -92,10 +95,14 @@ class AutoPoleEditor(tk.Frame):
         tk.Button(self, text="수정 저장", command=self.save_edit).pack()
         tk.Button(self, text="전주 상세 편집", command=self.open_equipment_editor).pack()
         tk.Button(self, text="전선 상세 편집", command=self.open_wire_editor).pack()
-
-
+        tk.Button(self, text="전주 추가", command=self.add_pole).pack()
+        tk.Button(self, text="전주 삭제", command=self.delete_pole).pack()
 
     def load_data(self):
+        if not self.runner:
+            print("runner가 아직 초기화되지 않았습니다.")
+            return
+
         if not self.runner.poledata:
             print("poledata가 아직 초기화되지 않았습니다.")
             return
@@ -225,6 +232,9 @@ class AutoPoleEditor(tk.Frame):
     def create_epoles(self):
         # EditablePole 리스트 생성
         self.editable_poles = {"main": [], "sub": []}
+        if not self.runner.poledata:
+            print('poledata is empty')
+            return
 
         for track_name, poles in self.runner.poledata.items():
             prev_epole = None
@@ -245,7 +255,9 @@ class AutoPoleEditor(tk.Frame):
     def create_ewires(self):
         # EditableWire 리스트 생성
         self.editable_wires = {"main": [], "sub": []}
-
+        if not self.runner.wire_data:
+            print('wire_data is empty')
+            return
         for track_name, wires in self.runner.wire_data.items():
             prev_ewire = None
             for wire in wires:
@@ -280,13 +292,9 @@ class AutoPoleEditor(tk.Frame):
                             messagebox.showerror('전주 업데이트 실패', f'지정한 {epole.pole.pos}는 일반 개소가 아닙니다.')
                             return
 
-                        # 새 span 계산
-                        new_span = epole.pole.next_pos - new_pos
-                        if new_span not in self.runner.dataprocessor.get_span_list():
-                            messagebox.showerror('전주 업데이트 실패', f'경간 {new_span}은 지정된 spanlist에 없습니다.')
-                            return
-
-                        with Transaction(epole.pole, epole.prev_pole.pole, epole.next_pole.pole):
+                        # 마지막 전주 예외 처리
+                        if epole.pole.next_pos is None:
+                            # 다음 전주가 없으므로 span 계산 생략
                             epole.update(
                                 post_number=new_post_number,
                                 pos=new_pos,
@@ -294,7 +302,23 @@ class AutoPoleEditor(tk.Frame):
                                 section=new_section,
                                 base_type=new_base_type
                             )
-                            BracketEditor.update(epole.pole, self.runner.dataprocessor, self.runner.idxlib)
+                            self.runner.log("마지막 전주라 span 계산은 생략했습니다.")
+                        else:
+                            # 새 span 계산
+                            new_span = epole.pole.next_pos - new_pos
+                            if new_span not in self.runner.dataprocessor.get_span_list():
+                                messagebox.showerror('전주 업데이트 실패', f'경간 {new_span}은 지정된 spanlist에 없습니다.')
+                                return
+
+                            with Transaction(epole.pole, epole.prev_pole.pole, epole.next_pole.pole):
+                                epole.update(
+                                    post_number=new_post_number,
+                                    pos=new_pos,
+                                    gauge=new_gauge,
+                                    section=new_section,
+                                    base_type=new_base_type
+                                )
+                                BracketEditor.update(epole.pole, self.runner.dataprocessor, self.runner.idxlib)
                         break
                     except Exception as e:
                         messagebox.showerror('전주 업데이트 실패', str(e))
@@ -319,3 +343,70 @@ class AutoPoleEditor(tk.Frame):
     def open_wire_editor(self):
         we = WireEditor(self.runner, self.events)
         we.bind_events()
+
+    def add_pole(self):
+        current_tab = self.notebook.tab(self.notebook.select(), "text")
+        if current_tab == "본선":
+            tree = self.tree_main
+            poles = self.runner.poledata["main"]
+            al = self.runner.polyline_with_sta
+        else:
+            tree = self.tree_sub
+            poles = self.runner.poledata["sub"]
+            al = self.runner.offset_line_with_25
+
+        # Entry 값 가져오기
+        post_number = self.entry_post_number.get()
+        pos = int(self.entry_pos.get()) if self.entry_pos.get() else 0.0
+        gauge = float(self.entry_gauge.get()) if self.entry_gauge.get() else 0.0
+        structure = self.entry_structure.get()
+        section = None if self.entry_section.get() == 'None' else self.entry_section.get()
+        base_type = self.entry_base_type.get()
+
+        # PoleDATA 객체 생성 (필수 속성만, 나머지는 기본값)
+        new_pole = ManualPoleProcessor.create_pole(al,self.runner.dataprocessor,self.runner.idxlib, self.runner.curvelist, self.runner.pitchlist, pos, post_number, gauge, structure, section, base_type)
+
+        poles.append(new_pole)
+        #next 속성 채우기
+        if len(poles) > 1:
+            prev_pole = poles[-2]
+            prev_pole.next_pos = new_pole.pos
+            prev_pole.span = new_pole.pos - prev_pole.pos
+            prev_pole.next_gauge = new_pole.gauge
+            prev_pole.next_structure = new_pole.structure
+            prev_pole.next_z = new_pole.z
+            prev_pole.next_base_type = new_pole.base_type
+
+        self.create_epoles()
+        self.create_ewires()
+
+        # Treeview 반영
+        tree.insert("", "end", values=(
+            new_pole.post_number, new_pole.pos, new_pole.span, new_pole.gauge,
+            new_pole.structure, new_pole.section, new_pole.base_type,
+            new_pole.radius, new_pole.pitch, new_pole.cant, new_pole.z
+        ))
+        self.refresh_tree()
+
+    def delete_pole(self):
+        current_tab = self.notebook.tab(self.notebook.select(), "text")
+        if current_tab == "본선":
+            tree = self.tree_main
+            poles = self.runner.poledata["main"]
+        else:
+            tree = self.tree_sub
+            poles = self.runner.poledata["sub"]
+
+        selected_item = tree.selection()
+        if selected_item:
+            values = tree.item(selected_item[0], "values")
+            post_number = values[0]
+
+            # runner.poledata에서 제거
+            poles[:] = [p for p in poles if p.post_number != post_number]
+
+            # Treeview에서 제거
+            tree.delete(selected_item[0])
+            self.refresh_tree()
+            self.create_epoles()
+            self.create_ewires()

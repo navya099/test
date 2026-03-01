@@ -13,7 +13,7 @@ from utils.comom_util import find_last_block, distribute_pole_spacing_flexible, 
 from shapely.geometry.linestring import LineString
 
 class AutoPole:
-    def __init__(self, log_widget):
+    def __init__(self):
         self.polesaver_sub = None
         self.polesaver_main = None
         self.wire_path_sub = None
@@ -40,7 +40,7 @@ class AutoPole:
         self.track_mode = None
         self.track_direction = None
         self.track_distance = 0.0
-        self.log_widget = log_widget
+        self.log_widget = None
         self.poledata = None
         self.wire_data = None
         self._cached_df = None
@@ -81,15 +81,12 @@ class AutoPole:
         polyline = load_coordinates()
         self.polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
-        #데이터셋 로드,
-        dataset = load_dataset(self.designspeed, self.iscustommode)
         self.pole_positions = distribute_pole_spacing_flexible(self.start_station, self.end_station, curvelist=self.curvelist,structure_list=self.structure_list)
         self.airjoint_list = define_airjoint_section(self.pole_positions ,airjoint_span=1600)
 
         # 전주번호 추가
         post_number_lst = generate_postnumbers(self.pole_positions)
-        # 데이터 처리
-        self.dataprocessor = DatasetGetter(dataset)
+
 
         ######트랙별 처리###### todo
         #현재는 두 트랙이 동일하다고 가정(즉 pos와 모든 구조물을 공유함)
@@ -100,7 +97,7 @@ class AutoPole:
         if self.track_mode == 'double':
             line = LineString(polyline)
             # 오프셋 적용
-            if self.track_direction == "본선 L / 상선 R":
+            if self.track_direction == "mainL_subR":
                 direction = 'right'
             else:
                 direction = 'left'

@@ -97,6 +97,8 @@ class PlotPoleMap(tk.Frame):
 
     def draw_poles(self):
         # 본선 전주 좌표 배열
+        if not self.runner.poledata:
+            return
         main_coords = np.array([pole.coord for pole in self.runner.poledata.get("main", [])])
         if len(main_coords) > 0:
             self.ax.scatter(

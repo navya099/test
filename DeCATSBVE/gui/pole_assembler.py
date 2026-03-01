@@ -92,7 +92,7 @@ class PoleAssemblerApp(tk.Toplevel):
         frame = ttk.Frame(self.equip_frame)
         frame.pack(fill="x", pady=2)
 
-        eqs = self.lib_manager.list_all_files(group='base')
+        eqs = self.objlib.list_all_files(group='base')
         equip_var = tk.StringVar(value=name if name else "")
         equip_combo = ttk.Combobox(frame, textvariable=equip_var,
                                    values=eqs, state="readonly")
@@ -139,9 +139,9 @@ class PoleAssemblerApp(tk.Toplevel):
         def update_brackets(event=None):
             rail_type = railtype_var.get()
             if rail_type:
-                group = self.lib_manager.define_group(rail_type)
+                group = self.objlib.define_group(rail_type)
                 # 브래킷 목록 갱신
-                brackets = self.lib_manager.list_files_in_category(category='브래킷', group=group)
+                brackets = self.objlib.list_files_in_category(category='브래킷', group=group)
                 bracket_combo.config(values=brackets)
                 # 피팅 목록 갱신
 
@@ -172,9 +172,9 @@ class PoleAssemblerApp(tk.Toplevel):
 
             f_var = tk.StringVar(value=name)
             rail_type = railtype_var.get()
-            group = self.lib_manager.define_group(rail_type) if rail_type else 'base'
+            group = self.objlib.define_group(rail_type) if rail_type else 'base'
             f_combo = ttk.Combobox(f_frame, textvariable=f_var,
-                                   values=self.lib_manager.list_files_in_category('브래킷', group=group),
+                                   values=self.objlib.list_files_in_category('브래킷', group=group),
                                    state="readonly")
             f_combo.pack(side="left")
 

@@ -1,8 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from tkinter.filedialog import asksaveasfilename
+
 import pandas as pd
 from bve.bvecsv import BVECSV
+from core.manual_pole_runner import ManualPoleRunner
 from core.runner import AutoPole
+from dataset.dataset_getter import DatasetGetter
 from dataset.dataset_manager import load_dataset
 from event.event_controller import EventController
 from file_io.filemanager import write_to_file, load_poles, save_poles, save_runner, load_runner
@@ -16,18 +20,20 @@ from xref_module.object_libraymgr import LibraryManager
 class AutoPoleApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.db = None
         self.dataset = None
         self.idxlib = None
         self.title("AutoPOLE")
         self.events = EventController()
         self.objlib = LibraryManager()
         self.objlib.scan_library()
+
+
         # 로그 박스
         self.log_box = tk.Text(self, height=10, width=80)
         self.log_box.pack(side="bottom", fill="x")
-        self.runner = AutoPole(self.log_box)
-        # 라이브러리 갱신
-        self.refresh_library()
+        self.runner = None
+
         # 입력 영역
         input_frame = tk.Frame(self)
         input_frame.pack(side="top", fill="x")
@@ -56,7 +62,9 @@ class AutoPoleApp(tk.Tk):
         self.is_create_dxf = tk.BooleanVar(value=False)
         tk.Checkbutton(input_frame, text="도면 작성", variable=self.is_create_dxf).pack(side="left")
 
-
+        self.gen_mode = tk.StringVar(value="auto")
+        tk.Radiobutton(input_frame, text="자동 생성", variable=self.gen_mode, value="auto").pack(side="left")
+        tk.Radiobutton(input_frame, text="수동 생성", variable=self.gen_mode, value="manual").pack(side="left")
 
         # 버튼 영역
         button_frame = tk.Frame(self)
@@ -121,7 +129,8 @@ class AutoPoleApp(tk.Tk):
         URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 
         self.idxlib = IndexLibrary(pd.read_csv(URL))
-        self.runner.idxlib = self.idxlib
+        if self.runner:
+            self.runner.idxlib = self.idxlib
 
     def exit_app(self):
         self.quit()
@@ -132,6 +141,15 @@ class AutoPoleApp(tk.Tk):
 
     def update_inputs(self):
         try:
+            if self.gen_mode.get() == 'auto':
+                self.runner = AutoPole()
+                self.runner.log_widget = self.log_box
+                self.runner.log(f"현재 모드: 자동 배치모드")
+            else:
+                self.runner = ManualPoleRunner()
+                self.runner.log_widget = self.log_box
+                self.runner.log(f"현재 모드: 수동 배치모드")
+
             self.runner.designspeed = int(self.entry_speed.get())
             self.runner.iscustommode = int(self.is_custom_mode.get())
             self.runner.is_create_dxf = int(self.is_create_dxf.get())
@@ -140,6 +158,7 @@ class AutoPoleApp(tk.Tk):
             self.runner.start_station = self.entry_start_sta_var.get()
             self.runner.end_station = self.entry_end_sta_var.get()
             self.runner.brokenchain = self.entry_brokenchain_var.get()
+
             if self.runner.track_mode == "single":
                 self.runner.track_direction = self.single_direction.get()
                 self.runner.track_distance = 0.0
@@ -154,7 +173,11 @@ class AutoPoleApp(tk.Tk):
     def run_and_open_editor(self):
         # 입력값 반영 후 실행
         self.update_inputs()
+        self.refresh_library()
+        self.load_dataset()
         self.runner.run()
+        self.editor.runner = self.runner
+        self.plotter.runner = self.runner
         self.editor.create_epoles()
         self.editor.create_ewires()
         self.editor.refresh_tree()
@@ -164,11 +187,40 @@ class AutoPoleApp(tk.Tk):
     def save(self):
         t = self.runner.polesaver_main.create_pole_csv() #본선 저장
         t2 = self.runner.polesaver_main.create_wire_csv()
+        if not self.runner.pole_path_main:
+            # 기본 파일명 지정
+            self.runner.pole_path_main= asksaveasfilename(
+                title='본선 전주 데이터 저장',
+                defaultextension=".txt",
+                filetypes=[("TXT files", "*.txt")],
+                initialfile="전주.txt"
+            )
+            self.runner.wire_path_main = asksaveasfilename(
+                title='본선 전차선 데이터 저장',
+                defaultextension=".txt",
+                filetypes=[("TXT files", "*.txt")],
+                initialfile="전차선.txt"
+            )
         write_to_file(self.runner.pole_path_main, t)
         write_to_file(self.runner.wire_path_main, t2)
         if self.runner.track_mode == "double":
             s = self.runner.polesaver_sub.create_pole_csv()  # 본선 저장
             s2 = self.runner.polesaver_sub.create_wire_csv()
+            if not self.runner.pole_path_sub:
+                # 기본 파일명 지정
+                self.runner.pole_path_sub = asksaveasfilename(
+                    title='상선 전주 데이터 저장',
+                    defaultextension=".txt",
+                    filetypes=[("TXT files", "*.txt")],
+                    initialfile="상선전주.txt"
+                )
+                self.runner.wire_path_sub = asksaveasfilename(
+                    title='상선 전차선 데이터 저장',
+                    defaultextension=".txt",
+                    filetypes=[("TXT files", "*.txt")],
+                    initialfile="상선전차선.txt"
+                )
+
             write_to_file(self.runner.pole_path_sub, s)
             write_to_file(self.runner.wire_path_sub, s2)
         self.runner.log(f"저장 성공!")
@@ -178,8 +230,11 @@ class AutoPoleApp(tk.Tk):
         messagebox.showinfo('정보','데이터 저장이 완료됐습니다.')
 
     def load_pickle(self):
-        self.runner = AutoPole(log_widget=None)
+        self.update_inputs()
         load_runner(self.runner, 'c:/temp/decatsbve.dat')
+
+        self.refresh_library()
+        self.load_dataset()
         self.runner.polesaver_main = BVECSV(self.runner.poledata["main"], self.runner.wire_data["main"], 0)
         if self.runner.track_mode == "double":
             self.runner.polesaver_sub = BVECSV(self.runner.poledata["sub"], self.runner.wire_data["sub"], 1)
@@ -195,5 +250,8 @@ class AutoPoleApp(tk.Tk):
 
     def load_dataset(self):
         self.dataset = load_dataset(int(self.entry_speed.get()),int(self.is_custom_mode.get()))
+        self.db = DatasetGetter(self.dataset)
+        if self.runner:
+            self.runner.dataprocessor = self.db
     def edit_dataset(self):
         de = DataSetEditor(self.dataset)
