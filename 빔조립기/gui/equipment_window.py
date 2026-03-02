@@ -150,7 +150,7 @@ class EquipMentWindow(ttk.LabelFrame):
     def remove_equip(self):
         if self.current_section.equips_var:
             self.current_section.equips_var.pop()  # 마지막 장비 제거
-            self.rebuild_equips()
+            self.refresh_equips()
             self.event.emit("equips.updated")
 
     def edit_equip(self, equip):

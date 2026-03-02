@@ -18,9 +18,9 @@ class StationInfoFrame(ttk.LabelFrame):
         self.parser = AlignmentParser()
         self.calculator = AlignmentCalculator()
         self.filepath = ''
-        default_station_name_var = tk.StringVar(value="OO정거장")
+        self.default_station_name_var = tk.StringVar(value="OO정거장")
         ttk.Label(self, text="정거장명").grid(row=1, column=0, sticky="w", padx=5)
-        ttk.Entry(self, textvariable=default_station_name_var, width=15).grid(row=1, column=1, padx=5)
+        ttk.Entry(self, textvariable=self.default_station_name_var, width=15).grid(row=1, column=1, padx=5)
         ttk.Button(self, text="정거장파일 불러오기", command=self.load_info).grid(row=1, column=2, padx=5)
         self.al = None
 
