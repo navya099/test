@@ -85,16 +85,19 @@ class SectionFrame(ttk.LabelFrame):
     def remove_section(self):
         selected_items = self.section_list.selection()
         for item in selected_items:
+            # 삭제 전에 값 가져오기
+            values = self.section_list.item(item, "values")
+
+            # 내부 리스트에서 제거
+            if hasattr(self, "sections"):
+                self.sections = [
+                    s for s in self.sections
+                    if not (s.station_var.get() == float(values[0]) and
+                            s.pole_number_var.get() == values[1])
+                ]
+
             # Treeview에서 삭제
             self.section_list.delete(item)
-
-            # 내부 리스트에서도 삭제
-            if hasattr(self, "sections"):
-                # station, pole_number 값으로 매칭해서 제거
-                values = self.section_list.item(item, "values")
-                self.sections = [s for s in self.sections
-                                 if not (s.station_var.get() == float(values[0]) and
-                                         s.pole_number_var.get() == values[1])]
 
         if self.event:
             self.event.emit("section.removed", selected_items)

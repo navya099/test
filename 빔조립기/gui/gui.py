@@ -1,9 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter import scrolledtext
+from tkinter.filedialog import askopenfilename, asksaveasfile, asksaveasfilename
+from tkinter import filedialog
 from adapter.tkinstalladpater import TkInstallAdapter
 from bve.bve_structure_list import BVEStrurctureList
-
+import os
 from bve.bveserializer import BVETextBuilder
 from controller.event_controller import EventController
 from controller.file_controler import FileController
@@ -29,6 +31,7 @@ URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sh
 class PoleInstallGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.filepath = None
         self._cached_df = None
         self.al = None
         self.selected_dto = None
@@ -149,24 +152,37 @@ class PoleInstallGUI(tk.Tk):
         # VM → DTO 변환
         installs = self.installadaptor.collect(self.section_frame.sections)
 
-        path = r'c:/temp/saved_beam_assembler_data.pkl'  # pickle 파일
-        with open(path, "wb") as f:
-            pickle.dump(installs, f)
+        path = asksaveasfilename(title='전주 데이터 저장',
+                defaultextension=".pkl",
+                filetypes=[("PKL files", "*.pkl")]
+            )  # pickle 파일
+        if path:
+            with open(path, "wb") as f:
+                pickle.dump(installs, f)
 
-        messagebox.showinfo('데이터 저장', '저장이 완료됐습니다.')
-
+            messagebox.showinfo('데이터 저장', '저장이 완료됐습니다.')
+        else:
+            print('올바른 pkl파일을 지정해주세요')
+            return
     def load(self):
         self.isloading = True
-        path = r'c:/temp/saved_beam_assembler_data.pkl'
-        try:
-            with open(path, "rb") as f:
-                self.result = pickle.load(f)
-                self.section_frame.sections = self.installadaptor.apply(self, self.result)
-                self.section_frame.refresh_sections()
-            self.isloading = False
-            messagebox.showinfo('데이터 로드', '로드가 완료됐습니다.')
-        except Exception as e:
-            messagebox.showerror('에러', f'로드에 실패했습니다. {e}')
+        path = askopenfilename(title='전주 데이터 열기',
+                defaultextension=".pkl",
+                filetypes=[("PKL files", "*.pkl")]
+            )  # pickle 파일
+        if path:
+            try:
+                with open(path, "rb") as f:
+                    self.result = pickle.load(f)
+                    self.section_frame.sections = self.installadaptor.apply(self, self.result)
+                    self.section_frame.refresh_sections()
+                self.isloading = False
+                messagebox.showinfo('데이터 로드', '로드가 완료됐습니다.')
+            except Exception as e:
+                messagebox.showerror('에러', f'로드에 실패했습니다. {e}')
+        else:
+            print('올바른 pkl파일을 지정해주세요')
+            return
 
     def show_errors(self, title, messages):
         win = tk.Toplevel(self)
@@ -240,14 +256,28 @@ class PoleInstallGUI(tk.Tk):
             return
 
     def save_allbve(self):
-        path = r'c:/temp/extract_bve_synrax_data.txt'
+        if not self.filepath:
+            folder_path = filedialog.askdirectory(
+                title="폴더 선택",
+                initialdir="C:/",  # 기본 시작 경로 (옵션)
+                mustexist=True  # 존재하는 폴더만 선택 가능
+            )
+
+            if folder_path:
+                print("선택된 폴더:", folder_path)
+                # 여기서 folder_path를 활용하면 됩니다
+            else:
+                print("선택된 폴더가 없습니다.:")
+                return
+
+            self.filepath = os.path.join(folder_path, "전주.txt")
         all_text = ''
         self._generate()
         for dto in self.result:
             all_text += BVETextBuilder.to_text(dto)
             all_text += '\n'  # DTO 간 구분을 위해 빈 줄 추가
 
-        fc = FileController(path)
+        fc = FileController(self.filepath)
         fc.save(all_text)
 
         path2 = r'c:/temp/bve_structure_list.txt'
