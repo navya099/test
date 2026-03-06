@@ -151,13 +151,41 @@ class PoleFrame(ttk.LabelFrame):
                 base_rail_cb.set("")
                 print(f"  -> uid {uid} not found in rail_uid_map")
 
-            ttk.Combobox(self, textvariable=pole_vm.poletype,
+            poletype_cb = ttk.Combobox(self, textvariable=pole_vm.poletype,
                          values=["강관주", "H형강주", "조립철주"],
-                         state="readonly", width=15).grid(row=row, column=2)
+                         state="readonly", width=15)
+            poletype_cb.grid(row=row, column=2)
 
-            ttk.Combobox(self, textvariable=pole_vm.polespec,
-                         values=["P10", "P12", "P14", "P16", "P18", "P20"],
-                         state="readonly", width=15).grid(row=row, column=3)
+            polespeclist = {
+                '강관주':["P10", "P12", "P14", "P16", "P18", "P20"],
+                'H형강주':['H250x250','H300x300'],
+                '조립철주':['L75x300x400','L75x450x450', 'L90x450x450']
+            }
+            # 전주 규격 콤보박스
+            polespec_cb = ttk.Combobox(
+                self,
+                textvariable=pole_vm.polespec,
+                values=polespeclist.get(pole_vm.poletype.get(), []),
+                state="readonly",
+                width=15
+            )
+            polespec_cb.grid(row=row, column=3)
+
+            # 이벤트 바인딩: 타입 선택 시 규격 콤보박스 갱신 + 초기화
+            def update_polespec(event, pole_vm=pole_vm, polespec_cb=polespec_cb):
+                selected_type = pole_vm.poletype.get()
+                values = polespeclist.get(selected_type, [])
+                polespec_cb['values'] = values
+
+                if values:
+                    # ✅ 첫 번째 값으로 설정
+                    polespec_cb.current(0)
+                    pole_vm.polespec.set(values[0])
+                else:
+                    # 값이 없으면 초기화
+                    pole_vm.polespec.set("")
+
+            poletype_cb.bind("<<ComboboxSelected>>", update_polespec)
 
             tk.Entry(self, textvariable=pole_vm.pole_length, width=6).grid(row=row, column=4)
             tk.Entry(self, textvariable=pole_vm.gauge, width=6).grid(row=row, column=5)
