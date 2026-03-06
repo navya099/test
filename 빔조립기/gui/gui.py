@@ -57,20 +57,39 @@ class PoleInstallGUI(tk.Tk):
         # 딜레이 타이머 ID 저장용
         self._preview_after_id = None
 
+        # 메인 컨테이너 (스크롤 가능)
+        container = ttk.Frame(self)
+        container.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(container)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
         # 프레임 생성
-        self.station_info_frame = StationInfoFrame(self, self.event)
+        self.station_info_frame = StationInfoFrame(scrollable_frame, self.event)
         self.station_info_frame.pack(fill="x", padx=10, pady=5)
-        self.section_frame = SectionFrame(self, self.event)
+        self.section_frame = SectionFrame(scrollable_frame, self.event)
         self.section_frame.pack(fill="x", padx=10, pady=5)
-        self.basic_frame = BasicInfoFrame(self, self.event)
+        self.basic_frame = BasicInfoFrame(scrollable_frame, self.event)
         self.basic_frame.pack(fill="x", padx=10, pady=5)
-        self.structure_frame = StructureFrame(self, self.event)
+        self.structure_frame = StructureFrame(scrollable_frame, self.event)
         self.structure_frame.pack(fill="x", padx=10, pady=5)
-        self.eq_frame = EquipMentWindow(self, self.event, self.lib_manager)
+        self.eq_frame = EquipMentWindow(scrollable_frame, self.event, self.lib_manager)
         self.eq_frame.pack(fill="x", padx=10, pady=5)
-        self.bracket_frame = BracketFrame(self, self.event, self.lib_manager)
+        self.bracket_frame = BracketFrame(scrollable_frame, self.event, self.lib_manager)
         self.bracket_frame.pack(fill="x", padx=10, pady=5)
-        self.wire_frame = WireFrame(self, self.event)
+        self.wire_frame = WireFrame(scrollable_frame, self.event)
         self.wire_frame.pack(fill="x", padx=10, pady=5)
         
         # 버튼 생성
@@ -101,7 +120,7 @@ class PoleInstallGUI(tk.Tk):
     # =============================
     def _build_buttons(self):
         frame = ttk.Frame(self)
-        frame.pack(fill="x", pady=10)
+        frame.pack(fill="x", side="bottom", pady=10)
 
         ttk.Button(frame, text="종료", command=self.destyoy).pack(side="right", padx=10)
         ttk.Button(frame, text="미리보기", command=self.plot_preview).pack(side="right", padx=10)
