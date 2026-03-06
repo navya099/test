@@ -1,6 +1,7 @@
-from bve.beam_builder import TempleteBeamBuilder
+from bve.beam_builder.base_builder import BaseBeamBuilder
+from bve.beam_builder.beam_build_factory import BeamBuilderFactory
 from bve.bveserializer import BVETextBuilder
-from bve.pole_builder import TempletePoleBuilder
+from bve.pole_builder.pole_builder import TempletePoleBuilder
 from controller.filefinder import FileLocator
 from controller.path_resolver import PathResolver
 from preview.category import PreviewCategory
@@ -24,7 +25,7 @@ class PreviewService:
                 if beam.iscustom:
 
                     if beam.length_m not in beam_cache:
-                        builder = TempleteBeamBuilder(beam.length_m)
+                        builder = BeamBuilderFactory.create_builder(beam.type, beam.length_m)
                         beam_cache[beam.length_m] = builder.build()
 
                     path = beam_cache[beam.length_m]
