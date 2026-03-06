@@ -40,7 +40,7 @@ class CSVObjectParser:
                     x, y, z = map(float, parts[1:4])
                     cur_vertices.append(Vector3(x, y, z))
 
-                elif cmd == "AddFace":
+                elif cmd == "AddFace" or cmd == "AddFace2":
                     a, b, c = map(int, parts[1:4])
                     cur_faces.append(Face(a, b, c))
 
