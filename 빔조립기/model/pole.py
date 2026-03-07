@@ -14,6 +14,7 @@ class Pole:
         display_name: UI 표시 전주 이름
         length: 전주길이(m)
         width: 전주 치수(mm)
+        series: 전주 규격 P,H,L 등
         index: BVE 오브젝트 인덱스
         base_rail_index: 기준 레일 인덱스
         base_rail_uid: 기준 레일 uid(참조용)
@@ -24,6 +25,7 @@ class Pole:
     display_name: str | None = None
     length: float | None = None
     width: float | None = None
+    series: str | None = None
     index: int | None = None
     base_rail_index: int | None = None
     base_rail_uid: str | None = None

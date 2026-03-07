@@ -8,7 +8,7 @@ class HBEAMBuiilder(BasePoleBuilder):
     def build(self):
         self.build_body()
         dimension_str = PoleDimensionFinder.get_pole_type_by_dimension('H_BEAM', self.diameter)
-        self.save_text(f'c:/temp/H형주_{dimension_str}_{self.length}m.csv')
+        self.save_text(f'D:/BVE/루트/Railway/Object/temp/H형강주_{dimension_str}_{self.length}m.csv')
         return self.path
     def build_body(self):
         fname = 'H빔250' if self.diameter == 0.25 else 'H빔350'

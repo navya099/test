@@ -26,23 +26,36 @@ class PoleDimensionFinder:
         }
 
         # pole.type에 따라 해당 딕셔너리에서 width 키를 찾아 반환
-        return pole_dimension_tables[pole.type.name][pole.width]
+        return pole_dimension_tables[pole.type.name][pole.series]
 
     @staticmethod
-    def get_pole_type_by_dimension(pole_type, dimension):
+    def get_pole_type_by_dimension(pole_type: str, dimension: float, series: str = None):
+        """
+        pole_type: 'PIPE', 'H_BEAM', 'STEEL'
+        dimension: 기둥 치수 (예: 0.45)
+        series: 'L75' 또는 'L95' (STEEL일 때만 필요)
+        """
         pole_dimension_tables = {
             'PIPE': PoleDimensionFinder.pipepole_dimension_tables,
             'H_BEAM': PoleDimensionFinder.hbeam_pole_dimension_tables,
             'STEEL': PoleDimensionFinder.steel_pole_dimension_tables
         }
 
-        # 지정된 타입의 테이블에서만 검색
         table = pole_dimension_tables.get(pole_type)
         if not table:
             return None
 
+        # STEEL 타입일 때 L75/L95 구분
+        if pole_type == 'STEEL' and series:
+            candidates = [width for width, dim in table.items() if dim == dimension]
+            for c in candidates:
+                if c.startswith(series):  # 예: "L75..." 또는 "L95..."
+                    return c
+            return None
+
+        # 일반 타입은 dimension 값만으로 검색
         for width, dim in table.items():
-            if dim == dimension:  # 정확히 일치하는 값만
+            if dim == dimension:
                 return width
         return None
 

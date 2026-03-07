@@ -19,7 +19,7 @@ class TkPoleAdapter:
                     type=PoleType(vm.poletype.get()),
                     length=vm.pole_length.get(),
                     xoffset=vm.gauge.get(),
-                    width=vm.polespec.get(),
+                    series=vm.polespec.get(),
                     uid=vm.base_rail_uid.get(),
                     base_rail_index=vm.base_rail_index.get(),
                     base=PoleBase(name=vm.foundation.basename_var.get(),index=-1),
@@ -31,13 +31,13 @@ class TkPoleAdapter:
     def from_dto(data: Pole) -> PoleVM:
         # base가 None일 경우 대비
         base_name = data.base.name if data.base is not None else "없음"
-
+        series = data.series if data.series is not None else data.width
         return PoleVM(
             index=tk.IntVar(value=data.index),
             poletype=tk.StringVar(value=data.type.value),
             pole_length=tk.DoubleVar(value=data.length),
             gauge=tk.DoubleVar(value=data.xoffset),
-            polespec=tk.StringVar(value=data.width),
+            polespec=tk.StringVar(value=series),
             base_rail_index=tk.IntVar(value=data.base_rail_index),
             base_rail_uid=tk.StringVar(value=data.uid),
             foundation=PoleBaseVM(basename_var=tk.StringVar(value=base_name)),

@@ -17,7 +17,7 @@ class TRUSSBeamBuilder(BaseBeamBuilder):
         self._build_header()
         self.build_beam_body() #빔 본체
         self.build_gueset_plate(dx=self.length,rotate_180=True)
-        self.save_text(f'c:/temp/트러스빔_{self.length}m.csv')
+        self.save_text(f'D:/BVE/루트/Railway/Object/temp/트러스빔-{self.length}m.csv')
         return self.path
 
     def build_beam_body(self):

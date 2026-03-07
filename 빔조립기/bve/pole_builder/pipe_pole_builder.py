@@ -21,7 +21,7 @@ class PIPEPoleBuilder(BasePoleBuilder):
         ring_width = self.cal_ring_width()
         self.build_ring(0.032, ring_width, buttom_y=0.381) #하단 간판
         dimension_str = PoleDimensionFinder.get_pole_type_by_dimension('PIPE', self.diameter)
-        self.save_text(f'c:/temp/강관주_{dimension_str}_{self.length}m.csv')
+        self.save_text(f'D:/BVE/루트/Railway/Object/temp/강관주-{dimension_str}-{self.length}m.csv')
         return self.path
 
     def build_colum(self, height, diameter, buttom_y):

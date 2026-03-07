@@ -3,18 +3,27 @@ from utils.pole_dimention_finder import PoleDimensionFinder
 
 
 class SteelPoleBuilder(BasePoleBuilder):
+    def __init__(self, length, diameter, series=None):
+        super().__init__(length, diameter)
+        self.series = series
     def build(self):
         self._build_header()
         self.build_body()
-        dimension_str = PoleDimensionFinder.get_pole_type_by_dimension('STEEL', self.diameter)
-        self.save_text(f'c:/temp/조립철주_{dimension_str}_{self.length}m.csv')
+        prefix = self.series[:3] if self.series else None
+        dimension_str = PoleDimensionFinder.get_pole_type_by_dimension('STEEL', self.diameter, series=prefix)
+        self.save_text(f'D:/BVE/루트/Railway/Object/temp/조립철주_{dimension_str}_{self.length}m.csv')
         return self.path
 
     def build_body(self):
-        if self.diameter == 0.4:
+        if self.series == 'L75x300x400':
             fname = '조립철주_L75X300X400'
-        else:
+        elif self.series == 'L75x450x450':
+            fname = '조립철주_L75X450X450'
+        elif self.series == 'L90x450x450':
             fname = '조립철주_L90X450X450'
+        else:
+            raise ValueError("Unknown steel pole series")
+
         with open(f'c:/temp/{fname}.csv', 'r', encoding='utf-8') as f:
             lines = f.readlines()
 

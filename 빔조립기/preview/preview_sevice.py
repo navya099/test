@@ -53,10 +53,10 @@ class PreviewService:
         # 2. 기둥
         for col in install.poles:
             if col.iscustom:
-                key = (col.type, col.length)  # 타입과 길이만 캐시 키로 사용
+                key = (col.type,col.series, col.length)  # 타입과 길이만 캐시 키로 사용
 
                 if key not in pole_cache:
-                    builder = POLEBuilderFactory.create_builder(col.type, col.length, col.width)
+                    builder = POLEBuilderFactory.create_builder(col.type, col.length, col.width, col.series)
                     pole_cache[key] = builder.build()
 
                 path = pole_cache[key]

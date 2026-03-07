@@ -12,6 +12,9 @@ class POLEBuilderFactory:
     }
 
     @classmethod
-    def create_builder(cls, pole_type: PoleType, length_m: float, diameter: float):
+    def create_builder(cls, pole_type: PoleType, length_m: float, diameter: float, series: str = None):
         builder_class = cls._builder_map.get(pole_type, PIPEPoleBuilder)
+        # SteelPoleBuilder만 series를 받도록 처리
+        if pole_type == PoleType.STEEL:
+            return builder_class(length_m, diameter, series)
         return builder_class(length_m, diameter)
