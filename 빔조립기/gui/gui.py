@@ -290,6 +290,7 @@ class PoleInstallGUI(tk.Tk):
                 return
 
             self.filepath = os.path.join(folder_path, "전주.txt")
+            self.path2 = os.path.join(folder_path, "커스텀.txt")
         all_text = ''
         self._generate()
         for dto in self.result:
@@ -299,8 +300,8 @@ class PoleInstallGUI(tk.Tk):
         fc = FileController(self.filepath)
         fc.save(all_text)
 
-        path2 = r'c:/temp/bve_structure_list.txt'
+
         lines = BVEStrurctureList.to_text()
 
-        fc.set_path(path2)
+        fc.set_path(self.path2)
         fc.save(lines)
