@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from Electric.Overhead.Pole.poletype import PoleType
+from model.polebase import PoleBase
 from model.rail import RailData
 
 
@@ -29,3 +30,4 @@ class Pole:
     # 배치 정보
     xoffset: float | None = None
     iscustom: bool | None = None
+    base: PoleBase | None = None

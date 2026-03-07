@@ -10,20 +10,29 @@ class BVETextBuilder:
         # ----------------
         # 기둥
         # ----------------
-        text += ',;기둥\n'
+
         for pole in dto.poles:
             if pole:
+                text += ',;기둥\n'
                 text += (
                     f'.freeobj {pole.base_rail_index};{pole.obj_index};'
                     f'{pole.xoffset};0;0;,;{pole.display_name}\n'
                 )
+                # 기초
+                if pole and pole.base and pole.base.name and pole.base.name != '없음':
+                    text += ',;기초\n'
+                    text += (
+                        f'.freeobj {pole.base_rail_index};{pole.base.index};'
+                        f'{pole.xoffset};0;0;,;{pole.base.name}\n'
+                    )
 
         # ----------------
         # 빔
         # ----------------
-        text += ',;빔\n'
+
         for beam in dto.beams:
             if beam:
+                text += ',;빔\n'
                 text += (
                     f'.freeobj {beam.ref_start_pole.base_rail_index};{beam.index};'
                     f'{beam.ref_start_pole.xoffset};0;0;,;{beam.name}\n'

@@ -37,7 +37,7 @@ class PoleInstallGUI(tk.Tk):
         self.selected_dto = None
         self.bve_window = None
         self.title("정거장구간 전차선로 설계 프로그램")
-        self.geometry("900x1200")
+        self.geometry("900x900")
         self.isloading = False
         self.installadaptor = TkInstallAdapter()
         if self._cached_df is None:

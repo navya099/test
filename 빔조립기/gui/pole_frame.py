@@ -1,6 +1,8 @@
 from tkinter import ttk
 import tkinter as tk
 from gui.viewmodel.pole_vm import PoleVM
+from gui.viewmodel.polebasevm import PoleBaseVM
+
 
 class PoleFrame(ttk.LabelFrame):
     def __init__(self, master, event=None):
@@ -101,7 +103,8 @@ class PoleFrame(ttk.LabelFrame):
                 pole_length=tk.DoubleVar(value=9.0),
                 base_rail_index=tk.IntVar(value=0),
                 base_rail_uid=tk.StringVar(value=''),
-                gauge=tk.DoubleVar(value=3.0)
+                gauge=tk.DoubleVar(value=3.0),
+                foundation=PoleBaseVM(basename_var=tk.StringVar(value='')),
             )
             self.current_section.poles_var.append(pole_vm)
 
@@ -112,7 +115,7 @@ class PoleFrame(ttk.LabelFrame):
         for w in self.winfo_children():
             w.destroy()
 
-        headers = ["NO", '설치 레일', "전주 타입", '전주 규격', '전주 길이', '건식게이지']
+        headers = ["NO", '설치 레일', "전주 타입", '전주 규격', '전주 길이', '기초형식','건식게이지']
         for col, text in enumerate(headers):
             ttk.Label(self, text=text, font=("맑은 고딕", 9, "bold")).grid(row=0, column=col, padx=5, pady=2)
 
@@ -187,8 +190,20 @@ class PoleFrame(ttk.LabelFrame):
 
             poletype_cb.bind("<<ComboboxSelected>>", update_polespec)
 
+            # 기초형식 콤보박스
+            polebaselist =['없음', '원형기초', '사각기초', '교량기초', '조립철주기초', '배수로기초', '옹벽기초']
+
+            polebase_cb = ttk.Combobox(
+                self,
+                textvariable=pole_vm.foundation.basename_var,
+                values=polebaselist,
+                state="readonly",
+                width=15
+            )
+            polebase_cb.grid(row=row, column=5)
+
             tk.Entry(self, textvariable=pole_vm.pole_length, width=6).grid(row=row, column=4)
-            tk.Entry(self, textvariable=pole_vm.gauge, width=6).grid(row=row, column=5)
+            tk.Entry(self, textvariable=pole_vm.gauge, width=6).grid(row=row, column=6)
 
             self._bind_base_rail(base_rail_cb, pole_vm)
 

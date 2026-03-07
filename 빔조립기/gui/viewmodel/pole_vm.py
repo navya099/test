@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import tkinter as tk
 
+from gui.viewmodel.polebasevm import PoleBaseVM
 from model.tkraildata import TKRailData
 
 
@@ -14,3 +15,4 @@ class PoleVM:
     base_rail_index: tk.IntVar
     base_rail_uid: tk.StringVar
     gauge: tk.DoubleVar
+    foundation: PoleBaseVM = None

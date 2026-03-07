@@ -1,5 +1,6 @@
 from Electric.Overhead.Pole.poletype import PoleType
 from model.rail import RailData
+from resolver.polebase_resolver import PoleBaseResolver
 from utils.pole_dimention_finder import PoleDimensionFinder
 from utils.polenamer import PoleNameBuilder
 
@@ -41,3 +42,6 @@ class PoleResolver:
                     PoleResolver.next_index += 1
 
             pole.obj_index = index
+
+            #기초 리졸버
+            PoleBaseResolver.resolve(pole, idxlib)

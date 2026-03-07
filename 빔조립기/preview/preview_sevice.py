@@ -78,7 +78,25 @@ class PreviewService:
                 )
             else:
                 missing.append(col.display_name)
-
+            #기둥 기초
+            if col.base:
+                path = locator.find(col.base.name)
+                if path:
+                    items.append(
+                        PreviewItem(
+                            path=path,
+                            transform=Transform(
+                                x=col.xoffset,
+                                y=install.station,
+                                z=0,
+                                rotation=0,
+                                pivot=col.base_rail.coord
+                            ),
+                        category=PreviewCategory.POLE
+                        )
+                    )
+                else:
+                    missing.append(col.base.name)
         # 3. 브래킷
         for rail in install.rails:
             brackets = rail.brackets

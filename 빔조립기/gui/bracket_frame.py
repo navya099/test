@@ -50,9 +50,6 @@ class BracketFrame(ttk.LabelFrame):
         self.bracket_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
     def rebuild_brackets(self, *_):
-        if self.master.isloading:
-            return
-
         for w in self.bracket_frame.winfo_children():
             w.destroy()
 
