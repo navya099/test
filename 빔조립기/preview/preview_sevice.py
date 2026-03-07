@@ -1,7 +1,7 @@
 from bve.beam_builder.base_builder import BaseBeamBuilder
 from bve.beam_builder.beam_build_factory import BeamBuilderFactory
 from bve.bveserializer import BVETextBuilder
-from bve.pole_builder.pole_builder import TempletePoleBuilder
+from bve.pole_builder.pole_build_factory import POLEBuilderFactory
 from controller.filefinder import FileLocator
 from controller.path_resolver import PathResolver
 from preview.category import PreviewCategory
@@ -23,12 +23,12 @@ class PreviewService:
         if install.beams:
             for beam in install.beams:
                 if beam.iscustom:
-
-                    if beam.length_m not in beam_cache:
+                    key = (beam.type, beam.length_m)
+                    if key not in beam_cache:
                         builder = BeamBuilderFactory.create_builder(beam.type, beam.length_m)
-                        beam_cache[beam.length_m] = builder.build()
+                        beam_cache[key] = builder.build()
 
-                    path = beam_cache[beam.length_m]
+                    path = beam_cache[key]
                 else:
                     path = locator.find(beam.name)
                 if path:
@@ -53,11 +53,13 @@ class PreviewService:
         # 2. 기둥
         for col in install.poles:
             if col.iscustom:
-                if col.length not in pole_cache:
-                    builder = TempletePoleBuilder(col.length, col.width)
-                    pole_cache[col.length] = builder.build()
+                key = (col.type, col.length)  # 타입과 길이만 캐시 키로 사용
 
-                path = pole_cache[col.length]
+                if key not in pole_cache:
+                    builder = POLEBuilderFactory.create_builder(col.type, col.length, col.width)
+                    pole_cache[key] = builder.build()
+
+                path = pole_cache[key]
             else:
                 path = locator.find(col.display_name)
             if path:
