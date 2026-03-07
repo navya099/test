@@ -41,7 +41,7 @@ class BVETextBuilder:
         # ----------------
         # 브래킷
         # ----------------
-        text += ',;브래킷\n'
+
 
         for rail in dto.rails:
             brackets = rail.brackets
@@ -50,31 +50,34 @@ class BVETextBuilder:
             offs = BVETextBuilder.offsets(n, s)
 
             for i, br in enumerate(brackets):
-                offset = offs[i]
-                station = dto.station + offset
+                if br:
+                    text += ',;브래킷\n'
+                    offset = offs[i]
+                    station = dto.station + offset
 
-                text += f'{station}\n'
-                text += f',;{rail.name}\n'
-                text += (
-                    f'.freeobj {br.rail_no};{br.index};'
-                    f'{br.xoffset};{br.yoffset};{br.rotation};,;{br.type}\n'
-                )
-                # --- 브래킷 하위 피팅들 ---
-                for f in getattr(br, "fittings", []):  # 호환성 위해 getattr 사용
-                    if f:
-                        text += ',;브래킷 금구류\n'
-                        text += (
-                            f'.freeobj {br.rail_no};{f.index};'
-                            f'{f.xoffset};{f.yoffset};{f.rotation};,;{f.label}\n'
-                        )
+                    text += f'{station}\n'
+                    text += f',;{rail.name}\n'
+                    text += (
+                        f'.freeobj {br.rail_no};{br.index};'
+                        f'{br.xoffset};{br.yoffset};{br.rotation};,;{br.type}\n'
+                    )
+                    # --- 브래킷 하위 피팅들 ---
+                    for f in getattr(br, "fittings", []):  # 호환성 위해 getattr 사용
+                        if f:
+                            text += ',;브래킷 금구류\n'
+                            text += (
+                                f'.freeobj {br.rail_no};{f.index};'
+                                f'{f.xoffset};{f.yoffset};{f.rotation};,;{f.label}\n'
+                            )
 
         #장비
-        text += ',;기타설비\n'
-        text += f'{dto.station}\n'
         for eq in dto.equips:
-            text += (
-                f'.freeobj {eq.base_rail_index};{eq.objindex};{eq.xoffset};{eq.yoffset};{eq.rotation};,;{eq.name}\n'
-            )
+            if eq:
+                text += ',;기타설비\n'
+                text += f'{dto.station}\n'
+                text += (
+                    f'.freeobj {eq.base_rail_index};{eq.objindex};{eq.xoffset};{eq.yoffset};{eq.rotation};,;{eq.name}\n'
+                )
 
         return text
 

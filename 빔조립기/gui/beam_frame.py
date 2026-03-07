@@ -11,7 +11,7 @@ class BeamFrame(ttk.LabelFrame):
         if event:
             self.event.bind("section.selected", self._on_section_selected)
             self.event.bind("basic.changed", self._on_basic_changed)
-
+            self.event.bind("beam.changed", self._on_basic_changed)
     def _on_section_selected(self, section):
         self.current_section = section
         if self.current_section.beams_var:

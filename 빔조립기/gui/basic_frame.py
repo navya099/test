@@ -20,7 +20,7 @@ class BasicInfoFrame(ttk.LabelFrame):
 
         self._build()
         self.pole_count_entry.bind("<KeyRelease>", self._on_changed)
-        self.beam_count_entry.bind("<KeyRelease>", self._on_changed)
+        self.beam_count_entry.bind("<KeyRelease>", self._on_beam_changed)
         self.station_entry.bind("<KeyRelease>", self._on_changed)
 
     def on_section_added(self, tkinstall):
@@ -40,6 +40,10 @@ class BasicInfoFrame(ttk.LabelFrame):
         self.beam_count_entry.config(textvariable=self.current_section.beam_count_var)
         # ✅ 체크박스 연결
         self.beam_check.config(variable=self.current_section.isbeaminstall_var)
+
+    def _on_beam_changed(self, *args):
+        # 이벤트 알림
+        self.event.emit("beam.changed", self.current_section)
 
     def _on_changed(self, *args):
         if self.event and self.current_section:
