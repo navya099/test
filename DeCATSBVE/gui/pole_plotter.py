@@ -9,6 +9,7 @@ from tkinter import ttk, messagebox
 from matplotlib.collections import LineCollection
 
 from utils.math_util import interpolate_cached, calculate_offset_point
+from xref_module.dxf_controller.dxf_controller import DXFController
 from xref_module.preview.preview_sevice import PreviewService
 from xref_module.preview.preview_viewer import PreviewViewer
 from xref_module.transaction import Transaction
@@ -47,6 +48,8 @@ class PlotPoleMap(tk.Frame):
         btn_right.pack(side="right")
         btn_preview = tk.Button(self, text="전주 미리보기", command=self.show_preview)
         btn_preview.pack(side="bottom")
+        btn_savedxf = tk.Button(self, text="도면 저장", command=self.save_dxf)
+        btn_savedxf.pack(side="bottom")
 
         # ✅ 미리보기 뷰어를 한 번만 생성
         self.viewer = PreviewViewer()
@@ -74,6 +77,43 @@ class PlotPoleMap(tk.Frame):
                 '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(missing_all)
             )
         self.viewer.draw()
+
+    def save_dxf(self):
+        try:
+            self.viewer.objects.clear()
+            missing_all = []
+            # 오프셋 적용
+            if self.runner.track_direction == "mainL_subR":
+                direction = 1
+            else:
+                direction = -1
+
+            for i, lis in enumerate(self.selected_epoles):
+                result = self.service.build(lis.pole, i, self.runner.track_distance, direction, mode=self.runner.track_mode)
+                for obj in result.objects:
+                    self.viewer.add_object(obj)
+                missing_all.extend(result.missing)
+            if missing_all:
+                messagebox.showwarning(
+                    '일부 파일 누락',
+                    '다음 파일을 찾을 수 없습니다:\n\n' + '\n'.join(missing_all)
+                )
+        except Exception as e:
+            messagebox.showwarning(
+                '예외 발생',
+                f'save_dxf 처리중 예외가 발생했습니다. {e}'
+            )
+            return
+
+        try:
+            filename = f'c:/temp/{self.selected_epoles[0].pole.post_number}.dxf'
+
+            dxfmgr = DXFController()
+            dxfmgr.export_dxf(self.viewer.objects, filename, option='2d')
+            messagebox.showinfo("도면 저장 완료", f"DXF 저장 완료: {filename}")
+        except Exception as e:
+            messagebox.showerror("저장 실패", f"DXF 저장 중 오류 발생:\n{e}")
+
 
     def draw_alignment(self):
         # 본선 선형
