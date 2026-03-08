@@ -77,6 +77,10 @@ class BVECSV:
                     for p, br in zip(poss, brs):
                         self.lines.append(',;가동브래킷구문\n')
                         write_brackets(p, [br])
+                else:
+                    write_equipment(pos, eqs)
+                    write_mast(pos, mast)
+                    write_brackets(pos, brs)
 
             except AttributeError as e:
                 print(f"poledata 데이터 누락: {pos}, 오류: {e}")

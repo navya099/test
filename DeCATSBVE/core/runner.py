@@ -1,6 +1,7 @@
 from tkinter.filedialog import asksaveasfilename
 import pandas as pd
 from bve.bvecsv import BVECSV
+from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
 from core.pole.pole_processor import PoleProcessor
 from core.structure.define_structure import apply_brokenchain_to_structure
 from core.wire.wire_processor import WireProcessor
@@ -137,6 +138,10 @@ class AutoPole:
 
         self.wire_processor = WireProcessor(self.dataprocessor, alignment_by_track, self.poledata, self.curvelist)
         self.wire_data = self.wire_processor.process_to_wire()
+
+        #추가설비(흐름방지장치)
+        self.anticreeping_pr = AnticreepingDeviceProcessor(self.poledata, self.wire_data, self.airjoint_list, self.wire_processor)
+        self.anticreeping_pr.process()
 
         # 본선 저장
         self.polesaver_main = BVECSV(self.poledata["main"], self.wire_data["main"], 0)

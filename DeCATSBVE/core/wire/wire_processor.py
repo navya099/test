@@ -1,6 +1,5 @@
 from core.wire.af_wire.af_processor import AFWireProcessor
 from core.wire.common_processor import CommonWireProcessor
-from core.wire.extra_wire.extra_wire_processor import ExtraWireProcessor
 from core.wire.fpw_wire.fpw_processor import FPWWireProcessor
 from core.wire.section_handler import WireSectionHandler
 from core.wire.wire_data import WireData
@@ -15,7 +14,6 @@ class WireProcessor:
         self.com = CommonWireProcessor()
         self.afp = AFWireProcessor(self.pro)
         self.fpwp = FPWWireProcessor(self.pro)
-        self.etcp = ExtraWireProcessor(self.pro)
         self.curve_list = curve_list
 
     def process_to_wire(self):
@@ -39,8 +37,6 @@ class WireProcessor:
                     wire.add_wire(self.afp.process(pole, self.polyline_by_track[track_name], pitch_angle))
                     # FPW
                     wire.add_wire(self.fpwp.process(pole, self.polyline_by_track[track_name], pitch_angle))
-                    # 추가 전선 처리
-                    # wire.add_wire(self.etcp.process(pole, self.polyline_by_track[track_name], pitch_angle))
 
                     wires.append(wire)
                 except Exception as e:
