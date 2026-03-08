@@ -21,7 +21,7 @@ class ManualPoleRunner:
         self.log_widget = None
         self.offset_line_with_25 = []
         self.track_distance = 0.0
-        self.track_direction = -1
+        self.track_direction = {'main':None, 'sub':None}
         self.track_mode = ''
         self.polyline_with_sta = []
         self.pitchlist = []
@@ -41,6 +41,7 @@ class ManualPoleRunner:
         self.pole_path_main = ''
         self.pole_path_sub = ''
         self._cached_df = None
+        self.tunnel_direction = {'main': None, 'sub': None}
 
     def log(self, msg):
         if self.log_widget:
@@ -75,7 +76,7 @@ class ManualPoleRunner:
         # LineString 생성
         line = LineString(polyline)
         # 오프셋 적용
-        if self.track_direction == "mainL_subR":
+        if self.track_direction['main'] == -1:
             direction = 'right'
         else:
             direction = 'left'
