@@ -33,6 +33,8 @@ class PreviewAssembler:
                 pivot.z
             )
             modifier.rotate_z(item.transform.rotation)
+            modifier.rotate_y(item.transform.roll)
+
             modifier.translate_local(
                 item.transform.x,
                 item.transform.y,

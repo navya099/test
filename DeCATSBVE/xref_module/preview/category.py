@@ -8,3 +8,4 @@ class PreviewCategory(Enum):
     FEEDER = auto()
     TRACK = auto()
     STRUCTURE = auto()
+    CENTERLINE = auto()

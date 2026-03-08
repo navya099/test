@@ -6,7 +6,7 @@ from xref_module.preview.preview_item import PreviewItem
 from xref_module.objmodel.transform import Transform
 from xref_module.preview.preview_result import PreviewBuildResult
 from xref_module.vector3.vector3 import Vector3
-
+import math
 
 class PreviewService:
     def __init__(self):
@@ -85,8 +85,26 @@ class PreviewService:
         items.append(
             PreviewItem(
                 path=r"D:/BVE/루트/Railway/Object/철도표준라이브러리/궤도/표준단면/자갈도상/일반철도/5M레일_신선_전차선X.csv",
-                transform=Transform(x=0, z=0, rotation=0,pivot=pivot),
+                transform=Transform(x=0, z=0, rotation=0,pivot=pivot,roll=math.degrees(math.atan(pole.cant / 1.5))),
                 category=PreviewCategory.TRACK
+            )
+        )
+
+        # 4-1. 건축한계
+        items.append(
+            PreviewItem(
+                path=r"D:/BVE/루트/Railway/Object/temp/건축한계.csv",
+                transform=Transform(x=0, z=0, rotation=0, pivot=pivot, roll=math.degrees(math.atan(pole.cant / 1.5))),
+                category=PreviewCategory.TRACK
+            )
+        )
+
+        # 4-2. 궤도중심선
+        items.append(
+            PreviewItem(
+                path=r"D:/BVE/루트/Railway/Object/temp/선로중심선.csv",
+                transform=Transform(x=0, z=0, rotation=0, pivot=pivot, roll=math.degrees(math.atan(pole.cant / 1.5))),
+                category=PreviewCategory.CENTERLINE
             )
         )
 

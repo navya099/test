@@ -9,4 +9,6 @@ class Transform:
     y: float = 0.0
     z: float = 0.0
     rotation: float = 0.0
+    pitch: float = 0.0
+    roll: float = 0.0
     pivot: Vector3 = Vector3(0,0,0)

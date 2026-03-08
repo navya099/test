@@ -69,6 +69,7 @@ class PreviewPlotter:
             "BRACKET": "purple",
             "TRACK": "white",
             "STRUCTURE": "skyblue",
+            "CENTERLINE": 'red'
         }.get(category, "white")
 
     def _project(self, x, y, z):
