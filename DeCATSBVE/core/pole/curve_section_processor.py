@@ -9,7 +9,7 @@ class CurveSectionProcessor:
         _, cw_height = dataprocessor.get_contact_wire_and_massanger_wire_info(pole.structure)
         direction = 1 if pole.radius > 0 else -1
         default_stagger = -0.2 * direction
-        stagger = calculate_curve_stagger(pole.cant, contact_wire_height=cw_height,
+        stagger = calculate_curve_stagger(abs(pole.cant), contact_wire_height=cw_height,
                                           offset=default_stagger, direction=direction)
 
         bracket = BracketCreator.create_bracket(pole, dataprocessor, idxlib, current_curve, rotation, stagger)
