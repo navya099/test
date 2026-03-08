@@ -7,7 +7,17 @@ class FPWWireProcessor(BaseWireProcessor):
         x_offset, y_offset = self.pro.get_fpw_offset(pole.structure)
         x_offset_next, y_offset_next = self.pro.get_fpw_offset(pole.next_structure)
         idx = self.pro.get_protection_wire_span(pole.span)
-        if pole.side == 'L':
-            x_offset *= -1
-            x_offset_next *= -1
+
+        # 현재 구조물 처리
+        if pole.structure == '터널':
+            x_offset *= -pole.side  # 터널은 항상 side 반대
+        else:
+            x_offset *= pole.side
+
+        # 다음 구조물 처리
+        if pole.next_structure == '터널':
+            x_offset_next *= -pole.next_side  # 터널은 항상 side 반대
+        else:
+            x_offset_next *= pole.next_side
+
         return idx, (x_offset, y_offset), (x_offset_next, y_offset_next), "FPW"

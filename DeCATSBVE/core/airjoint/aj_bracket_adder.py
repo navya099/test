@@ -24,7 +24,7 @@ class AirjointBracketAdder:
             else:
                 NormalSectionProcessor.process(pole, self.prosc, idxlib)
             x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
-            if pole.side == 'L':
+            if pole.side == -1:
                 x1 *= -1
             start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
             en = idxlib.get_name(1247)
@@ -53,7 +53,7 @@ class AirjointBracketAdder:
             else:
                 NormalSectionProcessor.process(pole, self.prosc, idxlib)
             x5, y5 = self.prosc.get_bracket_coordinates('F형_끝')
-            if pole.side == 'R':
+            if pole.side == 1:
                 x5 *= -1
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge)
             pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle, type='장력장치'))
@@ -67,33 +67,30 @@ class AirjointBracketAdder:
         if not end:
             # START 구간: F → AJ
             x1, y1 = self.prosc.get_bracket_coordinates('F형_시점')
-            if pole.side == 'L':
+            if pole.side == -1:
                 x1 *= -1
             self.add_f_bracket(pole, f_i, idxlib, x1, y1)
 
             x1, y1 = self.prosc.get_bracket_coordinates('AJ형_시점')
-            if pole.side == 'L':
+            if pole.side == -1:
                 x1 *= -1
             self.add_aj_bracket(pole,'I', aj_i, idxlib, x1, y1)
 
         else:
             # END 구간: AJ → F
             x1, y1 = self.prosc.get_bracket_coordinates('AJ형_끝')
-            if pole.side == 'R':
+            if pole.side == 1:
                 x1 *= -1
             self.add_aj_bracket(pole,'O', aj_o, idxlib, x1, y1, end=True)
 
             x1, y1 = self.prosc.get_bracket_coordinates('F형_끝')
-            if pole.side == 'R':
+            if pole.side == 1:
                 x1 *= -1
             self.add_f_bracket(pole, f_o, idxlib, x1, y1)
 
     def add_f_bracket(self, pole: PoleDATA, bracket_code, idxlib, x1, y1):
         """F형 가동 브래킷 및 금구류 추가"""
-        if pole.structure == '터널':
-            rotation = 180 if pole.side == 'L' else 0
-        else:
-            rotation = 180 if pole.side == 'R' else 0
+        rotation = 180 if pole.side == 1 else 0
 
         #전차선 지지금구 F
         idx1 = self.params.contact_wire_fitting
@@ -137,10 +134,8 @@ class AirjointBracketAdder:
 
     def add_aj_bracket(self, pole: PoleDATA,bracket_type, bracket_code, idxlib, x1, y1, end=False):
         """AJ형 가동 브래킷 및 금구류 추가"""
-        if pole.structure == '터널':
-            rotation = 180 if pole.side == 'L' else 0
-        else:
-            rotation = 180 if pole.side == 'R' else 0
+
+        rotation = 180 if pole.side == 1 else 0
         #조가선 지지금구 에어조인트용
         idx1 = self.params.messenger_wire_fittings['에어조인트용']
         n1 = idxlib.get_name(idx1)
@@ -184,13 +179,13 @@ class AirjointBracketAdder:
         aj_i, aj_o = self.params.aj_bracket_values
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간1')
-        if pole.side == 'L':
+        if pole.side == -1:
             x1 *= -1
         self.add_aj_bracket(pole, 'I',aj_i, idxlib, x1, y1)
 
         # AJ형 가동 브래킷 및 금구류 추가
         x1, y1 = self.prosc.get_bracket_coordinates('AJ형_중간2')
-        if pole.side == 'R':
+        if pole.side == 1:
             x1 *= -1
         self.add_aj_bracket(pole, 'O', aj_o, idxlib, x1, y1, end=True)
 
@@ -201,36 +196,31 @@ class AirjointBracketAdder:
         spreaderidx = self.params.spreader_idx
         spreader_name = self.params.spreader_name
 
-        original_gauge = pole.gauge
-
         if pole.structure == '터널':
             # 게이지 뒤집기
-            flipped_gauge = -original_gauge
-            pole.gauge = flipped_gauge
-            pole.next_gauge = flipped_gauge
-            feeder_rotation = 180 if pole.side == 'R' else 0
+            feeder_rotation = 180 if pole.side == -1 else 0
 
 
             # Equipment 생성
             pole.equipments.append(
-                EquipmentDATA(name=feeder_name, index=feederidx, offset=(original_gauge, 0),
+                EquipmentDATA(name=feeder_name, index=feederidx, offset=(pole.gauge * -1, 0),
                               rotation=feeder_rotation, type='급전선설비')
             )
 
         else:
-            mast_rotation = 180 if pole.side == 'R' else 0
+            mast_rotation = 180 if pole.side == 1 else 0
             feeder_rotation = mast_rotation
 
             # Mast 생성
-            pole.mast = Mast(self.params.mast_name, self.params.mast_type, original_gauge, rotation=mast_rotation)
+            pole.mast = Mast(self.params.mast_name, self.params.mast_type, pole.gauge, rotation=mast_rotation)
 
             # Equipment 생성
             pole.equipments.append(
-                EquipmentDATA(name=feeder_name, index=feederidx, offset=(original_gauge, 0),
+                EquipmentDATA(name=feeder_name, index=feederidx, offset=(pole.gauge, 0),
                               rotation=feeder_rotation, type='급전선설비')
             )
             pole.equipments.append(
-                EquipmentDATA(name=spreader_name, index=spreaderidx, offset=(original_gauge, 0),
+                EquipmentDATA(name=spreader_name, index=spreaderidx, offset=(pole.gauge, 0),
                               rotation=feeder_rotation, type='평행틀')
             )
 

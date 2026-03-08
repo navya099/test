@@ -29,7 +29,7 @@ class AirjointWireProcessor:
         # 방향(side) + 터널 여부에 따라 X 좌표 반전
 
         # 일반 구간
-        if pole.side == 'L':
+        if pole.side == -1:
             aj_start_x *= -1
             f_start_x *= -1
             aj_middle1_x *= -1

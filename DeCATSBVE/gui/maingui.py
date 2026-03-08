@@ -20,6 +20,7 @@ from xref_module.object_libraymgr import LibraryManager
 class AutoPoleApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.tunnel_direction = {'main': None,'sub': None}
         self.db = None
         self.dataset = None
         self.idxlib = None
@@ -85,21 +86,31 @@ class AutoPoleApp(tk.Tk):
         tk.Radiobutton(options_frame, text="단일 트랙", variable=self.track_mode, value="single").pack(side="left")
         tk.Radiobutton(options_frame, text="이중 트랙", variable=self.track_mode, value="double").pack(side="left")
 
-        single_frame = tk.LabelFrame(self, text="단일 트랙 방향")
-        single_frame.pack(side="top", fill="x", padx=5, pady=5)
+        # 트랙 옵션 전체 컨테이너
+        tracks_frame = tk.Frame(self)
+        tracks_frame.pack(side="top", fill="x", padx=5, pady=5)
+
+        single_frame = tk.LabelFrame(tracks_frame, text="단일 트랙 방향")
+        single_frame.pack(side="left", fill="x", padx=5, pady=5)
 
         self.single_direction = tk.StringVar(value="L")
+        self.tunnel_direction['main'] = tk.StringVar(value="R")
         tk.Radiobutton(single_frame, text="본선 좌측", variable=self.single_direction, value="L").pack(anchor="w")
         tk.Radiobutton(single_frame, text="본선 우측", variable=self.single_direction, value="R").pack(anchor="w")
 
-        double_frame = tk.LabelFrame(self, text="이중 트랙 방향")
-        double_frame.pack(side="top", fill="x", padx=5, pady=5)
+        tk.Radiobutton(single_frame, text="터널 좌측 전주 설치", variable=self.tunnel_direction['main'], value="L").pack(side="left")
+        tk.Radiobutton(single_frame, text="터널 우측 전주 설치", variable=self.tunnel_direction['main'], value="R").pack(side="left")
+
+        double_frame = tk.LabelFrame(tracks_frame, text="이중 트랙 방향")
+        double_frame.pack(side="left", fill="x", padx=5, pady=5)
 
         self.double_direction = tk.StringVar(value="mainL_subR")
         tk.Radiobutton(double_frame, text="본선 L / 상선 R", variable=self.double_direction, value="mainL_subR").pack(
             anchor="w")
         tk.Radiobutton(double_frame, text="본선 R / 상선 L", variable=self.double_direction, value="mainR_subL").pack(
             anchor="w")
+
+
         #트랙 간격(계산용)
         self.track_distance = tk.DoubleVar(value=4.3)
         tk.Label(double_frame, text="선로중심간격").pack(side="left")
@@ -160,13 +171,30 @@ class AutoPoleApp(tk.Tk):
             self.runner.brokenchain = self.entry_brokenchain_var.get()
 
             if self.runner.track_mode == "single":
-                self.runner.track_direction = self.single_direction.get()
+                if self.single_direction.get() == 'L':
+                    self.runner.track_direction['main'] = -1
+                else:
+                    self.runner.track_direction['main'] = 1
                 self.runner.track_distance = 0.0
+                if self.tunnel_direction['main'].get() == 'L':
+                    self.runner.tunnel_direction['main'] = -1
+                else:
+                    self.runner.tunnel_direction['main'] = 1
+
                 self.runner.log(f"현재 모드: 단일 트랙 (본선 {self.runner.track_direction})")
             else:
-                self.runner.track_direction = self.double_direction.get()
+                if self.double_direction.get() == 'mainL_subR':
+                    self.runner.track_direction['main'] = -1
+                    self.runner.track_direction['sub'] = 1
+                else:
+                    self.runner.track_direction['main'] = 1
+                    self.runner.track_direction['sub'] = -1
+
                 self.runner.track_distance = self.track_distance.get()
+                self.runner.tunnel_direction['main'] = self.runner.track_direction['main'] * -1 #복선 터널은 방향반전
+                self.runner.tunnel_direction['sub'] = self.runner.track_direction['sub'] * -1
                 self.runner.log(f"현재 모드: 이중 트랙 ({self.runner.track_direction})")
+
         except ValueError:
             self.runner.log("⚠️ 숫자를 입력하세요")
 

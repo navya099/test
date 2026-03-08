@@ -8,7 +8,7 @@ from utils.math_util import get_elevation_pos, interpolate_cached, calculate_off
 class ManualPoleProcessor:
     """단일 전주 생성기"""
     @staticmethod
-    def create_pole(alignment, db, idxlib ,curvelist, pitchlist,structure_list, pos, post_number, gauge, section, base_type, track="main", side="L"):
+    def create_pole(alignment, db, idxlib ,curvelist, pitchlist,structure_list, pos, post_number, gauge, section, base_type, track="main", side=-1):
         """단일 전주 생성 메서드
         Args:
             alignment: 선형객체

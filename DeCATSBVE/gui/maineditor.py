@@ -371,18 +371,18 @@ class AutoPoleEditor(tk.Frame):
                 side = self.runner.track_direction
             else:
                 if self.runner.track_direction == "mainL_subR":
-                    side = 'L'
+                    side = -1
                 else:
-                    side = 'R'
+                    side = 1
         else:
             tree = self.tree_sub
             poles = self.runner.poledata["sub"]
             al = self.runner.offset_line_with_25
             track = 'sub'
             if self.runner.track_direction == "mainL_subR":
-                side = 'R'
+                side = 1
             else:
-                side = 'L'
+                side = -1
         #UI열기
         addui = PoleADDUI()
         self.wait_window(addui)  # 입력창 닫힐 때까지 대기

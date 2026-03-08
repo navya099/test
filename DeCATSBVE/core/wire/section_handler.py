@@ -12,7 +12,7 @@ class WireSectionHandler:
         self.curve_list = curve_list
     def run(self, pole, next_pole, wire, pitch_angle):
         """일반개소 및 에어조인트개소 구분처리"""
-        if pole.side == 'L':
+        if pole.side == -1:
             sign = -1 if pole.base_type == 'I' else 1
             next_sign = -1 if pole.next_base_type == 'I' else 1
         else:

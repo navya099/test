@@ -9,19 +9,23 @@ from core.pole.straight_section_processor import StraightSectionProcessor
 class TunnelSectionProcessor:
     @staticmethod
     def process(pole, dataprocessor, idxlib):
-        flip = True
+        flip = (pole.side == 1)
         if flip:
 
             if pole.base_type == 'I':
                 pole.base_type = 'O'
             else:
                 pole.base_type = 'I'
-        if pole.side == 'L':
-            rotation = 180
+            bracket_rotation = 180
+            mast_raotation = 180
+            feeder_rotation = 0
             stagger_flip = True
         else:
-            rotation = 0
+            bracket_rotation = 0
+            mast_raotation = 0
+            feeder_rotation = 180
             stagger_flip = False
+
         mast_index = dataprocessor.get_mast_index(pole.structure)
         mast_name = idxlib.get_name(mast_index)
 
@@ -30,19 +34,15 @@ class TunnelSectionProcessor:
 
         current_curve = '직선' if pole.radius == 0 else '곡선'
         if pole.radius == 0:
-            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation, stagger_flip=stagger_flip)
+            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, bracket_rotation, stagger_flip=stagger_flip)
         else:
-            CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation)
+            CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, bracket_rotation)
 
         # 터널 특수 규칙 적용
-        gauge = pole.gauge
-        pole.gauge *= -1
-        pole.next_gauge *= -1
-        mast = Mast(name=mast_name, index=mast_index, offset=pole.gauge, rotation=rotation)
+        mast = Mast(name=mast_name, index=mast_index, offset=pole.gauge, rotation=mast_raotation)
 
-        rotation = 180 if pole.side == 'R' else 0
         equipment = EquipmentDATA(name=feeder_name, index=feeder_idx,
-                                  offset=(gauge, 0), rotation=rotation,
+                                  offset=(pole.gauge * -1, 0), rotation=feeder_rotation,
                                   type='급전선설비')
         pole.mast = mast
         pole.equipments.append(equipment)

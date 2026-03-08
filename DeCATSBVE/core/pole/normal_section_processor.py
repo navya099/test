@@ -9,7 +9,7 @@ class NormalSectionProcessor:
     def process(pole, dataprocessor, idxlib):
         """노말구간 데이터 생성"""
         #공통변수
-        flip = True if pole.side == 'R' else False
+        flip = True if pole.side == 1 else False
         # MAST 데이터 가져오기
         mast_index = dataprocessor.get_mast_index(pole.structure)
         mast_name = idxlib.get_name(mast_index)

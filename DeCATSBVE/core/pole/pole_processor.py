@@ -14,7 +14,7 @@ class PoleProcessor:
 
     def _process_single_track(self, positions, structure_list, curve_list, pitchlist,
                               dataprocessor, airjoint_list, polyline_with_sta, idxlib,
-                              track_name="main", side="L"):
+                              track_name="main", side=-1, tunnel_direction=1):
         """단일 트랙 처리 함수"""
         post_number_lst = generate_postnumbers(positions)
         poles = []
@@ -35,7 +35,15 @@ class PoleProcessor:
 
                 gauge = dataprocessor.get_pole_gauge(current_structure)
                 next_gauge = dataprocessor.get_pole_gauge(next_structure)
-                if side == 'L':
+                if current_structure == '터널':
+                    poleside = tunnel_direction
+                else:
+                    poleside = side
+                if next_structure == '터널':
+                    nextside  = tunnel_direction
+                else:
+                    nextside  = side
+                if poleside == -1:
                     gauge *= -1
                     next_gauge *= -1
                     current_type = 'I' if i % 2 == 1 else 'O'
@@ -45,12 +53,12 @@ class PoleProcessor:
                     current_type = 'O' if i % 2 == 1 else 'I'
                     next_type = 'I' if current_type == 'O' else 'O'
                 if track_name == 'main':
-                    if side == 'L':
+                    if poleside == -1:
                         post_number = f'{post_number}D'
                     else:
                         post_number = f'{post_number}U'
                 else:
-                    if side == 'L':
+                    if poleside == -1:
                         post_number = f'{post_number}D'
                     else:
                         post_number = f'{post_number}U'
@@ -78,7 +86,8 @@ class PoleProcessor:
                     next_base_type=next_type,
                     coord=pos_coord_with_offset,
                     track=track_name,  # 추가
-                    side=side  # 추가
+                    side=poleside,
+                    next_side=nextside # 추가
                 )
                 if current_airjoint is None:
                     if pole.structure == '터널':
@@ -96,7 +105,7 @@ class PoleProcessor:
     def process_pole_multitrack(self, positions_by_track, structure_list_by_track,
                                 curve_list_by_track, pitchlist_by_track,
                                 dataprocessor, airjoint_list, polyline_with_sta,
-                                idxlib, track_mode="single", track_direction="L"):
+                                idxlib, track_mode="single", track_direction=None, tunnel_direction=None):
         """단일/이중 트랙 모두 지원"""
         results = {}
         if track_mode == "single":
@@ -106,41 +115,23 @@ class PoleProcessor:
                 curve_list_by_track["main"],
                 pitchlist_by_track["main"],
                 dataprocessor, airjoint_list, polyline_with_sta['main'], idxlib,
-                track_name="main", side=track_direction
+                track_name="main", side=track_direction['main'], tunnel_direction=tunnel_direction['main']
             )
         else:  # double track
-            if track_direction == "mainL_subR":
-                results["main"] = self._process_single_track(
-                    positions_by_track["main"],
-                    structure_list_by_track["main"],
-                    curve_list_by_track["main"],
-                    pitchlist_by_track["main"],
-                    dataprocessor, airjoint_list, polyline_with_sta['main'], idxlib,
-                    track_name="main", side="L"
-                )
-                results["sub"] = self._process_single_track(
-                    positions_by_track["sub"],
-                    structure_list_by_track["sub"],
-                    curve_list_by_track["sub"],
-                    pitchlist_by_track["sub"],
-                    dataprocessor, airjoint_list, polyline_with_sta['sub'], idxlib,
-                    track_name="sub", side="R"
-                )
-            else:  # mainR_subL
-                results["main"] = self._process_single_track(
-                    positions_by_track["main"],
-                    structure_list_by_track["main"],
-                    curve_list_by_track["main"],
-                    pitchlist_by_track["main"],
-                    dataprocessor, airjoint_list, polyline_with_sta['main'], idxlib,
-                    track_name="main", side="R"
-                )
-                results["sub"] = self._process_single_track(
-                    positions_by_track["sub"],
-                    structure_list_by_track["sub"],
-                    curve_list_by_track["sub"],
-                    pitchlist_by_track["sub"],
-                    dataprocessor, airjoint_list, polyline_with_sta['sub'], idxlib,
-                    track_name="sub", side="L"
-                )
+            results["main"] = self._process_single_track(
+                positions_by_track["main"],
+                structure_list_by_track["main"],
+                curve_list_by_track["main"],
+                pitchlist_by_track["main"],
+                dataprocessor, airjoint_list, polyline_with_sta['main'], idxlib,
+                track_name="main", side=track_direction['main'], tunnel_direction=tunnel_direction['main']
+            )
+            results["sub"] = self._process_single_track(
+                positions_by_track["sub"],
+                structure_list_by_track["sub"],
+                curve_list_by_track["sub"],
+                pitchlist_by_track["sub"],
+                dataprocessor, airjoint_list, polyline_with_sta['sub'], idxlib,
+                track_name="sub", side=track_direction['sub'], tunnel_direction=tunnel_direction['sub']
+            )
         return results

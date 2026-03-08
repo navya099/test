@@ -21,11 +21,12 @@ class PoleDATA:
     section: str
     z: float
     next_z: float
-    mast: Mast
+    mast: Mast | None
     brackets: list[BracketDATA] = field(default_factory=list)
     equipments: list[EquipmentDATA] = field(default_factory=list)
     base_type: str = ''
     next_base_type: str = ''
     coord: tuple[float, float] = (0, 0)
     track: str = None,  # 추가: 트랙 구분 (main / sub)
-    side: str = None  # 추가: 좌/우 구분 (L / R)
+    side: int = None  # 추가: 좌/우 구분 -1,1
+    next_side: int = None

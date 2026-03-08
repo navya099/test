@@ -38,7 +38,7 @@ class AutoPole:
         self.iscustommode = False
         self.is_create_dxf = False
         self.track_mode = None
-        self.track_direction = None
+        self.track_direction = {'main':None,'sub':None}
         self.track_distance = 0.0
         self.log_widget = None
         self.poledata = None
@@ -47,6 +47,8 @@ class AutoPole:
         self.start_station = 0.0
         self.end_station = 0.0
         self.brokenchain = 0.0
+        self.tunnel_direction = {'main':None,'sub':None}
+
     def log(self, msg):
         if self.log_widget:
             self.log_widget.insert("end", msg + "\n")
@@ -97,7 +99,7 @@ class AutoPole:
         if self.track_mode == 'double':
             line = LineString(polyline)
             # 오프셋 적용
-            if self.track_direction == "mainL_subR":
+            if self.track_direction['main'] == -1:
                 direction = 'right'
             else:
                 direction = 'left'
@@ -130,7 +132,7 @@ class AutoPole:
         self.poledata = self.pole_processor.process_pole_multitrack(
             positions_by_track, structure_list_by_track, curve_list_by_track, pitchlist_by_track,
             self.dataprocessor, self.airjoint_list, alignment_by_track, self.idxlib,
-            self.track_mode, self.track_direction,
+            self.track_mode, self.track_direction,tunnel_direction=self.tunnel_direction
         )
 
         self.wire_processor = WireProcessor(self.dataprocessor, alignment_by_track, self.poledata, self.curvelist)
