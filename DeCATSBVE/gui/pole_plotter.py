@@ -61,7 +61,7 @@ class PlotPoleMap(tk.Frame):
         self.viewer.objects.clear()
         missing_all = []
         # 오프셋 적용
-        if self.runner.track_direction == "mainL_subR":
+        if self.runner.track_direction['main'] == -1:
             direction = 1
         else:
             direction = -1
@@ -83,7 +83,7 @@ class PlotPoleMap(tk.Frame):
             self.viewer.objects.clear()
             missing_all = []
             # 오프셋 적용
-            if self.runner.track_direction == "mainL_subR":
+            if self.runner.track_direction['main'] == -1:
                 direction = 1
             else:
                 direction = -1
