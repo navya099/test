@@ -124,7 +124,8 @@ def save_runner(runner, filename="runner.dat", version=1):
         "track_mode": runner.track_mode,
         "track_direction": runner.track_direction,
         "offset_line_with_25": runner.offset_line_with_25,
-        "track_distance": runner.track_distance
+        "track_distance": runner.track_distance,
+        "tunnel_direction": runner.tunnel_direction
     }
 
     # None 체크 및 경고 출력
@@ -169,6 +170,7 @@ def load_runner(runner, filename="runner.dat"):
     runner.pole_path_main = state.get("pole_path_main")
     runner.pole_path_sub = state.get("pole_path_sub")
     runner.track_mode = state.get("track_mode", "single")
-    runner.track_direction = state.get("track_direction", "mainL_subR")
+    runner.track_direction = state.get("track_direction", {'main':None,'sub':None})
     runner.offset_line_with_25 = state.get("offset_line_with_25")
     runner.track_distance = state.get("track_distance", 4.3)
+    runner.tunnel_direction = state.get("tunnel_direction", {'main':None,'sub':None})
