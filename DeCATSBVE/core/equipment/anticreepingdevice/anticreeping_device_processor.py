@@ -69,12 +69,12 @@ class AnticreepingDeviceProcessor:
                 if device['tag'] == "흐름방지 시작점":
 
                     pole.equipments.extend([
-                        EquipmentDATA(name='장간애자N-a', index=678, offset=(pole.gauge, 5.7), rotation=0.0, type='장간애자'),
+                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=0.0, type='흐름방지장치'),
                         EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=0.0, type='봉강지선')
                     ])
                 elif device['tag'] == "흐름방지 끝점":
                     pole.equipments.extend([
-                        EquipmentDATA(name='장간애자N-a', index=678, offset=(pole.gauge, 5.7), rotation=180, type='장간애자'),
+                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=180, type='흐름방지장치'),
                         EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=180, type='봉강지선')
                     ])
 
@@ -84,23 +84,30 @@ class AnticreepingDeviceProcessor:
                 wire = device["wire"]
                 pole = device["pole"]
                 if device['tag'] in ["흐름방지 시작점"] and wire:
-                    extrawire = self.make_flowstop_wire(pole, track_name)
+                    extrawire = self.make_flowstop_wire(pole, track_name, isstart=True)
                     wire.add_wire(extrawire)
                 elif device['tag'] in ["흐름방지 중간점"] and wire:
-                    extrawire = self.make_flowstop_wire(pole, track_name, reverse=True)
+                    extrawire = self.make_flowstop_wire(pole, track_name, isstart=False)
                     wire.add_wire(extrawire)
 
-    def make_flowstop_wire(self, pole, track_name, reverse=False):
+    def make_flowstop_wire(self, pole, track_name, isstart=True):
         windex = self.wire_processor.pro.get_protection_wire_span(pole.span)
         system_heigh, contact_height = self.wire_processor.pro.get_contact_wire_and_massanger_wire_info(pole.structure)
+        stagger = 0.2
 
-        start = (pole.gauge, 5.7)
-        end = (pole.brackets[0].stagger, system_heigh + contact_height)
 
-        # 끝점일 경우 방향 반전
-        if reverse:
-            start, end = end, start
-
+        if pole.side == -1:
+            sign = -1 if pole.base_type == 'I' else 1
+            next_sign = -1 if pole.next_base_type == 'I' else 1
+        else:
+            sign = 1 if pole.base_type == 'I' else -1
+            next_sign = 1 if pole.next_base_type == 'I' else -1
+        if isstart:
+            start = (pole.gauge, 5.7)
+            end = (stagger * next_sign, system_heigh + contact_height)
+        else:
+            start = (pole.brackets[0].stagger, system_heigh + contact_height)
+            end = (pole.gauge, 5.7)
         pitch_angle = change_permile_to_degree(pole.pitch)
 
         return self.wire_processor.com.run(
