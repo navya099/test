@@ -295,59 +295,51 @@ class AutoPoleEditor(tk.Frame):
                     prev_ewire.next_wire = ewire
                 prev_ewire = ewire
 
-    def save_edit(self):
-        new_post_number = self.entry_post_number.get()
-        new_pos = int(self.entry_pos.get())
-        new_gauge = float(self.entry_gauge.get())
-        new_section = self.entry_section.get() if self.entry_section.get() != 'None' else None
-        new_base_type = self.entry_base_type.get()
+    def save_edit(self, post_number, pos, gauge, section, base_type, side):
+        current_tab = self.notebook.tab(self.notebook.select(), "text")
+        if current_tab == "본선":
+            tree = self.tree_main
+            poles = self.runner.poledata["main"]
+            al = self.runner.polyline_with_sta
+            track = 'main'
+        else:
+            tree = self.tree_sub
+            poles = self.runner.poledata["sub"]
+            al = self.runner.offset_line_with_25
+            track = 'sub'
 
-        found = False
-        for track_name, poles in self.editable_poles.items():
-            for epole in poles:
-                if epole.pole.pos == self.original_pos:
-                    found = True
-                    try:
-                        # 일반개소만 편집 허용
-                        if epole.pole.section is not None:
-                            raise Exception('NOT_NORMAL_SECTION')
+        new_post_number = post_number
+        new_pos = pos
+        new_gauge = gauge
+        new_section = section
+        new_base_type = base_type
+        new_side = side
 
-                        # 마지막 전주 예외 처리
-                        if epole.pole.next_pos is None:
-                            # 다음 전주가 없으므로 span 계산 생략
-                            epole.update(
-                                post_number=new_post_number,
-                                pos=new_pos,
-                                gauge=new_gauge,
-                                section=new_section,
-                                base_type=new_base_type
-                            )
-                            self.runner.log("마지막 전주라 span 계산은 생략했습니다.")
-                        else:
-                            # 새 span 계산
-                            new_span = epole.pole.next_pos - new_pos
-                            if new_span not in self.runner.dataprocessor.get_span_list():
-                                raise Exception('SPAN_OUT_OF_RANGE')
+        # PoleDATA 객체 생성 (필수 속성만, 나머지는 기본값)
+        new_pole = ManualPoleProcessor.create_pole(
+            al, self.runner.dataprocessor, self.runner.idxlib, self.runner.curvelist, self.runner.pitchlist,
+            self.runner.structure_list,
+            new_pos, new_post_number, new_gauge, new_section,
+            new_base_type, track, new_side)
 
-                            with Transaction(epole.pole, epole.prev_pole.pole, epole.next_pole.pole):
-                                epole.update(
-                                    post_number=new_post_number,
-                                    pos=new_pos,
-                                    gauge=new_gauge,
-                                    section=new_section,
-                                    base_type=new_base_type
-                                )
-                                BracketEditor.update(epole.pole, self.runner.dataprocessor, self.runner.idxlib)
-                        break
-                    except Exception as e:
-                        raise Exception(e)
-            if found:
+        # pos 기준으로 교체할 위치 찾기
+        replace_idx = None
+        for i, p in enumerate(poles):
+            if p.pos == self.original_pos:  # 기존 pos와 동일한 전주 찾기
+                replace_idx = i
                 break
 
-        # radius, cant, pitch, z, span, next_pos 등은 자동 재계산 예정
-        self.refresh_tree()
-        # 와이어 전체 재계산
+        if replace_idx is not None:
+            poles[replace_idx] = new_pole  # 기존 전주 대체
+
+        # 앞쪽 전주 갱신
+        PoleUpdator.update_all(poles)
+
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        # 흐름방지장치 복구
+        self.runner.anticreeping_pr.process()
+        self.create_epoles()
+        self.create_ewires()
 
         if self.events:
             self.events.emit("pole_saved")
@@ -424,6 +416,7 @@ class AutoPoleEditor(tk.Frame):
 
         self.refresh_tree()
         self.runner.log(f'전주 추가 성공 {new_pole.post_number} at {new_pole.pos}')
+
     def delete_pole(self):
         current_tab = self.notebook.tab(self.notebook.select(), "text")
         if current_tab == "본선":
@@ -441,11 +434,20 @@ class AutoPoleEditor(tk.Frame):
             # runner.poledata에서 제거
             poles[:] = [p for p in poles if p.post_number != post_number]
 
+            # 앞쪽 전주 갱신
+            PoleUpdator.update_all(poles)
+            #전선 재생성
+            self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+            # 흐름방지장치 복구
+            self.runner.anticreeping_pr.process()
+
+            self.create_epoles()
+            self.create_ewires()
+
             # Treeview에서 제거
             tree.delete(selected_item[0])
             self.refresh_tree()
-            self.create_epoles()
-            self.create_ewires()
+
 
     def edit_tree_cell(self, event, track):
         tree = self.tree_main if track == "main" else self.tree_sub
@@ -507,10 +509,24 @@ class AutoPoleEditor(tk.Frame):
             values = list(item["values"])
             values[col_index] = new_value
             tree.item(row_id, values=values)
-
+            col_map = {
+                0: "post_number",
+                1: "pos",
+                3: "gauge",
+                5: "section",
+                6: "base_type"
+            }
             try:
+                # Treeview 전체 값에서 필요한 인자 추출
+                post_number = values[0]
+                pos = int(values[1])
+                gauge = float(values[3])
+                section = values[5] if values[5] != 'None' else None
+                base_type = values[6]
+                side = -1 if gauge < 0 else 1
                 # 검증 로직 호출
-                self.save_edit()
+                self.save_edit(post_number, pos, gauge, section, base_type, side)
+                self.runner.log(f'전주 편집 성공! {col_map[col_index]}가 {new_value}로 변경되었습니다.')
             except Exception as e:
                 code = str(e)
                 # 에러코드별 메시지 분기
@@ -528,7 +544,6 @@ class AutoPoleEditor(tk.Frame):
 
             # Entry는 임시 객체 → 그냥 날려버림
             entry.destroy()
-
         entry.bind("<Return>", save_and_validate)
         #entry.bind("<FocusOut>", save_and_validate)
         entry.focus()
