@@ -4,8 +4,11 @@ from tkinter import ttk, messagebox
 from core.airjoint.airjoint_processor import AirJointProcessor
 from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
 from core.pole.manual_pole_processor import ManualPoleProcessor
+from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.pole_updator import PoleUpdator
+from core.pole.tunnel_section_processor import TunnelSectionProcessor
 from core.wire.wire_processor import WireProcessor
+from enums.airjoint_section import AirJoint
 from gui.pole_add_ui import PoleADDUI
 from gui.pole_assembler import PoleAssemblerApp
 from gui.wireeditor import WireEditor
@@ -116,7 +119,9 @@ class AutoPoleEditor(tk.Frame):
         tk.Button(self, text="전주 추가", command=self.add_pole).pack(side="left")
         tk.Button(self, text="전주 삭제", command=self.delete_pole).pack(side="left")
         tk.Button(self, text="에어조인트 추가", command=self.add_airjoint).pack(side="left")
+        tk.Button(self, text="에어조인트 삭제", command=self.remove_airjoint).pack(side="left")
         tk.Button(self, text="흐름방지장치 추가", command=self.add_antidevice).pack(side="left")
+        tk.Button(self, text="흐름방지장치 삭제", command=self.remove_antidevice).pack(side="left")
 
     def on_tree_click(self, event, track):
         tree = self.tree_main if track == "main" else self.tree_sub
@@ -572,6 +577,9 @@ class AutoPoleEditor(tk.Frame):
         mid_next = mid_epole.next_pole.pole
         end = mid_epole.next_pole.next_pole.pole
 
+        if mid.section is not None:
+            messagebox.showerror('에러', '지정한 전주는 일반 개소가 아닙니다.')
+            return
         # 섹션 변경
         start.section = '에어조인트 시작점 (1호주)'
         mid_prev.section = "에어조인트 (2호주)"
@@ -588,16 +596,74 @@ class AutoPoleEditor(tk.Frame):
                 self.runner.idxlib
             )
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        self.runner.anticreeping_pr.set_data(self.runner.poledata, self.runner.wire_data)
+        self.runner.anticreeping_pr.process()
         self.refresh_tree()
+        self.runner.log(f'에어조인트가 설치되었습니다. pos:{mid.pos}')
+
+    def remove_airjoint(self):
+        self.load_selected()
+        mid_epole = self.selected_pole  # EditablePole 유지
+
+        # 5개 전주 확보
+        start = mid_epole.prev_pole.prev_pole.pole
+        mid_prev = mid_epole.prev_pole.pole
+        mid = mid_epole.pole
+        mid_next = mid_epole.next_pole.pole
+        end = mid_epole.next_pole.next_pole.pole
+
+        if mid.section not in [AirJoint.MIDDLE.value]:
+            messagebox.showerror('에러', '지정한 전주는 에어조인트 설치 개소가 아닙니다.')
+            return
+
+        # 섹션 변경
+        start.section = None
+        mid_prev.section = None
+        mid.section = None
+        mid_next.section = None
+        end.section = None
+
+        # 처리
+        for pole in [start, mid_prev, mid, mid_next, end]:
+            #기본값으로 되돌리게 리셋
+            pole.brackets = []
+            pole.mast = None
+            pole.equipments = []
+            if pole.structure == '터널':
+                TunnelSectionProcessor.process(pole, self.runner.dataprocessor, self.runner.idxlib)
+            else:
+                NormalSectionProcessor.process(pole, self.runner.dataprocessor, self.runner.idxlib)
+        self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        self.runner.anticreeping_pr.set_data(self.runner.poledata,self.runner.wire_data)
+        self.runner.anticreeping_pr.process()
+        self.refresh_tree()
+        self.runner.log(f'에어조인트가 제거되었습니다. pos:{mid.pos}')
 
     def add_antidevice(self):
         self.load_selected()
         start_pos = self.selected_pole.prev_pole.pole.pos
         mid_pos = self.selected_pole.pole.pos
         end_pos = self.selected_pole.next_pole.pole.pos
-        self.runner.anticreeping_pr = AnticreepingDeviceProcessor(self.runner.poledata, self.runner.wire_data,
-                                                                  self.runner.airjoint_list,
-                                                                  self.runner.wire_processor)
-        self.runner.anticreeping_pr.add_manual_section('main', start_pos, end_pos, mid_pos)
-        self.runner.anticreeping_pr.add_manual_section('sub', start_pos, end_pos, mid_pos)
+        if self.selected_pole.pole.section is not None:
+            messagebox.showerror('에러', '지정한 전주는 일반 개소가 아닙니다.')
+            return
+
+        for track in self.runner.poledata.keys():
+            self.runner.anticreeping_pr.add_manual_section(track, start_pos, end_pos, mid_pos)
         self.refresh_tree()
+        self.runner.log(f'흐름방지 장치가 설치되었습니다. pos:{mid_pos}')
+    def remove_antidevice(self):
+        self.load_selected()
+
+        start_pos = self.selected_pole.prev_pole.pole.pos
+        mid_pos = self.selected_pole.pole.pos
+        end_pos = self.selected_pole.next_pole.pole.pos
+
+        if self.selected_pole.pole.section not in ["흐름방지 중간점"]:
+            messagebox.showerror('에러', '지정한 전주는 흐름방지장치 설치 개소가 아닙니다.')
+            return
+        for track in self.runner.poledata.keys():
+            self.runner.anticreeping_pr.remove_manual_section(track, start_pos, end_pos, mid_pos)
+
+        self.refresh_tree()
+        self.runner.log(f'흐름방지 장치가 제거되었습니다. pos:{mid_pos}')
