@@ -5,12 +5,13 @@ from tkinter.filedialog import asksaveasfilename, askdirectory, askopenfilename
 
 import pandas as pd
 from bve.bvecsv import BVECSV
-from core.manual_pole_runner import ManualPoleRunner
-from core.runner import AutoPole
+from core.base_runner import BaseRunner
+from core.manual_pole_runner import ManualRunner
+from core.runner import AutoRunner
 from dataset.dataset_getter import DatasetGetter
 from dataset.dataset_manager import load_dataset
 from event.event_controller import EventController
-from file_io.filemanager import write_to_file, load_poles, save_poles, save_runner, load_runner
+from file_io.filemanager import write_to_file, save_runner, load_runner
 from gui.dataset_gui import DataSetEditor
 from gui.maineditor import AutoPoleEditor
 from gui.pole_plotter import PlotPoleMap
@@ -34,7 +35,7 @@ class AutoPoleApp(tk.Tk):
         # 로그 박스
         self.log_box = tk.Text(self, height=10, width=80)
         self.log_box.pack(side="bottom", fill="x")
-        self.runner = None
+        self.runner: BaseRunner | None = None
 
         # 입력 영역
         input_frame = tk.Frame(self)
@@ -155,11 +156,11 @@ class AutoPoleApp(tk.Tk):
     def update_inputs(self):
         try:
             if self.gen_mode.get() == 'auto':
-                self.runner = AutoPole()
+                self.runner = AutoRunner()
                 self.runner.log_widget = self.log_box
                 self.runner.log(f"현재 모드: 자동 배치모드")
             else:
-                self.runner = ManualPoleRunner()
+                self.runner = ManualRunner()
                 self.runner.log_widget = self.log_box
                 self.runner.log(f"현재 모드: 수동 배치모드")
 
@@ -219,9 +220,6 @@ class AutoPoleApp(tk.Tk):
 
     def update_runner_tracks(self):
         """실행 중 runner의 트랙 관련 속성만 갱신"""
-        self.runner.track_direction = {'main':None,'sub':None}
-        self.runner.tunnel_direction = {'main':None,'sub':None}
-
         if self.runner.track_mode == "single":
             if self.single_direction.get() == 'L':
                 self.runner.track_direction['main'] = -1
