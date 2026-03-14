@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
 from core.pole.manual_pole_processor import ManualPoleProcessor
 from core.pole.pole_updator import PoleUpdator
 from gui.pole_add_ui import PoleADDUI
@@ -395,6 +396,8 @@ class AutoPoleEditor(tk.Frame):
 
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
         #흐름방지장치 복구
+        self.runner.anticreeping_pr = AnticreepingDeviceProcessor(self.runner.poledata, self.runner.wire_data, self.runner.airjoint_list,
+                                                           self.runner.wire_processor)
         self.runner.anticreeping_pr.process()
         self.create_epoles()
         self.create_ewires()
@@ -544,6 +547,7 @@ class AutoPoleEditor(tk.Frame):
 
             # Entry는 임시 객체 → 그냥 날려버림
             entry.destroy()
+            self.refresh_tree()
         entry.bind("<Return>", save_and_validate)
         #entry.bind("<FocusOut>", save_and_validate)
         entry.focus()

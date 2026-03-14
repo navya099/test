@@ -1,9 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
 
-from core.pole.manual_pole_processor import ManualPoleProcessor
-
-
 class PoleADDUI(tk.Toplevel):
     def __init__(self):
         super().__init__()

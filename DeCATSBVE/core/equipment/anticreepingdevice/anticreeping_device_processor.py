@@ -15,6 +15,8 @@ class AnticreepingDeviceProcessor:
 
     def define_section(self):
         for track_name, poles in self.poledata.items():
+            if track_name in self.devices_by_track:
+                continue
             devices = []
             aj_list = self.airjoint_list
 
@@ -40,18 +42,50 @@ class AnticreepingDeviceProcessor:
 
                     for tag, idx in zip(tags, indices):
                         pole = poles_in_section[idx]
-                        wire = next((w for w in self.wiredata[track_name] if w.pos == pole.pos), None)
                         devices.append({
                             "track": track_name,
                             "pos": pole.pos,
                             "post_number": pole.post_number,
                             "device_type": "Anticreeping",
-                            "tag": tag,
-                            "pole":pole, #pole객체 직접 참조
-                            "wire": wire #wire객체 직접참조
+                            "tag": tag
                         })
 
             self.devices_by_track[track_name] = devices
+
+    def add_manual_section(self, track_name, start_pos, end_pos, mid_pos):
+        """사용자가 직접 midpos를 지정해서 흐름방지 섹션 생성"""
+        poles = self.poledata[track_name]
+        poles_in_section = [p for p in poles if start_pos <= p.pos <= end_pos]
+        if not poles_in_section:
+            return
+
+        # midpos에 가장 가까운 전주 찾기
+        mid_pole = min(poles_in_section, key=lambda p: abs(p.pos - mid_pos))
+
+        indices = [max(0, poles_in_section.index(mid_pole) - 1),
+                   poles_in_section.index(mid_pole),
+                   min(len(poles_in_section) - 1, poles_in_section.index(mid_pole) + 1)]
+        tags = ["흐름방지 시작점", "흐름방지 중간점", "흐름방지 끝점"]
+
+        devices = []
+        for tag, idx in zip(tags, indices):
+            pole = poles_in_section[idx]
+            wire = next((w for w in self.wiredata[track_name] if w.pos == pole.pos), None)
+            devices.append({
+                "track": track_name,
+                "pos": pole.pos,
+                "post_number": pole.post_number,
+                "device_type": "Anticreeping",
+                "tag": tag
+            })
+
+        # 기존 섹션 유지하면서 track_name에 추가
+        if track_name not in self.devices_by_track:
+            self.devices_by_track[track_name] = []
+        self.devices_by_track[track_name].extend(devices)
+
+        # 바로 반영
+        self.apply()
 
     def apply(self):
         """실제로 poledata에 장치 태그 반영"""
@@ -61,7 +95,9 @@ class AnticreepingDeviceProcessor:
     def apply_pole_devices(self):
         for track_name, devices in self.devices_by_track.items():
             for device in devices:
-                pole = device["pole"]
+                pole = next((p for p in self.poledata[track_name] if p.pos == device["pos"]), None)
+                if not pole:
+                    continue
                 pole.section = device['tag']
                 if device['tag'] == "흐름방지 시작점":
 
@@ -78,8 +114,12 @@ class AnticreepingDeviceProcessor:
     def apply_wires(self):
         for track_name, devices in self.devices_by_track.items():
             for device in devices:
-                wire = device["wire"]
-                pole = device["pole"]
+                pole = next((p for p in self.poledata[track_name] if p.pos == device["pos"]), None)
+                if not pole:
+                    continue
+                wire = next((w for w in self.wiredata[track_name] if w.pos == device["pos"]), None)
+                if not wire:
+                    continue
                 cw = next((w for w in wire.wires if w.label == '전차선'), None)
                 if cw is None:
                     continue  # 전차선이 없으면 건너뜀

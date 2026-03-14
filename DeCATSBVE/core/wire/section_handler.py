@@ -28,6 +28,8 @@ class WireSectionHandler:
 
         if pole.section is None:
             self.process_normal_section(pole,next_pole, wire, pitch_angle, start_offset, end_offset, cw_index)
+        elif pole.section and pole.section.startswith("흐름방지"):
+            self.process_normal_section(pole, next_pole, wire, pitch_angle, start_offset, end_offset, cw_index)
         else:
             self.process_airjoint_section(pole, next_pole,wire, pitch_angle, start_offset, cw_index)
 
