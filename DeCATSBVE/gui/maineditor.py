@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from core.airjoint.airjoint_processor import AirJointProcessor
 from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
 from core.pole.manual_pole_processor import ManualPoleProcessor
 from core.pole.pole_updator import PoleUpdator
@@ -114,6 +115,8 @@ class AutoPoleEditor(tk.Frame):
         tk.Button(self, text="전선 상세 편집", command=self.open_wire_editor).pack(side="left")
         tk.Button(self, text="전주 추가", command=self.add_pole).pack(side="left")
         tk.Button(self, text="전주 삭제", command=self.delete_pole).pack(side="left")
+        tk.Button(self, text="에어조인트 추가", command=self.add_airjoint).pack(side="left")
+        tk.Button(self, text="흐름방지장치 추가", command=self.add_antidevice).pack(side="left")
 
     def on_tree_click(self, event, track):
         tree = self.tree_main if track == "main" else self.tree_sub
@@ -557,3 +560,44 @@ class AutoPoleEditor(tk.Frame):
         entry.bind("<Return>", save_and_validate)
         #entry.bind("<FocusOut>", save_and_validate)
         entry.focus()
+
+    def add_airjoint(self):
+        self.load_selected()
+        mid_epole = self.selected_pole  # EditablePole 유지
+
+        # 5개 전주 확보
+        start = mid_epole.prev_pole.prev_pole.pole
+        mid_prev = mid_epole.prev_pole.pole
+        mid = mid_epole.pole
+        mid_next = mid_epole.next_pole.pole
+        end = mid_epole.next_pole.next_pole.pole
+
+        # 섹션 변경
+        start.section = '에어조인트 시작점 (1호주)'
+        mid_prev.section = "에어조인트 (2호주)"
+        mid.section = "에어조인트 중간주 (3호주)"
+        mid_next.section = "에어조인트 (4호주)"
+        end.section = "에어조인트 끝점 (5호주)"
+
+        # 처리
+        for pole in [start, mid_prev, mid, mid_next, end]:
+            AirJointProcessor.process(
+                pole,
+                self.runner.polyline_with_sta,
+                self.runner.dataprocessor,
+                self.runner.idxlib
+            )
+        self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        self.refresh_tree()
+
+    def add_antidevice(self):
+        self.load_selected()
+        start_pos = self.selected_pole.prev_pole.pole.pos
+        mid_pos = self.selected_pole.pole.pos
+        end_pos = self.selected_pole.next_pole.pole.pos
+        self.runner.anticreeping_pr = AnticreepingDeviceProcessor(self.runner.poledata, self.runner.wire_data,
+                                                                  self.runner.airjoint_list,
+                                                                  self.runner.wire_processor)
+        self.runner.anticreeping_pr.add_manual_section('main', start_pos, end_pos, mid_pos)
+        self.runner.anticreeping_pr.add_manual_section('sub', start_pos, end_pos, mid_pos)
+        self.refresh_tree()

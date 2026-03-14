@@ -140,7 +140,7 @@ class AnticreepingDeviceProcessor:
             end = (end_x, system_heigh + contact_height)
         else:
             start = (start_x, system_heigh + contact_height)
-            end = (pole.gauge, 5.7)
+            end = (pole.next_gauge, 5.7)
         pitch_angle = change_permile_to_degree(pole.pitch)
 
         return self.wire_processor.com.run(
