@@ -1,9 +1,6 @@
-from networkx.algorithms.operators.unary import reverse
 
 from core.equipment.equipment_data import EquipmentDATA
-from core.wire.extra_wire.extra_wire_processor import ExtraWireProcessor
 from utils.math_util import change_permile_to_degree
-
 
 class AnticreepingDeviceProcessor:
     def __init__(self, poledata, wiredata, airjoint_list, wire_processor):
@@ -83,30 +80,26 @@ class AnticreepingDeviceProcessor:
             for device in devices:
                 wire = device["wire"]
                 pole = device["pole"]
+                cw = next((w for w in wire.wires if w.label == '전차선'), None)
+                if cw is None:
+                    continue  # 전차선이 없으면 건너뜀
                 if device['tag'] in ["흐름방지 시작점"] and wire:
-                    extrawire = self.make_flowstop_wire(pole, track_name, isstart=True)
+                    extrawire = self.make_flowstop_wire(pole, cw, track_name, isstart=True)
                     wire.add_wire(extrawire)
                 elif device['tag'] in ["흐름방지 중간점"] and wire:
-                    extrawire = self.make_flowstop_wire(pole, track_name, isstart=False)
+                    extrawire = self.make_flowstop_wire(pole, cw, track_name, isstart=False)
                     wire.add_wire(extrawire)
 
-    def make_flowstop_wire(self, pole, track_name, isstart=True):
+    def make_flowstop_wire(self, pole, wire, track_name, isstart=True):
         windex = self.wire_processor.pro.get_protection_wire_span(pole.span)
         system_heigh, contact_height = self.wire_processor.pro.get_contact_wire_and_massanger_wire_info(pole.structure)
-        stagger = 0.2
-
-
-        if pole.side == -1:
-            sign = -1 if pole.base_type == 'I' else 1
-            next_sign = -1 if pole.next_base_type == 'I' else 1
-        else:
-            sign = 1 if pole.base_type == 'I' else -1
-            next_sign = 1 if pole.next_base_type == 'I' else -1
+        start_x = wire.offset[0]
+        end_x = wire.end_point[0]
         if isstart:
             start = (pole.gauge, 5.7)
-            end = (stagger * next_sign, system_heigh + contact_height)
+            end = (end_x, system_heigh + contact_height)
         else:
-            start = (pole.brackets[0].stagger, system_heigh + contact_height)
+            start = (start_x, system_heigh + contact_height)
             end = (pole.gauge, 5.7)
         pitch_angle = change_permile_to_degree(pole.pitch)
 
