@@ -98,79 +98,20 @@ def load_poles(filename="poles.dat"):
         return pickle.load(f)
 
 def save_runner(runner, filename="runner.dat", version=1):
-    state = {
-        "version": version,
-        "poledata": runner.poledata,
-        "wire_data": runner.wire_data,
-        "polyline_with_sta": runner.polyline_with_sta,
-        "idxlib": runner.idxlib,
-        "dataprocessor": runner.dataprocessor,
-        "airjoint_list": runner.airjoint_list,
-        "pitchlist": runner.pitchlist,
-        "curvelist": runner.curvelist,
-        "structure_list": runner.structure_list,
-        "pole_processor": runner.pole_processor,
-        "wire_processor": runner.wire_processor,
-        "designspeed": runner.designspeed,
-        "iscustommode": runner.iscustommode,
-        "is_create_dxf": runner.is_create_dxf,
-        "_cached_df": runner._cached_df,
-        "wire_path_sub": runner.wire_path_sub,
-        "wire_path_main": runner.wire_path_main,
-        "polesaver_main": runner.polesaver_main,
-        "polesaver_sub": runner.polesaver_sub,
-        "pole_path_main": runner.pole_path_main,
-        "pole_path_sub": runner.pole_path_sub,
-        "track_mode": runner.track_mode,
-        "track_direction": runner.track_direction,
-        "offset_line_with_25": runner.offset_line_with_25,
-        "track_distance": runner.track_distance,
-        "tunnel_direction": runner.tunnel_direction
-    }
-
-    # None 체크 및 경고 출력
-    for key, value in state.items():
-        if value is None:
-            print(f"[WARN] {key} 값이 None으로 저장됩니다. 기본값을 확인하세요.")
+    # runner 객체 자체를 저장
+    if hasattr(runner, "log_widget"):
+        runner.log_widget = None
 
     with open(filename, "wb") as f:
-        pickle.dump(state, f)
+        pickle.dump({
+            "version": version,
+            "runner": runner
+        }, f)
 
-def load_runner(runner, filename="runner.dat"):
+def load_runner(filename="runner.dat"):
     with open(filename, "rb") as f:
-        state = pickle.load(f)
+        data = pickle.load(f)
+    version = data.get("version", 1)
+    runner = data["runner"]
+    return runner
 
-    # None 체크 및 출력
-    for key, value in state.items():
-        if value is None:
-            print(f"[WARN] {key} 값이 None입니다. 기본값으로 초기화하세요.")
-
-    # 안전한 기본값 적용
-    runner.poledata = state.get("poledata")
-    runner.wire_data = state.get("wire_data")
-    runner.polyline_with_sta = state.get("polyline_with_sta")
-    runner.idxlib = state.get("idxlib")
-    runner.dataprocessor = state.get("dataprocessor")
-    runner.airjoint_list = state.get("airjoint_list")
-    runner.pitchlist = state.get("pitchlist")
-    runner.curvelist = state.get("curvelist")
-    runner.structure_list = state.get("structure_list")
-    runner.pole_processor = state.get("pole_processor")
-    runner.wire_processor = state.get("wire_processor")
-
-    runner.designspeed = state.get("designspeed", 0)
-    runner.iscustommode = state.get("iscustommode", 0)
-    runner.is_create_dxf = state.get("is_create_dxf", 0)
-    runner._cached_df = state.get("_cached_df")
-
-    runner.wire_path_sub = state.get("wire_path_sub")
-    runner.wire_path_main = state.get("wire_path_main")
-    runner.polesaver_main = state.get("polesaver_main")
-    runner.polesaver_sub = state.get("polesaver_sub")
-    runner.pole_path_main = state.get("pole_path_main")
-    runner.pole_path_sub = state.get("pole_path_sub")
-    runner.track_mode = state.get("track_mode", "single")
-    runner.track_direction = state.get("track_direction", {'main':None,'sub':None})
-    runner.offset_line_with_25 = state.get("offset_line_with_25")
-    runner.track_distance = state.get("track_distance", 4.3)
-    runner.tunnel_direction = state.get("tunnel_direction", {'main':None,'sub':None})
