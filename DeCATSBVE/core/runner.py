@@ -15,6 +15,12 @@ from shapely.geometry.linestring import LineString
 
 class AutoPole:
     def __init__(self):
+        self.alignment_by_track = None
+        self.pitchlist_by_track = None
+        self.curve_list_by_track = None
+        self.structure_list_by_track = None
+        self.positions_by_track = None
+        self.anticreeping_pr = None
         self.polesaver_sub = None
         self.polesaver_main = None
         self.wire_path_sub = None
@@ -108,35 +114,35 @@ class AutoPole:
             #다시 분해후 재결합
             offset_polyline = offset_line.coords
             self.offset_line_with_25 = [(i * 25, *values) for i, values in enumerate(offset_polyline)]
-        positions_by_track = {
+        self.positions_by_track = {
             "main": self.pole_positions,
             "sub": self.pole_positions  # double일 때만
         }
-        structure_list_by_track = {
+        self.structure_list_by_track = {
             "main": self.structure_list,
             "sub": self.structure_list
         }
-        curve_list_by_track = {
+        self.curve_list_by_track = {
             "main": self.curvelist,
             "sub": self.curvelist
         }
-        pitchlist_by_track = {
+        self.pitchlist_by_track = {
             "main": self.pitchlist,
             "sub": self.pitchlist
         }
-        alignment_by_track = {
+        self.alignment_by_track = {
             "main": self.polyline_with_sta,
             "sub": self.offset_line_with_25
         }
         self.pole_processor = PoleProcessor()
 
         self.poledata = self.pole_processor.process_pole_multitrack(
-            positions_by_track, structure_list_by_track, curve_list_by_track, pitchlist_by_track,
-            self.dataprocessor, self.airjoint_list, alignment_by_track, self.idxlib,
+            self.positions_by_track, self.structure_list_by_track, self.curve_list_by_track, self.pitchlist_by_track,
+            self.dataprocessor, self.airjoint_list, self.alignment_by_track, self.idxlib,
             self.track_mode, self.track_direction,tunnel_direction=self.tunnel_direction
         )
 
-        self.wire_processor = WireProcessor(self.dataprocessor, alignment_by_track, self.poledata, self.curvelist)
+        self.wire_processor = WireProcessor(self.dataprocessor, self.alignment_by_track, self.poledata, self.curvelist)
         self.wire_data = self.wire_processor.process_to_wire()
 
         #추가설비(흐름방지장치)
@@ -196,5 +202,5 @@ class AutoPole:
             self.log(f"전주 개수: 본선={main_count}개")
         else:
             self.log(f"전주 개수: 본선={main_count}개, 상선={sub_count}개")
-        self.log(f"마지막 전주 위치: {positions_by_track['main'][-1]}m (종점: {int(self.end_station)}m)")
+        self.log(f"마지막 전주 위치: {self.positions_by_track['main'][-1]}m (종점: {int(self.end_station)}m)")
         self.log('모든 작업 완료')

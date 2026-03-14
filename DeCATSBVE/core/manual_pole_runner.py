@@ -18,6 +18,11 @@ class ManualPoleRunner:
     """
     def __init__(self, brokenchain=0.0):
         self.alignment_by_track = None
+        self.pitchlist_by_track = None
+        self.curve_list_by_track = None
+        self.structure_list_by_track = None
+        self.positions_by_track = None
+        self.anticreeping_pr = None
         self.log_widget = None
         self.offset_line_with_25 = []
         self.track_distance = 0.0
