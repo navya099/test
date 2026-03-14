@@ -42,8 +42,8 @@ class PlotPoleMap(tk.Frame):
         toolbar.pack(side="bottom", fill="x")
 
         # 이동 버튼 등록
-        btn_left = tk.Button(self, text="-5m", command=self.move_left)
-        btn_right = tk.Button(self, text="+5m", command=self.move_right)
+        btn_left = tk.Button(self, text="-1m", command=self.move_left)
+        btn_right = tk.Button(self, text="+1m", command=self.move_right)
         btn_left.pack(side="left")
         btn_right.pack(side="right")
         btn_preview = tk.Button(self, text="전주 미리보기", command=self.show_preview)
@@ -209,18 +209,18 @@ class PlotPoleMap(tk.Frame):
         self.selected_epoles = epoles
 
     def move_left(self):
-        self._move_pole(-5)
+        self._move_pole(-1)
 
     def move_right(self):
-        self._move_pole(+5)
+        self._move_pole(+1)
 
     def _move_pole(self, delta):
         if not self.selected_epole:
             return
 
         new_pos = self.selected_epole.pole.pos + delta
-        prev_pos = self.selected_epole.prev_pole.pole.pos if self.selected_epole.prev_pole else None
-        next_pos = self.selected_epole.next_pole.pole.pos if self.selected_epole.next_pole else None
+        prev_pos = self.selected_epole.prev_pole.pole.pos if self.selected_epole.prev_pole is not None else None
+        next_pos = self.selected_epole.next_pole.pole.pos if self.selected_epole.next_pole is not None else None
 
         # 범위 검사
         if prev_pos and new_pos <= prev_pos:
@@ -234,10 +234,17 @@ class PlotPoleMap(tk.Frame):
             return
 
         # span 검사
-        new_prev_pole_span = new_pos - prev_pos if prev_pos else None
-        new_span = next_pos - new_pos if next_pos else None
-        if (new_prev_pole_span and new_prev_pole_span not in self.runner.dataprocessor.get_span_list()) or \
-                (new_span and new_span not in self.runner.dataprocessor.get_span_list()):
+        span_data = self.runner.dataprocessor.dataset['span_data']
+        valid_spans = set()
+        for values in span_data.values():
+            valid_spans.update(values.keys())
+
+
+        new_prev_pole_span = new_pos - prev_pos if prev_pos is not None else None
+        new_span = next_pos - new_pos if next_pos is not None else None
+
+        if (new_prev_pole_span and new_prev_pole_span not in valid_spans) or \
+                (new_span and new_span not in valid_spans):
             messagebox.showerror('오류', f'{self.selected_epole.pole.post_number}: 지정한 전주는 span 범위에 없습니다.')
             return
 
@@ -252,8 +259,8 @@ class PlotPoleMap(tk.Frame):
         # 최종 반영
         with Transaction(
                 self.selected_epole.pole,
-                self.selected_epole.prev_pole.pole if self.selected_epole.prev_pole else None,
-                self.selected_epole.next_pole.pole if self.selected_epole.next_pole else None
+                self.selected_epole.prev_pole.pole if self.selected_epole.prev_pole is not None else None,
+                self.selected_epole.next_pole.pole if self.selected_epole.next_pole is not None else None
         ):
             self.selected_epole.update(pos=new_pos)
 

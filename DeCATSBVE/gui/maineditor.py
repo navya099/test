@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from core.pole.manual_pole_processor import ManualPoleProcessor
+from core.pole.pole_updator import PoleUpdator
 from gui.pole_add_ui import PoleADDUI
 from gui.pole_assembler import PoleAssemblerApp
 from gui.wireeditor import WireEditor
@@ -367,22 +368,12 @@ class AutoPoleEditor(tk.Frame):
             poles = self.runner.poledata["main"]
             al = self.runner.polyline_with_sta
             track = 'main'
-            if self.runner.track_mode == 'single':
-                side = self.runner.track_direction
-            else:
-                if self.runner.track_direction == "mainL_subR":
-                    side = -1
-                else:
-                    side = 1
         else:
             tree = self.tree_sub
             poles = self.runner.poledata["sub"]
             al = self.runner.offset_line_with_25
             track = 'sub'
-            if self.runner.track_direction == "mainL_subR":
-                side = 1
-            else:
-                side = -1
+
         #UI열기
         addui = PoleADDUI()
         self.wait_window(addui)  # 입력창 닫힐 때까지 대기
@@ -392,6 +383,7 @@ class AutoPoleEditor(tk.Frame):
             return
 
         poledict = addui.comfirm()
+        side = -1 if poledict['gauge'] < 0 else 1
         # PoleDATA 객체 생성 (필수 속성만, 나머지는 기본값)
         new_pole = ManualPoleProcessor.create_pole(
             al,self.runner.dataprocessor,self.runner.idxlib, self.runner.curvelist, self.runner.pitchlist,self.runner.structure_list,
@@ -407,26 +399,11 @@ class AutoPoleEditor(tk.Frame):
         poles.insert(insert_idx, new_pole)
         #next 속성 채우기
         # 앞쪽 전주 갱신
-        if insert_idx > 0:
-            prev_pole = poles[insert_idx - 1]
-            prev_pole.next_pos = new_pole.pos
-            prev_pole.span = new_pole.pos - prev_pole.pos
-            prev_pole.next_gauge = new_pole.gauge
-            prev_pole.next_structure = new_pole.structure
-            prev_pole.next_z = new_pole.z
-            prev_pole.next_base_type = new_pole.base_type
-
-        # 뒤쪽 전주 갱신
-        if insert_idx < len(poles) - 1:
-            next_pole = poles[insert_idx + 1]
-            new_pole.next_pos = next_pole.pos
-            new_pole.span = next_pole.pos - new_pole.pos
-            new_pole.next_gauge = next_pole.gauge
-            new_pole.next_structure = next_pole.structure
-            new_pole.next_z = next_pole.z
-            new_pole.next_base_type = next_pole.base_type
+        PoleUpdator.update_all(poles)
 
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        #흐름방지장치 복구
+        self.runner.anticreeping_pr.process()
         self.create_epoles()
         self.create_ewires()
 
@@ -446,7 +423,7 @@ class AutoPoleEditor(tk.Frame):
         ))
 
         self.refresh_tree()
-
+        self.runner.log(f'전주 추가 성공 {new_pole.post_number} at {new_pole.pos}')
     def delete_pole(self):
         current_tab = self.notebook.tab(self.notebook.select(), "text")
         if current_tab == "본선":

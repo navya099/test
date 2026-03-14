@@ -214,6 +214,7 @@ class AutoPoleApp(tk.Tk):
         self.plotter.selected_pole_text = None
 
     def save(self):
+        self.runner.polesaver_main = BVECSV(self.runner.poledata['main'], self.runner.wire_data['main'], track_index=0)
         t = self.runner.polesaver_main.create_pole_csv() #본선 저장
         t2 = self.runner.polesaver_main.create_wire_csv()
         if not self.runner.pole_path_main:
@@ -233,6 +234,8 @@ class AutoPoleApp(tk.Tk):
         write_to_file(self.runner.pole_path_main, t)
         write_to_file(self.runner.wire_path_main, t2)
         if self.runner.track_mode == "double":
+            self.runner.polesaver_sub = BVECSV(self.runner.poledata['sub'], self.runner.wire_data['sub'],
+                                                track_index=1)
             s = self.runner.polesaver_sub.create_pole_csv()  # 본선 저장
             s2 = self.runner.polesaver_sub.create_wire_csv()
             if not self.runner.pole_path_sub:

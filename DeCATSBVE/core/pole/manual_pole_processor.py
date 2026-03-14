@@ -54,7 +54,8 @@ class ManualPoleProcessor:
             next_base_type=None,
             coord=pos_coord_with_offset,
             track=track,
-            side=side
+            side=side,
+            next_side = None
         )
         NormalSectionProcessor.process(pole, db, idxlib)
         return pole
