@@ -8,6 +8,8 @@ from tkinter import ttk, messagebox
 
 from matplotlib.collections import LineCollection
 
+from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
+from core.wire.wire_processor import WireProcessor
 from utils.math_util import interpolate_cached, calculate_offset_point
 from xref_module.dxf_controller.dxf_controller import DXFController
 from xref_module.preview.preview_sevice import PreviewService
@@ -265,7 +267,14 @@ class PlotPoleMap(tk.Frame):
             self.selected_epole.update(pos=new_pos)
 
         self.selected_epole.pole.coord = pos_coord_with_offset
+        self.runner.wire_processor = WireProcessor(self.runner.dataprocessor, self.runner.alignment_by_track,
+                                                   self.runner.poledata, self.runner.curvelist)
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        # 흐름방지장치 복구
+        self.runner.anticreeping_pr = AnticreepingDeviceProcessor(self.runner.poledata, self.runner.wire_data,
+                                                                  self.runner.airjoint_list,
+                                                                  self.runner.wire_processor)
+        self.runner.anticreeping_pr.process()
         self.runner.log(f"전주 {self.selected_epole.pole.post_number} 이동 완료: {new_pos}")
 
         self.highlight_pole(new_pos)

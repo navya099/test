@@ -4,6 +4,7 @@ from tkinter import ttk, messagebox
 from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
 from core.pole.manual_pole_processor import ManualPoleProcessor
 from core.pole.pole_updator import PoleUpdator
+from core.wire.wire_processor import WireProcessor
 from gui.pole_add_ui import PoleADDUI
 from gui.pole_assembler import PoleAssemblerApp
 from gui.wireeditor import WireEditor
@@ -335,9 +336,12 @@ class AutoPoleEditor(tk.Frame):
 
         # 앞쪽 전주 갱신
         PoleUpdator.update_all(poles)
-
+        self.runner.wire_processor = WireProcessor(self.runner.dataprocessor, self.runner.alignment_by_track, self.runner.poledata, self.runner.curvelist)
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
         # 흐름방지장치 복구
+        self.runner.anticreeping_pr = AnticreepingDeviceProcessor(self.runner.poledata, self.runner.wire_data,
+                                                                  self.runner.airjoint_list,
+                                                                  self.runner.wire_processor)
         self.runner.anticreeping_pr.process()
         self.create_epoles()
         self.create_ewires()
@@ -394,6 +398,8 @@ class AutoPoleEditor(tk.Frame):
         # 앞쪽 전주 갱신
         PoleUpdator.update_all(poles)
 
+        self.runner.wire_processor = WireProcessor(self.runner.dataprocessor, self.runner.alignment_by_track,
+                                                   self.runner.poledata, self.runner.curvelist)
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
         #흐름방지장치 복구
         self.runner.anticreeping_pr = AnticreepingDeviceProcessor(self.runner.poledata, self.runner.wire_data, self.runner.airjoint_list,
