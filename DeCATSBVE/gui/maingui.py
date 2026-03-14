@@ -75,6 +75,7 @@ class AutoPoleApp(tk.Tk):
         tk.Button(button_frame, text="CSV저장", command=self.save).pack(side="left")
         tk.Button(button_frame, text="데이터저장", command=self.save_pickle).pack(side="left")
         tk.Button(button_frame, text="데이터로드", command=self.load_pickle).pack(side="left")
+        tk.Button(button_frame, text="러너 갱신", command=self.update_runner_tracks).pack(side="left")
         tk.Button(button_frame, text="라이브러리 갱신", command=self.refresh_library).pack(side="left")
         tk.Button(button_frame, text="데이터셋 불러오기", command=self.load_dataset).pack(side="left")
         tk.Button(button_frame, text="데이터셋 편집", command=self.edit_dataset).pack(side="left")
@@ -198,6 +199,36 @@ class AutoPoleApp(tk.Tk):
         except ValueError:
             self.runner.log("⚠️ 숫자를 입력하세요")
 
+    def update_runner_tracks(self):
+        """실행 중 runner의 트랙 관련 속성만 갱신"""
+        self.runner.track_direction = {'main':None,'sub':None}
+        self.runner.tunnel_direction = {'main':None,'sub':None}
+
+        if self.runner.track_mode == "single":
+            if self.single_direction.get() == 'L':
+                self.runner.track_direction['main'] = -1
+            else:
+                self.runner.track_direction['main'] = 1
+            self.runner.track_distance = 0.0
+            if self.tunnel_direction['main'].get() == 'L':
+                self.runner.tunnel_direction['main'] = -1
+            else:
+                self.runner.tunnel_direction['main'] = 1
+
+            self.runner.log(f"트랙 속성 갱신: 단일 트랙 (본선 {self.runner.track_direction})")
+        else:
+            if self.double_direction.get() == 'mainL_subR':
+                self.runner.track_direction['main'] = -1
+                self.runner.track_direction['sub'] = 1
+            else:
+                self.runner.track_direction['main'] = 1
+                self.runner.track_direction['sub'] = -1
+
+            self.runner.track_distance = self.track_distance.get()
+            self.runner.tunnel_direction['main'] = self.runner.track_direction['main'] * -1
+            self.runner.tunnel_direction['sub'] = self.runner.track_direction['sub'] * -1
+            self.runner.log(f"트랙 속성 갱신: 이중 트랙 ({self.runner.track_direction})")
+
     def run_and_open_editor(self):
         # 입력값 반영 후 실행
         self.update_inputs()
@@ -263,8 +294,7 @@ class AutoPoleApp(tk.Tk):
 
     def load_pickle(self):
         self.update_inputs()
-        load_runner(self.runner, 'c:/temp/decatsbve.dat')
-
+        self.runner = load_runner('c:/temp/decatsbve.dat')
         self.refresh_library()
         self.load_dataset()
         self.runner.polesaver_main = BVECSV(self.runner.poledata["main"], self.runner.wire_data["main"], 0)
