@@ -17,6 +17,10 @@ class ManualPoleRunner:
         brokenchain: 파정
     """
     def __init__(self, brokenchain=0.0):
+        self.coord_file_path = None
+        self.pitch_file_path = None
+        self.curve_file_path = None
+        self.structure_file_path = None
         self.alignment_by_track = None
         self.pitchlist_by_track = None
         self.curve_list_by_track = None
@@ -61,21 +65,48 @@ class ManualPoleRunner:
     def load_plugin(self):
         """플러그인 로드"""
         # 구조물 정보 로드
-        self.structure_list = load_structure_data()
-
+        self.structure_list = self.safe_load(
+            load_structure_data,
+            self.structure_file_path,
+            "구조물 정보가 성공적으로 로드되었습니다.",
+            "구조물 정보가 비어 있습니다.",
+            "구조물 정보 로드에 실패했습니다."
+        )
         if self.structure_list:
-            self.log("구조물 정보가 성공적으로 로드되었습니다.")
-            self.structure_list = apply_brokenchain_to_structure(self.structure_list, self.brokenchain)  # 파정 적용
+            self.structure_list = apply_brokenchain_to_structure(
+                self.structure_list, self.brokenchain
+            )
+
         # 곡선 정보 로드
-        self.curvelist = load_curve_data()
-        if self.curvelist:
-            self.log("곡선 정보가 성공적으로 로드되었습니다.")
+        self.curvelist = self.safe_load(
+            load_curve_data,
+            self.curve_file_path,
+            "곡선 정보가 성공적으로 로드되었습니다.",
+            "곡선 정보가 비어 있습니다.",
+            "곡선 정보 로드가 실패했습니다."
+        )
+
         # 기울기 정보 로드
-        self.pitchlist = load_pitch_data()
-        if self.pitchlist:
-            self.log("기울기선 정보가 성공적으로 로드되었습니다.")
-        # BVE 좌표 로드
-        polyline = load_coordinates()
+        self.pitchlist = self.safe_load(
+            load_pitch_data,
+            self.pitch_file_path,
+            "기울기 정보가 성공적으로 로드되었습니다.",
+            "기울기 정보가 비어 있습니다.",
+            "기울기 정보 로드가 실패했습니다."
+        )
+        if not self.pitchlist:
+            return
+
+        # 좌표 정보 로드
+        polyline = self.safe_load(
+            load_coordinates,
+            self.coord_file_path,
+            "좌표 정보가 성공적으로 로드되었습니다.",
+            "좌표 정보가 비어 있습니다.",
+            "좌표 정보 로드가 실패했습니다."
+        )
+        if not polyline:
+            return
         self.polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
         # LineString 생성
@@ -111,4 +142,16 @@ class ManualPoleRunner:
         # 상선 저장 (이중 트랙일 때만)
         if self.track_mode == "double":
             self.polesaver_sub = BVECSV(self.poledata["sub"], self.wire_data["sub"], 1)
+
+    def safe_load(self, loader_func, file_path, success_msg, empty_msg, fail_msg):
+        try:
+            data = loader_func(file_path)
+            if data:
+                self.log(success_msg)
+            else:
+                self.log(empty_msg)
+            return data
+        except Exception as e:
+            self.log(f"{fail_msg} {e}")
+            raise
 

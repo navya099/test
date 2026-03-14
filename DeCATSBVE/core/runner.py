@@ -7,7 +7,7 @@ from core.structure.define_structure import apply_brokenchain_to_structure
 from core.wire.wire_processor import WireProcessor
 from dataset.dataset_getter import DatasetGetter
 from dataset.dataset_manager import load_dataset
-from file_io.filemanager import read_file, load_structure_data, load_curve_data, load_pitch_data, load_coordinates, \
+from file_io.filemanager import load_structure_data, load_curve_data, load_pitch_data, load_coordinates, \
     write_to_file
 from utils.comom_util import find_last_block, distribute_pole_spacing_flexible, define_airjoint_section, \
     generate_postnumbers
@@ -15,6 +15,10 @@ from shapely.geometry.linestring import LineString
 
 class AutoPole:
     def __init__(self):
+        self.coord_file_path = None
+        self.pitch_file_path = None
+        self.curve_file_path = None
+        self.structure_file_path = None
         self.alignment_by_track = None
         self.pitchlist_by_track = None
         self.curve_list_by_track = None
@@ -67,35 +71,54 @@ class AutoPole:
         """전체 작업을 관리하는 메인 함수"""
 
         # 파일 읽기 및 데이터 처리
-
-        data = read_file()
-        last_block = find_last_block(data)
-
-
         # 구조물 정보 로드
-        self.structure_list = load_structure_data()
-
+        self.structure_list = self.safe_load(
+            load_structure_data,
+            self.structure_file_path,
+            "구조물 정보가 성공적으로 로드되었습니다.",
+            "구조물 정보가 비어 있습니다.",
+            "구조물 정보 로드에 실패했습니다."
+        )
         if self.structure_list:
-            print("구조물 정보가 성공적으로 로드되었습니다.")
-            self.structure_list = apply_brokenchain_to_structure(self.structure_list, self.brokenchain)# 파정 적용
+            self.structure_list = apply_brokenchain_to_structure(
+                self.structure_list, self.brokenchain
+            )
+
         # 곡선 정보 로드
-        self.curvelist = load_curve_data()
-        if self.curvelist:
-            print("곡선 정보가 성공적으로 로드되었습니다.")
+        self.curvelist = self.safe_load(
+            load_curve_data,
+            self.curve_file_path,
+            "곡선 정보가 성공적으로 로드되었습니다.",
+            "곡선 정보가 비어 있습니다.",
+            "곡선 정보 로드가 실패했습니다."
+        )
+
         # 기울기 정보 로드
-        self.pitchlist = load_pitch_data()
-        if self.pitchlist:
-            print("기울기선 정보가 성공적으로 로드되었습니다.")
-        # BVE 좌표 로드
-        polyline = load_coordinates()
+        self.pitchlist = self.safe_load(
+            load_pitch_data,
+            self.pitch_file_path,
+            "기울기 정보가 성공적으로 로드되었습니다.",
+            "기울기 정보가 비어 있습니다.",
+            "기울기 정보 로드가 실패했습니다."
+        )
+        if not self.pitchlist:
+            return
+
+        # 좌표 정보 로드
+        polyline = self.safe_load(
+            load_coordinates,
+            self.coord_file_path,
+            "좌표 정보가 성공적으로 로드되었습니다.",
+            "좌표 정보가 비어 있습니다.",
+            "좌표 정보 로드가 실패했습니다."
+        )
+        if not polyline:
+            return
+
         self.polyline_with_sta = [(i * 25, *values) for i, values in enumerate(polyline)]
 
         self.pole_positions = distribute_pole_spacing_flexible(self.start_station, self.end_station, curvelist=self.curvelist,structure_list=self.structure_list)
         self.airjoint_list = define_airjoint_section(self.pole_positions ,airjoint_span=1600)
-
-        # 전주번호 추가
-        post_number_lst = generate_postnumbers(self.pole_positions)
-
 
         ######트랙별 처리###### todo
         #현재는 두 트랙이 동일하다고 가정(즉 pos와 모든 구조물을 공유함)
@@ -149,52 +172,6 @@ class AutoPole:
         self.anticreeping_pr = AnticreepingDeviceProcessor(self.poledata, self.wire_data, self.airjoint_list, self.wire_processor)
         self.anticreeping_pr.process()
 
-        # 본선 저장
-        self.polesaver_main = BVECSV(self.poledata["main"], self.wire_data["main"], 0)
-        pole_text_main = self.polesaver_main.create_pole_csv()
-        wire_text_main = self.polesaver_main.create_wire_csv()
-        # 기본 파일명 지정
-        self.pole_path_main = asksaveasfilename(
-            title='본선 전주 데이터 저장',
-            defaultextension=".txt",
-            filetypes=[("TXT files", "*.txt")],
-            initialfile="전주.txt"
-        )
-        self.wire_path_main = asksaveasfilename(
-            title='본선 전차선 데이터 저장',
-            defaultextension=".txt",
-            filetypes=[("TXT files", "*.txt")],
-            initialfile="전차선.txt"
-        )
-
-        write_to_file(self.pole_path_main, pole_text_main)
-        write_to_file(self.wire_path_main, wire_text_main)
-
-        # 상선 저장 (이중 트랙일 때만)
-        if self.track_mode == "double":
-            self.polesaver_sub = BVECSV(self.poledata["sub"], self.wire_data["sub"], 1)
-            pole_text_sub = self.polesaver_sub.create_pole_csv()
-            wire_text_sub = self.polesaver_sub.create_wire_csv()
-            # 기본 파일명 지정
-            self.pole_path_sub = asksaveasfilename(
-                title='상선 전주 데이터 저장',
-                defaultextension=".txt",
-                filetypes=[("TXT files", "*.txt")],
-                initialfile="상선전주.txt"
-            )
-            self.wire_path_sub = asksaveasfilename(
-                title='상선 전차선 데이터 저장',
-                defaultextension=".txt",
-                filetypes=[("TXT files", "*.txt")],
-                initialfile="상선전차선.txt"
-            )
-            write_to_file(self.pole_path_sub, pole_text_sub)
-            write_to_file(self.wire_path_sub, wire_text_sub)
-
-        self.log("전주와 전차선 txt가 성공적으로 저장되었습니다.")
-        if self.is_create_dxf:
-            print("도면 작성중.")
-
         # 최종 출력
         main_count = len(self.poledata.get("main", []))
         sub_count = len(self.poledata.get("sub", []))
@@ -204,3 +181,15 @@ class AutoPole:
             self.log(f"전주 개수: 본선={main_count}개, 상선={sub_count}개")
         self.log(f"마지막 전주 위치: {self.positions_by_track['main'][-1]}m (종점: {int(self.end_station)}m)")
         self.log('모든 작업 완료')
+
+    def safe_load(self, loader_func, file_path, success_msg, empty_msg, fail_msg):
+        try:
+            data = loader_func(file_path)
+            if data:
+                self.log(success_msg)
+            else:
+                self.log(empty_msg)
+            return data
+        except Exception as e:
+            self.log(f"{fail_msg} {e}")
+            raise

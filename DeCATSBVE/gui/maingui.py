@@ -1,6 +1,7 @@
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
-from tkinter.filedialog import asksaveasfilename
+from tkinter.filedialog import asksaveasfilename, askdirectory, askopenfilename
 
 import pandas as pd
 from bve.bvecsv import BVECSV
@@ -171,6 +172,7 @@ class AutoPoleApp(tk.Tk):
             self.runner.end_station = self.entry_end_sta_var.get()
             self.runner.brokenchain = self.entry_brokenchain_var.get()
 
+            self.filepath_getter()
             if self.runner.track_mode == "single":
                 if self.single_direction.get() == 'L':
                     self.runner.track_direction['main'] = -1
@@ -198,6 +200,22 @@ class AutoPoleApp(tk.Tk):
 
         except ValueError:
             self.runner.log("⚠️ 숫자를 입력하세요")
+
+    def filepath_getter(self):
+        folder = askdirectory(title='info 파일 경로 지정')
+        coord_path = os.path.join(folder, 'bve_coordinates.txt')
+        curve_path = os.path.join(folder, 'curve_info.txt')
+        pitch_path = os.path.join(folder, 'pitch_info.txt')
+        structue_path = askopenfilename(title='구조물 파일 열기',
+                defaultextension=".xlsx",
+                filetypes=[("XLSX files", "*.xlsx")],
+
+        )
+        if self.runner:
+            self.runner.coord_file_path = coord_path
+            self.runner.curve_file_path = curve_path
+            self.runner.pitch_file_path = pitch_path
+            self.runner.structure_file_path = structue_path
 
     def update_runner_tracks(self):
         """실행 중 runner의 트랙 관련 속성만 갱신"""
@@ -231,18 +249,22 @@ class AutoPoleApp(tk.Tk):
 
     def run_and_open_editor(self):
         # 입력값 반영 후 실행
-        self.update_inputs()
-        self.refresh_library()
-        self.load_dataset()
-        self.runner.run()
-        self.editor.runner = self.runner
-        self.plotter.runner = self.runner
-        self.editor.create_epoles()
-        self.editor.create_ewires()
-        self.editor.refresh_tree()
-        self.plotter.update_plot()
-        self.plotter.selected_pole_scatter = None
-        self.plotter.selected_pole_text = None
+        try:
+            self.update_inputs()
+            self.refresh_library()
+            self.load_dataset()
+            self.runner.run()
+            self.editor.runner = self.runner
+            self.plotter.runner = self.runner
+            self.editor.create_epoles()
+            self.editor.create_ewires()
+            self.editor.refresh_tree()
+            self.plotter.update_plot()
+            self.plotter.selected_pole_scatter = None
+            self.plotter.selected_pole_text = None
+        except Exception as e:
+            messagebox.showerror(f'에러', f'러너 실행중 오류가 발생했습니다. \n{e}')
+            return
 
     def save(self):
         self.runner.polesaver_main = BVECSV(self.runner.poledata['main'], self.runner.wire_data['main'], track_index=0)
