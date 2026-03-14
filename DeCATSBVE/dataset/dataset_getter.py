@@ -98,39 +98,32 @@ class DatasetGetter:
         return self.dataset['F_bracket_data']
 
     def get_contact_wire_span(self, currentspan, current_structure):
-        span_data = self.dataset['span_data']
-        span_list = self.dataset['span_list']
-        cw_span_values = span_data['전차선'][current_structure]
-        self.validate_span_lengths([cw_span_values], len(span_list))
-        return cw_span_values[span_list.index(currentspan)]
+        """전차선 경간에 따른 인덱스 반환"""
+        if current_structure in ['토공', '교량']:
+            return self._get_span(currentspan, '토공전차선')
+        else:
+            return self._get_span(currentspan, '터널전차선')
 
     def get_feeder_span(self, currentspan):
-        span_data = self.dataset['span_data']
-        span_list = self.dataset['span_list']
-        af_span_values = span_data['급전선']
-        self.validate_span_lengths([af_span_values], len(span_list))
-        return af_span_values[span_list.index(currentspan)]
+        return self._get_span(currentspan, '급전선')
 
     def get_protection_wire_span(self, currentspan):
-        span_data = self.dataset['span_data']
-        span_list = self.dataset['span_list']
-        fpw_span_values = span_data['보호선']
-        self.validate_span_lengths([fpw_span_values], len(span_list))
-        return fpw_span_values[span_list.index(currentspan)]
+        return self._get_span(currentspan, '보호선')
 
     def get_inactive_cw_span(self, currentspan):
-        span_data = self.dataset['span_data']
-        span_list = self.dataset['span_list']
-        inactive_cw_values = span_data['무효전차선']
-        self.validate_span_lengths([inactive_cw_values], len(span_list))
-        return inactive_cw_values[span_list.index(currentspan)]
+        return self._get_span(currentspan, '무효용전차선')
 
     def get_inactive_mw_span(self, currentspan):
+        return self._get_span(currentspan, '무효용조가선')
+
+    def _get_span(self, currentspan, key):
+        """공통 스판 조회 메서드"""
         span_data = self.dataset['span_data']
-        span_list = self.dataset['span_list']
-        inactive_mw_values = span_data['무효조가선']
-        self.validate_span_lengths([inactive_mw_values], len(span_list))
-        return inactive_mw_values[span_list.index(currentspan)]
+        values = span_data[key]
+        if currentspan not in values:
+            raise ValueError(f"유효하지 않은 경간 값: {currentspan}")
+        return values[currentspan]
+
 
     def get_af_offset(self, current_structure):
         af_offset_values = self.dataset['wire_offset']['AF']
@@ -160,10 +153,3 @@ class DatasetGetter:
 
     def get_f_bracket_height(self):
         return self.dataset['f_bracket_height']
-
-    def get_span_list(self):
-        return self.dataset['span_list']
-
-    def validate_span_lengths(self, lists, expected_len):
-        if not all(len(lst) == expected_len for lst in lists):
-            raise ValueError("스판 인덱스와 정의된 LIST의 길이가 맞지 않습니다. 파일을 확인해주세요")
