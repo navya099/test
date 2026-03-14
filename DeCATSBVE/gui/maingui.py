@@ -295,6 +295,7 @@ class AutoPoleApp(tk.Tk):
     def load_pickle(self):
         self.update_inputs()
         self.runner = load_runner('c:/temp/decatsbve.dat')
+        self.runner.log_widget = self.log_box
         self.refresh_library()
         self.load_dataset()
         self.runner.polesaver_main = BVECSV(self.runner.poledata["main"], self.runner.wire_data["main"], 0)

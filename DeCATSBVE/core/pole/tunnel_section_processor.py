@@ -11,11 +11,6 @@ class TunnelSectionProcessor:
     def process(pole, dataprocessor, idxlib):
         flip = (pole.side == 1)
         if flip:
-
-            if pole.base_type == 'I':
-                pole.base_type = 'O'
-            else:
-                pole.base_type = 'I'
             bracket_rotation = 180
             mast_raotation = 180
             feeder_rotation = 0

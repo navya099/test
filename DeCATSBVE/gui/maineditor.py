@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from tkinter.filedialog import askopenfilename
 
 from core.airjoint.airjoint_processor import AirJointProcessor
 from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
@@ -7,6 +8,7 @@ from core.pole.manual_pole_processor import ManualPoleProcessor
 from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.pole_updator import PoleUpdator
 from core.pole.tunnel_section_processor import TunnelSectionProcessor
+from core.structure.define_structure import isbridge_tunnel
 from core.wire.wire_processor import WireProcessor
 from enums.airjoint_section import AirJoint
 from gui.pole_add_ui import PoleADDUI
@@ -118,6 +120,7 @@ class AutoPoleEditor(tk.Frame):
         tk.Button(self, text="전선 상세 편집", command=self.open_wire_editor).pack(side="left")
         tk.Button(self, text="전주 추가", command=self.add_pole).pack(side="left")
         tk.Button(self, text="전주 삭제", command=self.delete_pole).pack(side="left")
+        tk.Button(self, text="파일에서 전주 추가", command=self.add_pole_with_file).pack(side="left")
         tk.Button(self, text="에어조인트 추가", command=self.add_airjoint).pack(side="left")
         tk.Button(self, text="에어조인트 삭제", command=self.remove_airjoint).pack(side="left")
         tk.Button(self, text="흐름방지장치 추가", command=self.add_antidevice).pack(side="left")
@@ -667,3 +670,44 @@ class AutoPoleEditor(tk.Frame):
 
         self.refresh_tree()
         self.runner.log(f'흐름방지 장치가 제거되었습니다. pos:{mid_pos}')
+
+    def add_pole_with_file(self):
+        xlsxname = askopenfilename()
+        import pandas as pd
+        sheets = pd.read_excel(xlsxname, sheet_name=None)
+
+        for sheet_name, df in sheets.items():
+            poles = []  # 시트별 리스트 초기화
+            for _, row in df.iterrows():
+                post_number = row['전주번호']
+                pos = int(row['측점'])
+                base_type = row['기본타입']
+                section = None if str(row['구간']) == 'None' else str(row['구간'])
+
+                current_structure = isbridge_tunnel(pos, self.runner.structure_list)
+                gauge = self.runner.dataprocessor.get_pole_gauge(current_structure)
+                if self.runner.track_direction[sheet_name] == -1:
+                    side = -1
+                else:
+                    side = 1
+                gauge *= side
+                new_pole = ManualPoleProcessor.create_pole(
+                    self.runner.alignment_by_track[sheet_name],
+                    self.runner.dataprocessor,
+                    self.runner.idxlib,
+                    self.runner.curvelist,
+                    self.runner.pitchlist,
+                    self.runner.structure_list,
+                    pos, post_number, gauge, section, base_type, sheet_name, side
+                )
+
+                poles.append(new_pole)
+
+            # 시트별 업데이트 및 저장
+            PoleUpdator.update_all(poles)
+            self.runner.poledata[sheet_name] = poles
+            self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        self.create_epoles()
+        self.create_ewires()
+        self.refresh_tree()
+        self.runner.log(f"엑셀 전주데이터가 로드되었습니다. 계:{len(self.runner.poledata['main'])}")
