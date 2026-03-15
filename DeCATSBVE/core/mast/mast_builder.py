@@ -22,14 +22,19 @@ class MASTBuilder:
         yoffset = MASTBuilder.get_yoffset(dataprocessor, pole.structure)
         #전주용 밴드 2개
         # 밴드
-        size = 'P10' if pole.section is None else 'P12'
         accessories = []
-        accessories += AccessoryBuilder.build(dataprocessor, idxlib, '가동브래킷용', size, pole.structure, rotation,
-                                               pole.gauge)
-        accessories += AccessoryBuilder.build(dataprocessor, idxlib, '완철용', size, pole.structure, rotation,
+        if pole.section is None:
+             size = 'P10'
+             accessories += AccessoryBuilder.build(dataprocessor, idxlib, '가동브래킷용', size, pole.structure, rotation,
+                                                   pole.gauge)
+             accessories += AccessoryBuilder.build(dataprocessor, idxlib, '완철용', size, pole.structure, rotation,
+                                                   pole.gauge)
+        else:
+            size ='P12'
+            accessories += AccessoryBuilder.build(dataprocessor, idxlib, '완철용', size, pole.structure, rotation,
                                                pole.gauge)
 
-        base = MastBase(name=foundation_name, index=foundation_idx, offset=(pole.gauge,yoffset), rotation=rotation)
+        base = MastBase(name=foundation_name, index=foundation_idx, offset=(pole.gauge,0), rotation=rotation)
 
 
         return Mast(name=mast_name, index=mast_index, offset=(pole.gauge,yoffset), rotation=rotation, base=base, accessories=accessories)
