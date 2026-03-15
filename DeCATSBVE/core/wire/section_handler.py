@@ -51,12 +51,29 @@ class WireSectionHandler:
             print(f'[DEBUG]:return fallback end_offset at {pole.pos},{pole.section} in process_normal_section')
             end_offset = offset2
             end_cw_height = self.datapro.get_contact_wire_height(next_pole.structure)
-        wire.add_wire(self.compros.run(
-            self.al, index,
-            pole.pos, pole.next_pos, pole.z, pole.next_z,
-            start=(start_offset, start_cw_height), end=(end_offset, end_cw_height),
-            pitch_angle=pitch_angle, label='전차선'
-        ))
-
+        if start_cw_height == end_cw_height:
+            wire.add_wire(self.compros.run(
+                self.al, index,
+                pole.pos, pole.next_pos, pole.z, pole.next_z,
+                start=(start_offset, start_cw_height), end=(end_offset, end_cw_height),
+                pitch_angle=pitch_angle, label='전차선'
+            ))
+        else:
+            cw_idx = self.datapro.get_inactive_cw_span(pole.span)
+            mw_idx = self.datapro.get_inactive_mw_span(pole.span)
+            start_system_height = self.datapro.get_system_height(pole.structure)
+            end_system_height = self.datapro.get_system_height(next_pole.structure)
+            wire.add_wire(self.compros.run(
+                self.al, cw_idx,
+                pole.pos, pole.next_pos, pole.z, pole.next_z,
+                start=(start_offset, start_cw_height), end=(end_offset, end_cw_height),
+                pitch_angle=pitch_angle, label='전차선'
+            ))
+            wire.add_wire(self.compros.run(
+                self.al, mw_idx,
+                pole.pos, pole.next_pos, pole.z, pole.next_z,
+                start=(start_offset, start_cw_height + start_system_height), end=(end_offset, end_cw_height + end_system_height),
+                pitch_angle=pitch_angle, label='조가선'
+            ))
     def process_airjoint_section(self, pole, next_pole, wire, pitch_angle , offset, index):
         self.airpro.run(pole, next_pole, wire, pitch_angle ,offset, index)
