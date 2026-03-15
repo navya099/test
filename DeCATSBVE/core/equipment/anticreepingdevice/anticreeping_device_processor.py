@@ -1,6 +1,7 @@
 
 from core.equipment.equipment_data import EquipmentDATA
-from utils.math_util import change_permile_to_degree
+from utils.math_util import change_permile_to_degree, calculate_curve_angle, calculate_slope
+
 
 class AnticreepingDeviceProcessor:
     def __init__(self, poledata, wiredata, airjoint_list, wire_processor):
@@ -100,8 +101,14 @@ class AnticreepingDeviceProcessor:
         for track_name, devices in self.devices_by_track.items():
             for device in devices:
                 pole = next((p for p in self.poledata[track_name] if p.pos == device["pos"]), None)
+                wire = next((w for w in self.wiredata[track_name] if w.pos == device["pos"]), None)
+                if not wire:
+                    continue
                 if not pole:
                     continue
+                cw = next((w for w in wire.wires if w.label == '전차선'), None)
+                if cw is None:
+                    continue  # 전차선이 없으면 건너뜀
                 pole.section = device['tag']
                 # 기존 흐름방지 장치 제거
                 pole.equipments = [
@@ -110,14 +117,22 @@ class AnticreepingDeviceProcessor:
                 ]
 
                 if device['tag'] == "흐름방지 시작점":
-
+                    x1 = pole.gauge
+                    x2 = cw.end_point[0]
+                    adjusted_angle = calculate_curve_angle(self.wire_processor.polyline_by_track[track_name], pole.pos, pole.next_pos,
+                                                           x1, x2)
                     pole.equipments.extend([
-                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=0.0, type='흐름방지장치'),
+                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=adjusted_angle, type='흐름방지장치'),
                         EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=0.0, type='봉강지선')
                     ])
                 elif device['tag'] == "흐름방지 끝점":
+                    x1 = pole.gauge
+                    x2 = cw.offset[0]
+                    adjusted_angle = calculate_curve_angle(self.wire_processor.polyline_by_track[track_name], pole.pos,
+                                                           pole.next_pos,
+                                                           x1, x2)
                     pole.equipments.extend([
-                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=180, type='흐름방지장치'),
+                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=180 - adjusted_angle, type='흐름방지장치'),
                         EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=180, type='봉강지선')
                     ])
 
