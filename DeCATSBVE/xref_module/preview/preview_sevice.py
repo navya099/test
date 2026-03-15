@@ -28,17 +28,18 @@ class PreviewService:
         try:
             mast = pole.mast
             if mast:
-                path = self.locator.find(mast.name)
-                if path:
-                    items.append(
-                        PreviewItem(
-                            path=path,
-                            transform=Transform(x=mast.offset[0],z=mast.offset[1], rotation=mast.rotation,pivot=pivot),
-                            category=PreviewCategory.POLE
+                if mast.name:
+                    path = self.locator.find(mast.name)
+                    if path:
+                        items.append(
+                            PreviewItem(
+                                path=path,
+                                transform=Transform(x=mast.offset[0],z=mast.offset[1], rotation=mast.rotation,pivot=pivot),
+                                category=PreviewCategory.POLE
+                            )
                         )
-                    )
-                else:
-                    missing.append(mast.name)
+                    else:
+                        missing.append(mast.name)
         except Exception as e:
             print(f"[Mast 처리 오류] {e}")
             missing.append("mast 처리 실패")
@@ -61,8 +62,6 @@ class PreviewService:
                             )
                         else:
                             missing.append(base.name)
-                    else:
-                        raise AttributeError("mast.base.name is None")
         except Exception as e:
             print(f"[기초 처리 오류] {e}")
             missing.append("기초 처리 실패")
@@ -87,8 +86,6 @@ class PreviewService:
                                     )
                                 else:
                                     missing.append(ac.name)
-                            else:
-                                raise AttributeError("mast.accessory.name is None")
         except Exception as e:
             print(f"[전주 악세서리 처리 오류] {e}")
             missing.append("악세서리 처리 실패")
@@ -97,33 +94,35 @@ class PreviewService:
         for br in getattr(pole, "brackets", []):
             try:
                 if br:
-                    path = self.locator.find(br.bracket_name)
-                    if path:
-                        items.append(
-                            PreviewItem(
-                                path=path,
-                                transform=Transform(x=br.offset[0], z=br.offset[1], rotation=br.rotation,pivot=pivot),
-                                category=PreviewCategory.BRACKET
+                    if br.bracket_name:
+                        path = self.locator.find(br.bracket_name)
+                        if path:
+                            items.append(
+                                PreviewItem(
+                                    path=path,
+                                    transform=Transform(x=br.offset[0], z=br.offset[1], rotation=br.rotation,pivot=pivot),
+                                    category=PreviewCategory.BRACKET
+                                )
                             )
-                        )
-                    else:
-                        missing.append(br.bracket_name)
+                        else:
+                            missing.append(br.bracket_name)
 
                     # 브래킷 피팅류
                     for f in getattr(br, "fittings", []):
                         try:
                             if f:
-                                path = self.locator.find(f.label)
-                                if path:
-                                    items.append(
-                                        PreviewItem(
-                                            path=path,
-                                            transform=Transform(x=f.offset[0], z=f.offset[1],rotation=f.rotation,pivot=pivot),
-                                            category=PreviewCategory.BRACKET
+                                if f.label:
+                                    path = self.locator.find(f.label)
+                                    if path:
+                                        items.append(
+                                            PreviewItem(
+                                                path=path,
+                                                transform=Transform(x=f.offset[0], z=f.offset[1],rotation=f.rotation,pivot=pivot),
+                                                category=PreviewCategory.BRACKET
+                                            )
                                         )
-                                    )
-                                else:
-                                    missing.append(f.label)
+                                    else:
+                                        missing.append(f.label)
                         except Exception as e:
                             print(f"[Fitting 처리 오류] {e}")
                             missing.append("fitting 처리 실패")
@@ -162,17 +161,18 @@ class PreviewService:
         for equip in getattr(pole, "equipments", []):
             try:
                 if equip:
-                    path = self.locator.find(equip.name)
-                    if path:
-                        items.append(
-                            PreviewItem(
-                                path=path,
-                                transform=Transform(x=equip.offset[0], z=equip.offset[1], rotation=equip.rotation,pivot=pivot),
-                                category=PreviewCategory.FEEDER
+                    if equip.name:
+                        path = self.locator.find(equip.name)
+                        if path:
+                            items.append(
+                                PreviewItem(
+                                    path=path,
+                                    transform=Transform(x=equip.offset[0], z=equip.offset[1], rotation=equip.rotation,pivot=pivot),
+                                    category=PreviewCategory.FEEDER
+                                )
                             )
-                        )
-                    else:
-                        missing.append(equip.name)
+                        else:
+                            missing.append(equip.name)
             except Exception as e:
                 print(f"[Equipment 처리 오류] {e}")
                 missing.append("equipment 처리 실패")
