@@ -13,11 +13,8 @@ class AirjointWireProcessor:
         # 에어조인트 구간 처리
         # 전차선 정보 가져오기,
         system_heigh, contact_height = self.datap.get_contact_wire_and_massanger_wire_info(pole.structure)
-
-        #무효전선 인덱스
-        imw_index = self.datap.get_inactive_mw_span(pole.span)
-        icw_index = self.datap.get_inactive_cw_span(pole.span)
-
+        imw_index = self.datap.get_inactive_mw_span(pole.span - 7)
+        icw_index = self.datap.get_inactive_cw_span(pole.span - 7)
         # 평행구간 전차선 오프셋
         aj_start_x, aj_start_y = self.datap.get_bracket_coordinates('AJ형_시점').get('x'),self.datap.get_bracket_coordinates('AJ형_시점').get('y')
         f_start_x, f_start_y = self.datap.get_bracket_coordinates('F형_시점').get('x'), self.datap.get_bracket_coordinates('F형_시점').get('y')
@@ -43,6 +40,8 @@ class AirjointWireProcessor:
             start_offset = pole.brackets[0].stagger
             start_cw_height = self.datap.get_contact_wire_height(pole.structure)
             end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
+            start_system_height = self.datap.get_system_height(pole.structure)
+            end_system_height = self.datap.get_system_height(next_pole.structure)
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
                 (start_offset,start_cw_height),(aj_start_x,end_cw_height), pitch_angle, label='본선전차선')
@@ -54,37 +53,55 @@ class AirjointWireProcessor:
 
             mw = self.common.run(
                 self.al, imw_index, sta2, pole.next_pos, pole.z, pole.next_z,
-                (pererall_d,h2),(f_start_x,contact_height + system_heigh +f_start_y), pitch_angle, label='무효조가선')
+                (pererall_d,h2),(f_start_x,end_cw_height + end_system_height), pitch_angle, label='무효조가선')
 
             mw.station = sta2
             wire.add_wire(mw)
+
             cw = self.common.run(
                 self.al, icw_index, sta2, pole.next_pos, pole.z, pole.next_z,
-                (pererall_d, h1), (f_start_x, contact_height + f_start_y), pitch_angle, label='무효전차선')
+                (pererall_d, h1), (f_start_x, end_cw_height + f_start_y), pitch_angle, label='무효전차선')
             cw.station = sta2
             wire.add_wire(cw)
         elif pole.section == '에어조인트 (2호주)':
             # 본선
             start_cw_height = self.datap.get_contact_wire_height(pole.structure)
             end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
+            start_system_height = self.datap.get_system_height(pole.structure)
+            end_system_height = self.datap.get_system_height(next_pole.structure)
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
                 (aj_start_x, start_cw_height), (aj_middle2_x, end_cw_height), pitch_angle, label='본선전차선')
             )
             # 무효선
+            imw_index = self.datap.get_inactive_mw_span(pole.span)
+            icw_index = self.datap.get_inactive_mw_span(pole.span)
             wire.add_wire(self.common.run(
-                self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                self.al, imw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (f_start_x, start_cw_height + start_system_height), (aj_middle1_x, end_cw_height + end_system_height), pitch_angle, label='무효조가선')
+            )
+            wire.add_wire(self.common.run(
+                self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
                 (f_start_x, start_cw_height + f_start_y), (aj_middle1_x, end_cw_height), pitch_angle, label='무효전차선')
             )
-
         elif pole.section == '에어조인트 중간주 (3호주)':
             # 본선 >무효선 상승
             start_cw_height = self.datap.get_contact_wire_height(pole.structure)
             end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
+            start_system_height = self.datap.get_system_height(pole.structure)
+            end_system_height = self.datap.get_system_height(next_pole.structure)
+            #본선 -> 무효전차선
+            imw_index = self.datap.get_inactive_mw_span(pole.span)
+            icw_index = self.datap.get_inactive_mw_span(pole.span)
             wire.add_wire(self.common.run(
-                self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
-                (aj_middle2_x, start_cw_height), (f_end_x, end_cw_height + f_start_y), pitch_angle, label='본선->무효전차선')
+                self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (aj_middle2_x, start_cw_height), (f_end_x, end_cw_height + f_start_y), pitch_angle, label='무효전차선')
             )
+            wire.add_wire(self.common.run(
+                self.al, imw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+                (aj_middle2_x, start_cw_height + start_system_height), (f_end_x, end_cw_height + end_system_height), pitch_angle, label='무효조가선')
+            )
+
             # 무효선 > 본선
             wire.add_wire(self.common.run(
                 self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
@@ -101,6 +118,9 @@ class AirjointWireProcessor:
                 (aj_end_x, start_cw_height), (end_offset, end_cw_height), pitch_angle, label='본선전차선')
             )
             # 무효선
+            imw_index = self.datap.get_inactive_mw_span(pole.span - 6)
+            icw_index = self.datap.get_inactive_cw_span(pole.span - 6)
+
             # slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
             slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(
                 pole.pos, pole.gauge, pole.span, contact_height, system_heigh, f_start_y)
