@@ -4,6 +4,8 @@ from tkinter import ttk, messagebox
 from tkinter.filedialog import asksaveasfilename, askdirectory, askopenfilename
 
 import pandas as pd
+from matplotlib.pyplot import title
+
 from bve.bvecsv import BVECSV
 from core.base_runner import BaseRunner
 from core.manual_pole_runner import ManualRunner
@@ -265,48 +267,37 @@ class AutoPoleApp(tk.Tk):
             return
 
     def save(self):
-        self.runner.polesaver_main = BVECSV(self.runner.poledata['main'], self.runner.wire_data['main'], track_index=0)
-        t = self.runner.polesaver_main.create_pole_csv() #본선 저장
-        t2 = self.runner.polesaver_main.create_wire_csv()
-        if not self.runner.pole_path_main:
-            # 기본 파일명 지정
-            self.runner.pole_path_main= asksaveasfilename(
-                title='본선 전주 데이터 저장',
-                defaultextension=".txt",
-                filetypes=[("TXT files", "*.txt")],
-                initialfile="전주.txt"
-            )
-            self.runner.wire_path_main = asksaveasfilename(
-                title='본선 전차선 데이터 저장',
-                defaultextension=".txt",
-                filetypes=[("TXT files", "*.txt")],
-                initialfile="전차선.txt"
-            )
-        write_to_file(self.runner.pole_path_main, t)
-        write_to_file(self.runner.wire_path_main, t2)
-        if self.runner.track_mode == "double":
-            self.runner.polesaver_sub = BVECSV(self.runner.poledata['sub'], self.runner.wire_data['sub'],
-                                                track_index=1)
-            s = self.runner.polesaver_sub.create_pole_csv()  # 본선 저장
-            s2 = self.runner.polesaver_sub.create_wire_csv()
-            if not self.runner.pole_path_sub:
-                # 기본 파일명 지정
-                self.runner.pole_path_sub = asksaveasfilename(
-                    title='상선 전주 데이터 저장',
-                    defaultextension=".txt",
-                    filetypes=[("TXT files", "*.txt")],
-                    initialfile="상선전주.txt"
-                )
-                self.runner.wire_path_sub = asksaveasfilename(
-                    title='상선 전차선 데이터 저장',
-                    defaultextension=".txt",
-                    filetypes=[("TXT files", "*.txt")],
-                    initialfile="상선전차선.txt"
-                )
+        try:
+            self.runner.polesaver_main = BVECSV(self.runner.poledata['main'], self.runner.wire_data['main'], track_index=0)
+            t = self.runner.polesaver_main.create_pole_csv() #본선 저장
+            t2 = self.runner.polesaver_main.create_wire_csv()
+            main_path =  askdirectory(title='저장 경로 선택')
+            if main_path:
+                if not self.runner.pole_path_main:
+                    # 기본 파일명 지정
+                    self.runner.pole_path_main = os.path.join(main_path, '전주.txt')
+                    self.runner.wire_path_main = os.path.join(main_path, '전차선.txt')
+                write_to_file(self.runner.pole_path_main, t)
+                write_to_file(self.runner.wire_path_main, t2)
+                if self.runner.track_mode == "double":
+                    self.runner.polesaver_sub = BVECSV(self.runner.poledata['sub'], self.runner.wire_data['sub'],
+                                                        track_index=1)
+                    s = self.runner.polesaver_sub.create_pole_csv()  # 본선 저장
+                    s2 = self.runner.polesaver_sub.create_wire_csv()
+                    if not self.runner.pole_path_sub:
+                        # 기본 파일명 지정
+                        self.runner.pole_path_sub = os.path.join(main_path, '상선전주.txt')
+                        self.runner.wire_path_sub = os.path.join(main_path, '상선전차선.txt')
 
-            write_to_file(self.runner.pole_path_sub, s)
-            write_to_file(self.runner.wire_path_sub, s2)
-        self.runner.log(f"저장 성공!")
+                    write_to_file(self.runner.pole_path_sub, s)
+                    write_to_file(self.runner.wire_path_sub, s2)
+                self.runner.log(f"txt 저장 성공!")
+            else:
+                messagebox.showerror('txt 저장 에러', '경로가 지정되지 않았습니다.')
+                return
+        except Exception as e:
+            messagebox.showerror('치명적 에러', f'save를 실행중 치명적인 응용프로그램 에러가 발생했습니다. {e}')
+            return
 
     def save_pickle(self):
         save_runner(self.runner,'c:/temp/decatsbve.dat')
