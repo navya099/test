@@ -32,9 +32,10 @@ class AirjointBracketAdder:
             start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
             en = self.idxlib.get_name(1247)
             pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=start_angle, type='장력장치'))
-            jiseon = self.idxlib.get_name(674)
-            pole.equipments.append(
-                EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=0, type='지선설비'))
+            if pole.structure != '터널':
+                jiseon = self.idxlib.get_name(674)
+                pole.equipments.append(
+                    EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=0, type='지선설비'))
         elif pole.section == AirJoint.POINT_2.value:
             # POINT_2 구간 처리
             self.add_common_equipts(pole)
@@ -62,9 +63,10 @@ class AirjointBracketAdder:
                 x5 *= -1
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge)
             pole.equipments.append(EquipmentDATA(name=en, index=1247, offset=(pole.gauge,0),rotation=180 + end_angle, type='장력장치'))
-            jiseon = self.idxlib.get_name(674)
-            pole.equipments.append(
-                EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=180, type='지선설비'))
+            if pole.structure != '터널':
+                jiseon = self.idxlib.get_name(674)
+                pole.equipments.append(
+                    EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=180, type='지선설비'))
 
     def add_f_and_aj_brackets(self, pole, end=False):
         """F형 및 AJ형 브래킷을 추가하는 공통 함수"""

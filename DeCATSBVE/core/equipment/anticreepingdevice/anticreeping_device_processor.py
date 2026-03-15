@@ -121,21 +121,30 @@ class AnticreepingDeviceProcessor:
                     x2 = cw.end_point[0]
                     adjusted_angle = calculate_curve_angle(self.wire_processor.polyline_by_track[track_name], pole.pos, pole.next_pos,
                                                            x1, x2)
-                    pole.equipments.extend([
-                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=adjusted_angle, type='흐름방지장치'),
-                        EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=0.0, type='봉강지선')
-                    ])
+                    if pole.structure != '터널':
+                        pole.equipments.extend([
+                            EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=adjusted_angle, type='흐름방지장치'),
+                            EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=0.0, type='봉강지선')
+                        ])
+                    else:
+                        pole.equipments.append(
+                            EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0),
+                                          rotation=adjusted_angle, type='흐름방지장치'))
                 elif device['tag'] == "흐름방지 끝점":
                     x1 = pole.gauge
                     x2 = cw.offset[0]
                     adjusted_angle = calculate_curve_angle(self.wire_processor.polyline_by_track[track_name], pole.pos,
                                                            pole.next_pos,
                                                            x1, x2)
-                    pole.equipments.extend([
-                        EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=180 - adjusted_angle, type='흐름방지장치'),
-                        EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=180, type='봉강지선')
-                    ])
-
+                    if pole.structure != '터널':
+                        pole.equipments.extend([
+                            EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0), rotation=180 - adjusted_angle, type='흐름방지장치'),
+                            EquipmentDATA(name='봉강지선', index=674, offset=(pole.gauge, 0), rotation=180, type='봉강지선')
+                        ])
+                    else:
+                        pole.equipments.append(
+                            EquipmentDATA(name='흐름방지장치_강관주용', index=679, offset=(pole.gauge, 0),
+                                          rotation=180 - adjusted_angle, type='흐름방지장치'))
     def apply_wires(self):
         for track_name, devices in self.devices_by_track.items():
             for device in devices:
