@@ -11,9 +11,9 @@ class AutoRunner(BaseRunner):
     def run(self):
         """전체 작업을 관리하는 메인 함수"""
         self.base_info_load()
+        self.pole_positions = distribute_pole_spacing_flexible(self.start_station, self.end_station, curvelist=self.curvelist,structure_list=self.structure_list)
         self.create_dictionary_by_track()
 
-        self.pole_positions = distribute_pole_spacing_flexible(self.start_station, self.end_station, curvelist=self.curvelist,structure_list=self.structure_list)
         self.airjoint_list = define_airjoint_section(self.pole_positions ,airjoint_span=1600)
         self.pole_processor = PoleProcessor()
 

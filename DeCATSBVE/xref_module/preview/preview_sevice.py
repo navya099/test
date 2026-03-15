@@ -33,7 +33,7 @@ class PreviewService:
                     items.append(
                         PreviewItem(
                             path=path,
-                            transform=Transform(x=mast.offset, z=0, rotation=mast.rotation,pivot=pivot),
+                            transform=Transform(x=mast.offset[0],z=mast.offset[1], rotation=mast.rotation,pivot=pivot),
                             category=PreviewCategory.POLE
                         )
                     )
@@ -42,6 +42,56 @@ class PreviewService:
         except Exception as e:
             print(f"[Mast 처리 오류] {e}")
             missing.append("mast 처리 실패")
+
+        # 2-1. 전주기초
+        try:
+            mast = pole.mast
+            if mast:
+                if mast.base:
+                    base = mast.base
+                    if base.name:
+                        path = self.locator.find(mast.base.name)
+                        if path:
+                            items.append(
+                                PreviewItem(
+                                    path=path,
+                                    transform=Transform(x=base.offset[0], z=base.offset[1], rotation=base.rotation, pivot=pivot),
+                                    category=PreviewCategory.POLE
+                                )
+                            )
+                        else:
+                            missing.append(base.name)
+                    else:
+                        raise AttributeError("mast.base.name is None")
+        except Exception as e:
+            print(f"[기초 처리 오류] {e}")
+            missing.append("기초 처리 실패")
+
+        # 2-2. 전주악세서리
+        try:
+            mast = pole.mast
+            if mast:
+                if mast.accessories:
+                    for ac in mast.accessories:
+                        if ac:
+                            if ac.name:
+                                path = self.locator.find(ac.name)
+                                if path:
+                                    items.append(
+                                        PreviewItem(
+                                            path=path,
+                                            transform=Transform(x=ac.offset[0], z=ac.offset[1], rotation=ac.rotation,
+                                                                pivot=pivot),
+                                            category=PreviewCategory.POLE
+                                        )
+                                    )
+                                else:
+                                    missing.append(ac.name)
+                            else:
+                                raise AttributeError("mast.accessory.name is None")
+        except Exception as e:
+            print(f"[전주 악세서리 처리 오류] {e}")
+            missing.append("악세서리 처리 실패")
 
         # 3. 브래킷
         for br in getattr(pole, "brackets", []):

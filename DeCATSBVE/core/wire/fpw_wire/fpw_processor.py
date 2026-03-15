@@ -4,8 +4,8 @@ from core.wire.base_wire_procsseor import BaseWireProcessor
 
 class FPWWireProcessor(BaseWireProcessor):
     def collect_data(self, pole: PoleDATA):
-        x_offset, y_offset = self.pro.get_fpw_offset(pole.structure)
-        x_offset_next, y_offset_next = self.pro.get_fpw_offset(pole.next_structure)
+        x_offset, y_offset = self.pro.get_fpw_offset(pole.structure).get('x'), self.pro.get_fpw_offset(pole.structure).get('y')
+        x_offset_next, y_offset_next = self.pro.get_fpw_offset(pole.next_structure).get('x'), self.pro.get_fpw_offset(pole.next_structure).get('y')
         idx = self.pro.get_protection_wire_span(pole.span)
 
         # 현재 구조물 처리

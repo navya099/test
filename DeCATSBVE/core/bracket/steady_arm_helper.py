@@ -6,7 +6,7 @@ class SteadyArmHelper:
     def get_index(dataprocessor, base_type):
         steady_arm_dict = dataprocessor.get_steady_arm_fittings()
 
-        return steady_arm_dict[base_type][0] if base_type == 'I' else steady_arm_dict[base_type][1]
+        return steady_arm_dict[base_type]['L'] if base_type == 'I' else steady_arm_dict[base_type]['R']
 
     @staticmethod
     def create_fitting(pole, dataprocessor, idxlib, stagger, cw_height, rotation):

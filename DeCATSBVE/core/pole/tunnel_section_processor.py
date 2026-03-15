@@ -1,14 +1,16 @@
 from core.bracket.bracket_data import BracketDATA
 from core.bracket.helper_bracket_create import BracketCreator
 from core.equipment.equipment_data import EquipmentDATA
+from core.mast.mast_builder import MASTBuilder
 from core.mast.mastdata import Mast
 from core.pole.curve_section_processor import CurveSectionProcessor
 from core.pole.straight_section_processor import StraightSectionProcessor
+from dataset.dataset_getter import DatasetGetter
 
 
 class TunnelSectionProcessor:
     @staticmethod
-    def process(pole, dataprocessor, idxlib):
+    def process(pole, dataprocessor: DatasetGetter, idxlib):
         flip = (pole.side == 1)
         if flip:
             bracket_rotation = 180
@@ -21,8 +23,6 @@ class TunnelSectionProcessor:
             feeder_rotation = 180
             stagger_flip = False
 
-        mast_index = dataprocessor.get_mast_index(pole.structure)
-        mast_name = idxlib.get_name(mast_index)
 
         feeder_idx = dataprocessor.get_feeder_insulator_idx(pole.structure)
         feeder_name = idxlib.get_name(feeder_idx)
@@ -34,7 +34,8 @@ class TunnelSectionProcessor:
             CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, bracket_rotation)
 
         # 터널 특수 규칙 적용
-        mast = Mast(name=mast_name, index=mast_index, offset=pole.gauge, rotation=mast_raotation)
+        # 전주 빌더 호출
+        mast = MASTBuilder.build(pole, dataprocessor, idxlib, mast_raotation)
 
         equipment = EquipmentDATA(name=feeder_name, index=feeder_idx,
                                   offset=(pole.gauge * -1, 0), rotation=feeder_rotation,

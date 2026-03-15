@@ -21,15 +21,38 @@ class BVECSV:
 
         def write_equipment(pos, eqs):
             for eq in eqs:
-                self.lines.append(
-                    f'{pos},.freeobj {self.track_index};{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n'
-                )
+                if eq:
+                    if eq.index:
+                        self.lines.append(
+                            f'{pos},.freeobj {self.track_index};{eq.index};{eq.offset[0]};{eq.offset[1]};{eq.rotation};,;{eq.name}\n'
+                        )
 
         def write_mast(pos, mast):
             if mast is not None:
-                self.lines.append(
-                    f'{pos},.freeobj {self.track_index};{mast.index};{mast.offset};0;{mast.rotation};,;{mast.name}\n'
-                )
+                if mast.index:
+                    self.lines.append(
+                        f'{pos},.freeobj {self.track_index};{mast.index};{mast.offset[0]};{mast.offset[1]};{mast.rotation};,;{mast.name}\n'
+                    )
+
+        def write_mast_accessories(pos: str, mast) -> None:
+            if mast and mast.accessories:
+                for ac in mast.accessories:
+                    if ac:
+                        if ac.index:
+                            line = (
+                                f"{pos},.freeobj {self.track_index};"
+                                f"{ac.index};{ac.offset[0]};{ac.offset[1]};"
+                                f"{ac.rotation};,;{ac.name}\n"
+                            )
+                            self.lines.append(line)
+        def write_base(pos, mast):
+            if mast:
+                if mast.base:
+                    base = mast.base
+                    if base.index:
+                        self.lines.append(
+                            f'{pos},.freeobj {self.track_index};{base.index};{base.offset[0]};{base.offset[1]};{base.rotation};,;{base.name}\n'
+                        )
 
         def write_brackets(pos, brs):
             for br in brs:
@@ -40,9 +63,11 @@ class BVECSV:
 
         def write_fittings(pos, fittings):
             for fit in fittings:
-                self.lines.append(
-                    f'{pos},.freeobj {self.track_index};{fit.index};{fit.offset[0]};{fit.offset[1]};{fit.rotation};,;{fit.label}\n'
-                )
+                if fit:
+                    if fit.index:
+                        self.lines.append(
+                            f'{pos},.freeobj {self.track_index};{fit.index};{fit.offset[0]};{fit.offset[1]};{fit.rotation};,;{fit.label}\n'
+                        )
 
         for pole in self.poledata:
             try:
@@ -59,13 +84,10 @@ class BVECSV:
                 self.lines.append(f',;{post_number}\n')
                 self.lines.append(f',;-----{section_label}({structure})({curve})-----\n')
 
-                if section is None:
-                    write_equipment(pos, eqs)
+                if section in ['에어조인트 시작점 (1호주)', '에어조인트 끝점 (5호주)']:
                     write_mast(pos, mast)
-                    write_brackets(pos, brs)
-
-                elif section in ['에어조인트 시작점 (1호주)', '에어조인트 끝점 (5호주)']:
-                    write_mast(pos, mast)
+                    write_mast_accessories(pos, mast)
+                    write_base(pos, mast)
                     write_brackets(pos, [brs[0]])
                     write_equipment(pos, eqs)
 
@@ -73,6 +95,8 @@ class BVECSV:
                     poss = (pos - 0.528, pos + 0.528) if section in ['에어조인트 (2호주)', '에어조인트 (4호주)'] else (
                     pos - 0.8, pos + 0.8)
                     write_mast(pos, mast)
+                    write_mast_accessories(pos, mast)
+                    write_base(pos, mast)
                     write_equipment(pos, eqs)
                     for p, br in zip(poss, brs):
                         self.lines.append(',;가동브래킷구문\n')
@@ -80,6 +104,8 @@ class BVECSV:
                 else:
                     write_equipment(pos, eqs)
                     write_mast(pos, mast)
+                    write_mast_accessories(pos, mast)
+                    write_base(pos, mast)
                     write_brackets(pos, brs)
 
             except AttributeError as e:

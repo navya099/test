@@ -1,14 +1,15 @@
 from core.airjoint.aj_bracket_adder import AirjointBracketAdder
 from core.airjoint.aj_data_context import AirjointDataContext
+from dataset.dataset_getter import DatasetGetter
 
 
 class AirJointProcessor:
     @staticmethod
-    def process(pole, polyline_with_sta, dataprocessor, idxlib):
+    def process(pole, polyline_with_sta, dataprocessor: DatasetGetter, idxlib):
         """에어조인트 구간별 전주 데이터 생성"""
         # 데이터 가져오기
         contact_wire_fitting, messenger_wire_fittings, steady_arm_fittings = dataprocessor.get_fittings()
-        mast_idx = dataprocessor.get_mast_index(pole.structure)
+        mast_idx = dataprocessor.get_mast_index(pole.structure, pole.section)
         mast_name = idxlib.get_name(mast_idx)
         f_bracket_valuse = dataprocessor.get_bracket_codes(pole.structure, type='F')
         aj_bracket_values = dataprocessor.get_bracket_codes(pole.structure, type='AJ')
@@ -38,5 +39,5 @@ class AirJointProcessor:
             f_bracket_height=f_bracket_height
         )
         # 에어조인트 구간별 처리(2호주 ,3호주, 4호주)
-        adder = AirjointBracketAdder(context, dataprocessor)
-        adder.add_airjoint_brackets(pole, polyline_with_sta, idxlib)
+        adder = AirjointBracketAdder(context, dataprocessor, idxlib)
+        adder.add_airjoint_brackets(pole, polyline_with_sta)

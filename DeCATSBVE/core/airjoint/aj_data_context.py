@@ -8,8 +8,8 @@ class AirjointDataContext:
     steady_arm_fitting: dict
     mast_type: int
     mast_name: str
-    aj_bracket_values: list
-    f_bracket_valuse: list
+    aj_bracket_values: dict
+    f_bracket_valuse: dict
     feeder_idx: int
     feeder_name: str
     spreader_name: str
