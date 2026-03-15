@@ -33,11 +33,12 @@ def get_max_span_by_radius(radius):
     if radius >= 400: return 40
     return 35 # 급곡선
 
-def distribute_pole_spacing_flexible(start_m, end_m, curvelist=None,structure_list=None):
+def distribute_pole_spacing_flexible(start_m, end_m, curvelist=None,structure_list=None, design_speed=0):
     """
     45, 50, 55, 60m 범위에서 전주 간격을 균형 있게 배분하여 전체 구간을 채우는 함수
     마지막 전주는 종점보다 약간 앞에 위치할 수도 있음.
 
+    :param design_speed: 설계속도
     :param structure_list:
     :param curvelist:
     :param start_m: 시작점 (km 단위)
@@ -54,11 +55,11 @@ def distribute_pole_spacing_flexible(start_m, end_m, curvelist=None,structure_li
         curve_type, r, c = iscurve(current_pos, curvelist)
         structure = isbridge_tunnel(current_pos, structure_list)
         if structure == '터널':
-            current_span = 40
+            current_span = get_max_span_tunnel(design_speed)
         elif curve_type == '곡선':
             current_span = get_max_span_by_radius(abs(r))
         else:
-            current_span = 60
+            current_span = get_max_span_straight(design_speed)
         if current_pos + current_span > end_m:
             break
         current_pos += current_span
@@ -144,7 +145,7 @@ def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_
         sta2: 보정된 전선 측점
     """
     # 장력장치 치수
-    tension_device_length = 7.28
+    tension_device_length = 6.555
 
     # 전선 각도
     new_length = currentspan - tension_device_length  # 현재 span에서 장력장치까지의 거리
@@ -168,3 +169,19 @@ def offsets(n, s):
     if n == 2:
         return [-s * 0.5, s * 0.5]
     return [(i - (n - 1) / 2) * s * 0.5 for i in range(n)]
+
+def get_max_span_straight(speed):
+    if speed == 150:
+        return 50
+    elif speed == 250:
+        return 60
+    elif speed == 350:
+        return 63
+
+def get_max_span_tunnel(speed):
+    if speed == 150:
+        return 40
+    elif speed == 250:
+        return 45
+    elif speed == 350:
+        return 50
