@@ -10,11 +10,10 @@ import shutil
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 import os
-import matplotlib.font_manager as fm
+import matplotlib
 import matplotlib.pyplot as plt
 import csv
-
-
+matplotlib.use('Agg')
 '''
 BVE구배파일을 바탕으로 기울기표(준고속용)을 설치하는 프로그램
 -made by dger -
@@ -44,7 +43,8 @@ csv파일에는 텍스쳐명이 bvc와 g 이어야함
 
 '''
 
-#클래스 정의
+
+# 클래스 정의
 @dataclass
 class VIPdata:
     """
@@ -73,6 +73,7 @@ class VIPdata:
     VIP_STA: float = 0.0
     EVC_STA: float = 0.0
 
+
 @dataclass
 class ObjectDATA:
     VIPNO: int = 0
@@ -83,10 +84,12 @@ class ObjectDATA:
     filename: str = ''
     object_path: str = ''
 
+
 def format_distance(number):
     number *= 0.001
-    
+
     return "{:.3f}".format(number)
+
 
 def try_read_file(file_path, encodings=('utf-8', 'euc-kr')):
     for encoding in encodings:
@@ -97,6 +100,7 @@ def try_read_file(file_path, encodings=('utf-8', 'euc-kr')):
             print(f"[경고] {encoding} 인코딩 실패. 다음 인코딩으로 시도합니다.")
     print("[오류] 지원되는 인코딩으로 파일을 읽을 수 없습니다.")
     return []
+
 
 def read_file():
     file_path = filedialog.askopenfilename(
@@ -117,6 +121,7 @@ def read_file():
     print("[선택된 파일]:", file_path)
     return file_path
 
+
 def remove_duplicate_pitch(data):
     filtered_data = []
     previous_pitch = None
@@ -133,6 +138,7 @@ def remove_duplicate_pitch(data):
             previous_pitch = pitch
 
     return filtered_data
+
 
 def process_sections(data, threshold=75.0, min_points=1):
     sections = []
@@ -160,7 +166,8 @@ def process_sections(data, threshold=75.0, min_points=1):
 
     return sections
 
-#핵심로직(클래스화로 구조변경)
+
+# 핵심로직(클래스화로 구조변경)
 def annotate_sections(sections: list[list[tuple[float, float]]], broken_chain) -> list[VIPdata]:
     """
     주어진 종단 기울기 구간 데이터를 기반으로 VIP(Vertical Inflection Point) 정보를 생성합니다.
@@ -189,24 +196,24 @@ def annotate_sections(sections: list[list[tuple[float, float]]], broken_chain) -
     for section in sections:
         if not section:
             continue
-        #BVC, EVC 추출
+        # BVC, EVC 추출
         bvc_staion, prev_pitch = section[0]
         evc_staion, next_pitch = section[-1]
         vip_staion = (evc_staion + bvc_staion) / 2
 
-        #파정 적용
+        # 파정 적용
         bvc_staion += broken_chain
         evc_staion += broken_chain
         vip_staion += broken_chain
 
-        #종곡선 제원 계산
-        vertical_length = evc_staion - bvc_staion #종곡선 길이
-        #종곡선 반경
+        # 종곡선 제원 계산
+        vertical_length = evc_staion - bvc_staion  # 종곡선 길이
+        # 종곡선 반경
         vertical_radius = calculate_vertical_curve_radius(vertical_length, prev_pitch, next_pitch)
-        #오목형 볼록형 판단
+        # 오목형 볼록형 판단
         seg = get_vertical_curve_type(prev_pitch, next_pitch)
 
-        #종곡선 여부 판단
+        # 종곡선 여부 판단
         if len(section) < 3:
             isvcurve = False
         else:
@@ -222,15 +229,17 @@ def annotate_sections(sections: list[list[tuple[float, float]]], broken_chain) -
             BVC_STA=bvc_staion,
             VIP_STA=vip_staion,
             EVC_STA=evc_staion
-            )
+        )
         )
         i += 1
 
     return vipdatas
 
+
 # DXF 파일을 생성하는 함수
 class TunnelPitchCreator:
     """터널 구배 DXF 파일을 생성하는 클래스"""
+
     def __init__(self, work_directory):
         self.work_directory = work_directory
 
@@ -247,32 +256,32 @@ class TunnelPitchCreator:
 
         # 정수부 및 소수부 분리
         formatted_text, text_x, text_y, is_negative = formatted_result[:4]
-        
+
         # 텍스트 스타일 설정 및 추가
         style_name = 'GHS'
         try:
             doc.styles.add(style_name, font='H2GTRE.ttf')
         except:
             doc.styles.add(style_name, font='HYGTRE.ttf')
-        
+
         # 정수부 텍스트 추가
         self.create_text(msp, formatted_text, text_x, text_y, 59.9864, 1, style_name)
 
         # 소수부가 존재하면 추가
         if len(formatted_result) > 4:
             formatted_text2, text_x2, text_y2, height2 = formatted_result[4:]
-            self.create_text(msp , formatted_text2, text_x2, text_y2, height2, 0.8162, style_name)
+            self.create_text(msp, formatted_text2, text_x2, text_y2, height2, 0.8162, style_name)
             if is_negative:
                 x = 161.376
                 y = 76.37
-                
+
             else:
                 x = 161.376
                 y = 13.5468
             width = 10
-            height= 10
+            height = 10
 
-            self.draw_rectangle_with_hatch(msp, x, y, width, height, color=1)#소수점 그리기
+            self.draw_rectangle_with_hatch(msp, x, y, width, height, color=1)  # 소수점 그리기
 
         # 화살표 추가
         if not 'L' in formatted_text:
@@ -294,7 +303,7 @@ class TunnelPitchCreator:
         msp.add_lwpolyline(points, close=True, dxfattribs={'color': color})
         hatch = msp.add_hatch(color=1)
         hatch.paths.add_polyline_path(points, is_closed=True)
-        
+
     def format_text(self, text):
         """텍스트를 포맷팅하여 위치 값과 함께 반환"""
         is_negative = text.startswith('-')
@@ -302,13 +311,13 @@ class TunnelPitchCreator:
 
         # 텍스트 길이에 따라 공백 처리
         if not is_negative:  # 상구배
-            if len(text) == 1:#3
+            if len(text) == 1:  # 3
                 formatted_text = '  L' if integer_part == '0' else '  ' + integer_part
-            elif len(text) == 2:#13
+            elif len(text) == 2:  # 13
                 formatted_text = ' ' + integer_part
-            elif len(text) == 3:#1.1
+            elif len(text) == 3:  # 1.1
                 formatted_text = ' ' + integer_part  # 정수부만 사용
-            elif len(text) == 4:#27.4
+            elif len(text) == 4:  # 27.4
                 formatted_text = integer_part  # 정수부만 사용
 
             text_x, text_y = 60.7065, 13.5468  # 정수부 위치
@@ -320,13 +329,13 @@ class TunnelPitchCreator:
                 return formatted_text, text_x, text_y, is_negative, formatted_text2, text_x2, text_y2, height2
 
         else:  # 하구배
-            if len(text) == 2:#-3
+            if len(text) == 2:  # -3
                 formatted_text = '  L' if integer_part == '0' else '  ' + integer_part
-            elif len(text) == 3:#-11
+            elif len(text) == 3:  # -11
                 formatted_text = ' ' + integer_part
-            elif len(text) == 4:#-4.5
+            elif len(text) == 4:  # -4.5
                 formatted_text = ' ' + integer_part  # 정수부만 사용
-            elif len(text) == 5:#-11.5
+            elif len(text) == 5:  # -11.5
                 formatted_text = integer_part  # 정수부만 사용
 
             text_x, text_y = 60.7065, 76.37  # 정수부 위치
@@ -341,13 +350,13 @@ class TunnelPitchCreator:
 
     def create_text(sefl, msp, text, text_x, text_y, height, width, style_name):
         msp.add_text(text, dxfattribs={
-            'insert': (text_x, text_y), 
-            'height': height, 
-            'width': width, 
-            'style': style_name, 
+            'insert': (text_x, text_y),
+            'height': height,
+            'width': width,
+            'style': style_name,
             'color': 1
         })
-        
+
     def create_tunnel_pitch_arrow(self, msp, is_negative):
         """터널 구배 화살표 생성"""
         if not is_negative:  # 상구배
@@ -367,7 +376,8 @@ class TunnelPitchCreator:
         msp.add_lwpolyline(points, close=True, dxfattribs={'color': 1})
         hatch = msp.add_hatch(color=1)
         hatch.paths.add_polyline_path(points, is_closed=True)
-    
+
+
 def replace_text_in_dxf(file_path, modified_path, sta, grade, seg, R):
     """DXF 파일의 특정 텍스트를 새 텍스트로 교체하고, 특정 레이어 가시성을 조절하는 함수"""
     try:
@@ -377,45 +387,46 @@ def replace_text_in_dxf(file_path, modified_path, sta, grade, seg, R):
         # 🟢 특정 레이어의 TEXT 엔티티 찾아서 교체
         for entity in msp.query("TEXT"):
             if entity.dxf.layer == "측점":
-                if len(sta) == 5:#3.456
+                if len(sta) == 5:  # 3.456
                     sta = ' ' + sta
-                    
+
                 entity.dxf.text = sta  # STA 변경
-                if len(sta) == 7:#123.456
+                if len(sta) == 7:  # 123.456
                     entity.dxf.width = 0.9
-                
+
             elif entity.dxf.layer == "구배":
-                if len(grade) == 1:#2
+                if len(grade) == 1:  # 2
                     grade = grade + ' '
                 entity.dxf.text = grade  # 구배 변경
             elif entity.dxf.layer == "R":
                 if R != 'None':
-                    entity.dxf.text = R  #종곡선반경 변경
+                    entity.dxf.text = R  # 종곡선반경 변경
         # 🟢 레이어 가시성 조절 (볼록형: 표시, 오목형: 숨김)
         layers = doc.layers
-        
+
         if seg == '오목형':
             layers.get(seg).on()
             layers.get('볼록형').off()
-            
+
         elif seg == '볼록형':
             layers.get(seg).on()
             layers.get('오목형').off()
-        
+
         # 변경된 DXF 저장
         doc.saveas(modified_path)
-        #print("✅ DXF 수정 완료")
+        # print("✅ DXF 수정 완료")
         return True
 
     except Exception as e:
         print(f"❌ DXF 수정 실패: {e}")
         return False
 
+
 class DXF2IMG:
     """DXF 파일을 이미지로 변환하는 클래스"""
     default_img_format = '.png'
     default_img_res = 96
-    
+
     def convert_dxf2img(self, file_paths, img_format=default_img_format, img_res=default_img_res):
         """DXF를 이미지(PNG)로 변환하는 함수"""
         output_paths = []
@@ -427,7 +438,7 @@ class DXF2IMG:
             try:
                 doc = ezdxf.readfile(file_path)
                 msp = doc.modelspace()
-                
+
                 # DXF 파일 검증
                 auditor = doc.audit()
                 if auditor.has_errors:
@@ -451,12 +462,12 @@ class DXF2IMG:
                 fig.savefig(output_path, dpi=img_res, bbox_inches='tight', pad_inches=0)
                 plt.close(fig)  # 메모리 해제
 
-                #print(f"✅ 변환 완료: {output_path}")
+                # print(f"✅ 변환 완료: {output_path}")
                 output_paths.append(output_path)
 
             except Exception as e:
                 print(f"❌ 변환 실패: {file_path} - {str(e)}")
-        
+
         return output_paths
 
     def trim_and_resize_image(self, input_path, output_path, target_size=(500, 300)):
@@ -483,12 +494,13 @@ class DXF2IMG:
             # 크기 조정 (500x300)
             resized_img = cropped_img.resize(target_size, Image.LANCZOS)
             resized_img.save(output_path)
-            #print(f"✅ 여백 제거 및 크기 조정 완료: {output_path}")
+            # print(f"✅ 여백 제거 및 크기 조정 완료: {output_path}")
 
         except Exception as e:
             print(f"❌ 이미지 처리 실패: {e}")
-          
-#기울기표용
+
+
+# 기울기표용
 class GradePost:
     def __init__(self, work_directory: str):
         self.work_directory = work_directory
@@ -513,7 +525,8 @@ class GradePost:
         arrow_draw.polygon(arrow_points, fill=text_color, outline=text_color)
         return arrow_image.transpose(Image.FLIP_TOP_BOTTOM) if is_negative else arrow_image
 
-    def create_grade_post(self, text, text2, filename, text_color, post_direction, image_size=(500, 400), font_size1=180, font_size2=100):
+    def create_grade_post(self, text, text2, filename, text_color, post_direction, image_size=(500, 400),
+                          font_size1=180, font_size2=100):
         img = Image.new('RGB', image_size, (255, 255, 255))
         draw = ImageDraw.Draw(img)
         try:
@@ -541,56 +554,59 @@ class GradePost:
             decimal_bg = self.create_text_image(decimal_part, font_decimal, text_color, image_size, rotate_angle)
             decimal_positions = self.get_decimal_position(post_direction, integer_part, is_negative)
             img.paste(decimal_bg, decimal_positions)
-        
+
         draw.line([(0, 280), (500, 280)], fill=text_color, width=10)
         distance_positions = self.get_distance_position(post_direction, text2)
-        distance_text = f'L={text2}M' 
+        distance_text = f'L={text2}M'
         draw.text(distance_positions, distance_text, font=font_sub, fill=text_color)
         if text == '0':
             arrow_image = self.create_L_symbol(image_size, text_color)
         else:
             arrow_image = self.create_arrow_symbol(image_size, text_color, is_negative)
-        
+
         img.paste(arrow_image, (0, -120 if is_negative else 0), arrow_image)
 
         if not filename.endswith('.png'):
             filename += '.png'
         final_dir = os.path.join(self.work_directory, filename)
         img.save(final_dir)
-        #print(f"최종 이미지 저장됨: {final_dir}")
-        
+        # print(f"최종 이미지 저장됨: {final_dir}")
+
     def get_decimal_position(self, post_direction, integer_part, is_negative):
         if post_direction == '좌':
-            if int(integer_part) > 9:#구배가 2자리
+            if int(integer_part) > 9:  # 구배가 2자리
                 return (330, 140) if is_negative else (310, 40)
-            else:#구배가 1자리
+            else:  # 구배가 1자리
                 return (240, 160) if is_negative else (200, 60)
         return (110, 110)  # '우' 기본 위치
-    
+
     def get_distance_position(self, post_direction, integer_part):
         if post_direction == '좌':
-            
-            if len(integer_part) == 3:#거리가 3자리
-                return (100,290)
-            elif len(integer_part) == 4:#거리가 4자리
-                return (75,290)
+
+            if len(integer_part) == 3:  # 거리가 3자리
+                return (100, 290)
+            elif len(integer_part) == 4:  # 거리가 4자리
+                return (75, 290)
             else:
-                return (60,290)
+                return (60, 290)
+
     def create_L_symbol(self, image_size, text_color):
         arrow_image = Image.new('RGBA', image_size, (255, 255, 255, 0))
         arrow_draw = ImageDraw.Draw(arrow_image)
         arrow_points = [(121, 42), (121, 242), (313, 242), (313, 181), (171, 181), (171, 42)]
         arrow_draw.polygon(arrow_points, fill=text_color, outline=text_color)
         return arrow_image
-    
-def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str, source_diretory: str, work_directory: str, offset=0.0):
+
+
+def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str, source_diretory: str,
+                        work_directory: str, offset=0.0):
     # Define the input and output file paths
     open_file = source_diretory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
-    
+
     # List to store modified lines
     new_lines = []
-        
+
     # Open the input file for reading
     with open(open_file, 'r', encoding='utf-8') as file:
         # Iterate over each line in the input file
@@ -610,16 +626,14 @@ def copy_and_export_csv(open_filename: str, output_filename: str, curvetype: str
         file.writelines(new_lines)
 
 
-
-
-
 def create_pitch_post_txt(data_list: list[ObjectDATA], output_file):
     """
     결과 데이터를 받아 파일로 저장하는 함수.
     """
     with open(output_file, "w", encoding="utf-8") as file:
-         for data in data_list:  # 두 리스트를 동시에 순회
-            file.write(f"{data.station},.freeobj 0;{data.object_index};,;VIP{data.VIPNO}_{data.vcurvetype}-{data.structure}\n")  # 원하는 형식으로 저장
+        for data in data_list:  # 두 리스트를 동시에 순회
+            file.write(
+                f"{data.station},.freeobj 0;{data.object_index};,;VIP{data.VIPNO}_{data.vcurvetype}-{data.structure}\n")  # 원하는 형식으로 저장
 
 
 def create_pitch_index_txt(data_list: list[ObjectDATA], output_file):
@@ -656,6 +670,7 @@ def find_structure_section(filepath):
 
     return structure_list
 
+
 def apply_brokenchain_to_structure(structure_list, brokenchain):
     """
     structure_list의 각 구간(start, end)에 brokenchain 값을 더해서
@@ -679,8 +694,9 @@ def apply_brokenchain_to_structure(structure_list, brokenchain):
 
     return updated_structure
 
+
 def find_pitch_section(filepath, brokenchain=0.0):
-    df = pd.read_excel(filepath,  header=0)
+    df = pd.read_excel(filepath, header=0)
 
     ip_list = []
     current_ip = None
@@ -696,36 +712,38 @@ def find_pitch_section(filepath, brokenchain=0.0):
         vradius = row['원곡선 반지름'] if pd.notna(row['원곡선 반지름']) else 0.0
         isverticalvurve = True if seg == '볼록형' or seg == '오목형' else False
 
-        #파정 적용
+        # 파정 적용
         vipsta += brokenchain
         if current_ip:  # 이전 IP 저장
             ip_list.append(current_ip)
         current_ip = VIPdata(VIPNO=ip_counter)
         ip_counter += 1
         current_ip.VIP_STA = vipsta
-        current_ip.seg =  seg
+        current_ip.seg = seg
         current_ip.vradius = vradius
         current_ip.isvcurve = isverticalvurve
         current_ip.vlength = vlength
-        current_ip.prev_slope = prev_pitch * 0.001 #퍼밀을 0..01로 변환
-        current_ip.next_slope = next_pitch * 0.001 #퍼밀을 0..01로 변환
-        #bvc evc 계산
-        current_ip.BVC_STA = vipsta - (vlength / 2) #BVC
-        current_ip.EVC_STA = vipsta + (vlength / 2) #EVC
+        current_ip.prev_slope = prev_pitch * 0.001  # 퍼밀을 0..01로 변환
+        current_ip.next_slope = next_pitch * 0.001  # 퍼밀을 0..01로 변환
+        # bvc evc 계산
+        current_ip.BVC_STA = vipsta - (vlength / 2)  # BVC
+        current_ip.EVC_STA = vipsta + (vlength / 2)  # EVC
 
     return ip_list
+
 
 def isbridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
     for name, start, end in structure_list['bridge']:
         if start <= sta <= end:
             return '교량'
-    
+
     for name, start, end in structure_list['tunnel']:
         if start <= sta <= end:
             return '터널'
-    
+
     return '토공'
+
 
 def open_excel_file():
     """파일 선택 대화 상자를 열고, 엑셀 파일 경로를 반환하는 함수"""
@@ -733,13 +751,14 @@ def open_excel_file():
     root.withdraw()  # Tkinter 창을 숨김
     # 대화 상자가 항상 최상위로 표시되도록 설정
     root.attributes("-topmost", True)
-    
+
     file_path = filedialog.askopenfilename(
         title="엑셀 파일 선택",
         filetypes=[("Excel Files", "*.xlsx")]
     )
-    
+
     return file_path
+
 
 def get_vertical_curve_type(start_grade: float, end_grade: float) -> str:
     if start_grade > end_grade:
@@ -775,29 +794,37 @@ def format_grade(value):
     '''
     return f"{value * 1000:.1f}".rstrip('0').rstrip('.')  # 소수점 이하 0 제거
 
-#civil3d함수
+
+# civil3d함수
 '''WIP'''
 
-def process_verticulcurve(vipdata: VIPdata, viptype: str, current_sta: float, current_structure: str, source_directory: str, work_directory: str):
 
+def process_verticulcurve(vipdata: VIPdata, viptype: str, current_sta: float, current_structure: str,
+                          source_directory: str, work_directory: str):
     converter = DXF2IMG()
-
-    grade_text = format_grade(vipdata.next_slope)
+    if viptype == 'BVC':
+        grade_text = format_grade(vipdata.prev_slope)
+    elif viptype == 'VIP':
+        grade_text = format_grade(vipdata.next_slope)
+    elif viptype == 'EVC':
+        grade_text = format_grade(vipdata.next_slope)
     station_text = f'{format_distance(current_sta)}'
 
     img_f_name = f'VIP{vipdata.VIPNO}_{viptype}'
     r = str(int(vipdata.vradius))
-    
+
     file_path = source_directory + f'{viptype}.dxf'
     final_output_image = work_directory + img_f_name + '.png'
 
     modifed_path = work_directory + 'BVC-수정됨.dxf'
-    replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, vipdata.seg , r)
+    replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, vipdata.seg, r)
 
     output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
     converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
 
-def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, structure: str, work_directory: str, altype: str):
+
+def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, structure: str, work_directory: str,
+                     altype: str):
     grade_post_generator = GradePost(work_directory)
     tunnel_post_generator = TunnelPitchCreator(work_directory)
     converter = DXF2IMG()
@@ -806,14 +833,14 @@ def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, stru
     filename = 'BVC-수정됨.dxf'
 
     current_grade = vip.next_slope
-    img_text2 = format_grade(current_grade)#기울기표 구배문자
-    img_text3 = f'{int(current_distance)}' #기울기표 거리문자
-    img_bg_color2 = (255, 255, 255) #기울기표 문자                     
-    img_f_name2 = f'VIP{vip.VIPNO}_{pitchtype}_기울기표'#기울기표 파일명
+    img_text2 = format_grade(current_grade)  # 기울기표 구배문자
+    img_text3 = f'{int(current_distance)}'  # 기울기표 거리문자
+    img_bg_color2 = (255, 255, 255)  # 기울기표 문자
+    img_f_name2 = f'VIP{vip.VIPNO}_{pitchtype}_기울기표'  # 기울기표 파일명
     openfile_name2 = f'기울기표_{structure}용'
-    
-    final_output_image = work_directory + img_f_name2 + '.png'    
-    
+
+    final_output_image = work_directory + img_f_name2 + '.png'
+
     if structure == '터널' or altype == '도시철도':
         tunnel_post_generator.create_tunnel_pitch_image(filename, img_text2)
         modifed_path = work_directory + 'BVC-수정됨.dxf'
@@ -837,11 +864,13 @@ def select_target_directory():
 
     return target_directory
 
+
 def is_civil3d_format(lines):
     try:
         return any('pitch' in cell.lower() for line in lines for cell in line)
     except Exception as e:
-        return  False
+        return False
+
 
 def convert_pitch_lines(lines):
     """
@@ -860,7 +889,7 @@ def convert_pitch_lines(lines):
         # 1단계: ".CURVE" 등 대소문자 구분 없이 제거 (정규식 사용)
         line = re.sub(r'\.pitch', '', line, flags=re.IGNORECASE)
 
-        #4단계: line의 각 요소 추출
+        # 4단계: line의 각 요소 추출
         parts = line.split(',')
         if len(parts) == 1 or len(parts) == 0:
             print(f"[경고] 잘못된 행 형식: {line} → 건너뜀")
@@ -868,7 +897,7 @@ def convert_pitch_lines(lines):
         try:
             if len(parts) == 2:
                 sta, pitch = map(float, parts)
-                pitch *= 0.001 #내부 단위 자료구조 통일을 위해 0.001곱하기
+                pitch *= 0.001  # 내부 단위 자료구조 통일을 위해 0.001곱하기
             else:
                 raise ValueError
 
@@ -879,6 +908,7 @@ def convert_pitch_lines(lines):
             continue
 
     return converted
+
 
 def process_and_save_sections(lines: list[list[tuple[float, float]]], brokenchain, flag: str, data) -> list[VIPdata]:
     """종곡선 정보를 처리하고 파일로 저장"""
@@ -897,31 +927,35 @@ def process_and_save_sections(lines: list[list[tuple[float, float]]], brokenchai
     else:
         vipdatas = data
 
-
     return vipdatas
 
-#1. 곡선 구간(Line) 생성 분리
+
+# 1. 곡선 구간(Line) 생성 분리
 def get_vcurve_lines(vip: VIPdata) -> list[list]:
     if vip.isvcurve:
         return [['BVC', vip.BVC_STA], ['VIP', vip.VIP_STA], ['EVC', vip.EVC_STA]]
     else:
         return [['VIP', vip.VIP_STA]]
 
-def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str, target_directory, al_type: str, offset= 0.0):
+
+def process_bve_profile(start: float, end: float,vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str,
+                        target_directory, al_type: str, offset=0.0):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
-    #이미지 저장
+    # 이미지 저장
     object_index = 3025
     objects = []
     object_folder = target_directory.split("Object/")[-1]
 
     for i, vip in enumerate(vipdats):
+        if not start <= vip.VIP_STA <= end:
+            continue
         lines = get_vcurve_lines(vip)
         if not lines:
             continue
 
         # 일반철도 구배표용 구배거리
         if i < len(vipdats) - 1:
-            current_distance = vipdats[i+1].VIP_STA - vip.VIP_STA
+            current_distance = vipdats[i + 1].VIP_STA - vip.VIP_STA
         else:
             current_distance = 0  # 기본값 (에러 방지)
 
@@ -929,7 +963,7 @@ def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory
             current_sta = value
             current_structure = isbridge_tunnel(current_sta, structure_list)
             if key == 'VIP':
-                process_vertical(vip, current_distance, key,  current_structure, work_directory,al_type)
+                process_vertical(vip, current_distance, key, current_structure, work_directory, al_type)
             process_verticulcurve(vip, key, value, current_structure, source_directory, work_directory)
             img_f_name = f'VIP{vip.VIPNO}_{key}'
             openfile_name = f'{key}_{current_structure}용'
@@ -943,7 +977,7 @@ def process_bve_profile(vipdats: list[VIPdata], structure_list, source_directory
                 object_index=object_index,
                 filename=img_f_name,
                 object_path=object_folder
-                )
+            )
             )
             object_index += 1
 
@@ -960,6 +994,7 @@ def load_structure_data():
         print("엑셀 파일을 선택하지 않았습니다.")
         structure_list = []  # 기본 빈 리스트 반환
     return structure_list
+
 
 def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None):
     """
@@ -1011,7 +1046,7 @@ class PitchProcessingApp(tk.Tk):
         self.title("Pitch 데이터 처리기")
         self.geometry("700x500")
 
-        self.source_directory = self.base_source_directory #원본 소스 위치
+        self.source_directory = self.base_source_directory  # 원본 소스 위치
         self.work_directory = ''
         self.target_directory = ''
         self.isbrokenchain: bool = False
@@ -1022,7 +1057,26 @@ class PitchProcessingApp(tk.Tk):
     def create_widgets(self):
         label = ttk.Label(self, text="기울기 데이터 자동 처리 시스템", font=("Arial", 16, "bold"))
         label.pack(pady=10)
+        input_frame = ttk.Frame(self.master)
+        input_frame.pack(pady=10)
+        # 🔹 시작 측점 입력
+        ttk.Label(input_frame, text="시작 측점").grid(row=0, column=0, sticky="e", padx=5)
 
+        self.start_station_var = tk.DoubleVar(value=33300)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.start_station_var,
+            width=15
+        ).grid(row=0, column=1, padx=5)
+        # 🔹 끝 측점 입력
+        ttk.Label(input_frame, text="끝 측점").grid(row=0, column=2, sticky="e", padx=5)
+
+        self.end_station_var = tk.DoubleVar(value=95000)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.end_station_var,
+            width=15
+        ).grid(row=0, column=3, padx=5)
         self.log_box = tk.Text(self, height=20, wrap=tk.WORD, font=("Consolas", 10))
         self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -1067,6 +1121,7 @@ class PitchProcessingApp(tk.Tk):
                 messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
 
         self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
+
     def process_offset(self):
         # float 값 입력 받기
         while True:
@@ -1106,8 +1161,11 @@ class PitchProcessingApp(tk.Tk):
             # ㅊ파정확인
             self.process_proken_chain()
 
-            #오프셋 적용
+            # 오프셋 적용
             self.process_offset()
+            #시작 끝 측점 확인
+            start_sta = self.start_station_var.get()
+            end_sta = self.end_station_var.get()
 
             # 파일 읽기
             data = None
@@ -1140,7 +1198,8 @@ class PitchProcessingApp(tk.Tk):
             self.log(f"{flag}용 처리 시작...")
             vipdatas = process_and_save_sections(data, self.brokenchain, flag, data)
 
-            objectdatas = process_bve_profile(vipdatas, structure_list, self.source_directory, self.work_directory,self.target_directory, self.alignment_type, offset=self.offset)
+            objectdatas = process_bve_profile(start_sta, end_sta, vipdatas, structure_list, self.source_directory, self.work_directory,
+                                              self.target_directory, self.alignment_type, offset=self.offset)
 
             # 최종 텍스트 생성
             if objectdatas:
