@@ -26,7 +26,7 @@ def main():
     namelist = ['FPW', '급전선', '무효용조가선', '무효용전차선']
     #소스 파일
     input_files = [
-        rf"D:\BVE\루트\Railway\Object\철도표준라이브러리\전철전력\공통\전선\{name}_base.csv"
+        rf"D:\BVE\루트\Railway\Object\철도표준라이브러리\전철전력\공통\전선\{name}.csv"
         for name in namelist
     ]
     #실행
