@@ -29,6 +29,11 @@ class MASTBuilder:
                                                    pole.gauge)
              accessories += AccessoryBuilder.build(dataprocessor, idxlib, '완철용', size, pole.structure, rotation,
                                                    pole.gauge)
+             if dataprocessor.get_extra_band_index():
+                 extra_band_dictionray = dataprocessor.get_extra_band_index()
+                 for key, value in extra_band_dictionray.items():
+                     accessories += AccessoryBuilder.build(dataprocessor, idxlib, key, size, pole.structure, rotation,
+                                                           pole.gauge)
         else:
             size ='P12'
             accessories += AccessoryBuilder.build(dataprocessor, idxlib, '완철용', size, pole.structure, rotation,

@@ -179,3 +179,13 @@ class DatasetGetter:
         """전주 밴드 오프셋
         """
         return self.dataset['mast']['band']['yoffset'][band_type][current_structure]
+
+    def get_extra_band_index(self):
+        """추가 전주 밴드"""
+        return self.dataset['mast']['band']['index'].get('기타', None)
+    def get_extra_band_offset(self):
+        """추가 전주 오프셋"""
+        return self.dataset['mast']['band']['yoffset'].get('기타', None)
+
+    def get_extra_wire_dictionary(self):
+        return self.dataset['wire']['offset']['Extra']
