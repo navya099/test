@@ -83,6 +83,8 @@ class ObjectDATA:
     object_index: int = 0
     filename: str = ''
     object_path: str = ''
+    offset: tuple[float, float] = (0,0)
+    rotation: float = 0.0
 
 
 def format_distance(number):
@@ -633,7 +635,7 @@ def create_pitch_post_txt(data_list: list[ObjectDATA], output_file):
     with open(output_file, "w", encoding="utf-8") as file:
         for data in data_list:  # 두 리스트를 동시에 순회
             file.write(
-                f"{data.station},.freeobj 0;{data.object_index};,;VIP{data.VIPNO}_{data.vcurvetype}-{data.structure}\n")  # 원하는 형식으로 저장
+                f"{data.station},.freeobj 0;{data.object_index};-{data.offset[0]};{data.offset[1]};{data.rotation};,;VIP{data.VIPNO}_{data.vcurvetype}-{data.structure}\n")  # 원하는 형식으로 저장
 
 
 def create_pitch_index_txt(data_list: list[ObjectDATA], output_file):
@@ -795,59 +797,6 @@ def format_grade(value):
     return f"{value * 1000:.1f}".rstrip('0').rstrip('.')  # 소수점 이하 0 제거
 
 
-# civil3d함수
-'''WIP'''
-
-
-def process_verticulcurve(vipdata: VIPdata, viptype: str, current_sta: float, current_structure: str,
-                          source_directory: str, work_directory: str):
-    converter = DXF2IMG()
-    if viptype == 'BVC':
-        grade_text = format_grade(vipdata.prev_slope)
-    elif viptype == 'VIP':
-        grade_text = format_grade(vipdata.next_slope)
-    elif viptype == 'EVC':
-        grade_text = format_grade(vipdata.next_slope)
-    station_text = f'{format_distance(current_sta)}'
-
-    img_f_name = f'VIP{vipdata.VIPNO}_{viptype}'
-    r = str(int(vipdata.vradius))
-
-    file_path = source_directory + f'{viptype}.dxf'
-    final_output_image = work_directory + img_f_name + '.png'
-
-    modifed_path = work_directory + 'BVC-수정됨.dxf'
-    replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, vipdata.seg, r)
-
-    output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
-    converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
-
-
-def process_vertical(vip: VIPdata, current_distance: float, pitchtype: str, structure: str, work_directory: str,
-                     altype: str):
-    grade_post_generator = GradePost(work_directory)
-    tunnel_post_generator = TunnelPitchCreator(work_directory)
-    converter = DXF2IMG()
-
-    output_image = work_directory + 'output_image.png'
-    filename = 'BVC-수정됨.dxf'
-
-    current_grade = vip.next_slope
-    img_text2 = format_grade(current_grade)  # 기울기표 구배문자
-    img_text3 = f'{int(current_distance)}'  # 기울기표 거리문자
-    img_bg_color2 = (255, 255, 255)  # 기울기표 문자
-    img_f_name2 = f'VIP{vip.VIPNO}_{pitchtype}_기울기표'  # 기울기표 파일명
-    openfile_name2 = f'기울기표_{structure}용'
-
-    final_output_image = work_directory + img_f_name2 + '.png'
-
-    if structure == '터널' or altype == '도시철도':
-        tunnel_post_generator.create_tunnel_pitch_image(filename, img_text2)
-        modifed_path = work_directory + 'BVC-수정됨.dxf'
-        output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
-        converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
-    else:
-        grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
 
 
 def select_target_directory():
@@ -910,24 +859,27 @@ def convert_pitch_lines(lines):
     return converted
 
 
-def process_and_save_sections(lines: list[list[tuple[float, float]]], brokenchain, flag: str, data) -> list[VIPdata]:
+def process_and_save_sections(lines: list[list[tuple[float, float]]] | list[VIPdata], brokenchain, flag: str) -> list[VIPdata] | None:
     """종곡선 정보를 처리하고 파일로 저장"""
+    try:
+        if not lines:
+            print("curve_info가 비어 있습니다.")
+            return
+        if flag == 'BVE':
+            # 중복 제거
+            # Civil3D 형식 여부 판단
+            civil3d = is_civil3d_format(lines)
+            unique_data = convert_pitch_lines(lines) if civil3d else remove_duplicate_pitch(lines)
+            # 구간 정의 및 처리
+            sections = process_sections(unique_data)
+            vipdatas = annotate_sections(sections, brokenchain)
+            return vipdatas
+        else:
+            return lines
+    except Exception as e:
+        raise ValueError(e)
 
-    if not data:
-        print("curve_info가 비어 있습니다.")
-        return None
-    if flag == 'BVE':
-        # 중복 제거
-        # Civil3D 형식 여부 판단
-        civil3d = is_civil3d_format(lines)
-        unique_data = convert_pitch_lines(lines) if civil3d else remove_duplicate_pitch(lines)
-        # 구간 정의 및 처리
-        sections = process_sections(unique_data)
-        vipdatas = annotate_sections(sections, brokenchain)
-    else:
-        vipdatas = data
 
-    return vipdatas
 
 
 # 1. 곡선 구간(Line) 생성 분리
@@ -937,52 +889,146 @@ def get_vcurve_lines(vip: VIPdata) -> list[list]:
     else:
         return [['VIP', vip.VIP_STA]]
 
+class ProfileProcessor:
+    """프로파일 처리기
+    Attributes:
+        source_directory: 소스 폴더
+        work_directory: 작업 폴더
+        target_directory: 대상 폴더
+        al_type: 선로 종류(일반철도, 도시철도, 고속철도, 준고속철도)
+        offset: 구조물별 오프셋 딕셔너리
+        log: 로그
+    """
+    def __init__(self, source_directory, work_directory, target_directory, al_type, offset, log):
+        self.source_directory = source_directory
+        self.work_directory = work_directory
+        self.target_directory = target_directory
+        self.al_type = al_type
+        self.offset = offset
+        self.log = log
 
-def process_bve_profile(start: float, end: float,vipdats: list[VIPdata], structure_list, source_directory: str, work_directory: str,
-                        target_directory, al_type: str, offset=0.0):
-    """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
-    # 이미지 저장
-    object_index = 3025
-    objects = []
-    object_folder = target_directory.split("Object/")[-1]
+    def process_bve_profile(self, start: float, end: float,vipdats: list[VIPdata], structure_list) -> list[ObjectDATA]:
+        """주어진 구간 정보를 처리하여 이미지 및 CSV 생성
+        Arguments:
+            start: 시작 측점
+            end: 끝 측점
+            vipdats: vip데이터 리스트
+            structure_list: 구조물 리스트
+        Returns:
+            objects: 오브젝트 데이터
+            """
+        # 이미지 저장
+        object_index = 3025
+        objects = []
+        object_folder = self.target_directory.split("Object/")[-1]
 
-    for i, vip in enumerate(vipdats):
-        if not start <= vip.VIP_STA <= end:
-            continue
-        lines = get_vcurve_lines(vip)
-        if not lines:
-            continue
+        for i, vip in enumerate(vipdats):
+            self.log(f"VIP {vip.VIPNO} 처리 중... ({i + 1}/{len(vipdats)})")
+            if not start <= vip.VIP_STA <= end:
+                self.log(f"범위를 벗어났습니다. 해당 구간은 건너뜁니다.")
+                continue
+            lines = get_vcurve_lines(vip)
+            if not lines:
+                continue
 
-        # 일반철도 구배표용 구배거리
-        if i < len(vipdats) - 1:
-            current_distance = vipdats[i + 1].VIP_STA - vip.VIP_STA
+            # 일반철도 구배표용 구배거리
+            if i < len(vipdats) - 1:
+                current_distance = vipdats[i + 1].VIP_STA - vip.VIP_STA
+            else:
+                current_distance = 0  # 기본값 (에러 방지)
+
+            for key, value in lines:
+                current_sta = value
+                current_structure = isbridge_tunnel(current_sta, structure_list)
+                if key == 'VIP':#vip만 별도처리
+                    self.process_vertical(vip, current_distance, key, current_structure)
+                self.process_verticulcurve(vip, key, value)
+
+                img_f_name = f'VIP{vip.VIPNO}_{key}'
+                openfile_name = f'{key}_{current_structure}용'
+                copy_and_export_csv(openfile_name, img_f_name, key, self.source_directory, self.work_directory, self.offset)
+
+                objects.append(
+                    ObjectDATA(
+                        VIPNO=vip.VIPNO,
+                        vcurvetype=key,
+                        structure=current_structure,
+                        station=value,
+                        object_index=object_index,
+                        filename=img_f_name,
+                        object_path=object_folder,
+                        offset=(self.offset[current_structure][0],self.offset[current_structure][1]),
+                        rotation=0
+                    )
+                )
+                object_index += 1
+
+        return objects
+
+    def process_vertical(self, vip: VIPdata, current_distance: float, pitchtype: str, structure: str):
+        """종곡선 없는 일간구간 처리용 메서드
+        Arguments:
+            vip: VIP객체
+            current_distance: 현재 VIP에서 다음 VIP까지의 거리
+            pitchtype: VIP타입(BVC,VIP,EVC)
+            structure: 구조물
+        """
+
+        if self.al_type == '고속철도':
+            return
+        grade_post_generator = GradePost(self.work_directory)
+        tunnel_post_generator = TunnelPitchCreator(self.work_directory)
+        converter = DXF2IMG()
+
+        output_image = self.work_directory + 'output_image.png'
+        filename = 'BVC-수정됨.dxf'
+
+        current_grade = vip.next_slope
+        img_text2 = format_grade(current_grade)  # 기울기표 구배문자
+        img_text3 = f'{int(current_distance)}'  # 기울기표 거리문자
+        img_bg_color2 = (255, 255, 255)  # 기울기표 문자
+        img_f_name2 = f'VIP{vip.VIPNO}_{pitchtype}_기울기표'  # 기울기표 파일명
+        openfile_name2 = f'기울기표_{structure}용'
+
+        final_output_image = self.work_directory + img_f_name2 + '.png'
+
+        if structure == '터널' or self.al_type == '도시철도':
+            tunnel_post_generator.create_tunnel_pitch_image(filename, img_text2)
+            modifed_path = self.work_directory + 'BVC-수정됨.dxf'
+            output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+            converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
         else:
-            current_distance = 0  # 기본값 (에러 방지)
+            grade_post_generator.create_grade_post(img_text2, img_text3, img_f_name2, (0, 0, 0), '좌')
 
-        for key, value in lines:
-            current_sta = value
-            current_structure = isbridge_tunnel(current_sta, structure_list)
-            if key == 'VIP':
-                process_vertical(vip, current_distance, key, current_structure, work_directory, al_type)
-            process_verticulcurve(vip, key, value, current_structure, source_directory, work_directory)
-            img_f_name = f'VIP{vip.VIPNO}_{key}'
-            openfile_name = f'{key}_{current_structure}용'
-            copy_and_export_csv(openfile_name, img_f_name, key, source_directory, work_directory, offset)
+    def process_verticulcurve(self, vipdata: VIPdata, viptype: str, current_sta: float):
+        """종곡선구간 처리용 메서드
+        Arguments:
+            vipdata: VIP객체
+            viptype: VIP타입(BVC,VIP,EVC)
+            current_sta: 현제 구간 측점
+        """
+        converter = DXF2IMG()
+        if viptype == 'BVC':
+            grade_text = format_grade(vipdata.prev_slope)
+        elif viptype == 'VIP':
+            grade_text = format_grade(vipdata.next_slope)
+        elif viptype == 'EVC':
+            grade_text = format_grade(vipdata.next_slope)
+        else:
+            grade_text = ''
+        station_text = f'{format_distance(current_sta)}'
 
-            objects.append(ObjectDATA(
-                VIPNO=vip.VIPNO,
-                vcurvetype=key,
-                structure=current_structure,
-                station=value,
-                object_index=object_index,
-                filename=img_f_name,
-                object_path=object_folder
-            )
-            )
-            object_index += 1
+        img_f_name = f'VIP{vipdata.VIPNO}_{viptype}'
+        r = str(int(vipdata.vradius))
 
-    return objects
+        file_path = self.source_directory + f'{viptype}.dxf'
+        final_output_image = self.work_directory + img_f_name + '.png'
 
+        modifed_path = self.work_directory + 'BVC-수정됨.dxf'
+        replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, vipdata.seg, r)
+
+        output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
+        converter.trim_and_resize_image(output_paths[0], final_output_image, target_size=(320, 200))
 
 def load_structure_data():
     """구조물 정보 로드"""
@@ -996,7 +1042,8 @@ def load_structure_data():
     return structure_list
 
 
-def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None):
+def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None,
+                   is_delete_original=True):
     """
     원본 폴더의 모든 파일을 대상 폴더로 복사 (대상 폴더의 모든 데이터 제거)
 
@@ -1004,6 +1051,7 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
     :param target_directory: 대상 폴더 경로
     :param include_extensions: 복사할 확장자의 리스트 (예: ['.txt', '.csv'] → 이 확장자만 복사)
     :param exclude_extensions: 제외할 확장자의 리스트 (예: ['.log', '.tmp'] → 이 확장자는 복사 안 함)
+    :param is_delete_original: 원본 삭제유무
     """
 
     # 대상 폴더가 존재하면 삭제 후 다시 생성
@@ -1032,7 +1080,8 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
             shutil.copy2(source_path, target_path)
 
     # 모든작업 종료후 원본폴더째로 삭제
-    shutil.rmtree(source_directory)
+    if is_delete_original:
+        shutil.rmtree(source_directory)
 
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
@@ -1044,14 +1093,14 @@ class PitchProcessingApp(tk.Tk):
         self.base_source_directory = 'c:/temp/pitch/소스/'
         self.log_box = None
         self.title("Pitch 데이터 처리기")
-        self.geometry("700x500")
+        self.geometry("700x700")
 
         self.source_directory = self.base_source_directory  # 원본 소스 위치
         self.work_directory = ''
         self.target_directory = ''
         self.isbrokenchain: bool = False
         self.brokenchain: float = 0.0
-        self.offset: float = 0.0
+        self.offset: dict = {}
         self.create_widgets()
 
     def create_widgets(self):
@@ -1077,15 +1126,60 @@ class PitchProcessingApp(tk.Tk):
             textvariable=self.end_station_var,
             width=15
         ).grid(row=0, column=3, padx=5)
-        self.log_box = tk.Text(self, height=20, wrap=tk.WORD, font=("Consolas", 10))
-        self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        run_button = ttk.Button(self, text="기울기 데이터 처리 실행", command=self.run_main)
+        # 🔹 파정 입력
+        ttk.Label(input_frame, text="파정").grid(row=0, column=4, sticky="e", padx=5)
+
+        self.brokenchain_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.brokenchain_var,
+            width=15
+        ).grid(row=0, column=5, padx=5)
+
+        # 🔹 오프셋 입력
+        offset_frame = ttk.LabelFrame(self, text="구조물별 offset 설정")
+        offset_frame.pack(pady=10)
+
+        ttk.Label(offset_frame, text="토공").grid(row=0, column=0, sticky="e", padx=5)
+        self.e_xoffset_var = tk.DoubleVar(value=3.3)
+        ttk.Entry(offset_frame, textvariable=self.e_xoffset_var, width=15).grid(row=0, column=1, padx=5)
+        self.e_yoffset_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(offset_frame, textvariable=self.e_yoffset_var, width=15).grid(row=0, column=2, padx=5)
+
+        ttk.Label(offset_frame, text="교량").grid(row=1, column=0, sticky="e", padx=5)
+        self.b_xoffset_var = tk.DoubleVar(value=3)
+        ttk.Entry(offset_frame, textvariable=self.b_xoffset_var, width=15).grid(row=1, column=1, padx=5)
+        self.b_yoffset_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(offset_frame, textvariable=self.b_yoffset_var, width=15).grid(row=1, column=2, padx=5)
+
+        ttk.Label(offset_frame, text="터널").grid(row=2, column=0, sticky="e", padx=5)
+        self.t_xoffset_var = tk.DoubleVar(value=4.546)
+        ttk.Entry(offset_frame, textvariable=self.t_xoffset_var, width=15).grid(row=2, column=1, padx=5)
+        self.t_yoffset_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(offset_frame, textvariable=self.t_yoffset_var, width=15).grid(row=2, column=2, padx=5)
+
+        log_frame = ttk.Frame(self)
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.log_box = tk.Text(log_frame, height=20, wrap=tk.WORD, font=("Consolas", 10))
+        scrollbar = ttk.Scrollbar(log_frame, command=self.log_box.yview)
+        self.log_box.configure(yscrollcommand=scrollbar.set)
+
+        self.log_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        button_frame = ttk.Frame(self)
+        button_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        run_button = ttk.Button(button_frame, text="기울기 데이터 처리 실행", command=self.run_main)
         run_button.pack(pady=10)
+        exit_button = ttk.Button(button_frame, text="종료", command=self.destroy)
+        exit_button.pack(pady=10)
 
     def log(self, msg):
         self.log_box.insert(tk.END, msg + "\n")
         self.log_box.see(tk.END)
+        self.log_box.update_idletasks()  # UI 즉시 갱신
 
     def process_interval(self):
         top = tk.Toplevel()
@@ -1101,40 +1195,6 @@ class PitchProcessingApp(tk.Tk):
 
         top.grab_set()  # 모달처럼 동작
         top.wait_window()
-
-    def process_proken_chain(self):
-        # Y/N 메시지박스
-        result = messagebox.askyesno("파정 확인", "노선에 거리파정이 존재하나요?")
-        if not result:
-            return False
-
-        # float 값 입력 받기
-        while True:
-            value = simpledialog.askstring("파정 입력", "거리파정 값을 입력하세요 (예: 12.34):")
-            if value is None:  # 사용자가 취소를 눌렀을 때
-                return False
-            try:
-                self.isbrokenchain = True if float(value) else False
-                self.brokenchain = float(value)
-                break
-            except ValueError:
-                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
-
-        self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
-
-    def process_offset(self):
-        # float 값 입력 받기
-        while True:
-            value = simpledialog.askstring("오프셋 입력", "오프셋 값을 입력하세요 (예: 12.34):")
-            if value is None:  # 사용자가 취소를 눌렀을 때
-                return False
-            try:
-                self.offset = float(value)
-                break
-            except ValueError:
-                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
-
-        self.log(f"오프셋 값: {self.offset}")
 
     def run_main(self):
         try:
@@ -1157,15 +1217,28 @@ class PitchProcessingApp(tk.Tk):
             # ✅ 항상 base_source_directory에서 새로 경로 만들기
             self.source_directory = os.path.join(self.base_source_directory, self.alignment_type) + '/'
             self.log(f"소스 경로: {self.source_directory}")
-
+            #소스폴더의 모든 내용을 작업폴더에 복사
+            copy_all_files(self.source_directory, self.work_directory, ['.bmp', '.png', '.jpg', '.jpeg'], ['.dxf', '.ai', '.csv'], is_delete_original=False)
             # ㅊ파정확인
-            self.process_proken_chain()
+            self.brokenchain = self.brokenchain_var.get()
+            if self.brokenchain != 0.0:
+                self.isbrokenchain = True
+            else:
+                self.isbrokenchain = False
 
             # 오프셋 적용
-            self.process_offset()
+            self.offset = {
+                '토공': (self.e_xoffset_var.get(), self.e_yoffset_var.get()),
+                "교량": (self.b_xoffset_var.get(), self.b_yoffset_var.get()),
+                "터널": (self.t_xoffset_var.get(), self.t_yoffset_var.get())
+            }
             #시작 끝 측점 확인
             start_sta = self.start_station_var.get()
             end_sta = self.end_station_var.get()
+
+            if start_sta >= end_sta:
+                self.log("⚠️ 시작 측점은 끝 측점보다 작아야 합니다.")
+                return
 
             # 파일 읽기
             data = None
@@ -1187,31 +1260,43 @@ class PitchProcessingApp(tk.Tk):
                 self.log(f'파일처리 예외발생 {e}')
                 flag = None
                 return
-
-            # 구조물 데이터 로드
-            self.log("구조물 데이터 로드 중...")
-            structure_list = load_structure_data()
-            # 구조물 측점 파정처리
-            structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
-            # 곡선 데이터 처리
+            try:
+                # 구조물 데이터 로드
+                self.log("구조물 데이터 로드 중...")
+                structure_list = load_structure_data()
+                # 구조물 측점 파정처리
+                structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
+                # 곡선 데이터 처리
+            except Exception as e:
+                self.log(f"구조물 데이터 로드 중 오류발생 {e}")
+                return
 
             self.log(f"{flag}용 처리 시작...")
-            vipdatas = process_and_save_sections(data, self.brokenchain, flag, data)
+            try:
+                vipdatas = process_and_save_sections(data, self.brokenchain, flag)
+            except Exception as e:
+                self.log(f"{flag}용 처리 중 에러발생 {e}")
+                return
 
-            objectdatas = process_bve_profile(start_sta, end_sta, vipdatas, structure_list, self.source_directory, self.work_directory,
-                                              self.target_directory, self.alignment_type, offset=self.offset)
+            try:
+                bveproseccoer = ProfileProcessor(self.source_directory, self.work_directory,
+                                              self.target_directory,  self.alignment_type, self.offset, self.log)
+                objectdatas = bveproseccoer.process_bve_profile(start_sta, end_sta, vipdatas, structure_list)
 
-            # 최종 텍스트 생성
-            if objectdatas:
-                self.log("최종 결과 생성 중...")
-                post_file = os.path.join(self.work_directory, 'pitch_post.txt')
-                index_file = os.path.join(self.work_directory, 'pitch_index.txt')
-                create_pitch_post_txt(objectdatas, post_file)
-                create_pitch_index_txt(objectdatas, index_file)
-                self.log("결과 파일 생성 완료!")
-            self.log("BVE 작업 완료")
-
-            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt'], ['.dxf', '.ai'])
+                # 최종 텍스트 생성
+                if objectdatas:
+                    self.log("최종 결과 생성 중...")
+                    post_file = os.path.join(self.work_directory, 'pitch_post.txt')
+                    index_file = os.path.join(self.work_directory, 'pitch_index.txt')
+                    create_pitch_post_txt(objectdatas, post_file)
+                    create_pitch_index_txt(objectdatas, index_file)
+                    self.log("결과 파일 생성 완료!")
+                self.log("BVE 작업 완료")
+            except Exception as e:
+                self.log(f"최종 결과 생성 중 에러 발생 {e}")
+                return
+            #result 복사
+            copy_all_files(self.work_directory, self.target_directory, ['.csv', '.png', '.txt', '.jpg', '.jpeg', '.bmp'], ['.dxf', '.ai'])
             self.log("모든 작업이 완료되었습니다.")
 
             messagebox.showinfo("완료", "Pitch 데이터 처리가 성공적으로 완료되었습니다.")
