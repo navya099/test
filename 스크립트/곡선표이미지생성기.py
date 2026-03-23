@@ -17,7 +17,8 @@ from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 import numpy as np
 import shutil
 import os
-
+import matplotlib
+matplotlib.use('Agg')
 '''
 BVE곡선파일을 바탕으로 곡선표(준고속용)을 설치하는 프로그램
 -made by dger -
@@ -75,6 +76,9 @@ class ObjectDATA:
     filename: str = ''
     object_path: str = ''
     speed: int = 0
+    offset: tuple[float, float] = (0, 0)
+    rotation: float = 0.0
+
 
 def format_distance(number):
     return f"{number / 1000:.3f}"
@@ -246,7 +250,7 @@ def annotate_sections(sections ,brokenchain):
 
     return ipdatas
     
-def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP', source_directory='', work_directory='', offset =0.0):
+def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS = False, R= 3100, curvetype='SP', source_directory='', work_directory=''):
     # Define the input and output file paths
     open_file = source_directory + open_filename + '.csv'
     output_file = work_directory + output_filename + '.csv'
@@ -266,7 +270,6 @@ def copy_and_export_csv(open_filename='SP1700', output_filename='IP1SP',isSPPS =
      
             # Append the modified line to the new_lines list
             new_lines.append(line)
-    new_lines.append(f'\nTranslateAll, {offset}, 0, 0\n')
 
     # Open the output file for writing the modified lines
     with open(output_file, 'w', encoding='utf-8') as file:
@@ -281,7 +284,7 @@ def create_curve_post_txt(data_list: list[ObjectDATA], output_file):
     """
     with open(output_file, "w", encoding="utf-8") as file:
          for data in data_list:  # 두 리스트를 동시에 순회
-            file.write(f"{data.station},.freeobj 0;{data.object_index};,;IP{data.IPNO}_{data.curvetype}-{data.structure}\n")  # 원하는 형식으로 저장
+            file.write(f"{data.station},.freeobj 0;{data.object_index};-{data.offset[0]};{data.offset[1]};{data.rotation};,;IP{data.IPNO}_{data.curvetype}-{data.structure}\n")  # 원하는 형식으로 저장
 
 def create_curve_index_txt(data_list: list[ObjectDATA], output_file):
     """
@@ -890,7 +893,7 @@ def cal_speed(radius: float) -> float:
     return (radius * 160 / 11.8) ** 0.5
 
 #핵심 로직2 (클래스화 구조변경)
-def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory, altype: str, offset =0.0):
+def process_sections_for_images(start, end, ipdatas: list[IPdata], structure_list ,source_directory, work_directory, target_directory, altype: str, offset):
     """주어진 구간 정보를 처리하여 이미지 및 CSV 생성"""
 
     object_path = ''
@@ -901,6 +904,9 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
     object_folder = target_directory.split("Object/")[-1]
 
     for i, ip in enumerate(ipdatas):
+        if not start <= ip.SP_STA <= end or start <= ip.BC_STA <= end:
+            print(f"범위를 벗어났습니다. 해당 구간은 건너뜁니다.")
+            continue
         lines = get_curve_lines(ip)
 
         if not lines:
@@ -919,7 +925,7 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
                 citylineprocess(key, ip.radius, ip.cant, tcl, img_f_name, source_directory, work_directory)
 
                 output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory,
-                                    work_directory, offset)  # csv 원본복사 후 추출함수
+                                    work_directory)  # csv 원본복사 후 추출함수
                 if speed < 120 and key in ['BC', 'PC']:
                     insert_speedlimt_syntax(output_file, structure, source_directory, work_directory) #속도제한표 추가
                     modify_r_text_in_file(output_file, img_f_name, str(int(ip.radius)))
@@ -928,7 +934,7 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
 
                 if isSPPS:
                     process_dxf_image(img_f_name, structure, ip.radius, source_directory, work_directory)
-                output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory, offset) # csv 원본복사 후 추출함수
+                output_file = copy_and_export_csv(openfile_name, img_f_name, isSPPS, int(ip.radius), key, source_directory, work_directory) # csv 원본복사 후 추출함수
             #print(object_path)
             #print(f'{img_f_name}-{openfile_name}-{key}:{img_text}-{objec_index}')
             #클래스에ㅐ 속성 추가
@@ -940,7 +946,9 @@ def process_sections_for_images(ipdatas: list[IPdata], structure_list ,source_di
                 object_index=object_index,
                 filename=img_f_name,
                 object_path=object_folder,
-                speed=speed
+                speed=speed,
+                offset=(offset[structure][0], offset[structure][1]),
+                rotation=0
                 )
             )
             object_index += 1
@@ -1012,7 +1020,7 @@ def apply_brokenchain_to_structure(structure_list, brokenchain):
     return updated_structure
 
 
-def process_curve_data(source_directory, work_directory, target_directory, data, structure_list, brokenchain, altype: str, flag: str, offset = 0.0):
+def process_curve_data(start, end, source_directory, work_directory, target_directory, data, structure_list, brokenchain, altype: str, flag: str, offset):
     """곡선 데이터 처리 (파일 저장 및 이미지 & CSV 생성)"""
     if not data:
         print("curve_info가 비어 있습니다.")
@@ -1023,20 +1031,22 @@ def process_curve_data(source_directory, work_directory, target_directory, data,
     else:
         ipdatas = data
     # 이미지 및 CSV 생성
-    objectdatas = process_sections_for_images(ipdatas, structure_list, source_directory, work_directory, target_directory, altype, offset)
+    objectdatas = process_sections_for_images(start, end, ipdatas, structure_list, source_directory, work_directory, target_directory, altype, offset)
 
     return objectdatas
 
-def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None):
+def copy_all_files(source_directory, target_directory, include_extensions=None, exclude_extensions=None,
+                   is_delete_original=True):
     """
     원본 폴더의 모든 파일을 대상 폴더로 복사 (대상 폴더의 모든 데이터 제거)
-    
+
     :param source_directory: 원본 폴더 경로
     :param target_directory: 대상 폴더 경로
     :param include_extensions: 복사할 확장자의 리스트 (예: ['.txt', '.csv'] → 이 확장자만 복사)
     :param exclude_extensions: 제외할 확장자의 리스트 (예: ['.log', '.tmp'] → 이 확장자는 복사 안 함)
+    :param is_delete_original: 원본 삭제유무
     """
-    
+
     # 대상 폴더가 존재하면 삭제 후 다시 생성
     if os.path.exists(target_directory):
         shutil.rmtree(target_directory)  # 대상 폴더 삭제
@@ -1050,20 +1060,21 @@ def copy_all_files(source_directory, target_directory, include_extensions=None, 
         # 파일만 처리 (폴더는 복사하지 않음)
         if os.path.isfile(source_path):
             file_ext = os.path.splitext(filename)[1].lower()  # 확장자 추출 후 소문자로 변환
-            
+
             # 포함할 확장자가 설정된 경우, 해당 확장자가 아니면 건너뛴다
             if include_extensions and file_ext not in include_extensions:
                 continue
-            
+
             # 제외할 확장자가 설정된 경우, 해당 확장자는 복사하지 않는다
             if exclude_extensions and file_ext in exclude_extensions:
                 continue
-            
+
             # 파일 복사 (메타데이터 유지)
             shutil.copy2(source_path, target_path)
 
-    #모든작업 종료후 원본폴더째로 삭제
-    shutil.rmtree(source_directory)
+    # 모든작업 종료후 원본폴더째로 삭제
+    if is_delete_original:
+        shutil.rmtree(source_directory)
 
     print(f"📂 모든 파일이 {source_directory} → {target_directory} 로 복사되었습니다.")
 
@@ -1118,36 +1129,80 @@ class CurveProcessingApp(tk.Tk):
     def create_widgets(self):
         label = ttk.Label(self, text="곡선 데이터 자동 처리 시스템", font=("Arial", 16, "bold"))
         label.pack(pady=10)
+        input_frame = ttk.Frame(self.master)
+        input_frame.pack(pady=10)
+        # 🔹 시작 측점 입력
+        ttk.Label(input_frame, text="시작 측점").grid(row=0, column=0, sticky="e", padx=5)
 
-        self.log_box = tk.Text(self, height=20, wrap=tk.WORD, font=("Consolas", 10))
-        self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.start_station_var = tk.DoubleVar(value=33300)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.start_station_var,
+            width=15
+        ).grid(row=0, column=1, padx=5)
+        # 🔹 끝 측점 입력
+        ttk.Label(input_frame, text="끝 측점").grid(row=0, column=2, sticky="e", padx=5)
 
-        run_button = ttk.Button(self, text="곡선 데이터 처리 실행", command=self.run_main)
+        self.end_station_var = tk.DoubleVar(value=95000)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.end_station_var,
+            width=15
+        ).grid(row=0, column=3, padx=5)
+
+        # 🔹 파정 입력
+        ttk.Label(input_frame, text="파정").grid(row=0, column=4, sticky="e", padx=5)
+
+        self.brokenchain_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.brokenchain_var,
+            width=15
+        ).grid(row=0, column=5, padx=5)
+
+        # 🔹 오프셋 입력
+        offset_frame = ttk.LabelFrame(self, text="구조물별 offset 설정")
+        offset_frame.pack(pady=10)
+
+        ttk.Label(offset_frame, text="토공").grid(row=0, column=0, sticky="e", padx=5)
+        self.e_xoffset_var = tk.DoubleVar(value=3.3)
+        ttk.Entry(offset_frame, textvariable=self.e_xoffset_var, width=15).grid(row=0, column=1, padx=5)
+        self.e_yoffset_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(offset_frame, textvariable=self.e_yoffset_var, width=15).grid(row=0, column=2, padx=5)
+
+        ttk.Label(offset_frame, text="교량").grid(row=1, column=0, sticky="e", padx=5)
+        self.b_xoffset_var = tk.DoubleVar(value=3)
+        ttk.Entry(offset_frame, textvariable=self.b_xoffset_var, width=15).grid(row=1, column=1, padx=5)
+        self.b_yoffset_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(offset_frame, textvariable=self.b_yoffset_var, width=15).grid(row=1, column=2, padx=5)
+
+        ttk.Label(offset_frame, text="터널").grid(row=2, column=0, sticky="e", padx=5)
+        self.t_xoffset_var = tk.DoubleVar(value=4.546)
+        ttk.Entry(offset_frame, textvariable=self.t_xoffset_var, width=15).grid(row=2, column=1, padx=5)
+        self.t_yoffset_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(offset_frame, textvariable=self.t_yoffset_var, width=15).grid(row=2, column=2, padx=5)
+
+        log_frame = ttk.Frame(self)
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.log_box = tk.Text(log_frame, height=20, wrap=tk.WORD, font=("Consolas", 10))
+        scrollbar = ttk.Scrollbar(log_frame, command=self.log_box.yview)
+        self.log_box.configure(yscrollcommand=scrollbar.set)
+
+        self.log_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        button_frame = ttk.Frame(self)
+        button_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        run_button = ttk.Button(button_frame, text="실행", command=self.run_main)
         run_button.pack(pady=10)
+        exit_button = ttk.Button(button_frame, text="종료", command=self.destroy)
+        exit_button.pack(pady=10)
 
     def log(self, message):
         self.log_box.insert(tk.END, message + "\n")
         self.log_box.see(tk.END)
-
-    def process_proken_chain(self):
-        # Y/N 메시지박스
-        result = messagebox.askyesno("파정 확인", "노선에 거리파정이 존재하나요?")
-        if not result:  # 창 종료
-            return
-
-        # float 값 입력 받기
-        while True:
-            value = simpledialog.askstring("파정 입력", "거리파정 값을 입력하세요 (예: 12.34):")
-            if value is None:  # 사용자가 취소를 눌렀을 때
-                return
-            try:
-                self.isbrokenchain = True if float(value) else False
-                self.brokenchain = float(value)
-                break
-            except ValueError:
-                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
-
-        self.log(f"현재 노선의 거리파정 값: {self.brokenchain}")
+        self.log_box.update_idletasks()  # UI 즉시 갱신
 
     def process_interval(self):
         top = tk.Toplevel()
@@ -1163,20 +1218,6 @@ class CurveProcessingApp(tk.Tk):
 
         top.grab_set()  # 모달처럼 동작
         top.wait_window()
-
-    def process_offset(self):
-        # float 값 입력 받기
-        while True:
-            value = simpledialog.askstring("오프셋 입력", "오프셋 값을 입력하세요 (예: 12.34):")
-            if value is None:  # 사용자가 취소를 눌렀을 때
-                return False
-            try:
-                self.offset = float(value)
-                break
-            except ValueError:
-                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
-
-        self.log(f"오프셋 값: {self.offset}")
 
     def run_main(self):
         try:
@@ -1199,13 +1240,29 @@ class CurveProcessingApp(tk.Tk):
             # ✅ 항상 base_source_directory에서 새로 경로 만들기
             self.source_directory = os.path.join(self.base_source_directory, self.alignment_type) + '/'
             self.log(f"소스 경로: {self.source_directory}")
-
-            #ㅊ파정확인
-            self.process_proken_chain()
+            # 소스폴더의 모든 내용을 작업폴더에 복사
+            copy_all_files(self.source_directory, self.work_directory, ['.bmp', '.png', '.jpg', '.jpeg'],
+                           ['.dxf', '.ai', '.csv'], is_delete_original=False)
+            # ㅊ파정확인
+            self.brokenchain = self.brokenchain_var.get()
+            if self.brokenchain != 0.0:
+                self.isbrokenchain = True
+            else:
+                self.isbrokenchain = False
 
             # 오프셋 적용
-            self.process_offset()
+            self.offset = {
+                '토공': (self.e_xoffset_var.get(), self.e_yoffset_var.get()),
+                "교량": (self.b_xoffset_var.get(), self.b_yoffset_var.get()),
+                "터널": (self.t_xoffset_var.get(), self.t_yoffset_var.get())
+            }
 
+            # 시작 끝 측점 확인
+            start_sta = self.start_station_var.get()
+            end_sta = self.end_station_var.get()
+            if start_sta >= end_sta:
+                self.log("⚠️ 시작 측점은 끝 측점보다 작아야 합니다.")
+                return
             # 곡선 정보 파일 읽기
             self.log("곡선 정보 파일 읽는 중...")
             data = None
@@ -1234,7 +1291,7 @@ class CurveProcessingApp(tk.Tk):
             structure_list = apply_brokenchain_to_structure(structure_list, self.brokenchain)
             # 곡선 데이터 처리
             self.log("곡선 데이터 처리 중...")
-            objectdatas = process_curve_data(self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain, self.alignment_type, flag, self.offset)
+            objectdatas = process_curve_data(start_sta, end_sta, self.source_directory, self.work_directory, self.target_directory, data, structure_list, self.brokenchain, self.alignment_type, flag, self.offset)
 
             # 최종 텍스트 생성
             if objectdatas:
