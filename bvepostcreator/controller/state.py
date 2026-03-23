@@ -9,7 +9,7 @@ class AppState:
         self.isbrokenchain = False
         self.alignment_type = ''
         self.structure_excel_path = ''
-        self.offset = 0.0
+        self.offset = None
         self.target_directory = ''
         self.work_directory = ''
         self.base_source_directory = ''

@@ -1,8 +1,12 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox, simpledialog
 
+from gui.offset_setting_ui import OFFSetSettingUI
+
+
 class GUIWidget:
     def __init__(self, master, controller):
+        self.offset_var = None
         self.master = master
         self.controller = controller
 
@@ -31,25 +35,34 @@ class GUIWidget:
             width=15
         ).grid(row=0, column=3, padx=5)
 
+        # 🔹 파정 입력
+        ttk.Label(input_frame, text="파정").grid(row=0, column=4, sticky="e", padx=5)
+
+        self.brokenchain_var = tk.DoubleVar(value=0.0)
+        ttk.Entry(
+            input_frame,
+            textvariable=self.brokenchain_var,
+            width=15
+        ).grid(row=0, column=5, padx=5)
+
         # 🔹역방향 측점 입력
-        ttk.Label(input_frame, text="역방향 시작 측점").grid(row=0, column=4, sticky="e", padx=5)
+        ttk.Label(input_frame, text="역방향 시작 측점").grid(row=1, column=0, sticky="e", padx=5)
 
         self.reverse_start_station_var = tk.DoubleVar(value=45683)
         ttk.Entry(
             input_frame,
             textvariable=self.reverse_start_station_var,
             width=15
-        ).grid(row=0, column=5, padx=5)
+        ).grid(row=1, column=1, padx=5)
 
         # 🔹시작 인덱스 입력
-        ttk.Label(input_frame, text="시작 인덱스").grid(row=0, column=6, sticky="e", padx=5)
-
+        ttk.Label(input_frame, text="시작 인덱스").grid(row=1, column=2, sticky="e", padx=5)
         self.start_index_var = tk.IntVar(value=4025)
         ttk.Entry(
             input_frame,
             textvariable=self.start_index_var,
             width=15
-        ).grid(row=0, column=7, padx=5)
+        ).grid(row=1, column=3, padx=5)
 
         btn_frame = ttk.Frame(self.master)
         btn_frame.pack(pady=10, anchor="center")
@@ -63,6 +76,13 @@ class GUIWidget:
         chk2 = ttk.Checkbutton(btn_frame, text='복선', variable=self.is_twotrack_var)
         chk2.state(['!alternate'])
         chk2.pack(side=tk.LEFT, padx=10)
+
+        self.is_brokenchain_var = tk.BooleanVar(value=False)
+        chk2 = ttk.Checkbutton(btn_frame, text='파정', variable=self.is_brokenchain_var)
+        chk2.state(['!alternate'])
+        chk2.pack(side=tk.LEFT, padx=10)
+
+        ttk.Button(btn_frame, text="오프셋 설정", command=self.on_set_offset).pack(side=tk.LEFT, padx=10)
 
         ttk.Button(btn_frame, text="대상 디렉터리 설정", command=self.on_select_directory).pack(side=tk.LEFT, padx=10)
 
@@ -94,9 +114,21 @@ class GUIWidget:
         self.controller.state.reverse_start = self.reverse_start_station_var.get()
         self.controller.state.is_reverse = self.is_reverse_var.get()
         self.controller.state.is_two_track = self.is_twotrack_var.get()
+        self.controller.state.isbrokenchain = self.is_brokenchain_var.get()
+        self.controller.state.brokenchain = self.brokenchain_var.get()
+        self.controller.state.offset = self.offset_var
         self.controller.state.start_index = self.start_index_var.get()
         # 🔹 실행
         self.controller.run()
 
     def on_exit(self):
         self.master.destroy()
+
+    def on_set_offset(self):
+        dialog = OFFSetSettingUI(self.master)
+        self.master.wait_window(dialog)  # 창 닫힐 때까지 대기
+        if dialog.result:
+            self.offset_var = dialog.result
+            self.write_log(f"오프셋 설정 완료: {self.offset_var}")
+
+

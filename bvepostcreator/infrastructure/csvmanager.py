@@ -8,7 +8,6 @@ class CSVManager:
         ptype: str,
         source_directory: str,
         work_directory: str,
-        offset: float = 0.0,
     ):
         open_file = os.path.join(source_directory, f'{open_filename}.csv')
         output_file = os.path.join(work_directory, f'{output_filename}.csv')
@@ -23,8 +22,6 @@ class CSVManager:
                         f'LoadTexture, {output_filename}.png,'
                     )
                 new_lines.append(line)
-
-        new_lines.append(f'\nTranslateAll, {offset}, 0, 0\n')
 
         with open(output_file, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)

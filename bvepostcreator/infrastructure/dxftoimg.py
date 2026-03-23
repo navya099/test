@@ -7,6 +7,8 @@ from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 from matplotlib import pyplot as plt
 from PIL import Image
+import matplotlib
+matplotlib.use('Agg')
 
 class DXF2IMG:
     """DXF 파일을 이미지로 변환하는 클래스"""

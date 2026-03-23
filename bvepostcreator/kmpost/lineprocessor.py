@@ -1,3 +1,6 @@
+import ezdxf
+
+
 class LineProcessor:
     LAYER_RULES = {
         "일반철도": {

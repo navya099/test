@@ -7,7 +7,7 @@ class KMImageGenerator:
     @staticmethod
     def generate(imgdata, post_type, alignmenttype, source_directory, work_directory):
         if alignmenttype in ['도시철도', '일반철도']:
-            KMPostProcessor().process_dxf_image(
+            KMPostProcessor.process_dxf_image(
                 imgdata, source_directory, work_directory,
                 post_type, alignmenttype
             )

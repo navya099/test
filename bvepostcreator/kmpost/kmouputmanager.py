@@ -28,7 +28,7 @@ class KMOutputManager:
             exclude_ext or ['.dxf', '.ai']
         )
 
-    def generate_images_csv_bve(self, builder_results, source_directory, alignment_type, start_idx):
+    def generate_images_csv_bve(self, builder_results, source_directory, alignment_type, start_idx, offset):
         """Builder에서 생성한 sta, post_type, structure 결과를 이용해 이미지/CSV/BVE 생성"""
         index_datas= []
         post_datas = []
@@ -39,10 +39,9 @@ class KMOutputManager:
             CSVManager.copy_and_export_csv(
                 imgdata.openfile_name, imgdata.imgname, post_type,
                 source_directory=source_directory,
-                work_directory=self.work_directory,
-                offset=self.offset
+                work_directory=self.work_directory
             )
-            index, post = kmsystaxf.create(i=i, station=stadata, structure=structure, target_directory=self.target_directory,is_two_track=self.is_twotrack)
+            index, post = kmsystaxf.create(i=i, station=stadata, structure=structure, target_directory=self.target_directory,is_two_track=self.is_twotrack, offset=offset)
             index_datas.append(index)
             post_datas.append(post)
         return index_datas, post_datas
