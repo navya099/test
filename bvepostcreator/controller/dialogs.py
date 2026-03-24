@@ -13,3 +13,7 @@ class DialogService(ABC):
     @abstractmethod
     def select_alignment(self) -> str | None:
         pass
+
+    @abstractmethod
+    def open_offset_setting(self) -> dict[str, str] | None:
+        pass

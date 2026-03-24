@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox ,simpledialog
 from controller.dialogs import DialogService
+from gui.offset_setting_ui import OFFSetSettingUI
 
 
 class TkDialogService(DialogService):
@@ -83,3 +84,8 @@ class TkDialogService(DialogService):
         top.wait_window()
 
         return result["value"]
+
+    def open_offset_setting(self):
+        dialog = OFFSetSettingUI(self.master)
+        self.master.wait_window(dialog)  # 창 닫힐 때까지 대기
+        return dialog.result

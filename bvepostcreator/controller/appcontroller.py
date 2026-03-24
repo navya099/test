@@ -60,3 +60,14 @@ class AppController:
             generator_type=self.state.posttype
         )
         runner.run()
+
+    def set_offset(self):
+        result = self.dialogs.open_offset_setting()
+        if result:
+            self.state.offset_var = result
+            self.log(f"오프셋 설정 완료: {result}")
+
+    def update_state(self, gui_state: dict):
+        for key, value in gui_state.items():
+            setattr(self.state, key, value)
+

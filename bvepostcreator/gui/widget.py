@@ -1,12 +1,8 @@
 import tkinter as tk
-from tkinter import filedialog, ttk, messagebox, simpledialog
-
-from gui.offset_setting_ui import OFFSetSettingUI
-
+from tkinter import ttk
 
 class GUIWidget:
     def __init__(self, master, controller):
-        self.offset_var = None
         self.master = master
         self.controller = controller
 
@@ -108,27 +104,24 @@ class GUIWidget:
         self.controller.select_directory()
 
     def on_run(self):
-        # 🔹 GUI → 상태 저장
-        self.controller.state.start_station = self.start_station_var.get()
-        self.controller.state.end_station = self.end_station_var.get()
-        self.controller.state.reverse_start = self.reverse_start_station_var.get()
-        self.controller.state.is_reverse = self.is_reverse_var.get()
-        self.controller.state.is_two_track = self.is_twotrack_var.get()
-        self.controller.state.isbrokenchain = self.is_brokenchain_var.get()
-        self.controller.state.brokenchain = self.brokenchain_var.get()
-        self.controller.state.offset = self.offset_var
-        self.controller.state.start_index = self.start_index_var.get()
-        # 🔹 실행
+        gui_state = {
+            "start_station": self.start_station_var.get(),
+            "end_station": self.end_station_var.get(),
+            "reverse_start": self.reverse_start_station_var.get(),
+            "is_reverse": self.is_reverse_var.get(),
+            "is_two_track": self.is_twotrack_var.get(),
+            "isbrokenchain": self.is_brokenchain_var.get(),
+            "brokenchain": self.brokenchain_var.get(),
+            "start_index": self.start_index_var.get(),
+        }
+        self.controller.update_state(gui_state)
         self.controller.run()
 
     def on_exit(self):
         self.master.destroy()
 
     def on_set_offset(self):
-        dialog = OFFSetSettingUI(self.master)
-        self.master.wait_window(dialog)  # 창 닫힐 때까지 대기
-        if dialog.result:
-            self.offset_var = dialog.result
-            self.write_log(f"오프셋 설정 완료: {self.offset_var}")
+        self.controller.set_offset()
+
 
 
