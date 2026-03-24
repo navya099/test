@@ -3,15 +3,15 @@ from abc import ABC, abstractmethod
 
 class DialogService(ABC):
     @abstractmethod
-    def select_excel_file(self) -> str | None:
+    def select_file(self, title, file_ext) -> str | None:
         pass
 
     @abstractmethod
-    def select_directory(self) -> str | None:
+    def select_directory(self, title) -> str | None:
         pass
 
     @abstractmethod
-    def select_alignment(self) -> str | None:
+    def select_option_list(self, option_list: list[str]) -> str | None:
         pass
 
     @abstractmethod

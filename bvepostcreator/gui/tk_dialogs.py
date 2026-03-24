@@ -9,76 +9,29 @@ class TkDialogService(DialogService):
     def __init__(self, master):
         self.master = master
 
-    def select_excel_file(self):
+    def select_file(self, tilte, file_ext) -> str | None:
         return filedialog.askopenfilename(
             parent=self.master,
-            title="구조물 엑셀 파일 선택",
-            filetypes=[("Excel files", "*.xls *.xlsx")]
-        )
+            defaultextension=file_ext,
+            filetypes=[(f"{file_ext} files", f"*{file_ext}")],
+            title=f"{file_ext} 파일 선택")
 
-    def select_directory(self):
+    def select_directory(self, title: str) -> str:
         return filedialog.askdirectory(
             parent=self.master,
-            title="대상 디렉터리 선택"
+            title=title,
         )
 
-    def select_alignment(self):
+    def select_option_list(self, option_list):
         result = {"value": None}
 
         top = tk.Toplevel(self.master)
-        top.title("노선 구분 선택")
 
         def select(v):
             result["value"] = v
             top.destroy()
 
-        for opt in ["일반철도", "도시철도", "고속철도"]:
-            ttk.Button(top, text=opt, command=lambda v=opt: select(v)).pack(pady=5)
-
-        top.grab_set()
-        top.wait_window()
-
-        return result["value"]
-
-    def ask_brokenchain(self) -> tuple[bool, float | None]:
-        exists = messagebox.askyesno("파정 확인", "노선에 거리파정이 존재하나요?")
-        if not exists:
-            return False, 0
-
-        while True:
-            value = simpledialog.askstring(
-                "파정 입력",
-                "거리파정 값을 입력하세요 (예: 12.34):"
-            )
-            if value is None:
-                return False, 0
-
-            try:
-                return True, float(value)
-            except ValueError:
-                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
-
-    def show_input_float(self, title, prompt):
-        while True:
-            value = simpledialog.askstring(title,prompt)
-            if value is None:
-                return None
-            try:
-                return float(value)
-            except ValueError:
-                messagebox.showerror("입력 오류", "숫자(float) 형식으로 입력하세요.")
-
-    def show_select_function(self):
-        result = {"value": None}
-
-        top = tk.Toplevel(self.master)
-        top.title("제표 종류 선택")
-
-        def select(v):
-            result["value"] = v
-            top.destroy()
-
-        for opt in ["거리표", "곡선표", "기울기표", "구조물표"]:
+        for opt in option_list:
             ttk.Button(top, text=opt, command=lambda v=opt: select(v)).pack(pady=5)
 
         top.grab_set()
@@ -95,3 +48,4 @@ class TkDialogService(DialogService):
         dialog = TRACKSettingUI(self.master)
         self.master.wait_window(dialog)
         return dialog.result
+

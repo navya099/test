@@ -77,9 +77,11 @@ class GUIWidget:
 
         ttk.Button(btn_frame, text="오프셋 설정", command=self.on_set_offset).pack(side=tk.LEFT, padx=10)
 
-        ttk.Button(btn_frame, text="대상 디렉터리 설정", command=self.on_select_directory).pack(side=tk.LEFT, padx=10)
+        ttk.Button(btn_frame, text="대상 디렉터리 설정", command=self.on_select_target_directory).pack(side=tk.LEFT, padx=10)
 
         ttk.Button(btn_frame, text="구조물 엑셀 파일 선택", command=self.on_select_excel).pack(side=tk.LEFT, padx=10)
+
+        ttk.Button(btn_frame, text="INFO 경로 선택", command=self.on_select_infopath).pack(side=tk.LEFT, padx=10)
 
         ttk.Button(btn_frame, text="작업 시작", command=self.on_run).pack(side=tk.LEFT, padx=10)
 
@@ -95,10 +97,10 @@ class GUIWidget:
         self.log_box.see(tk.END)
 
     def on_select_excel(self):
-        self.controller.select_structure_excel()
+        self.controller.set_structure_excelfile()
 
-    def on_select_directory(self):
-        self.controller.select_directory()
+    def on_select_target_directory(self):
+        self.controller.set_target_directory()
 
     def on_run(self):
         gui_state = {
@@ -122,5 +124,7 @@ class GUIWidget:
     def on_set_track(self):
         self.controller.set_track()
 
+    def on_select_infopath(self):
+        self.controller.set_infopath()
 
 

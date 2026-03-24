@@ -10,10 +10,6 @@ class AppController:
         self.dialogs = dialogs
         self._logger = None
 
-    def set_alignment(self, value):
-        self.state.alignment_type = value
-        self.log(f"노선 종류 선택됨: {value}")
-
     def set_logger(self, logger_func):
         self._logger = logger_func
 
@@ -21,45 +17,59 @@ class AppController:
         if self._logger:
             self._logger(msg)
 
-    def select_structure_excel(self):
-        path = self.dialogs.select_excel_file()
-
+    def select_directory(self, state_attr: str, title: str):
+        """공통 경로 선택 메서드"""
+        path = self.dialogs.select_directory(title)
         if not path:
-            self.log("❌ 엑셀 파일 선택 취소")
+            self.log(f"❌ {title} 선택 취소")
             return False
 
-        self.state.structure_excel_path = path
-        self.log(f"엑셀 파일 선택됨: {path}")
+        setattr(self.state, state_attr, path)
+        self.log(f"{title} 선택됨: {path}")
         return True
 
-    def select_directory(self):
-        path = self.dialogs.select_directory()
-
+    def select_file(self, state_attr: str, title: str, file_ext):
+        """공통 파일 선택 메서드"""
+        path = self.dialogs.select_file(title, file_ext=file_ext)
         if not path:
-            self.log("❌ 대상 디렉토리 선택 취소")
+            self.log(f"❌ {title} 선택 취소")
             return False
 
-        self.state.target_directory = path
-        self.log(f"대상 디렉토리 선택됨: {path}")
+        setattr(self.state, state_attr, path)
+        self.log(f"{title} 선택됨: {path}")
         return True
+
+    def set_structure_excelfile(self):
+        self.select_file('structure_excel_path', '구조물 파일', '.xlsx')
+
+    def set_target_directory(self):
+        self.select_directory('target_directory', '대상 디렉토리')
+
+    def set_infopath(self):
+        self.select_directory('info_directory', 'info 디렉토리')
 
     def run(self):
         #사전작업
-        setup = PreRunSetup(
-            dialogs=self.dialogs,
-            state=self.state,
-            logger=self.log
-        )
+        try:
+            setup = PreRunSetup(
+                dialogs=self.dialogs,
+                state=self.state,
+                logger=self.log
+            )
 
-        if not setup.run():
+            if not setup.run():
+                self.log(f"사전 설정 실패")
+                return
+
+            runner = MainRunner(
+                state=self.state,
+                logger=self.log,
+                generator_type=self.state.posttype
+            )
+            runner.run()
+        except Exception as ex:
+            self.log(f'치명적 실행 에러: {ex}')
             return
-
-        runner = MainRunner(
-            state=self.state,
-            logger=self.log,
-            generator_type=self.state.posttype
-        )
-        runner.run()
 
     def set_offset(self):
         result = self.dialogs.open_offset_setting()
