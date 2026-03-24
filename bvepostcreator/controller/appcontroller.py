@@ -46,7 +46,7 @@ class AppController:
         self.select_directory('target_directory', '대상 디렉토리')
 
     def set_infopath(self):
-        self.select_directory('info_directory', 'info 디렉토리')
+        self.select_file('info_path', 'info 파일 선택', '*.*')
 
     def run(self):
         #사전작업

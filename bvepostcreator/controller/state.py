@@ -19,3 +19,4 @@ class AppState:
         self.track_mode =''
         self.track_direction = None
         self.track_index = None
+        self.info_path = ''
