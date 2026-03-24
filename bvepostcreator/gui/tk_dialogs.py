@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox ,simpledialog
 from controller.dialogs import DialogService
 from gui.offset_setting_ui import OFFSetSettingUI
+from gui.track_setting_ui import TRACKSettingUI
 
 
 class TkDialogService(DialogService):
@@ -88,4 +89,9 @@ class TkDialogService(DialogService):
     def open_offset_setting(self):
         dialog = OFFSetSettingUI(self.master)
         self.master.wait_window(dialog)  # 창 닫힐 때까지 대기
+        return dialog.result
+
+    def oepn_track_setting(self):
+        dialog = TRACKSettingUI(self.master)
+        self.master.wait_window(dialog)
         return dialog.result

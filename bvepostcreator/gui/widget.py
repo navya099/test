@@ -68,15 +68,12 @@ class GUIWidget:
         chk.state(['!alternate'])
         chk.pack(side=tk.LEFT, padx=10)
 
-        self.is_twotrack_var = tk.BooleanVar(value=False)
-        chk2 = ttk.Checkbutton(btn_frame, text='복선', variable=self.is_twotrack_var)
-        chk2.state(['!alternate'])
-        chk2.pack(side=tk.LEFT, padx=10)
-
         self.is_brokenchain_var = tk.BooleanVar(value=False)
         chk2 = ttk.Checkbutton(btn_frame, text='파정', variable=self.is_brokenchain_var)
         chk2.state(['!alternate'])
         chk2.pack(side=tk.LEFT, padx=10)
+
+        ttk.Button(btn_frame, text="선로 설정", command=self.on_set_track).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(btn_frame, text="오프셋 설정", command=self.on_set_offset).pack(side=tk.LEFT, padx=10)
 
@@ -109,7 +106,6 @@ class GUIWidget:
             "end_station": self.end_station_var.get(),
             "reverse_start": self.reverse_start_station_var.get(),
             "is_reverse": self.is_reverse_var.get(),
-            "is_two_track": self.is_twotrack_var.get(),
             "isbrokenchain": self.is_brokenchain_var.get(),
             "brokenchain": self.brokenchain_var.get(),
             "start_index": self.start_index_var.get(),
@@ -122,6 +118,9 @@ class GUIWidget:
 
     def on_set_offset(self):
         self.controller.set_offset()
+
+    def on_set_track(self):
+        self.controller.set_track()
 
 
 

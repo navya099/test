@@ -9,11 +9,14 @@ from kmpost.systaxfactory import KMBVESyntaxFactory
 
 class KMOutputManager:
     """KM 결과 파일, 이미지, CSV, BVE 구문 처리"""
-    def __init__(self, work_directory, target_directory, offset, is_twotrack):
+    def __init__(self, work_directory, target_directory, offset, mode, direction, index):
         self.work_directory = work_directory
         self.target_directory = target_directory
         self.offset = offset
-        self.is_twotrack = is_twotrack
+        self.track_mode = mode
+        self.track_direction = direction
+        self.track_index = index
+
 
     def save_txt_files(self, index_datas, post_datas):
         index_file = os.path.join(self.work_directory, 'km_index.txt')
@@ -28,7 +31,7 @@ class KMOutputManager:
             exclude_ext or ['.dxf', '.ai']
         )
 
-    def generate_images_csv_bve(self, builder_results, source_directory, alignment_type, start_idx, offset):
+    def generate_images_csv_bve(self, builder_results, source_directory, alignment_type, start_idx):
         """Builder에서 생성한 sta, post_type, structure 결과를 이용해 이미지/CSV/BVE 생성"""
         index_datas= []
         post_datas = []
@@ -41,7 +44,9 @@ class KMOutputManager:
                 source_directory=source_directory,
                 work_directory=self.work_directory
             )
-            index, post = kmsystaxf.create(i=i, station=stadata, structure=structure, target_directory=self.target_directory,is_two_track=self.is_twotrack, offset=offset)
+            index, post = kmsystaxf.create(
+                i=i, station=stadata, structure=structure, target_directory=self.target_directory,
+                track_index=self.track_index, offset=self.offset, track_mode=self.track_mode, track_direction=self.track_direction)
             index_datas.append(index)
             post_datas.append(post)
         return index_datas, post_datas

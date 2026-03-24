@@ -64,10 +64,20 @@ class AppController:
     def set_offset(self):
         result = self.dialogs.open_offset_setting()
         if result:
-            self.state.offset_var = result
+            self.state.offset = result
             self.log(f"오프셋 설정 완료: {result}")
 
     def update_state(self, gui_state: dict):
         for key, value in gui_state.items():
             setattr(self.state, key, value)
+        self.log(f"상태 설정 완료")
+
+    def set_track(self):
+        result = self.dialogs.oepn_track_setting()
+        if result:
+            self.state.track_mode = result["mode"]
+            self.state.track_direction = result["direction"]
+            self.state.track_distance = result["distance"]
+            self.state.track_index = result["index"]
+            self.log(f"트랙 설정 완료: {result}")
 
