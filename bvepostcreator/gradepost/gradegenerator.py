@@ -1,4 +1,5 @@
 from common.baseobjgenertor import BaseObjectGenerator
+from gradepost.grade_output_manager import GradeOutputManager
 from gradepost.preprocessor import VIPPreprocessor
 from gradepost.profile_processor import ProfileProcessor
 from infrastructure.filemanager import FileSystemService
@@ -27,6 +28,8 @@ class GradeGenerator(BaseObjectGenerator):
             # 전처리 + vip데이터빌드
             prepare_data = builder.preprocess(self.pitch_info_path, self.state.brokenchain)
             vipdatas = builder.build(prepare_data, self.state.brokenchain)
+
+            #object데이터 빌드
             bveproseccoer = ProfileProcessor(self.source_directory, self.work_directory,
                                              self.state.target_directory, self.state.alignment_type, self.state.offset,
                                              self.state.start_index ,self.log)
@@ -60,10 +63,12 @@ class GradeGenerator(BaseObjectGenerator):
             self.state.track_direction,
             self.state.track_index
         )
-        index_datas, post_datas = output_manager.generate_images_csv_bve(
-            builder_results, self.source_directory, self.state.alignment_type,self.state.start_index
-        )
+
         self.log("파일 저장 중...")
-        output_manager.save_txt_files(index_datas, post_datas)
+        post_file = os.path.join(self.work_directory, 'pitch_post.txt')
+        index_file = os.path.join(self.work_directory, 'pitch_index.txt')
+        GradeOutputManager.create_pitch_post_txt(builder_results, post_file)
+        GradeOutputManager.create_pitch_index_txt(builder_results, index_file)
+
         self.log("파일 복사 중...")
         output_manager.copy_result_files()

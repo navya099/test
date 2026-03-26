@@ -30,13 +30,13 @@ class KMBVESyntaxFactory:
                 data = (
                     f',;구조물={struc}\n'
                     f',;하선\n'
-                    f'{sta.origin_sta},.freeobj {track_index['main']};{idx};{main_x};{main_y};{main_rotation};\n'
+                    f"{sta.origin_sta},.freeobj {track_index['main']};{idx};{main_x};{main_y};{main_rotation};\n"
                     f',;상선\n'
-                    f'{sta.origin_sta},.freeobj {track_index['sub']};{idx};{sub_x};{sub_y};{sub_rotation};\n'
+                    f"{sta.origin_sta},.freeobj {track_index['sub']};{idx};{sub_x};{sub_y};{sub_rotation};\n"
                 )
                 return data
             else:
                 # 단선
-                return f'{sta.origin_sta},.freeobj {track_index['main']};{idx};{main_x};{main_y};{main_rotation};,;{struc}\n'
+                return f"{sta.origin_sta},.freeobj {track_index['main']};{idx};{main_x};{main_y};{main_rotation};,;{struc}\n"
         else:
             raise ValueError(f'UNVALID track_mode')

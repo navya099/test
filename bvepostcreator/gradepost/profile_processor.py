@@ -8,6 +8,7 @@ from infrastructure.structuresystem import StructureProcessor
 from model.grade.vip_object_data import VIPObjectDATA
 from model.grade.vipdata import VIPdata
 from common.common_utils import format_distance
+import os
 
 class ProfileProcessor:
     """프로파일 처리기
@@ -128,6 +129,9 @@ class ProfileProcessor:
             viptype: VIP타입(BVC,VIP,EVC)
             current_sta: 현제 구간 측점
         """
+        if self.al_type in ['일반철도', '도시철도']:
+            #일반철도 도시철도는 종곡선 X
+            return
         converter = DXF2IMG()
         if viptype == 'BVC':
             grade_text = format_grade(vipdata.prev_slope)
@@ -143,10 +147,10 @@ class ProfileProcessor:
         img_f_name = f'VIP{vipdata.VIPNO}_{viptype}'
         r = str(int(vipdata.vradius))
 
-        file_path = self.source_directory + f'{viptype}.dxf'
-        final_output_image = self.work_directory + img_f_name + '.png'
+        file_path = os.path.join(self.source_directory, f'{viptype}.dxf')
+        final_output_image = os.path.join(self.work_directory, img_f_name + '.png')
 
-        modifed_path = self.work_directory + 'BVC-수정됨.dxf'
+        modifed_path = os.path.join(self.work_directory, 'BVC-수정됨.dxf')
         DXFReplacer.replace_text_in_dxf(file_path, modifed_path, station_text, grade_text, vipdata.seg, r)
 
         output_paths = converter.convert_dxf2img([modifed_path], img_format='.png')
