@@ -6,3 +6,7 @@ class VIPDATABuilder(ABC):
     @abstractmethod
     def build(self, data, brokenchain) -> list[VIPdata]:
         raise NotImplementedError
+
+    @abstractmethod
+    def preprocess(self, data, brokenchain) -> VIPdata:
+        raise NotImplementedError

@@ -1,9 +1,19 @@
+from common.file_io import try_read_file
 from gradepost.pitch_util import calculate_vertical_curve_radius, get_vertical_curve_type
+
 from gradepost.vip_builder import VIPDATABuilder
 from model.grade.vipdata import VIPdata
 
 
 class BVEVIPDATABuilder(VIPDATABuilder):
+    """BVE용 VIP빌더"""
+    def preprocess(self, data, brokenchain):
+        """전처리 메서드"""
+        from gradepost.preprocessor import VIPPreprocessor
+        lines = try_read_file(data)
+        lines = VIPPreprocessor.remove_duplicate_pitch(lines)
+        return VIPPreprocessor.create_sections(lines)
+
     # 핵심로직(클래스화로 구조변경)
     def build(self, data,  broken_chain) -> list[VIPdata]:
         """

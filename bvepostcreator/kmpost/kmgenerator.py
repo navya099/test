@@ -40,13 +40,7 @@ class KMGenerator(BaseObjectGenerator):
         FileSystemService.ensure_directory(self.work_directory, self.log)
         self.log(f"대상 디렉토리: {self.state.target_directory}")
 
-    def load_structure_processor(self):
-        self.log("구조물 정보 불러오는 중...")
-        self.structure_processor = self.load_structures()
-        if self.structure_processor:
-            self.log("구조물 정보가 성공적으로 로드되었습니다.")
-        else:
-            self.log("구조물 정보가 없습니다.")
+
 
     def build_km_objects(self):
         interval = 100 if self.state.alignment_type == '도시철도' else 200

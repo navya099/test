@@ -5,6 +5,11 @@ from model.grade.vipdata import VIPdata
 
 
 class C3DVIPDATABuilder(VIPDATABuilder):
+    """CIVIL3D용 VIP데이터 빌더"""
+    def preprocess(self, data, brokenchain):
+        """전처리(CIVIL3D에서는 안함)"""
+        return data
+
     def build(self, data, brokenchain):
 
         df = pd.read_excel(data, header=0)
