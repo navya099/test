@@ -223,26 +223,17 @@ class PipeApp(tk.Tk):
         self.bind("<Down>", lambda e: self.adjust_slider(-10))
 
         self.title("Slider Control")
-        self.geometry("500x800")
+        self.geometry("1024x800")
 
-        # Plot 창
-        self.plot_root = tk.Toplevel()
-        self.plot_root.title("Plot Window")
-        self.plot_root.geometry("600x900")
+        # 메인 영역 (좌우 분할)
+        main_frame = tk.PanedWindow(self, orient="horizontal")
+        main_frame.pack(fill="both", expand=True)
 
-        self.fig, self.ax = plt.subplots()
-        self.ax.set_aspect('equal', adjustable='box')
-        self.ax.grid(True)
-
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_root)
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        toolbar_frame = tk.Frame(self.plot_root)
-        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        NavigationToolbar2Tk(self.canvas, toolbar_frame)
-
+        # 좌측 : 슬라이더 영역
+        sldier_frame = tk.Frame(main_frame)
+        main_frame.add(sldier_frame)
         # Notebook(탭) 생성
-        notebook = ttk.Notebook(self)
+        notebook = ttk.Notebook(sldier_frame)
         notebook.pack(fill="both", expand=True)
 
         # 각 탭 프레임
@@ -263,7 +254,7 @@ class PipeApp(tk.Tk):
         self.create_slider("가고", 0, 2, 0.01, 0.96, parent=frame_wire)
         self.create_slider("건식게이지", 0, 10, 0.01, 3.0, parent=frame_wire)
         self.create_slider("전주길이", 1, 20, 0.1, 9, parent=frame_wire)
-        self.create_slider("전주폭", 0.05, 1, 0.1, 0.254, parent=frame_wire)
+        self.create_slider("전주폭", 0.05, 1, 0.001, 0.254, parent=frame_wire)
         self.create_slider("편위", -1, 1, 0.01, 0, parent=frame_wire)
         self.create_slider("전주와브래킷이격거리", 0, 1, 0.01, 0.2, parent=frame_wire)
 
@@ -292,28 +283,39 @@ class PipeApp(tk.Tk):
         self.create_slider("현수길이", 0, 5, 0.01, 1.5, parent=frame_feeder)
         self.create_slider("현수각도", -180, 180, 0.01, -90, parent=frame_feeder)
 
-        #애자
+        # 애자
         self.create_slider("장간애자길이", 0, 2, 0.01, 0.75, parent=frame_insulator)
         self.create_slider("장간애자폭", 0, 1, 0.01, 0.15, parent=frame_insulator)
         self.create_slider("장간애자날개수", 0, 20, 1, 12, parent=frame_insulator)
-
 
         self.create_slider("급전선현수애자길이", 0, 2, 0.01, 0.75, parent=frame_insulator)
         self.create_slider("급전선현수애자폭", 0, 1, 0.01, 0.15, parent=frame_insulator)
         self.create_slider("급전선현수애자날개수", 0, 20, 1, 8, parent=frame_insulator)
 
+        # 우측: Plotter
+        plotter_frame = tk.Frame(main_frame)
+        main_frame.add(plotter_frame)
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_aspect('equal', adjustable='box')
+        self.ax.grid(True)
 
-        # 저장/로드 버튼
-        btn_save = tk.Button(self, text="세팅 저장", command=self.save_settings)
-        btn_save.pack(pady=5)
-        btn_load = tk.Button(self, text="세팅 불러오기", command=self.load_settings)
-        btn_load.pack(pady=5)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=plotter_frame)
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        btn_dxf = tk.Button(self, text="DXF 저장", command=self.save_dxf)
-        btn_dxf.pack(pady=10)
+        toolbar_frame = tk.Frame(plotter_frame)
+        toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        NavigationToolbar2Tk(self.canvas, toolbar_frame)
 
-        btn_dxf = tk.Button(self, text="종료", command=self.destroy)
-        btn_dxf.pack(pady=10)
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(side=tk.TOP, fill=tk.X)
+
+        center_frame = tk.Frame(btn_frame)
+        center_frame.pack(anchor="center")  # 가운데 정렬
+
+        tk.Button(center_frame, text="세팅 저장", command=self.save_settings).pack(side=tk.LEFT, padx=10)
+        tk.Button(center_frame, text="세팅 불러오기", command=self.load_settings).pack(side=tk.LEFT, padx=10)
+        tk.Button(center_frame, text="DXF 저장", command=self.save_dxf).pack(side=tk.LEFT, padx=10)
+        tk.Button(center_frame, text="종료", command=self.destroy).pack(side=tk.LEFT, padx=10)
 
     def save_settings(self):
         settings = {}
@@ -323,9 +325,9 @@ class PipeApp(tk.Tk):
                 slider = getattr(self, attr)
                 settings[attr] = slider.get()
         # JSON 파일로 저장
-        save_path = asksaveasfilename()
-        if save_path:
-            with open(save_path, "w", encoding="utf-8") as f:
+        self.save_path = asksaveasfilename()
+        if self.save_path:
+            with open(self.save_path, "w", encoding="utf-8") as f:
                 json.dump(settings, f, ensure_ascii=False, indent=2)
             messagebox.showinfo('저장', '설정 저장 완료')
         else:
@@ -333,11 +335,11 @@ class PipeApp(tk.Tk):
             return
 
     def load_settings(self):
-        load_path = askopenfilename()
-        if not os.path.exists(load_path):
+        self.load_path = askopenfilename()
+        if not os.path.exists(self.load_path):
             print("저장된 세팅 파일이 없습니다.")
             return
-        with open(load_path, "r", encoding="utf-8") as f:
+        with open(self.load_path, "r", encoding="utf-8") as f:
             settings = json.load(f)
         # 슬라이더 값 복원
         for label, value in settings.items():
@@ -601,7 +603,14 @@ class PipeApp(tk.Tk):
                            (isn.end.x, isn.end.y))
         msp.add_blockref("SLOPEPIPE_INSULATOR", (0, 0))
 
-        doc.saveas("c:/temp/pipe_system.dxf")
+        #파일명과 경로 분리 추출
+        path, filename = os.path.split(self.load_path)
+        # 파일명과 확장자 분리
+        name, ext = os.path.splitext(filename)
+
+
+        save_path = os.path.join(path, name + '.dxf')
+        doc.saveas(save_path)
         messagebox.showinfo('저장', '도면 저장 완료')
 
 
