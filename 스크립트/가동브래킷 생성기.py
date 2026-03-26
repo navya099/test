@@ -1,6 +1,8 @@
 import tkinter as tk
 import json
 from tkinter import ttk, messagebox, simpledialog
+from tkinter.filedialog import askopenfilename, asksaveasfilename
+
 import ezdxf
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -8,11 +10,10 @@ import math
 import numpy as np
 import os
 
-from AutoCAD.point2d import Point2d
-from AutoCAD.line import Line2d
 from AutoCAD.bulgesegment import BulgeSegment
+from AutoCAD.line import Line2d
+from AutoCAD.point2d import Point2d
 from AutoCAD.polyline import Polyline
-
 
 plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.rcParams['axes.unicode_minus'] = False
@@ -262,14 +263,19 @@ class PipeApp(tk.Tk):
         self.create_slider("가고", 0, 2, 0.01, 0.96, parent=frame_wire)
         self.create_slider("건식게이지", 0, 10, 0.01, 3.0, parent=frame_wire)
         self.create_slider("전주길이", 1, 20, 0.1, 9, parent=frame_wire)
+        self.create_slider("전주폭", 0.05, 1, 0.1, 0.254, parent=frame_wire)
         self.create_slider("편위", -1, 1, 0.01, 0, parent=frame_wire)
+        self.create_slider("전주와브래킷이격거리", 0, 1, 0.01, 0.2, parent=frame_wire)
 
         # 파이프 관련 슬라이더
         self.create_slider("메인파이프길이", 0.1, 10, 0.01, 3.5, parent=frame_pipe)
         self.create_slider("메인파이프y", 0, 10, 0.01, 5.96, parent=frame_pipe)
         self.create_slider("메인파이프각도", -90, 90, 1, 0, parent=frame_pipe)
+
         self.create_slider("경사파이프y", 0, 10, 0.01, 4.96, parent=frame_pipe)
-        self.create_slider("경사파이프x", -10, 10, 0.01, 0, parent=frame_pipe)
+        self.create_slider("경사파이프길이", 0.1, 10, 0.01, 4.96, parent=frame_pipe)
+        self.create_slider("경사파이프각도", -90, 90, 1, 33, parent=frame_pipe)
+
         self.create_slider("보조파이프길이", 0, 10, 0.01, 2.5, parent=frame_pipe)
         self.create_slider("보조파이프x", -10, 10, 0.01, -1.3, parent=frame_pipe)
 
@@ -317,15 +323,21 @@ class PipeApp(tk.Tk):
                 slider = getattr(self, attr)
                 settings[attr] = slider.get()
         # JSON 파일로 저장
-        with open("c:/temp/settings.json", "w", encoding="utf-8") as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
-        messagebox.showinfo('저장', '설정 저장 완료')
+        save_path = asksaveasfilename()
+        if save_path:
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+            messagebox.showinfo('저장', '설정 저장 완료')
+        else:
+            messagebox.showinfo('저장오류', '파일이 지정되지 않았습니다.')
+            return
 
     def load_settings(self):
-        if not os.path.exists("c:/temp/settings.json"):
+        load_path = askopenfilename()
+        if not os.path.exists(load_path):
             print("저장된 세팅 파일이 없습니다.")
             return
-        with open("c:/temp/settings.json", "r", encoding="utf-8") as f:
+        with open(load_path, "r", encoding="utf-8") as f:
             settings = json.load(f)
         # 슬라이더 값 복원
         for label, value in settings.items():
@@ -412,7 +424,8 @@ class PipeApp(tk.Tk):
         mainpipe_a = float(self.slider_메인파이프각도.get())
 
         slopepipe_y = float(self.slider_경사파이프y.get())
-        slopepipe_x = float(self.slider_경사파이프x.get())
+        slopepipe_l = float(self.slider_경사파이프길이.get())
+        slopepipe_a = float(self.slider_경사파이프각도.get())
 
         subpipe_l = float(self.slider_보조파이프길이.get())
         subpipe_x = float(self.slider_보조파이프x.get())
@@ -432,20 +445,21 @@ class PipeApp(tk.Tk):
         # 전주
         p1 = Point2d(rail_level.x - gague, 0)
         p2 = p1.moved(math.pi / 2, pole_height)
-
-        self.mast = MAST("강관주", 0.264, p1=p1, p2=p2)
+        mast_width = float(self.slider_전주폭.get())
+        self.mast = MAST("강관주", width=mast_width, p1=p1, p2=p2)
         self.mast.draw_centerline(self.ax)
         self.mast.draw_outline(self.ax)
 
         # 메인 파이프
-        mps = Point2d(p1.x, mainpipe_y)
+        offset = float(self.slider_전주와브래킷이격거리.get())
+        mps = Point2d(p1.x + offset, mainpipe_y)
         mpe = mps.moved(math.radians(mainpipe_a), mainpipe_l)
         self.main_pipe = Pipe(point1=mps, point2=mpe, color="skyblue", label='주파이프')
         self.main_pipe.draw(self.ax)
 
         # 경사 파이프
-        sps = Point2d(p1.x, slopepipe_y)
-        spe = Point2d(slopepipe_x, self.main_pipe.get_y_from_x(slopepipe_x))
+        sps = Point2d(p1.x + offset, slopepipe_y)
+        spe = sps.moved(math.radians(slopepipe_a), slopepipe_l)
         self.slope_pipe = Pipe(point1=sps, point2=spe, color="skyblue", label='경사파이프')
         self.slope_pipe.draw(self.ax)
 
