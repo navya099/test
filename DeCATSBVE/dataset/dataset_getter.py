@@ -188,4 +188,4 @@ class DatasetGetter:
         return self.dataset['mast']['band']['yoffset'].get('기타', None)
 
     def get_extra_wire_dictionary(self):
-        return self.dataset['wire']['offset']['Extra']
+        return self.dataset['wire']['offset'].get('Extra', None)

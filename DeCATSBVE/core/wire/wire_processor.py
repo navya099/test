@@ -40,7 +40,9 @@ class WireProcessor:
                     # FPW
                     wire.add_wire(self.fpwp.process(pole, self.polyline_by_track[track_name], pitch_angle))
                     #EXTRA
-                    wire.add_wire(self.exp.process(pole, self.polyline_by_track[track_name], pitch_angle))
+                    isext = self.pro.get_extra_wire_dictionary()
+                    if isext is not None:
+                        wire.add_wire(self.exp.process(pole, self.polyline_by_track[track_name], pitch_angle))
                     wires.append(wire)
                 except Exception as e:
                     print(f"[{track_name}] at {pole.pos} process_to_wire 실행 중 에러 발생: {e}")
