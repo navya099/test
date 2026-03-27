@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilename
 
 from core.airjoint.airjoint_processor import AirJointProcessor
+from core.airsection.airsection_processor import AirSectionProcessor
 from core.equipment.anticreepingdevice.anticreeping_device_processor import AnticreepingDeviceProcessor
 from core.pole.manual_pole_processor import ManualPoleProcessor
 from core.pole.normal_section_processor import NormalSectionProcessor
@@ -125,6 +126,8 @@ class AutoPoleEditor(tk.Frame):
         tk.Button(self, text="에어조인트 삭제", command=self.remove_airjoint).pack(side="left")
         tk.Button(self, text="흐름방지장치 추가", command=self.add_antidevice).pack(side="left")
         tk.Button(self, text="흐름방지장치 삭제", command=self.remove_antidevice).pack(side="left")
+        tk.Button(self, text="에어섹션 추가", command=self.add_airsection).pack(side="left")
+        tk.Button(self, text="에어섹션 제거", command=self.remove_airsection).pack(side="left")
 
     def on_tree_click(self, event, track):
         tree = self.tree_main if track == "main" else self.tree_sub
@@ -711,3 +714,83 @@ class AutoPoleEditor(tk.Frame):
         self.create_ewires()
         self.refresh_tree()
         self.runner.log(f"엑셀 전주데이터가 로드되었습니다. 계:{len(self.runner.poledata['main'])}")
+
+    def add_airsection(self):
+        self.load_selected()
+        start_epole = self.selected_pole  # 시작 전주
+        poles = []
+
+        # 시작 전주 포함
+        poles.append(start_epole.pole)
+
+        # 이후 7개 확보 (총 8개)
+        epole = start_epole
+        for _ in range(7):
+            if epole.next_pole:
+                epole = epole.next_pole
+                poles.append(epole.pole)
+            else:
+                messagebox.showerror('에러', '에어섹션을 구성할 전주가 부족합니다.')
+                return
+
+        # 섹션 지정
+        poles[0].section = "에어섹션1구간_1호주"
+        poles[1].section = "에어섹션1구간_2호주"
+        poles[2].section = "에어섹션1구간_3호주"
+        poles[3].section = "에어섹션1구간_4호주"
+        poles[4].section = "에어섹션2구간_1호주"
+        poles[5].section = "에어섹션2구간_2호주"
+        poles[6].section = "에어섹션2구간_3호주"
+        poles[7].section = "에어섹션2구간_4호주"
+
+        # 처리
+        for pole in poles:
+            AirSectionProcessor.process(
+                pole,
+                self.runner.polyline_with_sta,
+                self.runner.dataprocessor,
+                self.runner.idxlib
+            )
+
+        self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        self.runner.anticreeping_pr.set_data(self.runner.poledata, self.runner.wire_data)
+        self.runner.anticreeping_pr.process()
+        self.refresh_tree()
+        self.runner.log(f'에어섹션이 설치되었습니다. 시작 pos:{start_epole.pole.pos}')
+
+    def remove_airsection(self):
+        self.load_selected()
+        start_epole = self.selected_pole  # 시작 전주
+        poles = []
+
+        # 시작 전주 포함
+        poles.append(start_epole.pole)
+
+        # 이후 7개 확보 (총 8개)
+        epole = start_epole
+        for _ in range(7):
+            if epole.next_pole:
+                epole = epole.next_pole
+                poles.append(epole.pole)
+            else:
+                messagebox.showerror('에러', '에어섹션을 구성할 전주가 부족합니다.')
+                return
+        if poles[0].section not in ['에어섹션1구간_1호주']:
+            messagebox.showerror('에러', '지정한 전주는 에어섹션 시작 전주가 아닙니다.')
+            return
+        # 처리
+        for pole in poles:
+            #기본값으로 되돌리게 리셋
+            pole.section = None
+            pole.brackets = []
+            pole.mast = None
+            pole.equipments = []
+            if pole.structure == '터널':
+                TunnelSectionProcessor.process(pole, self.runner.dataprocessor, self.runner.idxlib)
+            else:
+                NormalSectionProcessor.process(pole, self.runner.dataprocessor, self.runner.idxlib)
+        self.runner.wire_data = self.runner.wire_processor.process_to_wire()
+        self.runner.anticreeping_pr.set_data(self.runner.poledata,self.runner.wire_data)
+        self.runner.anticreeping_pr.process()
+        self.refresh_tree()
+        self.runner.log(f'에어섹션이 제거되었습니다. pos:{start_epole.pole.pos}')

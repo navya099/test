@@ -1,5 +1,6 @@
 from core.alignment.define_funtion import iscurve
 from core.wire.aj_wire_processor import AirjointWireProcessor
+from core.wire.as_wire_processor import AirSectionWireProcessor
 from utils.math_util import calculate_curve_stagger, change_permile_to_degree
 
 
@@ -9,6 +10,7 @@ class WireSectionHandler:
         self.datapro = dataprocseor
         self.al = polyline_with_sta
         self.airpro = AirjointWireProcessor(self.compros, self.datapro, self.al)
+        self.aspro = AirSectionWireProcessor(self.compros, self.datapro, self.al)
         self.curve_list = curve_list
     def run(self, pole, next_pole, wire, pitch_angle):
         """일반개소 및 에어조인트개소 구분처리"""
@@ -30,8 +32,10 @@ class WireSectionHandler:
             self.process_normal_section(pole,next_pole, wire, pitch_angle, start_offset, end_offset, cw_index)
         elif pole.section and pole.section.startswith("흐름방지"):
             self.process_normal_section(pole, next_pole, wire, pitch_angle, start_offset, end_offset, cw_index)
-        else:
+        elif pole.section and pole.section.startswith("에어조인트"):
             self.process_airjoint_section(pole, next_pole,wire, pitch_angle, start_offset, cw_index)
+        elif pole.section and pole.section.startswith("에어섹션"):
+            self.process_airsection(pole, next_pole,wire, pitch_angle, start_offset, cw_index)
 
     def process_normal_section(self, pole,next_pole,  wire, pitch_angle, offset1, offset2, index):
         # 브래킷에서 stagger 직접 가져오기
@@ -77,3 +81,6 @@ class WireSectionHandler:
             ))
     def process_airjoint_section(self, pole, next_pole, wire, pitch_angle , offset, index):
         self.airpro.run(pole, next_pole, wire, pitch_angle ,offset, index)
+
+    def process_airsection(self, pole, next_pole, wire, pitch_angle , offset, index):
+        self.aspro.run(pole, next_pole, wire, pitch_angle ,offset, index)
