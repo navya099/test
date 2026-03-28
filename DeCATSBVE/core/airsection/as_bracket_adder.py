@@ -3,29 +3,30 @@ from core.bracket.bracket_data import BracketDATA
 from core.bracket.fitting_data import FittingDATA
 from core.equipment.equipment_data import EquipmentDATA
 from core.mast.mast_builder import MASTBuilder
-from core.mast.mastdata import Mast
 from core.pole.normal_section_processor import NormalSectionProcessor
 from core.pole.poledata import PoleDATA
 from core.pole.tunnel_section_processor import TunnelSectionProcessor
+from dataset.dataset_getter import DatasetGetter
 from enums.airjoint_section import AirJoint
 from utils.math_util import calculate_curve_angle
 
 
-class AirjointBracketAdder:
-    def __init__(self, params: AirjointDataContext ,dataprocessor, idxlib):
+class AirSectionBracketAdder:
+    def __init__(self, params: AirjointDataContext ,dataprocessor: DatasetGetter, idxlib, mode):
         self.params = params
         self.prosc = dataprocessor
         self.idxlib = idxlib
+        self.mode = mode
 
-    def add_airjoint_brackets(self, pole: PoleDATA, polyline_with_sta):
-        """에어조인트 각 구간별 브래킷 추가"""
-        if pole.section == AirJoint.START.value:
+    def add_airsection_brackets(self, pole: PoleDATA, polyline_with_sta):
+        """에어섹션 각 구간별 브래킷 추가"""
+        if pole.section == '에어섹션1구간_1호주':
             # START 구간 처리
             if pole.structure == '터널':
                 TunnelSectionProcessor.process(pole, self.prosc, self.idxlib)
             else:
                 NormalSectionProcessor.process(pole, self.prosc, self.idxlib)
-            f_start_coord = self.prosc.get_airjoint_offset('F형_시점')
+            f_start_coord = self.prosc.get_airsection_offset('F형_시점')
             x1, y1 = f_start_coord['x'], f_start_coord['y']
             if pole.side == -1:
                 x1 *= -1
@@ -36,29 +37,65 @@ class AirjointBracketAdder:
                 jiseon = self.idxlib.get_name(674)
                 pole.equipments.append(
                     EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=0, type='지선설비'))
-        elif pole.section == AirJoint.POINT_2.value:
+
+        elif pole.section == '에어섹션1구간_2호주':
             # POINT_2 구간 처리
             self.add_common_equipts(pole)
-            self.add_f_and_aj_brackets(pole)
+            f_start_coord = self.prosc.get_airsection_offset('F형_시점')
+            f_x, f_y = f_start_coord['x'], f_start_coord['y']
 
-        elif pole.section == AirJoint.MIDDLE.value:
+            aj_start_coord = self.prosc.get_airsection_offset('AS형_시점')
+            as_x, as_y = aj_start_coord['x'], aj_start_coord['y']
+            if pole.side == -1:
+                f_x *= 1
+                as_x *= 1
+            else:
+                f_x *= -1
+                as_x *= -1
+            self.add_f_and_as_brackets(pole, f_x, f_y, as_x, as_y, end=False)
+
+        elif pole.section == '에어섹션1구간_3호주':
             # MIDDLE 구간 처리
             self.add_common_equipts(pole)
-            self.add_aj_brackets_middle(pole)
+            self.add_as_brackets_middle(pole)
 
-        elif pole.section == AirJoint.POINT_4.value:
+        elif pole.section == '에어섹션1구간_4호주':
             # POINT_4 구간 처리
             self.add_common_equipts(pole)
-            self.add_f_and_aj_brackets(pole, end=True)
+            f_end_coord = self.prosc.get_airsection_offset('F형_끝')
+            f_x, f_y = f_end_coord['x'], f_end_coord['y']
 
-        elif pole.section == AirJoint.END.value:
+            aj_end_coord = self.prosc.get_airsection_offset('AS형_끝')
+            as_x, as_y = aj_end_coord['x'], aj_end_coord['y']
+            if pole.side == -1:
+                f_x *= -1
+                as_x *= -1
+            else:
+                f_x *= 1
+                as_x *= 1
+            self.add_f_and_as_brackets(pole, f_x, f_y, as_x, as_y, end=True)
+            if self.mode == 'double':
+                f_start_coord = self.prosc.get_airsection_offset('F형_시점')
+                x1, y1 = f_start_coord['x'], f_start_coord['y']
+                if pole.side == -1:
+                    x1 *= -1
+                start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
+                en = self.idxlib.get_name(1247)
+                pole.equipments.append(
+                    EquipmentDATA(name=en, index=1247, offset=(pole.gauge, 0), rotation=start_angle, type='장력장치'))
+                if pole.structure != '터널':
+                    jiseon = self.idxlib.get_name(674)
+                    pole.equipments.append(
+                        EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=0, type='지선설비'))
+
+        elif pole.section == '에어섹션1구간_5호주':
             # END 구간 처리
             en = self.idxlib.get_name(1247)
             if pole.structure == '터널':
                 TunnelSectionProcessor.process(pole, self.prosc, self.idxlib)
             else:
                 NormalSectionProcessor.process(pole, self.prosc, self.idxlib)
-            x5, y5 = self.prosc.get_airjoint_offset('F형_끝').get('x'), self.prosc.get_airjoint_offset('F형_끝').get('y')
+            x5, y5 = self.prosc.get_airsection_offset('F형_끝').get('x'), self.prosc.get_airsection_offset('F형_끝').get('y')
             if pole.side == 1:
                 x5 *= -1
             end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge)
@@ -68,39 +105,84 @@ class AirjointBracketAdder:
                 pole.equipments.append(
                     EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=180, type='지선설비'))
 
-    def add_f_and_aj_brackets(self, pole, end=False):
+        elif pole.section == '에어섹션2구간_1호주':
+            # POINT_2 구간 처리
+            self.add_common_equipts(pole)
+            f_end_coord = self.prosc.get_airsection_offset('F형_끝')
+            f_x, f_y = f_end_coord['x'], f_end_coord['y']
+
+            aj_end_coord = self.prosc.get_airsection_offset('AS형_끝')
+            as_x, as_y = aj_end_coord['x'], aj_end_coord['y']
+            if pole.side == -1:
+                f_x *= -1
+                as_x *= -1
+            else:
+                f_x *= 1
+                as_x *= 1
+            self.add_f_and_as_brackets(pole, f_x, f_y, as_x, as_y, end=False)
+
+            en = self.idxlib.get_name(682)
+            x5, y5 = self.prosc.get_airsection_offset('F형_끝').get('x'), self.prosc.get_airsection_offset('F형_끝').get(
+                'y')
+            if pole.side == -1:
+                x5 *= -1
+            end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge)
+            pole.equipments.append(
+                EquipmentDATA(name=en, index=682, offset=(pole.gauge, 0), rotation=180 + end_angle, type='인류장치'))
+            if pole.structure != '터널':
+                jiseon = self.idxlib.get_name(674)
+                pole.equipments.append(
+                    EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=180, type='지선설비'))
+        elif pole.section == '에어섹션2구간_2호주':
+            # MIDDLE 구간 처리
+            self.add_common_equipts(pole)
+            self.add_as_brackets_middle(pole)
+        elif pole.section == '에어섹션2구간_3호주':
+            # POINT_4 구간 처리
+            self.add_common_equipts(pole)
+            f_start_coord = self.prosc.get_airsection_offset('F형_시점')
+            f_x, f_y = f_start_coord['x'], f_start_coord['y']
+
+            aj_start_coord = self.prosc.get_airsection_offset('AS형_시점')
+            as_x, as_y = aj_start_coord['x'], aj_start_coord['y']
+            if pole.side == -1:
+                f_x *= 1
+                as_x *= 1
+            else:
+                f_x *= -1
+                as_x *= -1
+            self.add_f_and_as_brackets(pole, f_x, f_y, as_x, as_y, end=True)
+
+        elif pole.section == '에어섹션2구간_4호주':
+            # END 구간 처리
+            en = self.idxlib.get_name(682)
+            if pole.structure == '터널':
+                TunnelSectionProcessor.process(pole, self.prosc, self.idxlib)
+            else:
+                NormalSectionProcessor.process(pole, self.prosc, self.idxlib)
+            x5, y5 = self.prosc.get_airsection_offset('F형_끝').get('x'), self.prosc.get_airsection_offset('F형_끝').get(
+                'y')
+            if pole.side == 1:
+                x5 *= -1
+            end_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, x5, pole.next_gauge)
+            pole.equipments.append(
+                EquipmentDATA(name=en, index=682, offset=(pole.gauge, 0), rotation=180 + end_angle, type='인류장치'))
+            if pole.structure != '터널':
+                jiseon = self.idxlib.get_name(674)
+                pole.equipments.append(
+                    EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=180, type='지선설비'))
+
+    def add_f_and_as_brackets(self, pole, f_x, f_y, as_x, as_y, end=False):
         """F형 및 AJ형 브래킷을 추가하는 공통 함수"""
         f_i, f_o = self.params.f_bracket_valuse['I'], self.params.f_bracket_valuse['O']
         aj_i, aj_o = self.params.aj_bracket_values['I'], self.params.aj_bracket_values['O']
         pole.brackets.clear()
-
         if not end:
-            # START 구간: F → AJ
-            f_start_coord = self.prosc.get_airjoint_offset('F형_시점')
-            x1, y1 = f_start_coord['x'], f_start_coord['y']
-            if pole.side == -1:
-                x1 *= -1
-            self.add_f_bracket(pole, f_i, x1, y1)
-
-            aj_start_coord = self.prosc.get_airjoint_offset('AJ형_시점')
-            x1,y1 = aj_start_coord['x'], aj_start_coord['y']
-            if pole.side == -1:
-                x1 *= -1
-            self.add_aj_bracket(pole,'I', aj_i, x1, y1)
-
+            self.add_f_bracket(pole, f_o, f_x, f_y)
+            self.add_as_bracket(pole, 'I', aj_i, as_x, as_y)
         else:
-            # END 구간: AJ → F
-            aj_end_coord = self.prosc.get_airjoint_offset('AJ형_끝')
-            x1, y1 = aj_end_coord['x'], aj_end_coord['y']
-            if pole.side == 1:
-                x1 *= -1
-            self.add_aj_bracket(pole,'O', aj_o, x1, y1, end=True)
-
-            f_end_coord = self.prosc.get_airjoint_offset('F형_끝')
-            x1, y1 = f_end_coord['x'], f_end_coord['y']
-            if pole.side == 1:
-                x1 *= -1
-            self.add_f_bracket(pole, f_o, x1, y1)
+            self.add_as_bracket(pole, 'I', aj_i, as_x, as_y)
+            self.add_f_bracket(pole, f_o, f_x, f_y)
 
     def add_f_bracket(self, pole: PoleDATA, bracket_code, x1, y1):
         """F형 가동 브래킷 및 금구류 추가"""
@@ -146,7 +228,7 @@ class AirjointBracketAdder:
         # PoleDATA에 브래킷 등록
         pole.brackets.append(bracket)
 
-    def add_aj_bracket(self, pole: PoleDATA,bracket_type, bracket_code, x1, y1, end=False):
+    def add_as_bracket(self, pole: PoleDATA, bracket_type, bracket_code, x1, y1, end=False):
         """AJ형 가동 브래킷 및 금구류 추가"""
 
         rotation = 180 if pole.side == 1 else 0
@@ -185,7 +267,7 @@ class AirjointBracketAdder:
         pole.brackets.append(bracket)
 
 
-    def add_aj_brackets_middle(self, pole):
+    def add_as_brackets_middle(self, pole):
         """MIDDLE 구간에서 AJ형 브래킷 추가"""
         # 기본 브래킷 제거
         pole.brackets.clear()
@@ -194,16 +276,16 @@ class AirjointBracketAdder:
         aj_o = self.params.aj_bracket_values.get('O')
 
         # AJ형 가동 브래킷 및 금구류 추가
-        x1, y1 = self.prosc.get_airjoint_offset('AJ형_중간1').get('x'), self.prosc.get_airjoint_offset('AJ형_중간1').get('y')
+        x1, y1 = self.prosc.get_airsection_offset('AS형_중간1').get('x'), self.prosc.get_airsection_offset('AS형_중간1').get('y')
         if pole.side == -1:
             x1 *= -1
-        self.add_aj_bracket(pole, 'I',aj_i, x1, y1)
+        self.add_as_bracket(pole, 'O', aj_o, x1, y1)
 
         # AJ형 가동 브래킷 및 금구류 추가
-        x1, y1 = self.prosc.get_airjoint_offset('AJ형_중간2').get('x'), self.prosc.get_airjoint_offset('AJ형_중간2').get('y')
+        x1, y1 = self.prosc.get_airsection_offset('AS형_중간2').get('x'), self.prosc.get_airsection_offset('AS형_중간2').get('y')
         if pole.side == 1:
             x1 *= -1
-        self.add_aj_bracket(pole, 'O', aj_o, x1, y1, end=True)
+        self.add_as_bracket(pole, 'I', aj_i, x1, y1, end=True)
 
     def add_common_equipts(self, pole):
         """공통 설비"""

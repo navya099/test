@@ -2,62 +2,49 @@ from utils.comom_util import casting_key_str_to_int
 
 
 class DatasetGetter:
+    """데이터셋 겟터"""
     def __init__(self, dataset):
         self.dataset = dataset
+
     def get_prefix(self):
         return self.dataset['design']['prefix']
 
     def get_design_speed(self):
         return self.dataset['design']['speed']
 
-    def get_bracket_coordinates(self, bracket_type):
+    def get_airjoint_offset(self, bracket_type):
         """에어조인트구간 전차선 상호이격거리 반환"""
-        return self.dataset['bracket']['coordinates'][bracket_type]
+        return self.dataset['airjoint']['offset'][bracket_type]
+
+    def get_airsection_offset(self, bracket_type):
+        """에어섹션구간 전차선 상호이격거리 반환"""
+        return self.dataset['airsection']['offset'][bracket_type]
 
     def get_feeder_insulator_idx(self, current_structure):
         """설계속도와 구조물에 따른 피더 애자 인덱스 반환 (JSON 기반)"""
         return self.dataset['feeder'][current_structure]
 
-    def get_spreader_idx(self, current_structure, current_airjoint):
+    def get_spreader_idx(self, current_structure, length: str):
         """평행구간 평행틀 인덱스 반환"""
         spreader_dictionary = self.dataset['spreader']
         spreader_values = spreader_dictionary.get(current_structure, (0, 0))
+        return spreader_values.get(length, None)
 
-        if current_airjoint in ['에어조인트 2호주', '에어조인트 4호주']:
-            return spreader_values['1m']
-        elif current_airjoint == '에어조인트 중간주 (3호주)':
-            return spreader_values['1.6m']
-        else:
-            return spreader_values['1m']
+    def get_bracket_codes(self, bracket_type: str, current_structure: str, base_type: str | None = None):
+        """
+        브래킷 타입과 구조물에 따른 인덱스 반환
+        - bracket_type: '일반개소', '에어조인트', 'F브래킷' 등
+        - current_structure: '토공', '교량', '터널'
+        - base_type: 'I' 또는 'O' (일반개소처럼 방향 구분이 필요한 경우만 사용)
+        """
+        try:
+            data = self.dataset['bracket']['index'][bracket_type][current_structure]
+            if base_type:
+                return data[base_type]
+            return data
+        except KeyError:
+            raise ValueError(f"지원하지 않는 브래킷 타입/구조물/방향입니다: {bracket_type}, {current_structure}, {base_type}")
 
-    def get_bracket_type(self, current_structure, current_curve):
-        """구조물에 따른 일반구간 브래킷인덱스 가져오기"""
-        pole_data = self.dataset['bracket']['index']['일반개소']
-
-        if current_structure == '토공':
-            if current_curve == '직선':
-                i_type_index = pole_data['토공']['직선']['I']
-                o_type_index = pole_data['토공']['직선']['O']
-            else:
-                i_type_index = pole_data['토공']['곡선']['I']
-                o_type_index = pole_data['토공']['곡선']['O']
-        elif current_structure == '교량':
-            if current_curve == '직선':
-                i_type_index = pole_data['교량']['직선']['I']
-                o_type_index = pole_data['교량']['직선']['O']
-            else:
-                i_type_index = pole_data['교량']['곡선']['I']
-                o_type_index = pole_data['교량']['곡선']['O']
-        elif current_structure == '터널':
-            if current_curve == '직선':
-                i_type_index = pole_data['터널']['직선']['I']
-                o_type_index = pole_data['터널']['직선']['O']
-            else:
-                i_type_index = pole_data['터널']['곡선']['I']
-                o_type_index = pole_data['터널']['곡선']['O']
-        else:
-            raise ValueError(f'지원하지 않는 구조물입니다. {current_structure}')
-        return i_type_index, o_type_index
 
     def get_fittings(self):
         """에어조인트 금구류 데이터를 가져옴"""
@@ -93,20 +80,6 @@ class DatasetGetter:
         """건식게이지 """
         return self.dataset['mast']['gauge'][current_structure]
 
-    def get_f_bracket_codes(self, current_structure):
-        return self.get_F_bracket_data().get(current_structure, (0, 0))
-
-    def get_aj_bracket_codes(self, current_structure):
-        return self.get_airjoint_bracket_data().get(current_structure, (0, 0))
-
-    def get_bracket_codes(self, current_structure, type=''):
-        if type == 'F':
-            return self.get_f_bracket_codes(current_structure)
-        elif type == 'AJ':
-            return self.get_aj_bracket_codes(current_structure)
-        return 0, 0
-
-
     def get_airjoint_bracket_data(self):
         """에어조인트 브래킷 데이터를 반환 (JSON 기반)"""
         return self.dataset['bracket']['index']['에어조인트']
@@ -123,15 +96,19 @@ class DatasetGetter:
             return self._get_span(currentspan, '터널전차선')
 
     def get_feeder_span(self, currentspan):
+        """SPAN에 해당하는 급전선 인덱스"""
         return self._get_span(currentspan, '급전선')
 
     def get_protection_wire_span(self, currentspan):
+        """SPAN에 해당하는 보호선 인덱스"""
         return self._get_span(currentspan, '보호선')
 
     def get_inactive_cw_span(self, currentspan):
+        """SPAN에 해당하는 무효전차선 인덱스"""
         return self._get_span(currentspan, '무효용전차선')
 
     def get_inactive_mw_span(self, currentspan):
+        """SPAN에 해당하는 무효조가선 인덱스"""
         return self._get_span(currentspan, '무효용조가선')
 
     def _get_span(self, currentspan, key):
@@ -142,15 +119,15 @@ class DatasetGetter:
             raise ValueError(f"유효하지 않은 경간 값: {currentspan}")
         return values[currentspan]
 
-
     def get_af_offset(self, current_structure):
+        """구조물에 해당하는 급전선 오프셋"""
         af_offset_values = self.dataset['wire']['offset']['AF']
         return af_offset_values.get(current_structure, (0, 0))
 
     def get_fpw_offset(self, current_structure):
+        """구조물에 해당하는 보호선 오프셋"""
         fpw_offset_values = self.dataset['wire']['offset']['FPW']
         return fpw_offset_values.get(current_structure, (0, 0))
-
 
     def get_contact_wire_and_massanger_wire_info(self, current_structure):
         """전차선 가고와 높이정보 반환 (JSON 기반)"""
@@ -164,8 +141,13 @@ class DatasetGetter:
         """가고 정보 반환"""
         return self.dataset['wire']['system_height'][current_structure]
 
-    def get_f_bracket_height(self):
-        return self.dataset['bracket']['height']['F']
+    def get_airjoint_f_bracket_height(self):
+        """에어조인트구간 f브래킷 인상높이 반환"""
+        return self.dataset['airjoint']['bracket_height']
+
+    def get_airsection_f_bracket_height(self):
+        """에어섹션구간 f브래킷 인상높이 반환"""
+        return self.dataset['airsection']['bracket_height']
 
     def get_post_base(self, current_structure):
         """전철주 기초 인덱스 반환"""
@@ -188,4 +170,5 @@ class DatasetGetter:
         return self.dataset['mast']['band']['yoffset'].get('기타', None)
 
     def get_extra_wire_dictionary(self):
+        """추가전선 오프셋 딕셔너리 반환"""
         return self.dataset['wire']['offset'].get('Extra', None)

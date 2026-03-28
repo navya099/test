@@ -28,10 +28,10 @@ class NormalSectionProcessor:
         #브래킷 빌더 호출
         if pole.radius == 0:
             current_curve = '직선'
-            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation, stagger_flip=flip)
+            StraightSectionProcessor.process(pole, dataprocessor, idxlib, rotation, stagger_flip=flip)
         else:
             current_curve ='곡선'
-            CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, rotation)
+            CurveSectionProcessor.process(pole, dataprocessor, idxlib, rotation)
 
 
         #전주 빌더 호출

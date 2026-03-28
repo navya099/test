@@ -749,7 +749,8 @@ class AutoPoleEditor(tk.Frame):
                 pole,
                 self.runner.polyline_with_sta,
                 self.runner.dataprocessor,
-                self.runner.idxlib
+                self.runner.idxlib,
+                mode='double'
             )
 
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()

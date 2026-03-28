@@ -29,9 +29,9 @@ class TunnelSectionProcessor:
 
         current_curve = '직선' if pole.radius == 0 else '곡선'
         if pole.radius == 0:
-            StraightSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, bracket_rotation, stagger_flip=stagger_flip)
+            StraightSectionProcessor.process(pole, dataprocessor, idxlib, bracket_rotation, stagger_flip=stagger_flip)
         else:
-            CurveSectionProcessor.process(pole, dataprocessor, idxlib, current_curve, bracket_rotation)
+            CurveSectionProcessor.process(pole, dataprocessor, idxlib, bracket_rotation)
 
         # 터널 특수 규칙 적용
         # 전주 빌더 호출

@@ -127,7 +127,7 @@ def find_post_number(lst, pos):
         if arg[0] == pos:
             return arg[1]
 
-def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, y=0):
+def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_heigh, y=0, tension_device_length=6.555, cw_height=5.563936, mw_height= 6.04784):
     """장력장치구간 전차선과 조가선 각도 높이를 반환
     Arguments:
         pos: 현재 측점
@@ -136,6 +136,9 @@ def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_
         contact_height: 전차선 높이
         system_heigh: 가고
         y: 보정 높이
+        tension_device_length: 장력장치 길이
+        cw_height: 전차선 높이
+        mw_height: 조가선 높이
     Returns:
         slope_degree1: 전차선 종단각도
         slope_degree2: 조가선 종단각도
@@ -143,25 +146,21 @@ def initialrize_tenstion_device(pos, gauge, currentspan, contact_height, system_
         h2: 장력장치 조가선 높이
         pererall_d: 보정 거리
         sta2: 보정된 전선 측점
-    """
-    # 장력장치 치수
-    tension_device_length = 6.555
 
+    """
     # 전선 각도
     new_length = currentspan - tension_device_length  # 현재 span에서 장력장치까지의 거리
     pererall_d, vertical_offset = return_new_point(gauge, currentspan, tension_device_length)  # 선형 시작점에서 전선까지의 거리
 
     sta2 = pos + vertical_offset  # 전선 시작 측점
-    h1 = 5.563936  # 장력장치 전차선 높이
-    h2 = 6.04784  # 장력장치 조가선 높이
 
-    slope_radian1 = math.atan((h1 - (contact_height + y)) / currentspan)  # 전차선 각도(라디안)
-    slope_radian2 = math.atan((h2 - (contact_height + system_heigh)) / currentspan)  # 조가선 각도(라디안)
+    slope_radian1 = math.atan((cw_height - (contact_height + y)) / currentspan)  # 전차선 각도(라디안)
+    slope_radian2 = math.atan((mw_height - (contact_height + system_heigh)) / currentspan)  # 조가선 각도(라디안)
 
     slope_degree1 = math.degrees(slope_radian1)  # 전차선 각도(도)
     slope_degree2 = math.degrees(slope_radian2)  # 조가선 각도(도)
 
-    return slope_degree1, slope_degree2, h1, h2, pererall_d, sta2
+    return slope_degree1, slope_degree2, cw_height, mw_height ,pererall_d, sta2
 
 def offsets(n, s):
     if n == 1:

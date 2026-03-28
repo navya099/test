@@ -11,17 +11,18 @@ class AirJointProcessor:
         contact_wire_fitting, messenger_wire_fittings, steady_arm_fittings = dataprocessor.get_fittings()
         mast_idx = dataprocessor.get_mast_index(pole.structure, pole.section)
         mast_name = idxlib.get_name(mast_idx)
-        f_bracket_valuse = dataprocessor.get_bracket_codes(pole.structure, type='F')
-        aj_bracket_values = dataprocessor.get_bracket_codes(pole.structure, type='AJ')
+        f_bracket_valuse = dataprocessor.get_bracket_codes('F브래킷', pole.structure)
+        aj_bracket_values = dataprocessor.get_bracket_codes('에어조인트', pole.structure)
 
         # 급전선 설비 인덱스 가져오기
         feeder_idx = dataprocessor.get_feeder_insulator_idx(pole.structure)
         feeder_name =idxlib.get_name(feeder_idx)
         # 평행틀 설비 인덱스 가져오기
-        spreader_idx = dataprocessor.get_spreader_idx(pole.structure, pole.section)
+        length = '1.6m' if pole.section == '에어조인트 중간주 (3호주)' else '1m'
+        spreader_idx = dataprocessor.get_spreader_idx(pole.structure, length)
         spreader_name = idxlib.get_name(spreader_idx)
         #F브래킷 인상높이
-        f_bracket_height = dataprocessor.get_f_bracket_height()
+        f_bracket_height = dataprocessor.get_airjoint_f_bracket_height()
 
         # 모든 필요한 값들을 전달
         context = AirjointDataContext(

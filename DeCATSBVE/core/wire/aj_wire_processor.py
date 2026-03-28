@@ -1,8 +1,6 @@
 from core.wire.common_processor import CommonWireProcessor
 from utils.comom_util import initialrize_tenstion_device
 from utils.math_util import calculate_curve_angle, calculate_curve_stagger
-
-
 class AirjointWireProcessor:
     def __init__(self, compros: CommonWireProcessor, datap, al):
         self.common = compros
@@ -16,12 +14,12 @@ class AirjointWireProcessor:
         imw_index = self.datap.get_inactive_mw_span(pole.span - 7)
         icw_index = self.datap.get_inactive_cw_span(pole.span - 7)
         # 평행구간 전차선 오프셋
-        aj_start_x, aj_start_y = self.datap.get_bracket_coordinates('AJ형_시점').get('x'),self.datap.get_bracket_coordinates('AJ형_시점').get('y')
-        f_start_x, f_start_y = self.datap.get_bracket_coordinates('F형_시점').get('x'), self.datap.get_bracket_coordinates('F형_시점').get('y')
-        aj_middle1_x, aj_middle1_y = self.datap.get_bracket_coordinates('AJ형_중간1').get('x') , self.datap.get_bracket_coordinates('AJ형_중간1').get('y')
-        aj_middle2_x, aj_middle2_y = self.datap.get_bracket_coordinates('AJ형_중간2').get('x'), self.datap.get_bracket_coordinates('AJ형_중간2').get('y')
-        aj_end_x, aj_end_y = self.datap.get_bracket_coordinates('AJ형_끝').get('x'), self.datap.get_bracket_coordinates('AJ형_끝').get('y')
-        f_end_x, f_end_y = self.datap.get_bracket_coordinates('F형_끝').get('x'), self.datap.get_bracket_coordinates('F형_끝').get('y')
+        aj_start_x, aj_start_y = self.datap.get_airjoint_offset('AJ형_시점').get('x'),self.datap.get_airjoint_offset('AJ형_시점').get('y')
+        f_start_x, f_start_y = self.datap.get_airjoint_offset('F형_시점').get('x'), self.datap.get_airjoint_offset('F형_시점').get('y')
+        aj_middle1_x, aj_middle1_y = self.datap.get_airjoint_offset('AJ형_중간1').get('x') , self.datap.get_airjoint_offset('AJ형_중간1').get('y')
+        aj_middle2_x, aj_middle2_y = self.datap.get_airjoint_offset('AJ형_중간2').get('x'), self.datap.get_airjoint_offset('AJ형_중간2').get('y')
+        aj_end_x, aj_end_y = self.datap.get_airjoint_offset('AJ형_끝').get('x'), self.datap.get_airjoint_offset('AJ형_끝').get('y')
+        f_end_x, f_end_y = self.datap.get_airjoint_offset('F형_끝').get('x'), self.datap.get_airjoint_offset('F형_끝').get('y')
 
         # 방향(side) + 터널 여부에 따라 X 좌표 반전
 
