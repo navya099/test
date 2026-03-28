@@ -1,9 +1,6 @@
-import json
-from dataclasses import asdict
+from MODEL import RailwayConfig, Design, Mast, Band, Bracket
 
-from 데이터셋생성기 import RailwayConfig, Design, Mast, Band, Bracket
-
-gyeongbu = RailwayConfig(
+config_custom = RailwayConfig(
     design=Design(speed=150, prefix="기존선용"),
     mast=Mast(
         index={
@@ -40,9 +37,9 @@ gyeongbu = RailwayConfig(
     bracket=Bracket(
         index={
             "일반개소": {
-                "터널": {"직선": {"I": 649, "O": 650}, "곡선": {"I": 633, "O": 634}},
-                "토공": {"직선": {"I": 1252, "O": 1253}, "곡선": {"I": 629, "O": 630}},
-                "교량": {"직선": {"I": 1254, "O": 1255}, "곡선": {"I": 631, "O": 632}}
+                "터널": {"I": 633, "O": 634},
+                "토공": {"I": 629, "O": 630},
+                "교량": {"I": 631, "O": 632}
             },
             "에어조인트": {
                 "터널": {"I": 633, "O": 634},
@@ -56,15 +53,6 @@ gyeongbu = RailwayConfig(
             "조가선지지금구": {"일반용": None, "에어조인트용": None, "무효인상용": None},
             "곡선당김금구": {"I": {"L": 1293, "R": 1294}, "O": {"L": 599, "R": 609}, "F": {"L": 303, "R": 1292}}
         },
-        coordinates={
-            "F형_시점": {"x": 0.35, "y": 0.3},
-            "AJ형_시점": {"x": 0.15, "y": 0},
-            "AJ형_중간1": {"x": 0.15, "y": 0},
-            "AJ형_중간2": {"x": 0.15, "y": 0},
-            "AJ형_끝": {"x": 0.15, "y": 0},
-            "F형_끝": {"x": 0.35, "y": 0.3}
-        },
-        height={"F": 0.3}
     ),
     feeder={"토공": 981, "교량": 981, "터널": 1249},
     spreader={"토공": {"1m": 531, "1.6m": 532}, "교량": {"1m": 534, "1.6m": 535}, "터널": {"1m": 537, "1.6m": 538}},
@@ -78,8 +66,27 @@ gyeongbu = RailwayConfig(
             }
         },
         "system_height": {"토공": 0.96, "교량": 0.96, "터널": 0.71}
+    },
+    airjoint={
+        'offset':{
+            "F형_시점": {"x": 0.35, "y": 0.3},
+            "AJ형_시점": {"x": 0.15, "y": 0},
+            "AJ형_중간1": {"x": 0.15, "y": 0},
+            "AJ형_중간2": {"x": 0.15, "y": 0},
+            "AJ형_끝": {"x": 0.15, "y": 0},
+            "F형_끝": {"x": 0.35, "y": 0.3}
+        },
+        'bracket_height': 0.3
+    },
+    airsection={
+        'offset': {
+            "F형_시점": {"x": 0.7, "y": 0.37},
+            "AS형_시점": {"x": 0.2, "y": 0},
+            "AS형_중간1": {"x": 0.25, "y": 0},
+            "AS형_중간2": {"x": 0.25, "y": 0},
+            "AS형_끝": {"x": 0.2, "y": 0},
+            "F형_끝": {"x": 0.7, "y": 0.37}
+        },
+        'bracket_height': 0.37
     }
 )
-path="c:/temp"
-with open(f"{path}/custom_data.json", "w", encoding="utf-8") as f:
-    json.dump(asdict(gyeongbu), f, ensure_ascii=False, indent=2)
