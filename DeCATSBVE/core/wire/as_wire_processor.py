@@ -1,3 +1,4 @@
+from core.insulator.insulator_data import InsulatorData
 from core.wire.common_processor import CommonWireProcessor
 from utils.comom_util import initialrize_tenstion_device
 from utils.math_util import calculate_curve_angle, calculate_curve_stagger
@@ -24,9 +25,10 @@ class AirSectionWireProcessor:
         elif pole.section == '에어섹션1구간_3호주':
             self.process_section_three(pole, next_pole, wire, cw_index, pitch_angle)
 
-        elif pole.section == '에어섹션1구간_4호주':
-
+        elif pole.section == '에어섹션1구간_4호주_D':
             self.process_section_forth(pole, next_pole, wire, cw_index, pitch_angle)
+        elif pole.section == '에어섹션1구간_4호주_S':
+            self.process_section_forth_single(pole, next_pole, wire, cw_index, pitch_angle)
 
         elif pole.section == '에어섹션1구간_5호주':
             self.process_end(pole, next_pole, wire, cw_index, pitch_angle)
@@ -141,6 +143,12 @@ class AirSectionWireProcessor:
             self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
             (f_start_x, start_cw_height + f_start_y), (aj_middle1_x, end_cw_height), pitch_angle, label='무효전차선')
         )
+        #절연애자 설치
+        insulator = InsulatorData(pos=pole.pos + 2, index=678, type='장간애자N-a', offset=(f_start_x, start_cw_height + start_system_height),yaw=0,pitch=0,roll=0)
+        wire.add_insulator(insulator)
+        insulator = InsulatorData(pos=pole.pos + 2, index=678, type='장간애자N-a',
+                                  offset=(f_start_x, start_cw_height + f_start_y), yaw=0, pitch=0, roll=0)
+        wire.add_insulator(insulator)
 
     def process_section_three(self, pole, next_pole, wire, cw_index, pitch_angle):
         f_end_x, f_end_y = self.datap.get_airsection_offset('F형_끝').get('x'), self.datap.get_airsection_offset(
@@ -278,6 +286,68 @@ class AirSectionWireProcessor:
         cw.station = sta2
         wire.add_wire(cw)
 
+    def process_section_forth_single(self, pole, next_pole, wire, cw_index, pitch_angle):
+        f_end_x, f_end_y = self.datap.get_airsection_offset('F형_끝').get('x'), self.datap.get_airsection_offset(
+            'F형_끝').get('y')
+        aj_middle1_x, aj_middle1_y = self.datap.get_airsection_offset('AS형_중간1').get(
+            'x'), self.datap.get_airsection_offset('AS형_중간1').get('y')
+        aj_middle2_x, aj_middle2_y = self.datap.get_airsection_offset('AS형_중간2').get(
+            'x'), self.datap.get_airsection_offset('AS형_중간2').get('y')
+        aj_start_x, aj_start_y = self.datap.get_airsection_offset('AS형_시점').get(
+            'x'), self.datap.get_airsection_offset('AS형_시점').get('y')
+        f_start_x, f_start_y = self.datap.get_airsection_offset('F형_시점').get('x'), self.datap.get_airsection_offset(
+            'F형_시점').get('y')
+        aj_end_x, aj_end_y = self.datap.get_airsection_offset('AS형_끝').get('x'), self.datap.get_airsection_offset(
+            'AS형_끝').get('y')
+        # 일반 구간
+        if pole.side == -1:
+            aj_start_x *= 1
+            f_start_x *= 1
+            aj_middle1_x *= 1
+            aj_middle2_x *= -1
+            aj_end_x *= -1
+            f_end_x *= -1
+
+        else:
+            aj_start_x *= -1
+            f_start_x *= -1
+            aj_middle1_x *= -1
+            aj_middle2_x *= 1
+            aj_end_x *= 1
+            f_end_x *= 1
+        # 본선
+        end_offset = next_pole.brackets[0].stagger
+        start_cw_height = self.datap.get_contact_wire_height(pole.structure)
+        end_cw_height = self.datap.get_contact_wire_height(next_pole.structure)
+        start_system_height = self.datap.get_system_height(pole.structure)
+        wire.add_wire(self.common.run(
+            self.al, cw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+            (aj_end_x, start_cw_height), (end_offset, end_cw_height), pitch_angle, label='본선전차선')
+        )
+        # 무효선
+        tension_device_length = 7
+        imw_index = self.datap.get_inactive_mw_span(pole.span - tension_device_length)
+        icw_index = self.datap.get_inactive_cw_span(pole.span - tension_device_length)
+
+        # slope_degree1=전차선 각도, slope_degree2=조가선 각도, H1=전차선높이, H2=조가선 높이
+        slope_degree1, slope_degree2, h1, h2, pererall_d, sta2 = initialrize_tenstion_device(
+            pole.pos, pole.gauge, pole.span, start_cw_height, start_system_height, f_start_y)
+
+        wire.add_wire(self.common.run(
+            self.al, imw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+            (f_end_x, start_cw_height + start_system_height), (pole.next_gauge, h2), pitch_angle, label='무효조가선')
+        )
+        wire.add_wire(self.common.run(
+            self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
+            (f_end_x, start_cw_height + f_start_y), (pole.next_gauge, h1), pitch_angle, label='무효전차선')
+        )
+        # 절연애자 설치
+        insulator = InsulatorData(pos=pole.pos - 2, index=678, type='장간애자N-a',
+                                  offset=(f_end_x, start_cw_height + start_system_height), yaw=0, pitch=0, roll=0)
+        wire.add_insulator(insulator)
+        insulator = InsulatorData(pos=pole.pos - 2, index=678, type='장간애자N-a',
+                                  offset=(f_end_x, start_cw_height + f_start_y), yaw=0, pitch=0, roll=0)
+        wire.add_insulator(insulator)
     def process_section_five(self, pole, next_pole, wire, cw_index, pitch_angle):
         f_end_x, f_end_y = self.datap.get_airsection_offset('F형_끝').get('x'), self.datap.get_airsection_offset(
             'F형_끝').get('y')
@@ -325,6 +395,13 @@ class AirSectionWireProcessor:
             self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
             (f_start_x, start_cw_height + f_start_y), (aj_middle1_x, end_cw_height), pitch_angle, label='무효전차선')
         )
+        # 절연애자 설치
+        insulator = InsulatorData(pos=pole.pos + 2, index=678, type='장간애자N-a',
+                                  offset=(f_start_x, start_cw_height + start_system_height), yaw=0, pitch=0, roll=0)
+        wire.add_insulator(insulator)
+        insulator = InsulatorData(pos=pole.pos + 2, index=678, type='장간애자N-a',
+                                  offset=(f_start_x, start_cw_height + f_start_y), yaw=0, pitch=0, roll=0)
+        wire.add_insulator(insulator)
 
     def process_section_six(self, pole, next_pole, wire, cw_index, pitch_angle):
         f_end_x, f_end_y = self.datap.get_airsection_offset('F형_끝').get('x'), self.datap.get_airsection_offset(
@@ -430,7 +507,13 @@ class AirSectionWireProcessor:
             self.al, icw_index, pole.pos, pole.next_pos, pole.z, pole.next_z,
             (f_end_x, start_cw_height + f_start_y), (pole.next_gauge, h1), pitch_angle, label='무효전차선')
         )
-
+        # 절연애자 설치
+        insulator = InsulatorData(pos=pole.pos - 2, index=678, type='장간애자N-a',
+                                  offset=(f_end_x, start_cw_height + start_system_height), yaw=0, pitch=0, roll=0)
+        wire.add_insulator(insulator)
+        insulator = InsulatorData(pos=pole.pos - 2, index=678, type='장간애자N-a',
+                                  offset=(f_end_x, start_cw_height + f_start_y), yaw=0, pitch=0, roll=0)
+        wire.add_insulator(insulator)
     def process_end(self, pole, next_pole, wire, cw_index, pitch_angle):
         # 본선
         start_offset = pole.brackets[0].stagger

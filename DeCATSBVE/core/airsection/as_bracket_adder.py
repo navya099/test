@@ -59,7 +59,7 @@ class AirSectionBracketAdder:
             self.add_common_equipts(pole)
             self.add_as_brackets_middle(pole)
 
-        elif pole.section == '에어섹션1구간_4호주':
+        elif pole.section == '에어섹션1구간_4호주_S':
             # POINT_4 구간 처리
             self.add_common_equipts(pole)
             f_end_coord = self.prosc.get_airsection_offset('F형_끝')
@@ -74,19 +74,34 @@ class AirSectionBracketAdder:
                 f_x *= 1
                 as_x *= 1
             self.add_f_and_as_brackets(pole, f_x, f_y, as_x, as_y, end=True)
-            if self.mode == 'double':
-                f_start_coord = self.prosc.get_airsection_offset('F형_시점')
-                x1, y1 = f_start_coord['x'], f_start_coord['y']
-                if pole.side == -1:
-                    x1 *= -1
-                start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
-                en = self.idxlib.get_name(1247)
+        elif pole.section == '에어섹션1구간_4호주_D':
+            # POINT_4 구간 처리
+            self.add_common_equipts(pole)
+            f_end_coord = self.prosc.get_airsection_offset('F형_끝')
+            f_x, f_y = f_end_coord['x'], f_end_coord['y']
+
+            aj_end_coord = self.prosc.get_airsection_offset('AS형_끝')
+            as_x, as_y = aj_end_coord['x'], aj_end_coord['y']
+            if pole.side == -1:
+                f_x *= -1
+                as_x *= -1
+            else:
+                f_x *= 1
+                as_x *= 1
+            self.add_f_and_as_brackets(pole, f_x, f_y, as_x, as_y, end=True)
+
+            f_start_coord = self.prosc.get_airsection_offset('F형_시점')
+            x1, y1 = f_start_coord['x'], f_start_coord['y']
+            if pole.side == -1:
+                x1 *= -1
+            start_angle = calculate_curve_angle(polyline_with_sta, pole.pos, pole.next_pos, pole.gauge, x1)
+            en = self.idxlib.get_name(1247)
+            pole.equipments.append(
+                EquipmentDATA(name=en, index=1247, offset=(pole.gauge, 0), rotation=start_angle, type='장력장치'))
+            if pole.structure != '터널':
+                jiseon = self.idxlib.get_name(674)
                 pole.equipments.append(
-                    EquipmentDATA(name=en, index=1247, offset=(pole.gauge, 0), rotation=start_angle, type='장력장치'))
-                if pole.structure != '터널':
-                    jiseon = self.idxlib.get_name(674)
-                    pole.equipments.append(
-                        EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=0, type='지선설비'))
+                    EquipmentDATA(name=jiseon, index=674, offset=(pole.gauge, 0), rotation=0, type='지선설비'))
 
         elif pole.section == '에어섹션1구간_5호주':
             # END 구간 처리

@@ -14,6 +14,7 @@ from core.wire.wire_processor import WireProcessor
 from enums.airjoint_section import AirJoint
 from gui.pole_add_ui import PoleADDUI
 from gui.pole_assembler import PoleAssemblerApp
+from gui.tkdialog import TkDialogService
 from gui.wireeditor import WireEditor
 from vms.editable_pole import EditablePole
 from vms.editable_wires import EditableWire
@@ -716,6 +717,8 @@ class AutoPoleEditor(tk.Frame):
         self.runner.log(f"엑셀 전주데이터가 로드되었습니다. 계:{len(self.runner.poledata['main'])}")
 
     def add_airsection(self):
+        app = TkDialogService(self)
+        result = app.select_option_list(['에어섹션', '이중에어섹션'])
         self.load_selected()
         start_epole = self.selected_pole  # 시작 전주
         poles = []
@@ -725,7 +728,14 @@ class AutoPoleEditor(tk.Frame):
 
         # 이후 7개 확보 (총 8개)
         epole = start_epole
-        for _ in range(7):
+        count = 0
+        mode = 'single' if result == '에어섹션' else 'double'
+        if mode == 'single':
+            count = 4
+        elif mode == 'double':
+            count = 7
+
+        for _ in range(count):
             if epole.next_pole:
                 epole = epole.next_pole
                 poles.append(epole.pole)
@@ -737,11 +747,12 @@ class AutoPoleEditor(tk.Frame):
         poles[0].section = "에어섹션1구간_1호주"
         poles[1].section = "에어섹션1구간_2호주"
         poles[2].section = "에어섹션1구간_3호주"
-        poles[3].section = "에어섹션1구간_4호주"
-        poles[4].section = "에어섹션2구간_1호주"
-        poles[5].section = "에어섹션2구간_2호주"
-        poles[6].section = "에어섹션2구간_3호주"
-        poles[7].section = "에어섹션2구간_4호주"
+        poles[3].section = "에어섹션1구간_4호주_D" if mode == 'double' else "에어섹션1구간_4호주_S"
+        poles[4].section = "에어섹션2구간_1호주" if mode == 'double' else "에어섹션1구간_5호주"
+        if mode == 'double':
+            poles[5].section = "에어섹션2구간_2호주"
+            poles[6].section = "에어섹션2구간_3호주"
+            poles[7].section = "에어섹션2구간_4호주"
 
         # 처리
         for pole in poles:
@@ -750,14 +761,14 @@ class AutoPoleEditor(tk.Frame):
                 self.runner.polyline_with_sta,
                 self.runner.dataprocessor,
                 self.runner.idxlib,
-                mode='double'
+                mode=mode
             )
 
         self.runner.wire_data = self.runner.wire_processor.process_to_wire()
         self.runner.anticreeping_pr.set_data(self.runner.poledata, self.runner.wire_data)
         self.runner.anticreeping_pr.process()
         self.refresh_tree()
-        self.runner.log(f'에어섹션이 설치되었습니다. 시작 pos:{start_epole.pole.pos}')
+        self.runner.log(f'{result}이 설치되었습니다. 시작 pos:{start_epole.pole.pos}')
 
     def remove_airsection(self):
         self.load_selected()
@@ -769,7 +780,13 @@ class AutoPoleEditor(tk.Frame):
 
         # 이후 7개 확보 (총 8개)
         epole = start_epole
-        for _ in range(7):
+        count = 0
+        mode = "double" if any("에어섹션2구간" in p.section for p in poles) else "single"
+        if mode == 'single':
+            count = 4
+        elif mode == 'double':
+            count = 7
+        for _ in range(count):
             if epole.next_pole:
                 epole = epole.next_pole
                 poles.append(epole.pole)

@@ -69,6 +69,7 @@ class BVECSV:
                             f'{pos},.freeobj {self.track_index};{fit.index};{fit.offset[0]};{fit.offset[1]};{fit.rotation};,;{fit.label}\n'
                         )
 
+        pos = 0
         for pole in self.poledata:
             try:
                 pos = pole.pos
@@ -102,15 +103,15 @@ class BVECSV:
                         self.lines.append(',;가동브래킷구문\n')
                         write_brackets(p, [br])
 
-                elif section in ['에어섹션1구간_1호주', '에어섹션2구간_4호주']:
+                elif section in ['에어섹션1구간_1호주', '에어섹션1구간_5호주', '에어섹션2구간_4호주']:
                     write_mast(pos, mast)
                     write_mast_accessories(pos, mast)
                     write_base(pos, mast)
                     write_brackets(pos, [brs[0]])
                     write_equipment(pos, eqs)
 
-                elif section in ['에어섹션1구간_2호주', '에어섹션1구간_3호주', '에어섹션1구간_4호주', '에어섹션2구간_1호주', '에어섹션2구간_2호주', '에어섹션2구간_3호주']:
-                    poss = (pos - 0.528, pos + 0.528) if section in ['에어섹션1구간_2호주', '에어섹션1구간_3호주', '에어섹션1구간_4호주', '에어섹션2구간_1호주', '에어섹션2구간_2호주', '에어섹션2구간_3호주'] else (
+                elif section in ['에어섹션1구간_2호주', '에어섹션1구간_3호주', '에어섹션1구간_4호주_S','에어섹션1구간_4호주_D', '에어섹션2구간_1호주', '에어섹션2구간_2호주', '에어섹션2구간_3호주']:
+                    poss = (pos - 0.528, pos + 0.528) if section in ['에어섹션1구간_2호주', '에어섹션1구간_3호주', '에어섹션1구간_4호주_S','에어섹션1구간_4호주_D', '에어섹션2구간_1호주', '에어섹션2구간_2호주', '에어섹션2구간_3호주'] else (
                     pos - 0.8, pos + 0.8)
                     write_mast(pos, mast)
                     write_mast_accessories(pos, mast)
@@ -156,7 +157,11 @@ class BVECSV:
                 for wr in wire.wires:
                     sta = wr.station if wr.station else pos
                     self.lines.append(f'{sta},.freeobj {self.track_index};{wr.index};{wr.offset[0]};{wr.offset[1]};{wr.adjusted_angle};{wr.topdown_angle};0;,;{wr.label}\n')
-
+                if wire.insulators:
+                    for insulator in wire.insulators:
+                        self.lines.append(f'{insulator.pos},.freeobj {self.track_index};{insulator.index};'
+                                          f'{insulator.offset[0]};{insulator.offset[1]};'
+                                          f'{insulator.yaw};{insulator.pitch};{insulator.roll};,;{insulator.type}\n')
             except AttributeError as e:
                 print(f"Wire 데이터 누락: index {pos}, 오류: {e}")
             except Exception as e:
