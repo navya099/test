@@ -40,9 +40,10 @@ class KMOutputManager:
             imgdata = KMImageDataFactory.create(post_type, stadata.after_sta, structure)
             KMImageGenerator.generate(imgdata, post_type, alignment_type, source_directory, self.work_directory)
             CSVManager.copy_and_export_csv(
-                imgdata.openfile_name, imgdata.imgname, post_type,
+                imgdata.openfile_name, imgdata.imgname,
                 source_directory=source_directory,
-                work_directory=self.work_directory
+                work_directory=self.work_directory,
+                replacements={f'LoadTexture, {post_type}.png,':f'LoadTexture, {imgdata.imgname}.png,'}
             )
             index, post = kmsystaxf.create(
                 i=i, station=stadata, structure=structure, target_directory=self.target_directory,

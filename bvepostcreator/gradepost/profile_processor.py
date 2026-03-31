@@ -68,7 +68,13 @@ class ProfileProcessor:
 
                 img_f_name = f'VIP{vip.VIPNO}_{key}'
                 openfile_name = f'{key}_{current_structure}용'
-                CSVManager.copy_and_export_csv(openfile_name, img_f_name, key, self.source_directory, self.work_directory)
+                CSVManager.copy_and_export_csv(
+                    open_filename=openfile_name,
+                    output_filename=img_f_name,
+                    source_directory=self.source_directory,
+                    work_directory=self.work_directory,
+                    replacements={f'LoadTexture, {key}.png,':f'LoadTexture, {img_f_name}.png,'}
+                    )
 
                 objects.append(
                     VIPObjectDATA(
