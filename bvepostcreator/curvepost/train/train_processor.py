@@ -1,4 +1,5 @@
 import fitz  # pymupdf
+import os
 
 class TrainProcessor:
     """일반철도,준고속철도,고속철도용"""
@@ -8,7 +9,7 @@ class TrainProcessor:
     def process(self, curvetype: str, station: str, cant: str, filename='output.png', source_directory='',
                            work_directory=''):
 
-        ai_file = source_directory + curvetype + '.AI'
+        ai_file = os.path.join(source_directory, curvetype + '.AI')
 
         doc = fitz.open(ai_file)
 

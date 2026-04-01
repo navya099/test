@@ -1,15 +1,12 @@
 from enum import Enum
 
-from model.curve.ipdata import IPdata
-
-
 class CurveDirection(Enum):
     LEFT = '좌향'
     RIGHT = '우향'
 
 
 #1. 곡선 구간(Line) 생성 분리
-def get_curve_lines(ip: IPdata) -> list[list]:
+def get_curve_lines(ip) -> list[list]:
     if ip.curvetype == '원곡선':
         return [['BC', ip.BC_STA], ['EC', ip.EC_STA]]
     elif ip.curvetype == '완화곡선':

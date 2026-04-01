@@ -1,15 +1,15 @@
 from common.file_io import try_read_file
 from curvepost.base_builder import CurveDATABuilder
 from curvepost.curve_util import CurveDirection
-from curvepost.preprocessor import CurvePreprocessor
+
 from model.curve.ipdata import IPdata
-from model.grade.vipdata import VIPdata
 
 
-class BVECurveDATABuilder(CurveDATABuilder):
+class BVECURVEDATABuilder(CurveDATABuilder):
     """BVE용 CURVE데이터빌더"""
     def preprocess(self, data, brokenchain):
         """전처리 메서드"""
+        from curvepost.preprocessor import CurvePreprocessor
         lines = try_read_file(data)
         lines = CurvePreprocessor.remove_duplicate_radius(lines)
         return CurvePreprocessor.process_sections(lines)
@@ -73,10 +73,10 @@ class BVECurveDATABuilder(CurveDATABuilder):
 
             if curvetype == '원곡선':
                 # STA 결정 직후
-                BC_STA = section[0][0]
-                EC_STA = section[-1][0]
-                BC_STA += broken_chain
-                EC_STA += broken_chain
+                bc_sta = section[0][0]
+                ec_sta = section[-1][0]
+                bc_sta += broken_chain
+                ec_sta += broken_chain
 
                 # IPdata 생성 (예시, 필요에 따라 STA값 할당 조정)
                 ipdata = IPdata(
@@ -85,8 +85,8 @@ class BVECurveDATABuilder(CurveDATABuilder):
                     curve_direction=direction,
                     radius=abs(selected_radius),
                     cant=abs(selected_cant),
-                    BC_STA=BC_STA,
-                    EC_STA=EC_STA
+                    BC_STA=bc_sta,
+                    EC_STA=ec_sta
                 )
                 ipdatas.append(ipdata)
                 i += 1

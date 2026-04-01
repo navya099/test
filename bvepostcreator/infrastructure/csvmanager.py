@@ -33,6 +33,8 @@ class CSVManager:
         with open(output_file, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
 
+        return output_file
+
     @staticmethod
     def insert_other_text(origin_filename: str, add_filename: str):
         """기존 파일의 최하단에 source_file의 모든 내용을 붙여넣기

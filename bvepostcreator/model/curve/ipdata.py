@@ -10,9 +10,9 @@ class IPdata:
     curve_direction: CurveDirection = CurveDirection.RIGHT  # 기본값 우향
     radius: float = 0.0
     cant: float = 0.0
-    BC_STA: float = 0.0
-    EC_STA: float = 0.0
-    SP_STA: float = 0.0
-    PC_STA: float = 0.0
-    CP_STA: float = 0.0
-    PS_STA: float = 0.0
+    BC_STA: float = None
+    EC_STA: float = None
+    SP_STA: float = None
+    PC_STA: float = None
+    CP_STA: float = None
+    PS_STA: float = None

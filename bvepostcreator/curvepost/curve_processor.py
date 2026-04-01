@@ -72,15 +72,27 @@ class CurveProcessor:
             })  # csv 원본복사 후 추출함수
 
     def filter_ipdatas(self, ipdatas, start, end):
+        """범위 필터링"""
         valid_ips = []
         for ip in ipdatas:
-            if not (start <= ip.SP_STA <= end or start <= ip.BC_STA <= end):
+            # SP, BC 둘 다 None이면 무효
+            if ip.SP_STA is None and ip.BC_STA is None:
+                self.log("STA 값 없음")
+                continue
+
+            sp_in_range = (ip.SP_STA is not None and start <= ip.SP_STA <= end)
+            bc_in_range = (ip.BC_STA is not None and start <= ip.BC_STA <= end)
+
+            # 둘 중 하나라도 범위 안에 있으면 유효
+            if not (sp_in_range or bc_in_range):
                 self.log("범위를 벗어났습니다.")
                 continue
+
             lines = get_curve_lines(ip)
             if not lines:
                 self.log("데이터 없음")
                 continue
+
             valid_ips.append((ip, lines))
         return valid_ips
 

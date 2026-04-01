@@ -1,14 +1,18 @@
 import os
 import re
 
+from curvepost.bve_curvedata_builder import BVECURVEDATABuilder
+from curvepost.c3d_curvedata_builder import CIVIL3DCURVEDATABuilder
+
+
 class CurvePreprocessor:
     @staticmethod
     def get_builder(path):
         flag = CurvePreprocessor.define_flag_from_read_file(path)
         if flag == 'BVE':
-            return BVEVIPDATABuilder()
+            return BVECURVEDATABuilder()
         elif flag == 'CIVIL3D':
-            return C3DVIPDATABuilder()
+            return CIVIL3DCURVEDATABuilder()
         else:
             raise ValueError(f"지원하지 않는 flag: {flag}")
 
