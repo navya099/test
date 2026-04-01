@@ -55,7 +55,7 @@ class GradeGenerator(BaseObjectGenerator):
         self.log(f"대상 디렉토리: {self.state.target_directory}")
 
     def output_files(self, builder_results):
-        output_manager = KMOutputManager(
+        output_manager = GradeOutputManager(
             self.work_directory,
             self.state.target_directory,
             self.state.offset,
@@ -67,8 +67,8 @@ class GradeGenerator(BaseObjectGenerator):
         self.log("파일 저장 중...")
         post_file = os.path.join(self.work_directory, 'pitch_post.txt')
         index_file = os.path.join(self.work_directory, 'pitch_index.txt')
-        GradeOutputManager.create_pitch_post_txt(builder_results, post_file)
-        GradeOutputManager.create_pitch_index_txt(builder_results, index_file)
-
+        post_data = output_manager.create_pitch_post_txt(builder_results)
+        output_manager.create_pitch_index_txt(builder_results, index_file)
+        FileSystemService.create_txt(post_file, post_data)
         self.log("파일 복사 중...")
         output_manager.copy_result_files()
