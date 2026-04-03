@@ -1,4 +1,6 @@
+from Structure.bridge import Bridge
 from Structure.structure import Structure
+from Structure.tunnel import Tunnel
 from logger import logger
 
 class StructureCollection(list):
@@ -9,7 +11,10 @@ class StructureCollection(list):
 
     def get_by_type(self, structuretype: str) -> list[Structure]:
         """구조물을 타입별로 얻기"""
-        return [s for s in self if s.structuretype == structuretype]
+        if structuretype == '터널':
+            return [s for s in self if isinstance(s, Tunnel)]
+        elif structuretype == '교량':
+            return [s for s in self if isinstance(s, Bridge)]
 
     def find_containing(self, targetsta: float) -> Structure | None:
         """targetsta가 포함된 첫 번째 구조물을 반환"""
@@ -32,8 +37,10 @@ class StructureCollection(list):
         try:
             structure = self.find_containing(sta)
             if structure:
-                return structure.structuretype
-
+                if isinstance(structure, Bridge):
+                    return '교량'
+                if isinstance(structure, Tunnel):
+                    return '터널'
         except Exception as ex:
 
             logger.error(
