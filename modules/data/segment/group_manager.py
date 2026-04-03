@@ -1,52 +1,72 @@
-from data.segment.segment_group import SegmentGroup
+from data.alignment.exception.alignment_error import NotEnoughPIPointError, InvalidGeometryError
+from data.alignment.geometry.straight.straightgeometry import StraightGeometry
+from data.segment.segment import Segment
+from data.segment.segment_group.segment_group import SegmentGroup
+from data.segment.straight_segment import StraightSegment
+
 
 class GroupManager:
     def __init__(self):
-        self.groups = []
+        self.groups: list[SegmentGroup] = []
 
     def create_curve_group(self, i, bp, ip, ep, r, isspiral) -> SegmentGroup | None:
         """커브그룹 생성 팩토리메서드"""
         return SegmentGroup.create_from_pi(i, bp, ip, ep, r, isspiral)
 
-    def find_group_near_coord(self, coord):
+    def connect_all_groups(self) -> list[StraightSegment | Segment]:
+        """전체 그룹을 순회하며 그룹 사이 직선 세그먼트 생성"""
+        segments: list[Segment] = []
+
+        for idx, group in enumerate(self.groups):
+            if group is None:
+                continue
+
+            # 그룹 내부 세그먼트 추가
+            segments.extend(group.segments)
+
+            # 다음 그룹이 있으면 직선 연결
+            if idx < len(self.groups) - 1 and self.groups[idx + 1] is not None:
+                next_group = self.groups[idx + 1]
+                start_coord = group.segments[-1].end_coord
+                end_coord = next_group.segments[0].start_coord
+                straight = StraightSegment.from_coord(
+                    start_point=start_coord,
+                    end_point=end_coord
+                )
+                segments.append(straight)
+
+        return segments
+
+    def process_segment_at_index(self, i, pi_manager):
         """
-        주어진 PI 좌표가 영향을 미치는 그룹을 반환.
-        (BP~EP 구간 안에 있는 그룹)
+        핵심 로직 내부: index 기준 세그먼트(직선/곡선) 생성
         """
-        for group in self.groups:
-            if group.ip_coordinate == coord:
-                return group  # 완전 일치
-        return None
+        n = len(pi_manager.coord_list)
+        if n < 2:
+            raise NotEnoughPIPointError()
 
-    def delete_group(self, group):
-        """지정한 그룹 삭제"""
-        self.groups.remove(group)
+        # === 곡선이 가능한 구간 ===
+        if 0 < i < n - 1:
+            bp = pi_manager.coord_list[i - 1]
+            ip = pi_manager.coord_list[i]
+            ep = pi_manager.coord_list[i + 1]
+            r = pi_manager.radius_list[i]
+            isspiral = False
 
-    def remove_group(self, group: SegmentGroup):
+            # --- 그룹 생성 시도 ---
+            group = self.create_curve_group(i, bp, ip, ep, r, isspiral)
+            if group is None:
+                raise InvalidGeometryError(f"곡선 그룹 생성 실패: PI {i}")
+
+            #그룹리스트 갱신
+            self.groups[i] = group
+            #RADIUS리스트 갱신
+            pi_manager.radius_list[i] = r
+
+    def update_group_index(self):
         """
-        그룹 삭제 + 내부 세그먼트 제거 후, 이전·다음 세그먼트 반환
+        groups 리스트에 있는 각 SegmentGroup의 인덱스를 0부터 순서대로 갱신
         """
-        if not group:
-            return None, None
-
-        prev_seg = group.segments[0].prev_index
-        next_seg = group.segments[-1].next_index
-
-        # 세그먼트는 SegmentManager에 위임
-        self.segment_manager.remove_group_segments(group.segments)
-
-        # 그룹 리스트에서 삭제
-        if group in self.groups:
-            self.groups.remove(group)
-
-        prev_seg_obj = self.segment_manager.segment_list[prev_seg] if prev_seg is not None else None
-        next_seg_obj = self.segment_manager.segment_list[next_seg] if next_seg is not None else None
-
-        return prev_seg_obj, next_seg_obj
-
-    def get_prev_next_groups(self, index):
-        """지정된 index 주변 그룹을 튜플로 반환 (None 안전하게 처리)"""
-        prev_group = self.groups[index - 1] if index > 0 else None
-        target_group = self.groups[index] if index < len(self.groups) else None
-        next_group = self.groups[index + 1] if index + 1 < len(self.groups) else None
-        return prev_group, target_group, next_group
+        for idx, group in enumerate(self.groups):
+            if group:
+                group.group_index = idx

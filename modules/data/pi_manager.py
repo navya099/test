@@ -1,77 +1,41 @@
-from data.alignment.exception.alignment_error import NotEnoughPIPointError
-from data.segment.straight_segment import StraightSegment
-from point2d import Point2d
+from AutoCAD.point2d import Point2d
+from data.alignment.exception.alignment_error import PIOutOfRangeError
 
 
 class PIManager:
     def __init__(self):
-        self.coord_list = []
-        self.radius_list = []
+        self.coord_list: list[Point2d] = []
+        self.radius_list: list[float] = []
 
-    def _insert_pi_in_segment(self, coord):
-        """
-        주어진 좌표 근처의 세그먼트에 PI를 삽입.
-        :param coord: (x, y)
-        :return: (삽입된 PI 인덱스)
-        """
+    def update_pi(self, index: int, coord: Point2d, radius: float):
+        """주어진 인덱스의 PI 좌표 업데이트"""
+        if coord:
+            self.coord_list[index] = coord
+        if radius:
+            self.radius_list[index] = radius
 
+    def remove_pi(self, index: int):
+        """주어진 인덱스의 PI 좌표 삭제"""
+        if index < 0 or index >= len(self.coord_list):
+            raise PIOutOfRangeError("PI index out of range")
+        del self.coord_list[index]
+        del self.radius_list[index]
 
-        # 2️⃣ 삽입 위치(해당 세그먼트의 인덱스) 찾기
-        seg_index = nearest_seg.current_index
+    def add_pi(self, coord: Point2d, radius: float = 0.0):
+        """가장 가까운 PI 위치를 찾아 삽입"""
+        if not self.coord_list:
+            # 리스트가 비어있으면 그냥 추가
+            self.coord_list.append(coord)
+            self.radius_list.append(radius)
+            return
 
-        #세그먼트 분활
-        new_seg = nearest_seg.split_to_segment(coord)
+        # 각 PI와의 거리 계산
+        distances = [coord.distance_to(existing) for existing in self.coord_list]
 
-        #세그먼트 리스트에 추가
-        self.segment_list.insert(seg_index + 1, new_seg)
-        #인덱스 갱신
-        self._update_prev_next_entity_id()
+        # 가장 가까운 인덱스 찾기
+        nearest_index = min(range(len(distances)), key=lambda i: distances[i])
 
-        #pi인덱스 찾기
-        prev_pi_index, next_pi_index = self._find_pi_interval(coord)
-        self.coord_list.insert(next_pi_index, coord)
+        # 해당 위치에 삽입
+        self.coord_list.insert(nearest_index, coord)
+        self.radius_list.insert(nearest_index, radius)
 
-        #그룹 재조정
-        group_index = 0
-        for group in self.groups:
-            for seg in  group.segments:
-                if seg.current_index == nearest_seg.prev_index:
-                    group_index = group.group_id - 1
-                    break
-
-        # 각각 그룹 갱신
-        prev_group = self.groups[group_index]
-        next_group = self.groups[group_index + 1]
-
-        prev_group.update_by_pi(ep_coordinate=coord)
-        next_group.update_by_pi(bp_coordinate=coord)
-
-        #직선 세그먼트 갱신
-        self._adjust_adjacent_straights(prev_group)
-        self._adjust_adjacent_straights(next_group)
-
-        #인덱스 및 그룹 및 station 갱신
-        self._update_prev_next_entity_id()
-        self._update_group_index()
-        self._update_stations()
-
-    def find_pi_interval(self, coord: Point2d) -> tuple[int, int]:
-        """
-        주어진 좌표(coord)가 어느 두 PI 사이에 속하는지 반환.
-        (예: (1,2) → coord_list[1]과 coord_list[2] 사이)
-        """
-        if len(self.coord_list) < 2:
-            raise NotEnoughPIPointError()
-
-        min_dist = float('inf')
-        nearest_index = None
-
-        for i in range(len(self.coord_list) - 1):
-            p1, p2 = self.coord_list[i], self.coord_list[i + 1]
-            seg = StraightSegment(start_coord=p1, end_coord=p2)
-            dist = seg.distance_to_point(coord)
-            if dist < min_dist:
-                min_dist = dist
-                nearest_index = i
-
-        return nearest_index, nearest_index + 1
