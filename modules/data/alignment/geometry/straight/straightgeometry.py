@@ -37,7 +37,7 @@ class StraightGeometry(SegmentGeometry):
         _ ,off = self.project_at(p)
         return abs(off)
 
-    def project_at(self,p: Point2d) -> tuple[Point2d, float]:
+    def project_at(self, p: Point2d) -> tuple[Point2d, float]:
         ax, ay = self.start_coord.x, self.start_coord.y
         bx, by = self.end_coord.x, self.end_coord.y
         px, py = p.x, p.y
@@ -46,19 +46,20 @@ class StraightGeometry(SegmentGeometry):
         seg_len_sq = dx * dx + dy * dy
 
         if seg_len_sq == 0:
-            # degenerate
-            return p, 0.0
+            # degenerate: start == end
+            return self.start_coord, p.distance_to(self.start_coord)
 
         seg_len = math.sqrt(seg_len_sq)
 
-        # 투영 비율 t (무제한, 클램프 ❌)
+        # 투영 비율 t (세그먼트 기준 클램프)
         t = ((px - ax) * dx + (py - ay) * dy) / seg_len_sq
+        t = max(0.0, min(1.0, t))
 
         # 투영점
         proj_x = ax + t * dx
         proj_y = ay + t * dy
 
-        # 좌/우 offset (외적 부호 사용)
+        # 좌/우 offset
         cross = dx * (py - ay) - dy * (px - ax)
         offset = -cross / seg_len
 
