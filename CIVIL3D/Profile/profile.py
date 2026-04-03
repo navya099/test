@@ -1,5 +1,5 @@
-from Profile.profileentitycollection import ProfileEntityCollection
-from Profile.profilepvicollection import ProfilePVICollection
+from .profileentitycollection import ProfileEntityCollection
+from .profilepvicollection import ProfilePVICollection
 
 
 class Profile:

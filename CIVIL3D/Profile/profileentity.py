@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from Profile.profileentitytype import ProfileEntityType
+from .profileentitytype import ProfileEntityType
 from utils import generate_entity_id
 
 @dataclass

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from Profile.profileentity import ProfileEntity
-from Profile.profileentitytype import ProfileEntityType
+from .profileentity import ProfileEntity
+from .profileentitytype import ProfileEntityType
 
 @dataclass
 class ProfilePVI:

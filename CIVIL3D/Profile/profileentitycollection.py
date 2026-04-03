@@ -1,4 +1,4 @@
-from Profile.profileentity import ProfileEntity
+from .profileentity import ProfileEntity
 
 
 class ProfileEntityCollection(list):

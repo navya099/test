@@ -1,5 +1,5 @@
-from Profile.profileentitytype import ProfileEntityType
-from Profile.profilepvi import ProfilePVI
+from .profileentitytype import ProfileEntityType
+from .profilepvi import ProfilePVI
 
 
 class ProfilePVICollection(list):
