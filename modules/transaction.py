@@ -49,18 +49,3 @@ class Transaction:
         self._backup = None
         self._active = False
         print("Transaction aborted.")
-
-
-polyline = {"vertex1": {"x": 1, "y": 2}, "vertex2": {"x": 3, "y": 4}}
-
-try:
-    with Transaction(polyline) as tr:
-        # Vertex 1 수정
-        polyline["vertex1"]["x"] = 5
-        polyline["vertex2"]["y"] = 10
-        # commit은 블록 끝에서 자동 호출됨
-        raise RuntimeError("테스트용 예외")
-except Exception as e:
-    print("Error:", e)
-
-print(polyline)

@@ -356,8 +356,7 @@ def is_invalid_arc(bp: any, ip: any, ep: any, radius: float) -> tuple[bool, str]
 
     return False,"에러 없음"
 
-#교각 계산
-def calculator_internal_angle(p1 ,p2, p3):
+def calculator_internal_angle(p1,p2,p3):
     v1 = calculate_bearing(p1, p2)
     v2 = calculate_bearing(p2, p3)
     # ±π 범위로 보정

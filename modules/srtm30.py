@@ -71,7 +71,7 @@ class SrtmDEM30:
             # KML 범위에 포함되거나 주변 1도 버퍼 포함
             if self.min_lat - 1 <= lat_tile <= self.max_lat + 1 and self.min_lon - 1 <= lon_tile <= self.max_lon + 1:
                 selected_files.append(f)
-        print(f"선택된 DEM 타일 수: {len(selected_files)}")
+        #print(f"선택된 DEM 타일 수: {len(selected_files)}")
         self.selected_files = selected_files
         if not selected_files:
             raise ValueError("KML 범위에 맞는 DEM 파일을 찾을 수 없습니다.")
