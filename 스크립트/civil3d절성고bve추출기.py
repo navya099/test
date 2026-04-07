@@ -1,9 +1,10 @@
 import pandas as pd
-from tkinter import Tk, filedialog, Label, Button
+from tkinter import Tk, filedialog, Label, Button, Checkbutton, IntVar, Frame
 import os
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import List, Union
+from typing import List, Union, overload
+
 
 class Parser:
     @staticmethod
@@ -20,7 +21,7 @@ class Parser:
         return df.applymap(clean_cell)
 
     @staticmethod
-    def read_xls_files(filepaths) -> list[tuple[str, pd.DataFrame]]:
+    def read_xls_files(filepaths) -> pd.DataFrame:
         df = pd.read_excel(filepaths)
         return df
 
@@ -70,7 +71,6 @@ class Block:
         self.ground = None
         self.height = None
 
-
 def load_xls(root):
     file_path = filedialog.askopenfilename(title="엑셀 파일을 선택하세요")
     if not file_path:
@@ -99,47 +99,44 @@ def save_txt(bve_text_dict: dict):
     except Exception as e:
         print(f"파일 저장 오류: {e}")
 
-def process_dataframe(df, bvedata: BVEData):
-    rows = df.iloc[16:]
+def calc_elevation_diff(row):
+    ground_elevation = row[4] if not pd.isna(row[4]) else 0.0
+    rail_elevation = row[5] if not pd.isna(row[5]) else 0.0
+    return ground_elevation - rail_elevation
 
-    # 필요한 block 수만큼 생성
+def make_rails(trackposition, elevation_diff, offset):
+    return [
+        Rail(trackposition, rail_index=200, x_offset=-elevation_diff*1.5,
+             y_offset=elevation_diff, obj_index=87),
+        Rail(trackposition, rail_index=201, x_offset=(elevation_diff*1.5)+offset,
+             y_offset=elevation_diff, obj_index=88)
+    ]
+
+def make_ground_height(trackposition, elevation_diff):
+    ground_idx = 0 if -elevation_diff > 1 else 3
+    return Ground(trackposition, obj_index=ground_idx), Height(trackposition, height=-elevation_diff)
+
+def process_dataframe(df, bvedata: BVEData, mode):
+    rows = df.iloc[16:]
+    offset = 4.3 if mode == 1 else 0.0
+
     while len(bvedata.blocks) < len(rows):
         bvedata.blocks.append(Block())
 
-    # 인덱스 정의
-    left_nori_idx = 200 # 좌측사면 인덱스
-    right_nori_idx = 201 # 우측사면 인덱스
-    left_nori_obj_idx = 87 # 좌측사면오브젝트 인덱스
-    right_nori_obj_idx = 88 # 우측사면 오브젝트 인덱스
-
     for i, (_, row) in enumerate(rows.iterrows()):
         trackposition = row[1] if not pd.isna(row[1]) else 0.0
-        ground_elevation = row[4] if not pd.isna(row[4]) else 0.0
-        rail_elevation = row[5] if not pd.isna(row[5]) else 0.0
-        elevation_diff = ground_elevation - rail_elevation
+        elevation_diff = calc_elevation_diff(row)
+
+        rails = make_rails(trackposition, elevation_diff, offset)
+        ground, height = make_ground_height(trackposition, elevation_diff)
 
         bvedata.blocks[i].track_position = trackposition
-        bvedata.blocks[i].rails.append(Rail(trackposition=trackposition,
-                                            rail_index=left_nori_idx,
-                                            x_offset=-elevation_diff * 1.5,
-                                            y_offset=-elevation_diff,
-                                            obj_index= left_nori_obj_idx
-                                            )
-                                       )
-        bvedata.blocks[i].rails.append(Rail(trackposition=trackposition,
-                                            rail_index=right_nori_idx,
-                                            x_offset=elevation_diff * 1.5,
-                                            y_offset=-elevation_diff,
-                                            obj_index=right_nori_obj_idx
-                                            )
-                                       )
+        bvedata.blocks[i].rails.extend(rails)
+        bvedata.blocks[i].ground = ground
+        bvedata.blocks[i].height = height
 
-
-        # 절성고
-        ground_indx = 0 if -elevation_diff > 0 else 3
-        bvedata.blocks[i].ground = Ground(trackposition=trackposition,obj_index=ground_indx)
-        bvedata.blocks[i].height = Height(trackposition=trackposition,height=-elevation_diff)
     return bvedata
+
 
 def create_bve_systax(bvedata):
     bve_text_dict = {}
@@ -148,28 +145,28 @@ def create_bve_systax(bvedata):
         bve_text_dict['좌측사면'] = bve_text_dict.get('좌측사면', []) + [block.rails[0].to_bve()]
         bve_text_dict['우측사면'] = bve_text_dict.get('우측사면', []) + [block.rails[1].to_bve()]
         bve_text_dict['ground'] = bve_text_dict.get('ground', []) + [block.ground.to_bve()]
-        bve_text_dict['절성고'] = bve_text_dict.get('절성고', []) + [block.height.to_bve()]
+        bve_text_dict['height'] = bve_text_dict.get('height', []) + [block.height.to_bve()]
     return bve_text_dict
 
-def convert_dataframe_to_raildata(xls_files):
+def convert_dataframe_to_raildata(xls_files, mode):
     dataframe = Parser.read_xls_files(xls_files)
     df = Parser.preprocess(dataframe)
     bvedata = BVEData()
-    bvedata = process_dataframe(df, bvedata)
+    bvedata = process_dataframe(df, bvedata, mode)
     bve_text_list = create_bve_systax(bvedata)
 
     return bve_text_list
 
 
-def run(file_path):
-    raildata = convert_dataframe_to_raildata(file_path)
+def run(file_path, mode):
+    raildata = convert_dataframe_to_raildata(file_path, mode)
     return raildata
 
-def on_run_button_click(root, label):
+def on_run_button_click(root, label, mode):
     folder_path = load_xls(root)
     if folder_path:
         label.config(text="파일 처리 중...")
-        raildata = run(folder_path)
+        raildata = run(folder_path, mode)
         save_txt(raildata)
         label.config(text="파일 저장 완료!")
 
@@ -177,14 +174,23 @@ def main():
     root = Tk()
     root.title("BVE 절성고 파일 생성기")
 
-    # GUI 구성
     label = Label(root, text="엑셀 파일을 선택하고 처리 버튼을 클릭하세요.", width=50, height=2)
     label.pack(pady=20)
 
-    run_button = Button(root, text="파일 처리 시작", command=lambda: on_run_button_click(root, label), width=20)
-    run_button.pack(pady=10)
+    # 프레임 안에 체크박스와 버튼 배치
+    frame = Frame(root)
+    frame.pack(pady=10)
+
+    check_var = IntVar()
+    c1 = Checkbutton(frame, text="복선", variable=check_var)
+    c1.grid(row=0, column=0, padx=10)
+
+    run_button = Button(frame, text="파일 처리 시작",
+                        command=lambda: on_run_button_click(root, label, check_var.get()), width=20)
+    run_button.grid(row=0, column=1)
 
     root.mainloop()
+
 
 if __name__ == '__main__':
     main()
