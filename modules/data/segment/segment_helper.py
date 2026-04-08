@@ -1,3 +1,4 @@
+from data.segment.cubic_segment import CubicSegment
 from data.segment.curve_segment import CurveSegment
 from data.segment.straight_segment import StraightSegment
 from math_utils import draw_arc
@@ -20,5 +21,15 @@ class SegmentHelper:
         if isinstance(seg, StraightSegment):
             return None
         if isinstance(seg, CurveSegment):
-            return seg.midpoint
+            return seg.midpoint.x, seg.midpoint.y
         return None
+
+    @staticmethod
+    def get_color(seg):
+        """세그먼트 컬러링 헬퍼"""
+        colors = {
+            StraightSegment: "blue",
+            CurveSegment: "orange",
+            CubicSegment: "green"
+        }
+        return colors.get(seg.__class__, "gray")
