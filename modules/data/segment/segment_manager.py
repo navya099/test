@@ -15,8 +15,8 @@ class SegmentManager:
     def add_boundary_straights(self, segments, coord_list, groups):
         """시작과 끝 직선 세그먼트 추가"""
         # 시작 직선
-        if groups[0] is not None:
-            first_group = groups[0]
+        if len(groups) > 1 and groups[1] is not None:
+            first_group = groups[1]
             bp = coord_list[0]
             start_coord = bp
             end_coord = first_group.segments[0].start_coord
@@ -24,8 +24,8 @@ class SegmentManager:
             segments.insert(0, start_straight)
 
         # 끝 직선
-        if groups[-1] is not None:
-            last_group = groups[-1]
+        if len(groups) > 1 and groups[-2] is not None:
+            last_group = groups[-2]
             ep = coord_list[-1]
             start_coord = last_group.segments[-1].end_coord
             end_coord = ep
