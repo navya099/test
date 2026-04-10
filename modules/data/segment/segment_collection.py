@@ -83,6 +83,18 @@ class SegmentCollection:
         self._pi_manager.add_pi(coord=pipoint, radius=radius)
         self.create_by_pi_coords(self.coord_list, self.radius_list)
 
+    def update_bp_ep(self, index, point):
+        """노선 시작점(BP), 끝점(EP) 갱신 API"""
+        if not self.coord_list:
+            return
+        # 시작점(0) 또는 끝점(len-1)만 허용
+        if index != 0 and index != len(self.coord_list) - 1:
+            return
+        # 좌표 갱신
+        self._pi_manager.update_pi(index=index, coord=point, radius=None)
+        # 세그먼트 재생성
+        self.create_by_pi_coords(self.coord_list, self.radius_list)
+
     #내부 비공개 메서드
     #private
     def _update_attirbutes(self):
