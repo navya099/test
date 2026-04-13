@@ -13,33 +13,18 @@ class GroupManager:
         """커브그룹 생성 팩토리메서드"""
         return SegmentGroup.create_from_pi(i, bp, ip, ep, r, isspiral)
 
-    def connect_all_groups(self) -> list[StraightSegment | Segment]:
-        """전체 그룹을 순회하며 그룹 사이 직선 세그먼트 생성"""
-        segments: list[Segment] = []
-
-        for idx, group in enumerate(self.groups):
-            if group is None:
-                continue
-
-            # 그룹 내부 세그먼트 추가
-            segments.extend(group.segments)
-
-            # 다음 그룹이 있으면 직선 연결
-            if idx < len(self.groups) - 1 and self.groups[idx + 1] is not None:
-                next_group = self.groups[idx + 1]
-                start_coord = group.segments[-1].end_coord
-                end_coord = next_group.segments[0].start_coord
-                straight = StraightSegment.from_coord(
-                    start_point=start_coord,
-                    end_point=end_coord
-                )
-                segments.append(straight)
-
+    def collect_segments(self) -> list[Segment]:
+        """모든 그룹 내부 세그먼트를 모아 반환"""
+        segments = []
+        for group in self.groups:
+            if group:
+                segments.extend(group.segments)
         return segments
 
-    def process_segment_at_index(self, i, pi_manager):
+
+    def create_group_at_index(self, i, pi_manager):
         """
-        핵심 로직 내부: index 기준 세그먼트(직선/곡선) 생성
+        핵심 로직 내부: index 기준 그룹 생성
         """
         n = len(pi_manager.coord_list)
         if n < 2:
@@ -54,6 +39,8 @@ class GroupManager:
             isspiral = False
 
             # --- 그룹 생성 시도 ---
+            if r is None:
+                return
             group = self.create_curve_group(i, bp, ip, ep, r, isspiral)
             if group is None:
                 raise InvalidGeometryError(f"곡선 그룹 생성 실패: PI {i}")

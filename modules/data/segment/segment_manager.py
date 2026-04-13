@@ -1,38 +1,47 @@
-from AutoCAD.point2d import Point2d
-from data.alignment.geometry.segmentgeometry import SegmentGeometry
-from data.alignment.geometry.straight.straightgeometry import StraightGeometry
-from data.segment.curve_segment import CurveSegment
-from data.segment.exception.segment_exception import SegmentNotFoundError
-from data.segment.segment_group.segment_group import SegmentGroup
-
 from data.segment.straight_segment import StraightSegment
-
 
 class SegmentManager:
     def __init__(self):
         self.segment_list = []
 
-    def add_boundary_straights(self, segments, coord_list, groups):
-        """시작과 끝 직선 세그먼트 추가"""
-        # 시작 직선
-        if len(groups) > 1 and groups[1] is not None:
-            first_group = groups[1]
-            bp = coord_list[0]
-            start_coord = bp
-            end_coord = first_group.segments[0].start_coord
-            start_straight = StraightSegment.from_coord(start_point=start_coord, end_point=end_coord)
-            segments.insert(0, start_straight)
+    def build_segments(self, coord_list, groups):
+        """BP→EP까지 순서대로 세그먼트 빌드"""
+        segments = []
 
-        # 끝 직선
-        if len(groups) > 1 and groups[-2] is not None:
-            last_group = groups[-2]
-            ep = coord_list[-1]
-            start_coord = last_group.segments[-1].end_coord
-            end_coord = ep
-            end_straight = StraightSegment.from_coord(start_point=start_coord, end_point=end_coord)
-            segments.append(end_straight)
+        for idx in range(len(coord_list) - 1):
+            current_group = groups[idx]
+            next_group = groups[idx + 1]
 
-        return segments
+            # 현재 좌표의 끝점 결정
+            if current_group:
+                current_end = current_group.segments[-1].end_coord
+                segments.extend(current_group.segments)
+            else:
+                current_end = coord_list[idx]
+
+            # 다음 좌표의 시작점 결정
+            if next_group:
+                next_start = next_group.segments[0].start_coord
+            else:
+                next_start = coord_list[idx + 1]
+
+            # 직선 연결
+            self._append_unique(
+                segments,
+                StraightSegment.from_coord(start_point=current_end, end_point=next_start)
+            )
+
+        self.segment_list = segments
+        self.update_prev_next_entity_id()
+        self.update_stations()
+
+    def _append_unique(self, segments, seg):
+        """중복 방지 직선 추가"""
+        for s in segments:
+            if (s.start_coord == seg.start_coord and s.end_coord == seg.end_coord) or \
+                    (s.start_coord == seg.end_coord and s.end_coord == seg.start_coord):
+                return
+        segments.append(seg)
 
     def update_prev_next_entity_id(self):
         """전체 세그먼트 인덱스 연결"""

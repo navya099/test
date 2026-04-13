@@ -48,12 +48,10 @@ class SegmentCollection:
         i = 0
         try:
             for i in range(n - 1):
-                self._group_manager.process_segment_at_index(i, self._pi_manager)
+                self._group_manager.create_group_at_index(i, self._pi_manager)
 
             # 그룹 연결 + 경계 직선 추가 → 세그먼트 리스트 완성
-            segments = self._group_manager.connect_all_groups()
-            segments = self._segment_manager.add_boundary_straights(segments, coord_list, self._group_manager.groups)
-            self._segment_manager.segment_list = segments
+            self._segment_manager.build_segments(self.coord_list, self.groups)
 
             # 세그먼트 인덱스/STA 갱신
             self._update_attirbutes()
