@@ -22,20 +22,30 @@ class PIManager:
         del self.radius_list[index]
 
     def add_pi(self, coord: Point2d, radius: float = 0.0):
-        """가장 가까운 PI 위치를 찾아 삽입"""
+        """BP→EP 진행 방향 기준으로 PI 삽입"""
         if not self.coord_list:
-            # 리스트가 비어있으면 그냥 추가
             self.coord_list.append(coord)
             self.radius_list.append(radius)
             return
 
-        # 각 PI와의 거리 계산
-        distances = [coord.distance_to(existing) for existing in self.coord_list]
+        bp = self.coord_list[0]
+        # 각 PI까지의 BP 기준 거리
+        distances = [bp.distance_to(c) for c in self.coord_list]
+        new_dist = bp.distance_to(coord)
 
-        # 가장 가까운 인덱스 찾기
-        nearest_index = min(range(len(distances)), key=lambda i: distances[i])
+        # 삽입 위치 결정
+        insert_index = 0
+        for i, d in enumerate(distances):
+            if new_dist > d:
+                insert_index = i + 1
 
-        # 해당 위치에 삽입
-        self.coord_list.insert(nearest_index, coord)
-        self.radius_list.insert(nearest_index, radius)
+        self.coord_list.insert(insert_index, coord)
+        self.radius_list.insert(insert_index, radius)
+
+        # 안전하게 정렬 (BP→EP 방향)
+        combined = list(zip(self.coord_list, self.radius_list))
+        combined.sort(key=lambda x: bp.distance_to(x[0]))
+        self.coord_list, self.radius_list = zip(*combined)
+        self.coord_list = list(self.coord_list)
+        self.radius_list = list(self.radius_list)
 
