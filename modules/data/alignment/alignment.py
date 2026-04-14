@@ -122,3 +122,10 @@ class Alignment:
         print(f"Total length: {self.length:.3f} m")
         print(f"PI count: {len(self.collection.coord_list)}")
         print(f"Segment count: {len(self.collection.segment_list)}")
+
+    #내부 비공개 메서드
+    def _update_with_transaction(self, func, *args, **kwargs):
+        """트랜잭션을 걸고 특정 작업 실행"""
+        from transaction import Transaction
+        with Transaction(self.collection):
+            func(*args, **kwargs)
