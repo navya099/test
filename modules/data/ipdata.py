@@ -1,7 +1,8 @@
 from dataclasses import field, dataclass
 from typing import Self
 
-from point2d import Point2d
+from AutoCAD.point2d import Point2d
+
 
 @dataclass
 class PIData:
