@@ -22,7 +22,7 @@ class GroupManager:
         return segments
 
 
-    def create_group_at_index(self, i, pi_manager):
+    def create_group_at_index(self, i, pi_manager, radius_manger):
         """
         핵심 로직 내부: index 기준 그룹 생성
         """
@@ -35,7 +35,7 @@ class GroupManager:
             bp = pi_manager.coord_list[i - 1]
             ip = pi_manager.coord_list[i]
             ep = pi_manager.coord_list[i + 1]
-            r = pi_manager.radius_list[i]
+            r = radius_manger.radius_list[i]
             isspiral = False
 
             # --- 그룹 생성 시도 ---
@@ -48,7 +48,7 @@ class GroupManager:
             #그룹리스트 갱신
             self.groups[i] = group
             #RADIUS리스트 갱신
-            pi_manager.radius_list[i] = r
+            radius_manger.radius_list[i] = r
 
     def update_group_index(self):
         """

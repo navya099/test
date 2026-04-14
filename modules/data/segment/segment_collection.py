@@ -1,5 +1,7 @@
 from AutoCAD.point2d import Point2d
 from data.alignment.exception.alignment_error import NoUpdatePIError, CurveCreationError
+from data.curve_manager import CurveManager
+from data.pi_helper import PIHelper
 
 from data.segment.group_manager import GroupManager
 from data.pi_manager import PIManager
@@ -12,6 +14,7 @@ class SegmentCollection:
     """SegmentGroup 관리 컬렉션"""
     def __init__(self):
         self._pi_manager = PIManager()
+        self._curve_manager = CurveManager()
         self._segment_manager = SegmentManager()
         self._group_manager = GroupManager()
 
@@ -24,7 +27,7 @@ class SegmentCollection:
     @property
     def radius_list(self) -> list[float]:
         """곡선반경 리스트"""
-        return self._pi_manager.radius_list
+        return self._curve_manager.radius_list
 
     @property
     def segment_list(self) -> list[Segment]:
@@ -36,10 +39,11 @@ class SegmentCollection:
         """그룹들"""
         return self._group_manager.groups
 
+    #핵심 메서드
     def create_by_pi_coords(self, coord_list, radius_list):
         """PI와 radius 리스트로 전체 세그먼트 빌드"""
         self._pi_manager.coord_list = coord_list
-        self._pi_manager.radius_list = radius_list
+        self._curve_manager.radius_list = radius_list
         self._group_manager.groups = [None] * len(coord_list)
         self._segment_manager.segment_list.clear()
 
@@ -48,7 +52,7 @@ class SegmentCollection:
         i = 0
         try:
             for i in range(n - 1):
-                self._group_manager.create_group_at_index(i, self._pi_manager)
+                self._group_manager.create_group_at_index(i, self._pi_manager, self._curve_manager)
 
             # 그룹 연결 + 경계 직선 추가 → 세그먼트 리스트 완성
             self._segment_manager.build_segments(self.coord_list, self.groups)
@@ -63,22 +67,25 @@ class SegmentCollection:
         """공개API 주어진 PI와 radius로 업데이트"""
         if index <= 0 or index >= len(self.coord_list) - 1:
             raise NoUpdatePIError(index)
-        self._update_pi(index=index, pipoint=pipoint, radius=radius)
-
-    def _update_pi(self, index=None, pipoint=None, radius=None):
-        """pi 갱신 API"""
-        self._pi_manager.update_pi(index=index, coord=pipoint, radius=radius)
-        self.create_by_pi_coords(self.coord_list, self.radius_list)
+        if pipoint is not None:
+            self.update_pi(index=index, pipoint=pipoint)
+        if radius is not None:
+            self.update_curve(index=index, radius=radius)
 
     def remove_pi(self, index=None):
-
         """pi 삭제 API"""
         self._pi_manager.remove_pi(index=index)
+        self._curve_manager.remove_curve(index=index)
         self.create_by_pi_coords(self.coord_list, self.radius_list)
 
-    def add_pi(self, pipoint=None, radius=None):
+    def add_pi(self, pipoint=None):
         """pi 추가 API"""
-        self._pi_manager.add_pi(coord=pipoint, radius=radius)
+        self._pi_manager.add_pi(coord=pipoint)
+        self.create_by_pi_coords(self.coord_list, self.radius_list)
+
+    def update_pi(self, index=None, pipoint=None):
+        """pi 갱신 API"""
+        self._pi_manager.update_pi(index=index, coord=pipoint)
         self.create_by_pi_coords(self.coord_list, self.radius_list)
 
     def update_bp_ep(self, index, point):
@@ -89,7 +96,20 @@ class SegmentCollection:
         if index != 0 and index != len(self.coord_list) - 1:
             return
         # 좌표 갱신
-        self._pi_manager.update_pi(index=index, coord=point, radius=None)
+        self._pi_manager.update_pi(index=index, coord=point)
+        # 세그먼트 재생성
+        self.create_by_pi_coords(self.coord_list, self.radius_list)
+
+    def update_curve(self, index, radius):
+        """곡선 업데이트 API"""
+        if not self.coord_list:
+            return
+        if not self.radius_list:
+            return
+        if index == 0 and index == len(self.coord_list) - 1:
+            return
+        #곡선갱신
+        self._curve_manager.update_curve(index=index, radius=radius)
         # 세그먼트 재생성
         self.create_by_pi_coords(self.coord_list, self.radius_list)
 
