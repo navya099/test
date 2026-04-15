@@ -81,6 +81,8 @@ class SegmentCollection:
     def add_pi(self, pipoint=None):
         """pi 추가 API"""
         self._pi_manager.add_pi(coord=pipoint)
+        insert_index = PIHelper.find_insert_index(self.coord_list, pipoint)
+        self.add_curve(insert_index=insert_index, radius=None)
         self.create_by_pi_coords(self.coord_list, self.radius_list)
 
     def update_pi(self, index=None, pipoint=None):
@@ -99,6 +101,9 @@ class SegmentCollection:
         self._pi_manager.update_pi(index=index, coord=point)
         # 세그먼트 재생성
         self.create_by_pi_coords(self.coord_list, self.radius_list)
+
+    def add_curve(self, insert_index=None, radius=None):
+        self._curve_manager.add_curve(insert_index=insert_index, radius=radius)
 
     def update_curve(self, index, radius):
         """곡선 업데이트 API"""

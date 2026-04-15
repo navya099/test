@@ -1,11 +1,16 @@
 from AutoCAD.point2d import Point2d
 from data.alignment.exception.alignment_error import PIOutOfRangeError
+from data.pi_helper import PIHelper
 
 
 class CurveManager:
     """곡선 관리클래스"""
     def __init__(self):
         self.radius_list: list[float | None] = []
+
+    def add_curve(self, insert_index, radius):
+        """곡선 추가"""
+        self.radius_list.insert(insert_index, radius)
 
     def update_curve(self, index: int, radius: float | None):
         """곡선 반경 갱신/삭제"""
