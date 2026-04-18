@@ -4,12 +4,32 @@ from tkinter.filedialog import askopenfilename
 import os
 import meshio
 from rasterio.merge import merge
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 import numpy as np
 import rasterio
 
 from coordinate_utils import convert_coordinates
 from srtm30 import SrtmDEM30
+import geopandas as gpd
+from shapely.geometry import box
+
+#전역변수
+qml_template = """<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+    <qgis version="3.16" styleCategories="Symbology">
+      <renderer-v2 type="singleSymbol">
+        <symbols>
+          <symbol name="0" type="fill" alpha="1">
+            <layer pass="0" class="SimpleFill" locked="0">
+              <prop k="color" v="255,255,255,0"/> <!-- 채우기 없음 -->
+              <prop k="outline_color" v="0,0,0,255"/> <!-- 외곽선 검정 -->
+              <prop k="outline_width" v="0.1"/> <!-- 외곽선 두께 -->
+              <prop k="style" v="no"/> <!-- 내부 채움 없음 -->
+            </layer>
+          </symbol>
+        </symbols>
+      </renderer-v2>
+    </qgis>
+    """
 
 def read_coordinates(file_path):
     with open(file_path, 'r') as file:
@@ -46,79 +66,101 @@ def save_dem_as_obj(band, transform, filename):
     mesh = meshio.Mesh(points=vertices, cells=[("triangle", np.array(faces))])
     meshio.write(filename, mesh)
 
-# 좌표 읽기
-file = askopenfilename()
-read_coords = read_coordinates(file)
+def sampling_coords(coords: list, distance_m: int, base_interval_m: int = 25):
+    """
+    coords: [(x,y,z), ...] EPSG:5186 좌표 (미터 단위)
+    distance_m: 샘플링 간격 (미터)
+    base_interval_m: 원본 좌표 간격 (기본값 25m)
+    """
+    step = distance_m // base_interval_m  # 인덱스 간격 계산
+    return [(x, y) for i, (x, y, z) in enumerate(coords) if i % step == 0]
 
-# 200m 간격 샘플링
-xy_list = [(x,y) for i,(x,y,z) in enumerate(read_coords) if i % 200 == 0]
 
-# EPSG:5186 좌표계 그대로 사용 (미터 단위)
-line = LineString(xy_list)
+def _create_buffered(xy_list, buffer_m: int):
+    # 구간 분할 설정
+    segments = []
+    for idx, (x, y) in enumerate(xy_list, start=1):
+        point = Point(x, y)  # 샘플링된 점 자체를 중심점으로 사용
+        buffered = point.buffer(buffer_m)  # 좌우 1km 버퍼
+        segments.append(buffered.bounds)
 
-# 구간 분할 설정
-segment_length = 2000  # 10km
-buffer_m = 1000         # 좌우 1km 여유
+    # 마지막 점도 별도로 저장
+    last_point = Point(xy_list[-1][0], xy_list[-1][1])
+    buffered_last = last_point.buffer(buffer_m)
+    last_segment = buffered_last.bounds
 
-total_length = line.length
-segments = []
-d = 0
-while d < total_length:
-    point = line.interpolate(d)
-    buffered = point.buffer(buffer_m)  # 미터 단위 버퍼
-    segments.append(buffered.bounds)
-    d += segment_length
+    return segments, last_segment
 
-# ✅ 마지막 구간 추가 (노선 끝점 기준)
-point = line.interpolate(total_length)
-buffered = point.buffer(buffer_m)
-last_segment = buffered.bounds
+def extract_dem_and_obj(segments, strm: SrtmDEM30):
+    # 각 구간별 DEM 추출
+    for idx, (minx, miny, maxx, maxy) in enumerate(segments, start=1):
+        bounds_4326 = convert_coordinates([(minx, miny), (maxx, maxy)], 5186, 4326)
+        minx, miny = bounds_4326[0]
+        maxx, maxy = bounds_4326[1]
 
-# 폴더 초기화
-shutil.rmtree("C:/temp/OBJ", ignore_errors=True)
-os.makedirs("C:/temp/OBJ", exist_ok=True)
+        datasets = [rasterio.open(f) for f in strm.selected_files]
+        mosaic, out_transform = merge(datasets, bounds=(minx, miny, maxx, maxy))
+        band = mosaic[0]
 
-# DEM 클래스 호출 (WGS84 좌표 필요)
-converterd_coord = convert_coordinates(xy_list, 5186, 4326)
-strm = SrtmDEM30(converterd_coord)
+        # ✅ 모든 표고값에 +100 더하기
+        band = band + 100
 
-start_time = time.time()
+        save_dem_as_obj(band, out_transform, f"C:/temp/OBJ/terrain_part_{idx}.obj")
 
-# 각 구간별 DEM 추출
-for idx, (minx, miny, maxx, maxy) in enumerate(segments, start=1):
-    bounds_4326 = convert_coordinates([(minx, miny), (maxx, maxy)], 5186, 4326)
-    minx, miny = bounds_4326[0]
-    maxx, maxy = bounds_4326[1]
+        for ds in datasets:
+            ds.close()
 
-    datasets = [rasterio.open(f) for f in strm.selected_files]
-    mosaic, out_transform = merge(datasets, bounds=(minx, miny, maxx, maxy))
-    band = mosaic[0]
+def save_shp(segments):
+    # 구간별 Shapefile 저장
+    shutil.rmtree("C:/temp/shp/", ignore_errors=True)
+    os.makedirs("C:/temp/shp/", exist_ok=True)
 
-    # ✅ 모든 표고값에 +100 더하기
-    band = band + 100
+    for idx, (minx, miny, maxx, maxy) in enumerate(segments, start=1):
+        poly = box(minx, miny, maxx, maxy)
+        gdf = gpd.GeoDataFrame([{"id": idx, "geometry": poly}], crs="EPSG:5186")
+        out_shp = f"C:/temp/shp/segment_{idx}.shp"
+        gdf.to_file(out_shp)
+        #print("저장 완료:", out_shp)
 
-    save_dem_as_obj(band, out_transform, f"C:/temp/OBJ/terrain_part_{idx}.obj")
+def save_qml(segments):
+    # 구간별 QML 생성
+    for idx in range(1, len(segments) + 1):
+        qml_path = f"C:/temp/shp/segment_{idx}.qml"
+        with open(qml_path, "w", encoding="utf-8") as f:
+            f.write(qml_template)
+        #print("QML 저장 완료:", qml_path)
 
-    for ds in datasets:
-        ds.close()
+def main():
+    # 좌표 읽기
+    file = askopenfilename()
+    read_coords = read_coordinates(file)
+    xy_list = sampling_coords(read_coords, 2000) #1km간격 샘플링
 
-# ✅ 마지막 구간은 특별히 표시된 파일 이름으로 저장
-minx, miny, maxx, maxy = last_segment
-bounds_4326 = convert_coordinates([(minx, miny), (maxx, maxy)], 5186, 4326)
-minx, miny = bounds_4326[0]
-maxx, maxy = bounds_4326[1]
+    segments, last_segment = _create_buffered(xy_list, 1000)
 
-datasets = [rasterio.open(f) for f in strm.selected_files]
-mosaic, out_transform = merge(datasets, bounds=(minx, miny, maxx, maxy))
-band = mosaic[0]
+    # 폴더 초기화
+    shutil.rmtree("C:/temp/OBJ", ignore_errors=True)
+    os.makedirs("C:/temp/OBJ", exist_ok=True)
 
-# ✅ 모든 표고값에 +100 더하기
-band = band + 100
+    # DEM 클래스 호출 (WGS84 좌표 필요)
+    converterd_coord = convert_coordinates(xy_list, 5186, 4326)
+    strm = SrtmDEM30(converterd_coord)
 
-save_dem_as_obj(band, out_transform, "C:/temp/OBJ/terrain_last.obj")
+    start_time = time.time()
 
-for ds in datasets:
-    ds.close()
+    # 각 구간별 DEM 추출
+    print('각 구간별 DEM 추출')
+    extract_dem_and_obj(segments, strm)
+    #구간별 Shapefile 저장
+    print('구간별 Shapefile 저장')
+    save_shp(segments)
+    print('구간별 QML 생성')
+    # 구간별 QML 생성
+    save_qml(segments)
+    elapsed = time.time() - start_time
+    print(f'작업 완료: {elapsed}')
 
-elapsed = time.time() - start_time
-print(f"전체 완료! 총 소요시간: {elapsed:.1f}초")
+if __name__ == '__main__':
+    main()
+
+
