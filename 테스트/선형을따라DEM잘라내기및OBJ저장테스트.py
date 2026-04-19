@@ -11,6 +11,7 @@ from coordinate_utils import convert_coordinates
 from srtm30 import SrtmDEM30
 import geopandas as gpd
 from shapely.geometry import box
+from shapely.ops import nearest_points
 from rasterio.crs import CRS
 
 #전역변수
@@ -168,46 +169,81 @@ def save_qml(segments):
             f.write(qml_template)
         #print("QML 저장 완료:", qml_path)
 
+
 class MeshModifier:
     def __init__(self, mesh):
         self.mesh = mesh
 
-    def add_slope(self, track_edges, dem: SrtmDEM30, slope_ratio, width=25, side="left"):
+    def add_slope(self, track_edges, dem: SrtmDEM30, slope_ratio, side="left"):
         slope_side = []
-        for (x, y, z) in track_edges:
-            # DEM에서 해당 좌표의 표고 추출
-            long, lat = convert_coordinates([x,y], 5186, 4326) #좌표변환
-            dem_z = dem.get_elevation(long, lat)  # DEM 클래스에서 제공하는 함수라고 가정
-            dem_z += 100
-            # 성토/절토 자동 판정
-            z_dir = -slope_ratio if z > dem_z else slope_ratio
+        n = len(track_edges)
 
-            # 좌/우 방향 벡터
-            dx, dy = track_edges[-1][0] - track_edges[0][0], track_edges[-1][1] - track_edges[0][1]
-            length = np.sqrt(dx ** 2 + dy ** 2)
-            nx, ny = -dy / length, dx / length
+        for i in range(n):
+            x, y, z = track_edges[i]
 
-            if side == "left":
-                offset_vec = np.array([nx, ny, z_dir])
+            # 1. 해당 지점의 법선 벡터(Normal Vector) 계산
+            # 현재 점과 다음 점(또는 이전 점)을 이용하여 진행 방향의 수직 벡터를 구함
+            if i < n - 1:
+                dx = track_edges[i + 1][0] - x
+                dy = track_edges[i + 1][1] - y
             else:
-                offset_vec = np.array([-nx, -ny, z_dir])
+                dx = x - track_edges[i - 1][0]
+                dy = y - track_edges[i - 1][1]
 
-            slope_side.append((x + offset_vec[0] * width,
-                               y + offset_vec[1] * width,
-                               z + offset_vec[2] * width))
+            length = np.sqrt(dx ** 2 + dy ** 2)
+            nx, ny = (-dy / length, dx / length) if side == "left" else (dy / length, -dx / length)
 
-        # 트랙 edge와 slope edge 연결
+            # 2. 성토/절토 판정 (선로 바로 옆 지면 높이 확인)
+            long, lat = convert_coordinates([x + nx * 0.1, y + ny * 0.1], 5186, 4326)
+            dem_z = dem.get_elevation(long, lat) + 100  # 보정치 포함
+            is_cut = z < dem_z  # 선로가 지면보다 낮으면 절토
+
+            # 3. 이진 탐색으로 Daylight Point(교점) 찾기
+            low = 0.0
+            high = 500.0  # 최대 탐색 거리
+            intersect_pos = [x, y, z]
+
+            for _ in range(15):  # 15회 반복으로 정밀도 확보
+                mid = (low + high) / 2
+                curr_x = x + nx * mid
+                curr_y = y + ny * mid
+
+                # 사면의 높이 계산
+                # 절토(is_cut): 위로 올라감(+), 성토: 아래로 내려감(-)
+                slope_z = z + (mid / slope_ratio) if is_cut else z - (mid / slope_ratio)
+
+                # 해당 지점의 실제 지면 높이
+                l, a = convert_coordinates([curr_x, curr_y], 5186, 4326)
+                curr_dem_z = dem.get_elevation(l, a) + 100
+
+                if is_cut:
+                    if slope_z < curr_dem_z:
+                        low = mid
+                    else:
+                        high = mid
+                else:
+                    if slope_z > curr_dem_z:
+                        low = mid
+                    else:
+                        high = mid
+
+            # 탐색 완료된 최종 좌표 저장
+            final_dist = (low + high) / 2
+            fx, fy = x + nx * final_dist, y + ny * final_dist
+            fl, fa = convert_coordinates([fx, fy], 5186, 4326)
+            fz = dem.get_elevation(fl, fa) + 100
+            slope_side.append((fx, fy, fz))
+
+        # 4. 메쉬 생성 (기존 로직 유지)
         vertices = np.array(track_edges + slope_side)
         faces = []
-        n = len(track_edges)
         for i in range(n - 1):
             ti, ti_next = i, i + 1
             si, si_next = i + n, i + 1 + n
             faces.append([ti, si, ti_next])
             faces.append([si, si_next, ti_next])
 
-        return meshio.Mesh(points=vertices,
-                           cells=[("triangle", np.array(faces))])
+        return meshio.Mesh(points=vertices, cells=[("triangle", np.array(faces))])
 
 
 class TrackCreator:
@@ -344,6 +380,85 @@ class OutputExporter:
         save_qml(segments)
 
 
+import numpy as np
+from shapely.geometry import Polygon, MultiPolygon
+from scipy.spatial import Delaunay
+import meshio
+
+
+def clip_with_shapely_delaunay(terrain_mesh, clipping_poly):
+    vertices = terrain_mesh.points
+    faces = terrain_mesh.cells[0].data
+
+    final_vertices = []
+    final_faces = []
+    # 정점 중복 확인을 위한 딕셔너리 (좌표를 키로 사용)
+    v_map = {}
+
+    def get_v_idx(pt):
+        pt_tuple = (round(pt[0], 4), round(pt[1], 4), round(pt[2], 4))
+        if pt_tuple not in v_map:
+            v_map[pt_tuple] = len(final_vertices)
+            final_vertices.append(list(pt))
+        return v_map[pt_tuple]
+
+    for face in faces:
+        tri_coords = vertices[face]
+        tri_poly = Polygon(tri_coords[:, :2])
+
+        # 1. 차집합 연산
+        try:
+            clipped_area = tri_poly.difference(clipping_poly)
+        except:
+            continue  # 기하학적 오류 스킵
+
+        if clipped_area.is_empty: continue
+
+        # 2. 결과물 분해 (Polygon/MultiPolygon)
+        geoms = [clipped_area] if clipped_area.geom_type == 'Polygon' else clipped_area.geoms
+
+        for poly in geoms:
+            if poly.area < 0.001: continue  # 너무 작은 면적 제거 (크래시 방지 핵심)
+
+            ext_coords = np.array(poly.exterior.coords)[:-1]  # 마지막 중복점 제거
+            if len(ext_coords) < 3: continue
+
+            # 3. 삼각 분할
+            try:
+                tri = Delaunay(ext_coords[:, :2])
+                for t in tri.simplices:
+                    # 삼각형의 중심점이 실제로 폴리곤 내부에 있는지 검사 (Delaunay의 오작동 방지)
+                    pts_2d = ext_coords[t][:, :2]
+                    centroid = np.mean(pts_2d, axis=0)
+                    if not poly.contains(Point(centroid)): continue
+
+                    # 4. 정점 인덱싱 및 Z값 보간
+                    f_indices = []
+                    for pt_2d in pts_2d:
+                        z = interpolate_z(tri_coords, pt_2d)
+                        idx = get_v_idx((pt_2d[0], pt_2d[1], z))
+                        f_indices.append(idx)
+
+                    final_faces.append(f_indices)
+            except:
+                continue
+
+    return meshio.Mesh(points=np.array(final_vertices), cells=[("triangle", np.array(final_faces))])
+
+
+def interpolate_z(orig_tri, p_2d):
+    """원래 삼각형 평면 위의 (x, y)에 대응하는 정밀한 Z값을 계산"""
+    p1, p2, p3 = orig_tri
+    # 평면의 법선 벡터 (Normal Vector)
+    v1 = p2 - p1
+    v2 = p3 - p1
+    n = np.cross(v1, v2)
+    # 평면 방정식: a(x-x1) + b(y-y1) + c(z-z1) = 0
+    # z = z1 - (a(x-x1) + b(y-y1)) / c
+    if abs(n[2]) < 1e-9: return p1[2]  # 수직 평면 예외 처리
+    z = p1[2] - (n[0] * (p_2d[0] - p1[0]) + n[1] * (p_2d[1] - p1[1])) / n[2]
+    return z
+
 def main():
     # 좌표 읽기
     file = askopenfilename()
@@ -396,9 +511,32 @@ def main():
         track_vertices = vertices
         track_faces = np.array(faces)
 
-        # 저장
+        # 1. 각 사면의 끝점(Daylight Points)들만 추출
+        # add_slope가 meshio.Mesh를 반환하므로, vertices의 뒷부분 절반이 끝점들입니다.
+        n_half = len(slope_l.points) // 2
+        l_daylight = slope_l.points[n_half:]
+        r_daylight = slope_r.points[n_half:]
+
+        # 1. 각 사면의 끝점(Daylight Points)들 추출
+        n_half_l = len(slope_l.points) // 2
+        n_half_r = len(slope_r.points) // 2
+        l_daylight = slope_l.points[n_half_l:]
+        r_daylight = slope_r.points[n_half_r:]
+
+        # --- 추가된 부분: 클리핑용 폴리곤 생성 ---
+        # 왼쪽 끝점과 오른쪽 끝점을 역순으로 이어 붙여 닫힌 루프 생성
+        poly_coords = np.concatenate([l_daylight[:, :2], r_daylight[::-1, :2]])
+        from shapely.geometry import Polygon
+        clipping_poly = Polygon(poly_coords)
+        # ---------------------------------------
+
+        # 2. 지형 클리핑 수행 (이제 clipping_poly를 넘겨줍니다)
+        print(f"Segment {idx} 클리핑 시작...")
+        clipped_terrain = clip_with_shapely_delaunay(meshes[idx - 1], clipping_poly)
+
+        # 3. 결과 저장 (clipped_terrain 사용)
         save_obj_with_groups(f"c:/temp/obj/segment_{idx}.obj",
-                             terrain_vertices, terrain_faces,
+                             clipped_terrain.points, clipped_terrain.cells[0].data,
                              track_vertices, track_faces, slope_l, slope_r)
 
         print(f"트랙 병합 저장 완료: track_part_{idx}.obj")
