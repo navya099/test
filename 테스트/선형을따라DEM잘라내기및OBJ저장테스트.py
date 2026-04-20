@@ -13,6 +13,7 @@ import geopandas as gpd
 from shapely.geometry import box
 from shapely.ops import nearest_points
 from rasterio.crs import CRS
+import pyvista as pv
 
 #전역변수
 qml_template = """<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
@@ -128,13 +129,13 @@ def extract_segment_dem(segment, strm: SrtmDEM30):
 def save_segment_files(idx, mosaic, out_transform):
     """세그먼트 DEM을 GeoTIFF와 OBJ로 저장"""
     # GeoTIFF 저장
-    save_dem_as_geotiff(mosaic, out_transform, f"F:/temp/DEM/terrain_part_{idx}.tif")
+    save_dem_as_geotiff(mosaic, out_transform, f"c:/temp/DEM/terrain_part_{idx}.tif")
 
 def extract_dem_and_obj(segments, strm: SrtmDEM30):
     """전체 세그먼트 처리"""
     meshes = []
-    shutil.rmtree("F:/temp/DEM/", ignore_errors=True)
-    os.makedirs("F:/temp/DEM/", exist_ok=True)
+    shutil.rmtree("c:/temp/DEM/", ignore_errors=True)
+    os.makedirs("c:/temp/DEM/", exist_ok=True)
 
     for idx, segment in enumerate(segments, start=1):
         mosaic, out_transform = extract_segment_dem(segment, strm)
@@ -459,6 +460,120 @@ def interpolate_z(orig_tri, p_2d):
     z = p1[2] - (n[0] * (p_2d[0] - p1[0]) + n[1] * (p_2d[1] - p1[1])) / n[2]
     return z
 
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+
+def plot_multiple_meshes(meshes_with_colors):
+    """
+    meshes_with_colors: [(vertices, faces, color, name), ...]
+    """
+    plotter = pv.Plotter()
+
+    for vertices, faces, color, name in meshes_with_colors:
+        # PyVista faces 형식으로 변환
+        faces_pv = np.hstack([[3, *f] for f in faces])
+        pv_mesh = pv.PolyData(vertices, faces_pv)
+        plotter.add_mesh(pv_mesh, color=color, show_edges=True, opacity=0.7, label=name)
+
+    plotter.add_legend()
+    plotter.show()
+
+# 사용 예시
+# terrain_vertices = meshes[0].points
+# terrain_faces = meshes[0].cells[0].data
+# plot_mesh(terrain_vertices, terrain_faces)
+from shapely.ops import triangulate
+from shapely.geometry import Polygon, Point
+import meshio
+import numpy as np
+
+def clip_with_shapely_triangulate(terrain_mesh, clipping_poly):
+    vertices = terrain_mesh.points
+    faces = terrain_mesh.cells[0].data
+
+    final_vertices = []
+    final_faces = []
+    v_map = {}
+
+    def get_v_idx(pt):
+        pt_tuple = (round(pt[0], 8), round(pt[1], 8), round(pt[2], 8))
+        if pt_tuple not in v_map:
+            v_map[pt_tuple] = len(final_vertices)
+            final_vertices.append(list(pt))
+        return v_map[pt_tuple]
+
+    for face in faces:
+        tri_coords = vertices[face]
+        tri_poly = Polygon(tri_coords[:, :2])
+
+        # 교차 영역만 추출
+        try:
+            clipped_area = tri_poly.difference(clipping_poly)
+        except:
+            continue
+
+        if clipped_area.is_empty:
+            continue
+
+        # Polygon 또는 MultiPolygon 처리
+        geoms = [clipped_area] if clipped_area.geom_type == 'Polygon' else clipped_area.geoms
+
+        for poly in geoms:
+            if poly.area < 0.001:
+                continue
+
+            # triangulate로 내부 삼각화
+            tris = triangulate(poly)
+            for t in tris:
+                coords_2d = np.array(t.exterior.coords)[:-1]
+                if len(coords_2d) != 3:
+                    continue
+
+                # Z값 보간
+                f_indices = []
+                for pt_2d in coords_2d:
+                    z = interpolate_z(tri_coords, pt_2d)
+                    idx = get_v_idx((pt_2d[0], pt_2d[1], z))
+                    f_indices.append(idx)
+
+                final_faces.append(f_indices)
+
+    return meshio.Mesh(points=np.array(final_vertices),
+                       cells=[("triangle", np.array(final_faces))])
+
+
+from scipy.spatial import cKDTree
+
+
+def weld_slope_to_terrain(terrain_points, slope_mesh, threshold=0.1):
+    """
+    사면 메쉬의 끝점(Daylight)을 지형의 절단면 정점에 강제로 붙입니다.
+    terrain_points: 클리핑이 완료된 지형의 정점들
+    slope_mesh: add_slope로 생성된 meshio 객체
+    threshold: 스냅을 허용할 최대 거리 (단위: m, 보통 10cm 내외)
+    """
+    slope_points = slope_mesh.points.copy()
+
+    # 1. 지형 정점들로 KD-Tree 구축 (고속 근접점 검색용)
+    tree = cKDTree(terrain_points[:, :2])  # x, y 좌표만 비교
+
+    # 2. 사면 메쉬에서 Daylight 정점들만 타겟팅
+    # (보통 add_slope 로직상 정점 리스트의 뒷부분 절반이 Daylight입니다)
+    n_half = len(slope_points) // 2
+    daylight_indices = range(n_half, len(slope_points))
+
+    for i in daylight_indices:
+        pt = slope_points[i]
+        # 3. 가장 가까운 지형 정점 찾기
+        dist, idx = tree.query(pt[:2])
+
+        if dist < threshold:
+            # 4. 강제 용접 (지형의 x, y, z를 그대로 사면 정점에 이식)
+            slope_points[i] = terrain_points[idx]
+
+    return meshio.Mesh(points=slope_points, cells=slope_mesh.cells)
+
 def main():
     # 좌표 읽기
     file = askopenfilename()
@@ -528,11 +643,34 @@ def main():
         poly_coords = np.concatenate([l_daylight[:, :2], r_daylight[::-1, :2]])
         from shapely.geometry import Polygon
         clipping_poly = Polygon(poly_coords)
+        from shapely.validation import explain_validity
+        #디버그용 검증코드
+        print("Is valid:", clipping_poly.is_valid)
+        print("Area:", clipping_poly.area)
+        print("Bounds:", clipping_poly.bounds)
+        print("Validity check:", explain_validity(clipping_poly))
+
+        import matplotlib.pyplot as plt
+        x, y = clipping_poly.exterior.xy
+        plt.plot(x, y)
+        #plt.show()
         # ---------------------------------------
 
         # 2. 지형 클리핑 수행 (이제 clipping_poly를 넘겨줍니다)
         print(f"Segment {idx} 클리핑 시작...")
-        clipped_terrain = clip_with_shapely_delaunay(meshes[idx - 1], clipping_poly)
+        clipped_terrain = clip_with_shapely_triangulate(meshes[idx - 1], clipping_poly)
+        # 2. 후처리 용접 가동 (지형 정점 기준으로 사면 정점 보정)
+        print(f"Segment {idx} 정합 보정(Weld) 중...")
+        fixed_slope_l = weld_slope_to_terrain(clipped_terrain.points, slope_l)
+        fixed_slope_r = weld_slope_to_terrain(clipped_terrain.points, slope_r)
+        # 사용 예시
+        plot_multiple_meshes([
+
+            (track_vertices, track_faces, "blue", "Track"),
+            (fixed_slope_l.points, fixed_slope_l.cells[0].data, "green", "Slope Left"),
+            (fixed_slope_r.points, fixed_slope_r.cells[0].data, "red", "Slope Right"),
+            (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain"),
+        ])
 
         # 3. 결과 저장 (clipped_terrain 사용)
         save_obj_with_groups(f"c:/temp/obj/segment_{idx}.obj",
@@ -552,5 +690,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
