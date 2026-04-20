@@ -96,6 +96,15 @@ def sampling_coords(coords: list, distance_m: int, base_interval_m: int = 25):
     step = distance_m // base_interval_m  # 인덱스 간격 계산
     return [(x, y) for i, (x, y, z) in enumerate(coords) if i % step == 0]
 
+def sampling_coords_with_z(coords: list, distance_m: int, base_interval_m: int = 25):
+    """
+    coords: [(x,y,z), ...] EPSG:5186 좌표 (미터 단위)
+    distance_m: 샘플링 간격 (미터)
+    base_interval_m: 원본 좌표 간격 (기본값 25m)
+    """
+    step = distance_m // base_interval_m  # 인덱스 간격 계산
+    return [(x, y, z) for i, (x, y, z) in enumerate(coords) if i % step == 0]
+
 def _create_buffered(xy_list, buffer_m: int):
     # 구간 분할 설정
     segments = []
@@ -574,11 +583,15 @@ def weld_slope_to_terrain(terrain_points, slope_mesh, threshold=0.1):
 
     return meshio.Mesh(points=slope_points, cells=slope_mesh.cells)
 
+def translate_vertices(vertices, base_point):
+    return vertices - base_point
+
 def main():
     # 좌표 읽기
     file = askopenfilename()
     read_coords = read_coordinates(file)
     xy_list = sampling_coords(read_coords, 2000) # 2km 간격 샘플링
+    xyz_list = sampling_coords_with_z(read_coords, 2000)
     segments, last_segment = _create_buffered(xy_list, 1000)
 
     # 폴더 초기화
@@ -652,7 +665,7 @@ def main():
 
         import matplotlib.pyplot as plt
         x, y = clipping_poly.exterior.xy
-        plt.plot(x, y)
+        #plt.plot(x, y)
         #plt.show()
         # ---------------------------------------
 
@@ -664,18 +677,23 @@ def main():
         fixed_slope_l = weld_slope_to_terrain(clipped_terrain.points, slope_l)
         fixed_slope_r = weld_slope_to_terrain(clipped_terrain.points, slope_r)
         # 사용 예시
-        plot_multiple_meshes([
+        """plot_multiple_meshes([
 
             (track_vertices, track_faces, "blue", "Track"),
             (fixed_slope_l.points, fixed_slope_l.cells[0].data, "green", "Slope Left"),
             (fixed_slope_r.points, fixed_slope_r.cells[0].data, "red", "Slope Right"),
             (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain"),
-        ])
+        ])"""
 
+        #aaa 원점으로 평행이동
+        clipped_terrain.points = translate_vertices(clipped_terrain.points, xyz_list[idx-1])
+        track_vertices = translate_vertices(track_vertices, xyz_list[idx-1])
+        fixed_slope_l.points = translate_vertices(fixed_slope_l.points, xyz_list[idx-1])
+        fixed_slope_r.points = translate_vertices(fixed_slope_r.points, xyz_list[idx-1])
         # 3. 결과 저장 (clipped_terrain 사용)
         save_obj_with_groups(f"c:/temp/obj/segment_{idx}.obj",
                              clipped_terrain.points, clipped_terrain.cells[0].data,
-                             track_vertices, track_faces, slope_l, slope_r)
+                             track_vertices, track_faces, fixed_slope_l, fixed_slope_r)
 
         print(f"트랙 병합 저장 완료: track_part_{idx}.obj")
     strm.close()  # ✅ 프로그램 종료 직전에 닫기
