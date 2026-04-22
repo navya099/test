@@ -12,14 +12,24 @@ class MainAPP:
     def __init__(self, is_cui=False, debug=False):
         self.is_cui = is_cui
         self.debug = debug
-        if debug:
-            logging.basicConfig(level=logging.DEBUG)
-
         # 역할 클래스 초기화
         self.coord_loader = CoordinateLoader()
         self.structure_loader = StructureLoader()
 
+    def setup_logging(self):
+        level = logging.DEBUG if self.debug else logging.INFO
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            handlers=[
+                logging.FileHandler(r"c:/temp/bve_terrain_builder.log", encoding="utf-8"),
+                logging.StreamHandler()
+            ]
+        )
+
+
     def run(self, coord_file=None, structurefilepath=None):
+        self.setup_logging()
         if self.is_cui:
             self._run_cui(coord_file, structurefilepath)
         else:
