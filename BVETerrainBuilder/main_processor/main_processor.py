@@ -76,15 +76,15 @@ class MainProcessor:
 
         #트랙빌더
         track_manager = TrackProcessor(seg_coords)
-        track_mesh = track_manager.build_track()
+        track_mesh, track_edges = track_manager.build_track()
 
         #지형 빌더
         terrain_builder = TerrainBuilder(self.dem_processor, seg)
         terrain_mesh = terrain_builder.build()
 
         #사면 빌더
-        slope_manger = SlopeManager(self.dem_processor)
-        slope_left, slope_right = slope_manger.build_slopes(track_mesh, slope_ratio=1.5)
+        slope_manger = SlopeManager(self.dem_processor, terrain_mesh)
+        slope_left, slope_right = slope_manger.build_slopes(track_edges, slope_ratio=1.5)
 
         logging.debug(f"Slope Left vertices: {slope_left.points.shape}")
         logging.debug(f"Slope Left faces : {slope_left.cells[0].data.shape}")
@@ -99,12 +99,12 @@ class MainProcessor:
         logging.debug(f"Clipped terrain faces: {len(clipped_terrain.cells[0].data)}")
 
 
-        """#평행이동
+        #평행이동
         track_mesh = MeshModifier(track_mesh).translate(self.xyz_list[idx - 1])
         fixed_slope_left = MeshModifier(fixed_slope_left).translate(self.xyz_list[idx - 1])
         fixed_slope_right = MeshModifier(fixed_slope_right).translate(self.xyz_list[idx - 1])
         clipped_terrain = MeshModifier(clipped_terrain).translate(self.xyz_list[idx - 1])
-        """
+
 
         #저장
         # 3. 결과 저장 (clipped_terrain 사용)
@@ -115,8 +115,11 @@ class MainProcessor:
         logging.info(f"병합된 지표면 저장 완료: segment_{idx}")
 
         # PYVISTA 시각화
-        MeshPlotter.plot_multiple_meshes(
+        """MeshPlotter.plot_multiple_meshes(
             [
+                (track_mesh.points, track_mesh.cells[0].data, "blue", "Track"),
+                (fixed_slope_left.points, fixed_slope_left.cells[0].data, "green", "Slope Left"),
+                (fixed_slope_right.points, fixed_slope_right.cells[0].data, "red", "Slope Right"),
                 (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain")
             ]
-        )
+        )"""

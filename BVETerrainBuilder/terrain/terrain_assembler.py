@@ -2,7 +2,7 @@ import logging
 
 from terrain import terrain_builder
 from terrain.terrain_modifyer import TerrainModifier
-
+from shapely.validation import explain_validity
 
 class TerrainAssembler:
     """트랙과 사면을 조립해 최종 결과를 생성하는 클래스"""
@@ -19,7 +19,9 @@ class TerrainAssembler:
         logging.debug(f"[Segment {idx}] Left daylight pts: {len(l_daylight)}, Right daylight pts: {len(r_daylight)}")
 
         clipping_poly = self.slope_manager.slope_builder.create_polygon(l_daylight, r_daylight)
+        logging.debug(f"[Segment {idx}] Clipping poly exterior xy: {clipping_poly.exterior.xy}")
         logging.debug(f"[Segment {idx}] Clipping polygon bounds: {clipping_poly.bounds}, area: {clipping_poly.area}")
+        logging.debug(f"[Segment {idx}] Clipping polygon Is valid: {clipping_poly.is_valid}, Validity check: {explain_validity(clipping_poly)}")
 
         # 2. 지형 클리핑 및 용접
         terrain_modifyer = TerrainModifier(terrain_mesh)

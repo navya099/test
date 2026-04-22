@@ -12,4 +12,4 @@ class TrackProcessor:
     def build_track(self):
         """트랙 생성"""
         vertices, faces , left_side, right_side = self.trm.create_track()
-        return meshio.Mesh(points=vertices, cells=[("triangle", np.array(faces))])
+        return meshio.Mesh(points=vertices, cells=[("triangle", np.array(faces))]), [left_side, right_side]

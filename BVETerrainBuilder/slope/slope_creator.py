@@ -10,8 +10,7 @@ class SlopeBuilder:
     def __init__(self, mesh):
         self.mesh = mesh
 
-    def add_slope(self, track_mesh, dem, slope_ratio, side="left"):
-        track_edges = track_mesh.points  # mesh에서 좌표 꺼내기
+    def add_slope(self, track_edges, dem, slope_ratio, side="left"):
         slope_side = []
         n = len(track_edges)
 
