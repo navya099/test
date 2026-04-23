@@ -25,7 +25,7 @@ class MainProcessor:
 
         self.coord_processor = CoordinateProcessor()
 
-    def execute(self):
+    def execute(self, selected_segments=None, is_visible=False):
         logging.debug("MainProcessor 실행 시작")
         # 전체 파이프라인 실행
         try:
@@ -45,7 +45,10 @@ class MainProcessor:
             self.dem_processor = DEMProcessor(convert_coordinates(self.xy_list, 5186, 4326))
             #메인파이프실행
             for idx, seg in enumerate(segments, start=1):
-                self._process_segment(idx, seg)
+                if selected_segments and idx not in selected_segments:
+                    logging.info(f"Segment {idx} 건너뜀 (선택 구간 아님)")
+                    continue
+                self._process_segment(idx, seg, is_visible)
             #파이프 실행 후 외부 파일로 저장
             self.dem_processor.close()  # ✅ 프로그램 종료 직전에 닫기
 
@@ -64,7 +67,7 @@ class MainProcessor:
             logging.critical(e)
             raise e
 
-    def _process_segment(self, idx, seg):
+    def _process_segment(self, idx, seg, is_visible=False):
         """세그먼트별 파이프라인"""
         logging.info(f"Segment {idx} 처리 시작")
 
@@ -137,9 +140,9 @@ class MainProcessor:
 
             slope_left, slope_right = slope_manger.build_slopes((earth_left_side, earth_right_side), slope_ratio=1.5)
             logging.debug(
-                f"Segment {idx} Slope Left {i} points: {len(slope_left.points)}, faces: {len(slope_left.cells[0].data)}")
+                f"Segment {idx} Slope Left {corridor_idx} points: {len(slope_left.points)}, faces: {len(slope_left.cells[0].data)}")
             logging.debug(
-                f"Segment {idx} Slope Right {i} points: {len(slope_right.points)}, faces: {len(slope_right.cells[0].data)}")
+                f"Segment {idx} Slope Right {corridor_idx} points: {len(slope_right.points)}, faces: {len(slope_right.cells[0].data)}")
 
             slope_lefts.append(slope_left)
             slope_rights.append(slope_right)
@@ -186,6 +189,6 @@ class MainProcessor:
         # 우측 사면 여러 개 추가
         for i, sr in enumerate(fixed_slope_right, start=1):
             plot_items.append((sr.points, sr.cells[0].data, "red", f"Slope Right {i}"))
-
-        MeshPlotter.plot_multiple_meshes(plot_items)
+        if is_visible:
+            MeshPlotter.plot_multiple_meshes(plot_items)
 

@@ -55,7 +55,7 @@ class MainAPP:
             read_coords = self.coord_loader.load(coord_file)
             structure_list = self.structure_loader.load(structurefilepath)
             mp = MainProcessor(read_coords=read_coords, structure_list=structure_list)
-            mp.execute()
+            mp.execute(selected_segments=[2,4])
         except Exception as e:
             logging.error(e)
 
