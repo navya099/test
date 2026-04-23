@@ -3,9 +3,8 @@ import logging
 from tkinter.filedialog import askopenfilename
 
 from coord.coord_io import CoordinateLoader
-from coord.coord_sampler import CoordinateProcessor
 from main_processor.main_processor import MainProcessor
-from structure_io import StructureLoader
+from structure.structure_io import StructureLoader
 
 
 class MainAPP:

@@ -2,6 +2,7 @@ import logging
 
 from coord.coord_sampler import CoordinateProcessor
 from coordinate_utils import convert_coordinates
+from corridor.corridor_section import CorridorSection
 from dem.dem import DEMProcessor
 from folder_manger.foleder_manger import FolderManager
 from mesh.mesh_modifier import MeshModifier
@@ -11,6 +12,8 @@ from slope.slope_manager import SlopeManager
 from terrain.terrain_assembler import TerrainAssembler
 from terrain.terrain_builder import TerrainBuilder
 from track.processor import TrackProcessor
+from util import get_stations, get_earthwork_sections, is_bridge_tunnel
+
 
 class MainProcessor:
     def __init__(self, read_coords, structure_list):
@@ -47,10 +50,10 @@ class MainProcessor:
             self.dem_processor.close()  # ✅ 프로그램 종료 직전에 닫기
 
             # 구간별 Shapefile 저장
-            logging.info('구간별 Shapefile 저장')
+            logging.info('Shapefile 저장중')
             OutputExporter.save_shapefile(segments)
 
-            logging.info('구간별 QML 생성')
+            logging.info('QML 저장중')
             OutputExporter.save_qml(segments)
 
 
@@ -63,11 +66,12 @@ class MainProcessor:
 
     def _process_segment(self, idx, seg):
         """세그먼트별 파이프라인"""
-        logging.debug(f"Segment {idx} 처리 시작")
+        logging.info(f"Segment {idx} 처리 시작")
 
         #세그먼트 필터링 좌표리스트
         seg_coords = CoordinateProcessor.filter_coords_by_segment(self.read_coords, seg)
-        logging.info(f"Segment {idx} coords: {len(seg_coords)}")
+
+        logging.debug(f"Segment {idx} coords: {len(seg_coords)}")
 
         if len(seg_coords) < 2:
             #세그먼트 길이 부족시
@@ -77,36 +81,91 @@ class MainProcessor:
         #트랙빌더
         track_manager = TrackProcessor(seg_coords)
         track_mesh, track_edges = track_manager.build_track()
+        logging.debug(
+            f"Segment {idx} Track mesh points: {len(track_mesh.points)}, faces: {len(track_mesh.cells[0].data)}")
 
         #지형 빌더
         terrain_builder = TerrainBuilder(self.dem_processor, seg)
         terrain_mesh = terrain_builder.build()
+        logging.debug(
+            f"Segment {idx} Terrain mesh points: {len(terrain_mesh.points)}, faces: {len(terrain_mesh.cells[0].data)}")
 
         #사면 빌더
-        slope_manger = SlopeManager(self.dem_processor, terrain_mesh)
-        slope_left, slope_right = slope_manger.build_slopes(track_edges, slope_ratio=1.5)
+        #변경1 사면을 전체 트랙 생성에서 구조몰구간별로
+        #추가 seg_coords를 구조물로 필터링
+        #정보 self.read_coords의 인덱스에서 현재 좌표의 측점 계산가능
+        #self.read_coords[0] = 0.0, self.read_coords[i] == 25* i
 
-        logging.debug(f"Slope Left vertices: {slope_left.points.shape}")
-        logging.debug(f"Slope Left faces : {slope_left.cells[0].data.shape}")
-        logging.debug(f"Slope Right vertices: {slope_right.points.shape}")
-        logging.debug(f"Slope Right faces: {slope_right.cells[0].data.shape}")
+        #현재 구간의 측점 리스트
+        stations = get_stations(self.read_coords, seg_coords)
+
+        #측점 리스트에서 토공구간 분리
+        earth_list = get_earthwork_sections(seg_coords, stations, self.structure_list)
+
+        # 구조물 갯수 로그
+        # 세그먼트 시작/끝 측점 계산
+        seg_start_sta = stations[0]
+        seg_end_sta = stations[-1]
+        logging.info(f"Segment {idx} 범위: {seg_start_sta} ~ {seg_end_sta}")
+        logging.debug(f"Segment {idx} stations: {stations}")
+
+        # 교량 갯수
+        bridge_count = sum(
+            1 for name, start, end in self.structure_list['bridge']
+            if not (end < seg_start_sta or start > seg_end_sta)
+        )
+
+        # 터널 갯수
+        tunnel_count = sum(
+            1 for name, start, end in self.structure_list['tunnel']
+            if not (end < seg_start_sta or start > seg_end_sta)
+        )
+
+        logging.info(f"Segment {idx} 교량 갯수: {bridge_count}")
+        logging.info(f"Segment {idx} 터널 갯수: {tunnel_count}")
+        logging.info(f"Segment {idx} 토공 구간 갯수: {len(earth_list)}")
+
+        #여러 토공구간 순회 처리
+        slope_manger = SlopeManager(self.dem_processor, terrain_mesh)
+        slope_lefts = []
+        slope_rights = []
+        for corridor_idx, corridor in enumerate(earth_list, start=1):
+            logging.info(f"Segment {idx} Corridor {corridor_idx} 처리 시작")
+            logging.debug(f"Segment {idx} Corridor {corridor_idx} indices: {corridor['indices']}")
+            earth_left_side = [track_edges[0][i] for i in corridor["indices"]]
+            earth_right_side = [track_edges[1][i] for i in corridor["indices"]]
+
+            slope_left, slope_right = slope_manger.build_slopes((earth_left_side, earth_right_side), slope_ratio=1.5)
+            logging.debug(
+                f"Segment {idx} Slope Left {i} points: {len(slope_left.points)}, faces: {len(slope_left.cells[0].data)}")
+            logging.debug(
+                f"Segment {idx} Slope Right {i} points: {len(slope_right.points)}, faces: {len(slope_right.cells[0].data)}")
+
+            slope_lefts.append(slope_left)
+            slope_rights.append(slope_right)
 
         #계획지표면 생성(사면 외곽선 추출 및 지형 클리핑
+        logging.info(f"Segment {idx} 지형 생성중")
         terrain_assembler = TerrainAssembler(self.dem_processor, slope_manger)
-        clipped_terrain, fixed_slope_left, fixed_slope_right = terrain_assembler.build(idx, slope_left, slope_right, terrain_mesh)
+        clipped_terrain, fixed_slope_left, fixed_slope_right = terrain_assembler.build(idx, slope_lefts, slope_rights, terrain_mesh)
 
         logging.debug(f"Clipped terrain points: {len(clipped_terrain.points)}")
         logging.debug(f"Clipped terrain faces: {len(clipped_terrain.cells[0].data)}")
 
 
         #평행이동
+        # 평행이동
         track_mesh = MeshModifier(track_mesh).translate(self.xyz_list[idx - 1])
-        fixed_slope_left = MeshModifier(fixed_slope_left).translate(self.xyz_list[idx - 1])
-        fixed_slope_right = MeshModifier(fixed_slope_right).translate(self.xyz_list[idx - 1])
         clipped_terrain = MeshModifier(clipped_terrain).translate(self.xyz_list[idx - 1])
 
+        fixed_slope_left = [MeshModifier(sl).translate(self.xyz_list[idx - 1]) for sl in fixed_slope_left]
+        fixed_slope_right = [MeshModifier(sr).translate(self.xyz_list[idx - 1]) for sr in fixed_slope_right]
+
+        logging.debug(f"Segment {idx} translated Track points: {len(track_mesh.points)}")
+        logging.debug(f"Segment {idx} translated Terrain points: {len(clipped_terrain.points)}")
 
         #저장
+        logging.info(f"Segment {idx} 지형 저장중")
         # 3. 결과 저장 (clipped_terrain 사용)
         OutputExporter.save_obj_with_groups(f"c:/temp/obj/segment_{idx}.obj",
                              clipped_terrain.points, clipped_terrain.cells[0].data,
@@ -115,11 +174,18 @@ class MainProcessor:
         logging.info(f"병합된 지표면 저장 완료: segment_{idx}")
 
         # PYVISTA 시각화
-        """MeshPlotter.plot_multiple_meshes(
-            [
-                (track_mesh.points, track_mesh.cells[0].data, "blue", "Track"),
-                (fixed_slope_left.points, fixed_slope_left.cells[0].data, "green", "Slope Left"),
-                (fixed_slope_right.points, fixed_slope_right.cells[0].data, "red", "Slope Right"),
-                (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain")
-            ]
-        )"""
+        plot_items = [
+            (track_mesh.points, track_mesh.cells[0].data, "blue", "Track"),
+            (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain")
+        ]
+
+        # 좌측 사면 여러 개 추가
+        for i, sl in enumerate(fixed_slope_left, start=1):
+            plot_items.append((sl.points, sl.cells[0].data, "green", f"Slope Left {i}"))
+
+        # 우측 사면 여러 개 추가
+        for i, sr in enumerate(fixed_slope_right, start=1):
+            plot_items.append((sr.points, sr.cells[0].data, "red", f"Slope Right {i}"))
+
+        MeshPlotter.plot_multiple_meshes(plot_items)
+

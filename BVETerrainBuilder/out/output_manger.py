@@ -42,8 +42,8 @@ class OutputExporter:
     def save_obj_with_groups(filename,
                              terrain_vertices, terrain_faces,
                              track_vertices, track_faces,
-                             slope_left=None, slope_right=None):
-        """OBJ를 그룹화 하여 저장"""
+                             slope_left_list=None, slope_right_list=None):
+        """OBJ를 그룹화 하여 저장 (여러 사면 리스트 지원)"""
         with open(filename, "w") as f:
             # Terrain 그룹
             f.write("o Terrain\n")
@@ -60,20 +60,24 @@ class OutputExporter:
             for face in track_faces:
                 f.write(f"f {face[0] + 1 + offset} {face[1] + 1 + offset} {face[2] + 1 + offset}\n")
 
-            # 좌측 slope 그룹
-            if slope_left is not None:
-                f.write("o SlopeLeft\n")
+            # 여러 좌측 slope 그룹
+            if slope_left_list is not None:
                 offset2 = offset + len(track_vertices)
-                for v in slope_left.points:
-                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
-                for face in slope_left.cells[0].data:
-                    f.write(f"f {face[0] + 1 + offset2} {face[1] + 1 + offset2} {face[2] + 1 + offset2}\n")
+                for i, slope_left in enumerate(slope_left_list, start=1):
+                    f.write(f"o SlopeLeft_{i}\n")
+                    for v in slope_left.points:
+                        f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                    for face in slope_left.cells[0].data:
+                        f.write(f"f {face[0] + 1 + offset2} {face[1] + 1 + offset2} {face[2] + 1 + offset2}\n")
+                    offset2 += len(slope_left.points)
 
-            # 우측 slope 그룹
-            if slope_right is not None:
-                f.write("o SlopeRight\n")
-                offset3 = offset + len(track_vertices) + len(slope_left.points if slope_left else [])
-                for v in slope_right.points:
-                    f.write(f"v {v[0]} {v[1]} {v[2]}\n")
-                for face in slope_right.cells[0].data:
-                    f.write(f"f {face[0] + 1 + offset3} {face[1] + 1 + offset3} {face[2] + 1 + offset3}\n")
+            # 여러 우측 slope 그룹
+            if slope_right_list is not None:
+                offset3 = offset + len(track_vertices) + sum(len(sl.points) for sl in slope_left_list or [])
+                for i, slope_right in enumerate(slope_right_list, start=1):
+                    f.write(f"o SlopeRight_{i}\n")
+                    for v in slope_right.points:
+                        f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                    for face in slope_right.cells[0].data:
+                        f.write(f"f {face[0] + 1 + offset3} {face[1] + 1 + offset3} {face[2] + 1 + offset3}\n")
+                    offset3 += len(slope_right.points)
