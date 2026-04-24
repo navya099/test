@@ -44,4 +44,7 @@ class CoordinateProcessor:
     def filter_coords_by_segment(coords, segment_bounds):
         """구간 bounding box 안에 포함되는 좌표만 추출"""
         minx, miny, maxx, maxy = segment_bounds
-        return [(x, y, z) for (x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]
+        if len(coords[0]) == 3:
+            return [(x, y, z) for (x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]
+        elif len(coords[0]) == 4:
+            return [(x, y, z, sta) for (x, y, z, sta) in coords if minx <= x <= maxx and miny <= y <= maxy]
