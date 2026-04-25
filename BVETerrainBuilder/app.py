@@ -8,6 +8,7 @@ from file_manager.file_controller import FileController
 from main_processor.main_processor import MainProcessor
 from structure.structure_io import StructureLoader
 from track.railloader import RailLoader
+from ui.main_ui import MainGUI
 
 
 class MainAPP:
@@ -31,39 +32,33 @@ class MainAPP:
             ]
         )
 
+    def run(self):
+        # GUI 인스턴스 생성 및 실행
+        self.gui = MainGUI(self._process_callback)
+        self.gui.run()
 
-    def run(self, coord_file=None, structurefilepath=None, rail_info_path=None):
-        self.setup_logging()
-        if self.is_cui:
-            self._run_cui(coord_file, structurefilepath, rail_info_path)
-        else:
-            self._run_gui()
+    def _process_callback(self, coord_path, struct_path, rail_path, selected_segs, is_visible):
+        # GUI에서 넘겨받은 파라미터로 실제 프로세스 실행
+        self._process(coord_path, struct_path, rail_path, selected_segs, is_visible)
 
-    def _run_cui(self, coord_file, structurefilepath, rail_info_path):
-        if not coord_file:
-            raise ValueError('좌표파일 경로가 비어있습니다.')
-        if not structurefilepath:
-            raise ValueError('구조물파일 경로가 비어있습니다.')
-        self._process(coord_file, structurefilepath, rail_info_path)
-
-    def _run_gui(self):
-        coord_file = askopenfilename(title="좌표 파일 선택")
-        if not coord_file:
-            raise ValueError("좌표 파일을 선택하지 않았습니다.")
-        structurefilepath = askopenfilename(title="구조물 파일 선택")
-        if not structurefilepath:
-            raise ValueError("구조물 파일을 선택하지 않았습니다.")
-        rail_info_path = askopenfilename(title="정거장 파일 선택")
-        self._process(coord_file, structurefilepath, rail_info_path)
-
-    def _process(self, coord_file, structurefilepath, rail_info_path):
+    def _process(self, coord_file, structurefilepath, rail_info_path, selected_segs=[16], is_visible=True):
+        self.setup_logging()  # 로그 설정 적용
         try:
             read_coords = self.coord_loader.load(coord_file)
             structure_list = self.structure_loader.load(structurefilepath)
-            tracks = self.rail_loader.process_lines_to_alginment_data(self.file_loader.read_file(rail_info_path)) if rail_info_path else None
+
+            # rail_info_path가 있을 때만 파싱
+            tracks = None
+            if rail_info_path:
+                content = self.file_loader.read_file(rail_info_path)
+                tracks = self.rail_loader.process_lines_to_alginment_data(content)
+
             mp = MainProcessor(read_coords=read_coords, structure_list=structure_list, tracks=tracks)
-            mp.execute(selected_segments=[16],is_visible=True)
+            # GUI에서 선택한 세그먼트와 시각화 여부 적용
+            mp.execute(selected_segments=selected_segs, is_visible=is_visible)
+
         except Exception as e:
-            logging.error(e)
+            logging.error(f"프로세스 실행 중 치명적 오류: {e}")
+            raise e
 
 
