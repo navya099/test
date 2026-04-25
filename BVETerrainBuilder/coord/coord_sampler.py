@@ -47,4 +47,4 @@ class CoordinateProcessor:
         if len(coords[0]) == 3:
             return [(x, y, z) for (x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]
         elif len(coords[0]) == 4:
-            return [(x, y, z, sta) for (x, y, z, sta) in coords if minx <= x <= maxx and miny <= y <= maxy]
+            return [(sta, x, y, z) for (sta, x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]

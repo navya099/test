@@ -23,7 +23,7 @@ class MainAPP:
             level=level,
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             handlers=[
-                logging.FileHandler(r"c:/temp/bve_terrain_builder.log", encoding="utf-8"),
+                logging.FileHandler(r"c:/temp/bve_terrain_builder.log", encoding="utf-8", mode='w'),
                 logging.StreamHandler()
             ]
         )
@@ -59,7 +59,7 @@ class MainAPP:
             structure_list = self.structure_loader.load(structurefilepath)
             tracks = self.rail_loader.load(rail_info_path) if rail_info_path else None
             mp = MainProcessor(read_coords=read_coords, structure_list=structure_list, tracks=tracks)
-            mp.execute(selected_segments=[15],is_visible=True)
+            mp.execute(selected_segments=[16],is_visible=True)
         except Exception as e:
             logging.error(e)
 

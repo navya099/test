@@ -4,6 +4,7 @@ import logging
 from mesh.mesh_modifier import MeshModifier
 from out.output_manger import OutputExporter
 from plot.plot import MeshPlotter
+from slope.slope_assembler import SlopeAssembler
 from slope.slope_manager import SlopeManager
 from terrain.terrain_assembler import TerrainAssembler
 from track.processor import TrackProcessor
@@ -24,7 +25,7 @@ class SegmentProcessor:
 
         # ── 1. 지형 1회 생성 ──────────────────────────────────────
         terrain_builder = TerrainBuilder(self.dem_processor, seg)
-        terrain_mesh = terrain_builder.build()
+        terrain_mesh = terrain_builder.build(idx)
         slope_manager = SlopeManager(self.dem_processor, terrain_mesh)
 
         # ── 2. 모든 트랙의 사면을 누적 ───────────────────────────
@@ -35,22 +36,35 @@ class SegmentProcessor:
         # 메인 트랙
         seg_coords = CoordinateProcessor.filter_coords_by_segment(self.read_coords, seg)
         if len(seg_coords) >= 2:
+            # 측점 및 토공 구간 분리
+            logging.info('트랙 0번 작업 시작')
+            stations = get_stations(self.read_coords, seg_coords)
             track_mesh, slope_lefts, slope_rights = self._build_slopes_for_track(
-                idx, seg, seg_coords, slope_manager, track_no=0
-            )
+                idx, '트랙 0', stations, seg_coords, slope_manager)
             if track_mesh:
                 track_meshes.append(track_mesh)
                 all_slope_lefts.extend(slope_lefts)
                 all_slope_rights.extend(slope_rights)
 
         # 추가 트랙
+        # 예: 1번, 40번, 41번 트랙만 처리
+        allowed_tracks = [5,8,39]
+
         if self.tracks:
             for track_no, coords in self.tracks.items():
+                if track_no not in allowed_tracks:
+                    logging.info(f'트랙 {track_no} 번 스킵: 지정된 트랙이 아닙니다.')
+                    continue  # 지정된 번호가 아니면 건너뛰기
                 seg_coords_extra = CoordinateProcessor.filter_coords_by_segment(coords, seg)
+                # (x, y, z)만 추출
+                track_seg_coords = [(x, y, z) for (station, x, y, z) in seg_coords_extra]
+                track_stations = [station for (station, x, y, z) in seg_coords_extra]
+                label = f"Track {track_no}"
+                logging.info(f'트랙 {track_no} 번 작업 시작')
+
                 if len(seg_coords_extra) >= 2:
                     track_mesh_extra, slope_lefts_extra, slope_rights_extra = self._build_slopes_for_track(
-                        idx, seg, seg_coords_extra, slope_manager, track_no=track_no
-                    )
+                        idx, label, track_stations, track_seg_coords, slope_manager)
                     if track_mesh_extra:
                         track_meshes.append(track_mesh_extra)
                         all_slope_lefts.extend(slope_lefts_extra)
@@ -66,6 +80,12 @@ class SegmentProcessor:
         clipped_terrain, fixed_slope_lefts, fixed_slope_rights = terrain_assembler.build(
             idx, all_slope_lefts, all_slope_rights, terrain_mesh
         )
+
+        #TODO 사면끼리 클리핑 구현
+        """#    ── 3-1. 사면끼리 클리핑 ─────────────
+        logging.info(f"Segment {idx} 지형 클리핑 시작 (사면 총 {len(all_slope_lefts)}개)")
+        slope_assembler = SlopeAssembler(fixed_slope_lefts, fixed_slope_rights)
+        fixed_slope_lefts, fixed_slope_rights = slope_assembler.clip_slopes()"""
 
         # ── 4. 평행이동 ───────────────────────────────────────────
         clipped_terrain = MeshModifier(clipped_terrain).translate(self.xyz_list[idx - 1])
@@ -99,21 +119,19 @@ class SegmentProcessor:
                 plot_items.append((sr.points, sr.cells[0].data, "red", f"Slope Right {i}"))
             MeshPlotter.plot_multiple_meshes(plot_items)
 
-    def _build_slopes_for_track(self, idx, seg, seg_coords, slope_manager, track_no=0):
+    def _build_slopes_for_track(self, idx, label, stations, seg_coords, slope_manager):
         """
         단일 트랙의 토공 구간별 사면을 생성하고 반환.
         지형 생성/클리핑은 하지 않음 (process_segment에서 통합 처리).
         반환: (track_mesh, slope_lefts, slope_rights)
         """
-        label = f"Track {track_no}" if track_no else "Main Track"
+
         logging.info(f"Segment {idx} [{label}] 사면 생성 시작")
 
         # 트랙 빌더
         track_manager = TrackProcessor(seg_coords)
         track_mesh, track_edges = track_manager.build_track()
 
-        # 측점 및 토공 구간 분리
-        stations = get_stations(self.read_coords, seg_coords) if label == "Main Track" else [pt[-1] for pt in seg_coords]
         earth_list = get_earthwork_sections(seg_coords, stations, self.structure_list)
 
         seg_start_sta = stations[0]

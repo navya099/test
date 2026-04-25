@@ -22,12 +22,12 @@ class RailLoader:
                     parts = line.strip().split(',')
                     if len(parts) != 5:
                         continue
-                    track_no = int(parts[0])
-                    x = float(parts[1])
-                    y = float(parts[2])
-                    z = float(parts[3])
-                    station = float(parts[4])
-                    data.append((track_no, x, y, z, station))
+                    sta = float(parts[0])
+                    track_no = int(parts[1])
+                    x = float(parts[2])
+                    y = float(parts[3])
+                    z = float(parts[4])
+                    data.append((sta, track_no, x, y, z))
             logging.info(f"Rail info 읽기 완료: {len(data)} rows")
         except Exception as e:
             logging.error(f"Rail info 읽기 실패: {e}")
@@ -36,8 +36,8 @@ class RailLoader:
 
     def fillter_rail(self, raw_data):
         """선로번호별로 필터링하여 self.tracks에 저장"""
-        for track_no, x, y, z, sta in raw_data:
+        for sta, track_no, x, y, z in raw_data:
             if track_no not in self.tracks:
                 self.tracks[track_no] = []
-            self.tracks[track_no].append((x, y, z, sta))
+            self.tracks[track_no].append((sta, x, y, z))
         logging.info(f"Rail info 필터링 완료: {len(self.tracks)} tracks")

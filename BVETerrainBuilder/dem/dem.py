@@ -34,3 +34,6 @@ class DEMProcessor:
             return None, None
         mosaic, out_transform = merge(datasets, bounds=(minx, miny, maxx, maxy))
         return mosaic, out_transform
+
+    def extract_tiff(self, segment):
+        mosaic, out_transform = self.extract_segment(segment)

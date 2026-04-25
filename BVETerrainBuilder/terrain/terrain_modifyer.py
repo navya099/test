@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 from shapely import Polygon
 from shapely.ops import triangulate
-
+import logging
 from util import interpolate_z
 
 
@@ -43,7 +43,16 @@ class TerrainModifier :
                 continue
 
             # Polygon 또는 MultiPolygon 처리
-            geoms = [clipped_area] if clipped_area.geom_type == 'Polygon' else clipped_area.geoms
+            # 타입별 안전 처리
+            if clipped_area.geom_type == 'Polygon':
+                geoms = [clipped_area]
+            elif clipped_area.geom_type == 'MultiPolygon':
+                geoms = clipped_area.geoms
+            else:
+                # LineString, GeometryCollection 등은 스킵
+
+                logging.debug(f"Unexpected geom_type: {clipped_area.geom_type}, skip")
+                continue
 
             for poly in geoms:
                 if poly.area < 0.001:
