@@ -9,5 +9,5 @@ class FolderManager:
     @staticmethod
     def create(path):
         """폴더 생성"""
-        shutil.rmtree("C:/temp/OBJ", ignore_errors=True) #기존 폴더 삭제
-        os.makedirs("C:/temp/OBJ", exist_ok=True) #폴더 생성
+        shutil.rmtree(path, ignore_errors=True) #기존 폴더 삭제
+        os.makedirs(path, exist_ok=True) #폴더 생성

@@ -94,30 +94,22 @@ class SegmentProcessor:
         fixed_slope_rights = [MeshModifier(sr).translate(self.xyz_list[idx - 1]) for sr in fixed_slope_rights]
 
         # ── 5. 저장 ───────────────────────────────────────────────
-        # 메인 트랙 기준으로 저장 (track_meshes[0])
-        main_track = track_meshes[0] if track_meshes else None
-        OutputExporter.save_obj_with_groups(
-            f"c:/temp/obj/segment_{idx}.obj",
-            clipped_terrain.points, clipped_terrain.cells[0].data,
-            main_track.points if main_track else None,
-            main_track.cells[0].data if main_track else None,
-            fixed_slope_lefts,
-            fixed_slope_rights
-        )
+        save_items = [
+            (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain")
+        ]
+        for i, tm in enumerate(track_meshes):
+            save_items.append((tm.points, tm.cells[0].data, "blue", f"Track {i}"))
+        for i, sl in enumerate(fixed_slope_lefts, start=1):
+            save_items.append((sl.points, sl.cells[0].data, "green", f"Slope Left {i}"))
+        for i, sr in enumerate(fixed_slope_rights, start=1):
+            save_items.append((sr.points, sr.cells[0].data, "red", f"Slope Right {i}"))
+
+        OutputExporter.save_obj_with_groups(f"c:/temp/obj/segment_{idx}.obj", save_items)
         logging.info(f"병합된 지표면 저장 완료: segment_{idx}")
 
         # ── 6. 시각화 ─────────────────────────────────────────────
         if is_visible:
-            plot_items = [
-                (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain")
-            ]
-            for i, tm in enumerate(track_meshes):
-                plot_items.append((tm.points, tm.cells[0].data, "blue", f"Track {i}"))
-            for i, sl in enumerate(fixed_slope_lefts, start=1):
-                plot_items.append((sl.points, sl.cells[0].data, "green", f"Slope Left {i}"))
-            for i, sr in enumerate(fixed_slope_rights, start=1):
-                plot_items.append((sr.points, sr.cells[0].data, "red", f"Slope Right {i}"))
-            MeshPlotter.plot_multiple_meshes(plot_items)
+            MeshPlotter.plot_multiple_meshes(save_items)
 
     def _build_slopes_for_track(self, idx, label, stations, seg_coords, slope_manager):
         """
