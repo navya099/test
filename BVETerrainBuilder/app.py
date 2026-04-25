@@ -2,7 +2,9 @@
 import logging
 from tkinter.filedialog import askopenfilename
 
+from alignment.parser import AlignmentParser
 from coord.coord_io import CoordinateLoader
+from file_manager.file_controller import FileController
 from main_processor.main_processor import MainProcessor
 from structure.structure_io import StructureLoader
 from track.railloader import RailLoader
@@ -15,7 +17,8 @@ class MainAPP:
         # 역할 클래스 초기화
         self.coord_loader = CoordinateLoader()
         self.structure_loader = StructureLoader()
-        self.rail_loader = RailLoader()
+        self.rail_loader = AlignmentParser()
+        self.file_loader = FileController()
 
     def setup_logging(self):
         level = logging.DEBUG if self.debug else logging.INFO
@@ -50,14 +53,14 @@ class MainAPP:
         structurefilepath = askopenfilename(title="구조물 파일 선택")
         if not structurefilepath:
             raise ValueError("구조물 파일을 선택하지 않았습니다.")
-        rail_info_path = askopenfilename(title="rail info파일 선택")
+        rail_info_path = askopenfilename(title="정거장 파일 선택")
         self._process(coord_file, structurefilepath, rail_info_path)
 
     def _process(self, coord_file, structurefilepath, rail_info_path):
         try:
             read_coords = self.coord_loader.load(coord_file)
             structure_list = self.structure_loader.load(structurefilepath)
-            tracks = self.rail_loader.load(rail_info_path) if rail_info_path else None
+            tracks = self.rail_loader.process_lines_to_alginment_data(self.file_loader.read_file(rail_info_path)) if rail_info_path else None
             mp = MainProcessor(read_coords=read_coords, structure_list=structure_list, tracks=tracks)
             mp.execute(selected_segments=[16],is_visible=True)
         except Exception as e:

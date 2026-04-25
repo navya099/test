@@ -1,5 +1,6 @@
 import logging
 
+from alignment.calculoatr import AlignmentCalculator
 from coord.coord_sampler import CoordinateProcessor
 from coordinate_utils import convert_coordinates
 from dem.dem import DEMProcessor
@@ -36,6 +37,13 @@ class MainProcessor:
             segments = self.coord_processor.create_segments(self.xy_list,1000)
             # DEM 클래스 호출
             self.dem_processor = DEMProcessor(convert_coordinates(self.xy_list, 5186, 4326))
+
+            #선형 생성
+            al_cal_pm = AlignmentCalculator()
+            self.tracks.insert(0, al_cal_pm.create_mainline(self.read_coords))
+            #다른 트랙들 선형 생성
+            al_cal_pm.calculate_otherline_coordinates(self.tracks)
+
             #메인파이프실행
             for idx, seg in enumerate(segments, start=1):
                 if selected_segments and idx not in selected_segments:

@@ -1,3 +1,5 @@
+from rich.progress import track
+
 from coord.coord_sampler import CoordinateProcessor
 import logging
 
@@ -33,43 +35,29 @@ class SegmentProcessor:
         all_slope_rights = []
         track_meshes = []  # 시각화/저장용
 
-        # 메인 트랙
-        seg_coords = CoordinateProcessor.filter_coords_by_segment(self.read_coords, seg)
-        if len(seg_coords) >= 2:
-            # 측점 및 토공 구간 분리
-            logging.info('트랙 0번 작업 시작')
-            stations = get_stations(self.read_coords, seg_coords)
-            track_mesh, slope_lefts, slope_rights = self._build_slopes_for_track(
-                idx, '트랙 0', stations, seg_coords, slope_manager)
-            if track_mesh:
-                track_meshes.append(track_mesh)
-                all_slope_lefts.extend(slope_lefts)
-                all_slope_rights.extend(slope_rights)
-
-        # 추가 트랙
-        # 예: 1번, 40번, 41번 트랙만 처리
-        allowed_tracks = [5,8,39]
-
+        #트랙별 순회
+        track_names = []
         if self.tracks:
-            for track_no, coords in self.tracks.items():
-                if track_no not in allowed_tracks:
-                    logging.info(f'트랙 {track_no} 번 스킵: 지정된 트랙이 아닙니다.')
-                    continue  # 지정된 번호가 아니면 건너뛰기
-                seg_coords_extra = CoordinateProcessor.filter_coords_by_segment(coords, seg)
+            for alignment in self.tracks:
+                track_no = next((rail.railindex for rail in alignment.raildata if rail), None) #선로번호 가져오기
+                track_name = alignment.name #선로명
+                track_rails = [(rail.station, rail.coord.x,rail.coord.y, rail.coord.z) for rail in alignment.raildata] #vector3객체를 x,y,z튜플로 변환
+                seg_coords = CoordinateProcessor.filter_coords_by_segment(track_rails, seg) #전체 트랙에서 구간 분리
+
                 # (x, y, z)만 추출
-                track_seg_coords = [(x, y, z) for (station, x, y, z) in seg_coords_extra]
-                track_stations = [station for (station, x, y, z) in seg_coords_extra]
-                label = f"Track {track_no}"
-                logging.info(f'트랙 {track_no} 번 작업 시작')
+                track_coords = [(x, y, z) for (station, x, y, z) in seg_coords]
+                track_stations = [station for (station, x, y, z) in seg_coords]
 
-                if len(seg_coords_extra) >= 2:
-                    track_mesh_extra, slope_lefts_extra, slope_rights_extra = self._build_slopes_for_track(
-                        idx, label, track_stations, track_seg_coords, slope_manager)
-                    if track_mesh_extra:
-                        track_meshes.append(track_mesh_extra)
-                        all_slope_lefts.extend(slope_lefts_extra)
-                        all_slope_rights.extend(slope_rights_extra)
+                logging.info(f'트랙: {track_name}, 선로번호: {track_no} 번 작업 시작')
 
+                if len(seg_coords) >= 2:
+                    track_mesh, slope_lefts, slope_rights = self._build_slopes_for_track(
+                        idx, track_name, track_stations, track_coords, slope_manager)
+                    if track_mesh:
+                        track_meshes.append(track_mesh)
+                        all_slope_lefts.extend(slope_lefts)
+                        all_slope_rights.extend(slope_rights)
+                track_names.append(track_name)
         if not all_slope_lefts:
             logging.warning(f"Segment {idx}: 생성된 사면 없음 → 스킵")
             return
@@ -88,17 +76,19 @@ class SegmentProcessor:
         fixed_slope_lefts, fixed_slope_rights = slope_assembler.clip_slopes()"""
 
         # ── 4. 평행이동 ───────────────────────────────────────────
+        logging.info(f"Segment {idx} 평행이동")
         clipped_terrain = MeshModifier(clipped_terrain).translate(self.xyz_list[idx - 1])
         track_meshes = [MeshModifier(tm).translate(self.xyz_list[idx - 1]) for tm in track_meshes]
         fixed_slope_lefts = [MeshModifier(sl).translate(self.xyz_list[idx - 1]) for sl in fixed_slope_lefts]
         fixed_slope_rights = [MeshModifier(sr).translate(self.xyz_list[idx - 1]) for sr in fixed_slope_rights]
 
         # ── 5. 저장 ───────────────────────────────────────────────
+        logging.info(f"Segment {idx} 저장중...")
         save_items = [
             (clipped_terrain.points, clipped_terrain.cells[0].data, "orange", "Clipped Terrain")
         ]
-        for i, tm in enumerate(track_meshes):
-            save_items.append((tm.points, tm.cells[0].data, "blue", f"Track {i}"))
+        for tm, name in zip(track_meshes, track_names):
+            save_items.append((tm.points, tm.cells[0].data, "blue", f"Track {name}"))
         for i, sl in enumerate(fixed_slope_lefts, start=1):
             save_items.append((sl.points, sl.cells[0].data, "green", f"Slope Left {i}"))
         for i, sr in enumerate(fixed_slope_rights, start=1):
@@ -109,7 +99,10 @@ class SegmentProcessor:
 
         # ── 6. 시각화 ─────────────────────────────────────────────
         if is_visible:
+            logging.info(f"Segment {idx} 시각화 중...")
             MeshPlotter.plot_multiple_meshes(save_items)
+
+        logging.info(f"Segment {idx} 모든 작업 완료!")
 
     def _build_slopes_for_track(self, idx, label, stations, seg_coords, slope_manager):
         """
