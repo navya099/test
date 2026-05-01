@@ -6,7 +6,7 @@ from math_utils import calculate_bearing
 
 def read_civil3d_data():
     """엑셀 파일에서 좌표 리스트 얻기"""
-    df = pd.read_excel(r"C:\Users\Administrator\Documents\CivilReport.XLS", skiprows=14)
+    df = pd.read_excel(r"C:\Temp\CivilReport.XLS", skiprows=14)
     coords = df[['Northing', 'Easting']].values.tolist()
     chainages = df['측점'].values.tolist()
     bearings = df['접선 방향'].values.tolist()
@@ -59,38 +59,56 @@ def arc_from_points_and_tangent(p1, p2, start_tangent_angle):
     return arcs
 
 
+import math
 
 
-#메인 로직
-def generate_curve_cmds(chainages, coords, bearings, tol=0.005):
+def generate_curve_cmds(chainages, coords, bearings: list[str], tol=1e-6):
+    results = []
+    radii = []
     cmds = []
-    for i in range(len(bearings) -1):  # bearings 기준으로 순회
-        if i <= len(coords)-1:
-            start = coords[i]
-            end = coords[i+1]
-            chainage = chainages[i]
-            start_bearing = bearings[i]
-            end_bearing = bearings[i+1]
 
-            # 방향각 변화량
-            delta_bearing = end_bearing - start_bearing
-            # 구간 길이
-            dx = end[0] - start[0]
-            dy = end[1] - start[1]
-            segment_length = 25
+    for i in range(len(bearings) - 1):
+        start = coords[i]
+        end = coords[i + 1]
+        chainage = chainages[i]
 
-            # 직선 판정
-            if abs(delta_bearing) < tol:
-                cmds.append(f"{int(chainage)},.CURVE 0")
-            else:
-                # 반경 = 구간 길이 / 방향각 변화량
-                r = abs(segment_length / delta_bearing)
-                # 좌/우 판정
-                side = "left" if delta_bearing > 0 else "right"
-                r_signed = r if side == "right" else -r
-                cmds.append(f"{int(chainage)},.CURVE {int(r_signed)}")
+        theta1 = dms_to_radians(bearings[i])
+        theta2 = dms_to_radians(bearings[i + 1])
 
-    return cmds
+        # 각도 차이를 보정
+        delta_theta = normalize_angle_diff(theta1, theta2)
+
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        segment_length = math.hypot(dx, dy)
+
+        if segment_length > 0 and abs(delta_theta) > tol:
+            curvature = delta_theta / segment_length
+            radius = abs(1 / curvature)
+            side = -1 if delta_theta > 0 else 1
+        else:
+            radius = 0.0
+            side = 1
+
+        cmd = f"{chainage},.curve {radius * side};0;"
+        results.append((chainage, radius))
+        radii.append(radius)
+        cmds.append(cmd)
+
+    return results, radii, cmds
+
+
+
+def dms_to_radians(dms_str: str) -> float:
+    dms_str = dms_str.replace("N ", "").strip()
+    deg, rest = dms_str.split("°")
+    minutes, seconds = rest.split("'")
+    seconds = seconds.replace('"', '')
+    deg = float(deg)
+    minutes = float(minutes)
+    seconds = float(seconds)
+    decimal_degrees = 90 - (deg + minutes/60 + seconds/3600)
+    return decimal_degrees * math.pi / 180
 
 def save_txt(data, filepath):
     # 결과 확인
@@ -98,27 +116,74 @@ def save_txt(data, filepath):
         for d in data:
             file.write(str(d) + '\n')
 def main():
-
-    #엑셀데이터 읽기
+    # 엑셀데이터 읽기
     chainages, coords, bearings = read_civil3d_data()
 
-    #원본 좌표는 토목좌표계 기준(X-N,Y-E)으로 수학좌표계(X-E,Y-N)로 변환
-    coords = [[y,x] for x,y in coords]
+    # 좌표계 변환 (Civil 좌표계 → 수학 좌표계)
+    coords = [[y, x] for x, y in coords]
 
-    """# 접선각 계산
-    
-    bearings= []
-    for i in range(len(coords) - 1):
-        start_coord = coords[i]
-        end_coord = coords[i+1]
-        bearing = calculate_bearing(start_coord, end_coord)
-        bearings.append(bearing)"""
+    # 곡선반경 계산
+    curve_cmds, radii, cmds = generate_curve_cmds(chainages, coords, bearings)
+    filepath_curve = r"D:\BVE\루트\Railway\Route\연습용루트\평면선형.txt"
+    save_txt(cmds, filepath_curve)
 
-    #베어링 단위변환
-    bearings = [math.radians(90 - bearing) for bearing in bearings]
-    curve_cmds = generate_curve_cmds(chainages, coords ,bearings)
-    filepath = r"D:\BVE\루트\Railway\Route\연습용루트\평면선형.txt"
-    save_txt(curve_cmds, filepath)
+    # 좌표 검산
+    result = compute_coords(chainages, bearings, radii, start_coord=coords[0])
+
+    # 에러 체크 (Δx, Δy, 거리오차)
+    error_check_list = error_check(result, coords)
+
+    # 오차 저장
+    filepath_error = r"D:\BVE\루트\Railway\Route\연습용루트\좌표오차.txt"
+    save_errors(error_check_list, chainages, filepath_error)
+
+def normalize_angle_diff(theta1, theta2):
+    delta = theta2 - theta1
+    # -pi ~ +pi 범위로 보정
+    while delta > math.pi:
+        delta -= 2 * math.pi
+    while delta < -math.pi:
+        delta += 2 * math.pi
+    return delta
+
+
+def compute_coords(chainages, bearings, radii, start_coord):
+    coords_calc = [start_coord]
+    theta = dms_to_radians(bearings[0])  # 시작 방위각
+    print(math.degrees(theta))
+    for i in range(len(chainages) - 1):
+        ds = chainages[i + 1] - chainages[i]
+        R = radii[i]
+
+        if R == float('inf') or R == 0:  # 직선
+            x_new = coords_calc[-1][0] + ds * math.cos(theta)
+            y_new = coords_calc[-1][1] + ds * math.sin(theta)
+        else:  # 곡선
+            dtheta = ds / R
+            theta_new = theta + dtheta
+            x_new = coords_calc[-1][0] + R * (math.sin(theta_new) - math.sin(theta))
+            y_new = coords_calc[-1][1] - R * (math.cos(theta_new) - math.cos(theta))
+            theta = theta_new
+
+        coords_calc.append((x_new, y_new))
+
+    return coords_calc
+
+def error_check(coords_calc, coords_orig):
+    errors = []
+    for (xc, yc), (xo, yo) in zip(coords_calc, coords_orig):
+        dx = xc - xo
+        dy = yc - yo
+        dist_error = math.hypot(dx, dy)
+        errors.append((dx, dy, dist_error))
+    return errors
+
+def save_errors(errors, chainages, filepath):
+    with open(filepath, encoding='utf-8', mode='w') as file:
+        for i, (dx, dy, dist_error) in enumerate(errors):
+            file.write(
+                f"Chainage {chainages[i]}: Δx = {dx:.4f}, Δy = {dy:.4f}, DistError = {dist_error:.4f}\n"
+            )
 
 
 if __name__ == '__main__':
