@@ -1,5 +1,5 @@
-from AutoCAD.geometry import GeoMetry
-from AutoCAD.point2d import Point2d
+from .geometry import GeoMetry
+from .point2d import Point2d
 import math
 
 class Arc(GeoMetry):
@@ -46,9 +46,24 @@ class Arc(GeoMetry):
         return self.start_angle + self.end_angle
 
     @property
+    def theta(self) -> float:
+        """호의 진행 방향 중심각 (라디안)"""
+        theta = self.end_angle - self.start_angle
+        # -2π ~ 2π 범위로 정규화
+        while theta <= -2 * math.pi:
+            theta += 2 * math.pi
+        while theta > 2 * math.pi:
+            theta -= 2 * math.pi
+
+        if theta < 0:
+            theta += 2 * math.pi
+
+        return theta
+
+    @property
     def length(self) -> float:
         """호 길이"""
-        return abs(self.end_angle - self.start_angle) * self.radius
+        return abs(self.theta) * self.radius
 
     @property
     def chord_length(self) -> float:

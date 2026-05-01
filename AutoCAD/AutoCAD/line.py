@@ -1,7 +1,7 @@
 from abc import ABC
 import math
-from point2d import Point2d
-from geometry import GeoMetry  # 기존 추상 클래스
+from .point2d import Point2d
+from .geometry import GeoMetry  # 기존 추상 클래스
 
 class Line2d(GeoMetry):
     """
@@ -17,6 +17,36 @@ class Line2d(GeoMetry):
     def direction(self):
         return math.atan2(self.end.y - self.start.y, self.end.x - self.start.x)
 
+    #유틸
+    def get_x_from_y(self, y_input):
+        """
+        직선(Line2d) 위에서 특정 y좌표(y_input)에 대응하는 x좌표를 반환한다.
+        """
+        # 수직선 예외 처리
+        if self.end.x == self.start.x:
+            return self.start.x
+
+        # 기울기와 절편
+        m = (self.end.y - self.start.y) / (self.end.x - self.start.x)
+        b = self.start.y - m * self.start.x
+
+        # x = (y - b) / m
+        return (y_input - b) / m
+
+    def get_y_from_x(self, x_input):
+        """
+        직선(Line2d) 위에서 특정 x좌표(x_input)에 대응하는 y좌표를 반환한다.
+        """
+        # 수직선 예외 처리
+        if self.end.x == self.start.x:
+            return None
+
+        # 기울기와 절편
+        m = (self.end.y - self.start.y) / (self.end.x - self.start.x)
+        b = self.start.y - m * self.start.x
+
+        # y = m*x + b
+        return m * x_input + b
 
     # GeoMetry 추상 메소드 구현
     def move(self, angle: float, distance: float):

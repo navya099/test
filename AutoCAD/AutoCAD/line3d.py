@@ -1,8 +1,11 @@
-
+from abc import ABC
 import math
-from point2d import Point2d
-from point3d import Point3d
-from geometry import GeoMetry  # 기존 추상 클래스
+
+from .line import Line2d
+from .point2d import Point2d
+from .geometry import GeoMetry  # 기존 추상 클래스
+from .point3d import Point3d
+
 
 class Line3d(GeoMetry):
     """
@@ -13,11 +16,41 @@ class Line3d(GeoMetry):
         self.end = end
     @property
     def length(self):
-        return self.start.distance_to(self.end,option='3d')
+        return self.start.distance_to(self.end)
     @property
     def direction(self):
         return math.atan2(self.end.y - self.start.y, self.end.x - self.start.x)
 
+    #유틸
+    def get_x_from_y(self, y_input):
+        """
+        직선(Line2d) 위에서 특정 y좌표(y_input)에 대응하는 x좌표를 반환한다.
+        """
+        # 수직선 예외 처리
+        if self.end.x == self.start.x:
+            return self.start.x
+
+        # 기울기와 절편
+        m = (self.end.y - self.start.y) / (self.end.x - self.start.x)
+        b = self.start.y - m * self.start.x
+
+        # x = (y - b) / m
+        return (y_input - b) / m
+
+    def get_y_from_x(self, x_input):
+        """
+        직선(Line2d) 위에서 특정 x좌표(x_input)에 대응하는 y좌표를 반환한다.
+        """
+        # 수직선 예외 처리
+        if self.end.x == self.start.x:
+            return None
+
+        # 기울기와 절편
+        m = (self.end.y - self.start.y) / (self.end.x - self.start.x)
+        b = self.start.y - m * self.start.x
+
+        # y = m*x + b
+        return m * x_input + b
 
     # GeoMetry 추상 메소드 구현
     def move(self, angle: float, distance: float):
@@ -25,9 +58,9 @@ class Line3d(GeoMetry):
         self.end.move(angle, distance)
 
     def moved(self, angle: float, distance: float):
-        return Line3d(self.start.moved(angle, distance), self.end.moved(angle, distance))
+        return Line2d(self.start.moved(angle, distance), self.end.moved(angle, distance))
 
-    def distance_to(self, line: 'Line3d') -> float:
+    def distance_to(self, line: 'Line2d') -> float:
         # self와 line 사이 최소 거리 계산
         d1 = self.distance_to_point(line.start)
         d2 = self.distance_to_point(line.end)
@@ -58,7 +91,7 @@ class Line3d(GeoMetry):
         return angle
 
     def copy(self):
-        return Line3d(self.start.copy(), self.end.copy())
+        return Line2d(self.start.copy(), self.end.copy())
 
     def rotate(self, angle: float, origin=None):
         if origin is None:
