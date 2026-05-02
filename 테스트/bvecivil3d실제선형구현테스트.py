@@ -1,19 +1,60 @@
 import math
+from tkinter.filedialog import askopenfilename
+
+import chardet
 import pandas as pd
+import os
 
-from math_utils import calculate_bearing
+def file_valid_check(ext, filepath):
+    # 헤더만 읽기
+    if ext == '.xls':
+        header_df = pd.read_excel(filepath, nrows=0)
+    elif ext == '.csv':
+        with open(filepath, 'rb') as f:
+            result = chardet.detect(f.read(10000))  # 앞부분 샘플
+        encoding = result['encoding']
+        header_df = pd.read_csv(filepath, encoding=encoding, nrows=0)
+    else:
+        return False
+
+    cols = header_df.columns.tolist()
+    if ext == '.xls':
+        required = ['선형 증분 측점 보고서']
+    else:  # csv
+        required = ['Display_Station', 'Bearing(Rad)', 'Northing', 'Easting', 'Real_Station']
+
+    return all(col in cols for col in required)
 
 
-def read_civil3d_data():
+def read_civil3d_data(filepath):
     """엑셀 파일에서 좌표 리스트 얻기"""
-    df = pd.read_excel(r"C:\Temp\CivilReport.XLS", skiprows=14)
+
+    file_ext = os.path.splitext(filepath)[1].lower()
+    #유효성 체크
+    vaild = file_valid_check(file_ext, filepath)
+    if not vaild:
+        raise Exception('지원하지 않는 파일입니다. 올바른 파일을 선택하세요')
+
+    #파일 확장에따라 입력소스 분기
+    if file_ext == '.xls':
+        mode = 'civil3dreport'
+        skiprows=14
+        station_colum = '측점'
+        bearing_colum = '접선 방향'
+        df = pd.read_excel(filepath, skiprows=skiprows)
+    elif file_ext == '.csv':
+        mode = 'acadlisp'
+        skiprows=0
+        station_colum = 'Display_Station'
+        bearing_colum = 'Bearing(Rad)'
+        df = pd.read_csv(filepath, skiprows=skiprows)
+    else:
+        raise Exception(f'지원하지 않는 파일 형식 {file_ext}')
+
     coords = df[['Northing', 'Easting']].values.tolist()
-    chainages = df['측점'].values.tolist()
-    bearings = df['접선 방향'].values.tolist()
-    return chainages, coords, bearings
-
-
-import math
+    chainages = df[station_colum].values.tolist()
+    bearings = df[bearing_colum].values.tolist()
+    return chainages, coords, bearings, mode
 
 def arc_from_points_and_tangent(p1, p2, start_tangent_angle):
     x1, y1 = p1
@@ -28,11 +69,11 @@ def arc_from_points_and_tangent(p1, p2, start_tangent_angle):
     nx, ny = n
 
     # λ에 대한 이차방정식
-    A = nx**2 + ny**2 - 1
-    B = -2*(dx*nx + dy*ny)
-    C = dx**2 + dy**2
+    a = nx**2 + ny**2 - 1
+    b = -2*(dx*nx + dy*ny)
+    c = dx**2 + dy**2
 
-    disc = B**2 - 4*A*C
+    disc = b**2 - 4*a*c
     if disc < 0:
         return None
 
@@ -40,29 +81,29 @@ def arc_from_points_and_tangent(p1, p2, start_tangent_angle):
     if disc == 0:
         return [{"R": 0, "center": None, "side": None}]
 
-    lam1 = (-B + math.sqrt(disc)) / (2*A)
-    lam2 = (-B - math.sqrt(disc)) / (2*A)
+    lam1 = (-b + math.sqrt(disc)) / (2*a)
+    lam2 = (-b - math.sqrt(disc)) / (2*a)
 
     arcs = []
     for lam in [lam1, lam2]:
         cx = x1 + lam*nx
         cy = y1 + lam*ny
-        R = abs(lam)
+        r = abs(lam)
 
         # 좌/우 판별
         cvec = (cx - x1, cy - y1)
         cross = t[0]*cvec[1] - t[1]*cvec[0]
         side = "left" if cross > 0 else "right"
 
-        arcs.append({"R": R, "center": (cx, cy), "side": side})
+        arcs.append({"R": r, "center": (cx, cy), "side": side})
 
     return arcs
 
 
-import math
 
 
-def generate_curve_cmds(chainages, coords, bearings: list[str], tol=1e-6):
+
+def generate_curve_cmds(chainages, coords, bearings: list[str], mode, tol=1e-6):
     results = []
     radii = []
     cmds = []
@@ -72,8 +113,8 @@ def generate_curve_cmds(chainages, coords, bearings: list[str], tol=1e-6):
         end = coords[i + 1]
         chainage = chainages[i]
 
-        theta1 = dms_to_radians(bearings[i])
-        theta2 = dms_to_radians(bearings[i + 1])
+        theta1 = parse_bearing(bearings[i],mode)
+        theta2 = parse_bearing(bearings[i + 1],mode)
 
         # 각도 차이를 보정
         delta_theta = normalize_angle_diff(theta1, theta2)
@@ -116,19 +157,32 @@ def save_txt(data, filepath):
         for d in data:
             file.write(str(d) + '\n')
 def main():
-    # 엑셀데이터 읽기
-    chainages, coords, bearings = read_civil3d_data()
+    filepath = None
+    while True:
+        try:
+            filepath = askopenfilename(title="Civil3D 보고서 또는 AcadLisp CSV 선택")
+            if not filepath:
+                raise FileNotFoundError("대상 파일을 찾을 수 없습니다")
 
+            # 파일 읽기
+            chainages, coords, bearings, mode = read_civil3d_data(filepath)
+
+            print(f"파일 읽기 성공: {filepath}, 모드={mode}")
+            break
+
+        except Exception as e:
+            print(f"오류 발생: 파일: {filepath}는 {e}")
+            print("올바른 Civil3D 보고서(.xls) 또는 AcadLisp CSV(.csv)를 선택하세요.")
     # 좌표계 변환 (Civil 좌표계 → 수학 좌표계)
     coords = [[y, x] for x, y in coords]
 
     # 곡선반경 계산
-    curve_cmds, radii, cmds = generate_curve_cmds(chainages, coords, bearings)
+    curve_cmds, radii, cmds = generate_curve_cmds(chainages, coords, bearings, mode)
     filepath_curve = r"D:\BVE\루트\Railway\Route\연습용루트\평면선형.txt"
     save_txt(cmds, filepath_curve)
 
     # 좌표 검산
-    result = compute_coords(chainages, bearings, radii, start_coord=coords[0])
+    result = compute_coords(chainages, bearings, radii, start_coord=coords[0], mode=mode)
 
     # 에러 체크 (Δx, Δy, 거리오차)
     error_check_list = error_check(result, coords)
@@ -147,22 +201,22 @@ def normalize_angle_diff(theta1, theta2):
     return delta
 
 
-def compute_coords(chainages, bearings, radii, start_coord):
+def compute_coords(chainages, bearings, radii, start_coord, mode):
     coords_calc = [start_coord]
-    theta = dms_to_radians(bearings[0])  # 시작 방위각
+    theta = parse_bearing(bearings[0], mode)  # 시작 방위각
     print(math.degrees(theta))
     for i in range(len(chainages) - 1):
         ds = chainages[i + 1] - chainages[i]
-        R = radii[i]
+        r = radii[i]
 
-        if R == float('inf') or R == 0:  # 직선
+        if r == float('inf') or r == 0:  # 직선
             x_new = coords_calc[-1][0] + ds * math.cos(theta)
             y_new = coords_calc[-1][1] + ds * math.sin(theta)
         else:  # 곡선
-            dtheta = ds / R
+            dtheta = ds / r
             theta_new = theta + dtheta
-            x_new = coords_calc[-1][0] + R * (math.sin(theta_new) - math.sin(theta))
-            y_new = coords_calc[-1][1] - R * (math.cos(theta_new) - math.cos(theta))
+            x_new = coords_calc[-1][0] + r * (math.sin(theta_new) - math.sin(theta))
+            y_new = coords_calc[-1][1] - r * (math.cos(theta_new) - math.cos(theta))
             theta = theta_new
 
         coords_calc.append((x_new, y_new))
@@ -185,6 +239,11 @@ def save_errors(errors, chainages, filepath):
                 f"Chainage {chainages[i]}: Δx = {dx:.4f}, Δy = {dy:.4f}, DistError = {dist_error:.4f}\n"
             )
 
+def parse_bearing(bearing, mode):
+    if mode == 'civil3dreport':
+        return dms_to_radians(bearing)  # 문자열 → rad 변환
+    elif mode == 'acadlisp':
+        return float(bearing)           # 이미 rad 값
 
 if __name__ == '__main__':
     main()
