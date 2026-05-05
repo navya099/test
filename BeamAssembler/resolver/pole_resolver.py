@@ -8,7 +8,7 @@ from utils.polenamer import PoleNameBuilder
 class PoleResolver:
     index_dic = {}
     indexes = set()
-    next_index = 1600  # 빔과 겹치지 않도록 별도 범위 시작
+    next_index = None  # 빔과 겹치지 않도록 별도 범위 시작
 
     @staticmethod
     def resolve(poles, idxlib, rail_map):
@@ -45,3 +45,11 @@ class PoleResolver:
 
             #기초 리졸버
             PoleBaseResolver.resolve(pole, idxlib)
+
+    @staticmethod
+    def set_start_index(value: int):
+        if PoleResolver.next_index is None:
+            PoleResolver.next_index = value
+            PoleResolver.index_dic.clear()
+            PoleResolver.indexes.clear()
+            # 필요하다면 초기화 로직 추가

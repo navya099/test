@@ -2,7 +2,7 @@ from utils.beamnamer import BeamNameBuilder
 class BeamResolver:
     index_dic = {}
     indexes = set()
-    next_index = 1502
+    next_index = None
     @staticmethod
     def resolve(beams, idxlib, rail_map, pole_map):
         for beam in beams:
@@ -37,3 +37,11 @@ class BeamResolver:
             beam.index = index
             beam.ref_start_pole = start
             beam.ref_end_pole = end
+
+    @staticmethod
+    def set_start_index(value: int):
+        if BeamResolver.next_index is None:
+            BeamResolver.next_index = value
+            BeamResolver.index_dic.clear()
+            BeamResolver.indexes.clear()
+            # 필요하다면 초기화 로직 추가

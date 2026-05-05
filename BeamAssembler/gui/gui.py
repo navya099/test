@@ -13,9 +13,12 @@ from controller.library_controller import IndexLibrary
 from controller.main_controller import MainProcess
 from library.library import LibraryManager
 from preview.preview_sevice import PreviewService
+from resolver.beam_resolver import BeamResolver
+from resolver.pole_resolver import PoleResolver
 from .basic_frame import BasicInfoFrame
 from .bracket_frame import BracketFrame
 from .equipment_window import EquipMentWindow
+from .indexinfo import IndexInfoFrame
 from .preview import PreviewViewer
 from .section_frame import SectionFrame
 from .stationinfoframe import StationInfoFrame
@@ -77,6 +80,8 @@ class PoleInstallGUI(tk.Tk):
         scrollbar.pack(side="right", fill="y")
 
         # 프레임 생성
+        self.index_info_frame= IndexInfoFrame(scrollable_frame, self.event)
+        self.index_info_frame.pack(fill="x", padx=10, pady=5)
         self.station_info_frame = StationInfoFrame(scrollable_frame, self.event)
         self.station_info_frame.pack(fill="x", padx=10, pady=5)
         self.section_frame = SectionFrame(scrollable_frame, self.event)
@@ -130,6 +135,10 @@ class PoleInstallGUI(tk.Tk):
         ttk.Button(frame, text="bve구문저장", command=self.save_allbve).pack(side="right", padx=10)
 
     def _generate(self):
+        beam_idx = self.index_info_frame.default_beam_idx_var.get()
+        pole_idx = self.index_info_frame.default_pole_idx_var.get()
+        PoleResolver.set_start_index(pole_idx)
+        BeamResolver.set_start_index(beam_idx)
         self.result = self.installadaptor.collect(self.section_frame.sections)
         self.mp.run(self.result)
 
