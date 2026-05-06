@@ -117,4 +117,14 @@ class BracketFrame(ttk.LabelFrame):
                 text="브래킷 설정",
                 command=lambda r=rail: self.open_bracket_config(r)
             ).grid(row=row, column=5, padx=5)
+            ttk.Button(
+                self.bracket_frame,
+                text="브래킷 초기화",
+                command=lambda r=rail: self.reset_bracket(r)
+            ).grid(row=row, column=6, padx=5)
         self.event.emit('rails.updated')
+
+    def reset_bracket(self, rail: TKRailData):
+        # 브래킷 리스트 비우기
+        rail.brackets.clear()
+        print(f"[DEBUG]: {rail.name_var.get()} 브래킷 초기화 완료")
