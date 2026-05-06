@@ -6,7 +6,7 @@ class PoleNameBuilder:
     @staticmethod
     def build(pole) -> str:
         t = pole.type
-        length = format_meter(pole.length) #str
+        length = pole.length #str
         if t == PoleType.PIPE:
             return f"{t.value}-{pole.series}-{length}m"
 

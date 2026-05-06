@@ -7,5 +7,5 @@ class BeamNameBuilder:
     def build(beam) -> str:
         t = beam.type
         length = format_meter(beam.length_m)  # str
-        return f'{t.value}-{length}m'
+        return f'{t.value}-{beam.length_m}m'
 

@@ -21,11 +21,7 @@ class PoleResolver:
             pole.display_name = name
             pole.base_rail = rail_map[pole.base_rail_index]
 
-            # 조건 세분화
-            if (pole.type == PoleType.PIPE) and (pole.length in standard_lengths) and (pole.width in standard_widths):
-                pole.iscustom = False
-            else:
-                pole.iscustom = True
+            pole.iscustom = True
 
             # 인덱스 조회 및 추가
             index = idxlib.get_index(name)

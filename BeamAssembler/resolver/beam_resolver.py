@@ -15,7 +15,7 @@ class BeamResolver:
             beam.length = end_x - start_x
             beam.length_m = round(beam.length, 3)
 
-            beam.iscustom = not beam.length_m.is_integer()
+            beam.iscustom = True
             name = BeamNameBuilder.build(beam)
             beam.name = name
 
