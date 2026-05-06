@@ -17,7 +17,9 @@ class IndexInfoFrame(ttk.LabelFrame):
         self.event = event
         self.default_beam_idx_var = tk.IntVar(value=1500)
         self.default_pole_idx_var = tk.IntVar(value=1500)
-        ttk.Label(self, text="커스텀 빔 시작 인덱스").grid(row=1, column=0, sticky="w", padx=5)
+        ttk.Label(self, text="빔 인덱스").grid(row=1, column=0, sticky="w", padx=5)
         ttk.Entry(self, textvariable=self.default_beam_idx_var, width=15).grid(row=1, column=1, padx=5)
-        ttk.Label(self, text="커스텀 전주 시작 인덱스").grid(row=1, column=2, sticky="w", padx=5)
+        ttk.Label(self, text="전주 인덱스").grid(row=1, column=2, sticky="w", padx=5)
         ttk.Entry(self, textvariable=self.default_pole_idx_var, width=15).grid(row=1, column=3, padx=5)
+        self.is_reset_index_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self, text="인덱스 초기화", variable=self.is_reset_index_var).grid(row=1, column=4, sticky="w", padx=5)

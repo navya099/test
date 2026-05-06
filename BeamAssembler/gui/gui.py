@@ -137,8 +137,9 @@ class PoleInstallGUI(tk.Tk):
     def _generate(self):
         beam_idx = self.index_info_frame.default_beam_idx_var.get()
         pole_idx = self.index_info_frame.default_pole_idx_var.get()
-        PoleResolver.set_start_index(pole_idx)
-        BeamResolver.set_start_index(beam_idx)
+        is_reset_idx = self.index_info_frame.is_reset_index_var.get()
+        PoleResolver.set_start_index(pole_idx, is_reset_idx)
+        BeamResolver.set_start_index(beam_idx, is_reset_idx)
         self.result = self.installadaptor.collect(self.section_frame.sections)
         self.mp.run(self.result)
 

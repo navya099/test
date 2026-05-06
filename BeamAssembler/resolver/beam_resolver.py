@@ -39,8 +39,8 @@ class BeamResolver:
             beam.ref_end_pole = end
 
     @staticmethod
-    def set_start_index(value: int):
-        if BeamResolver.next_index is None:
+    def set_start_index(value: int, is_reset_idx):
+        if BeamResolver.next_index is None or is_reset_idx:
             BeamResolver.next_index = value
             BeamResolver.index_dic.clear()
             BeamResolver.indexes.clear()

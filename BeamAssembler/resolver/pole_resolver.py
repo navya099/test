@@ -47,8 +47,8 @@ class PoleResolver:
             PoleBaseResolver.resolve(pole, idxlib)
 
     @staticmethod
-    def set_start_index(value: int):
-        if PoleResolver.next_index is None:
+    def set_start_index(value: int, is_reset_idx):
+        if PoleResolver.next_index is None or is_reset_idx:
             PoleResolver.next_index = value
             PoleResolver.index_dic.clear()
             PoleResolver.indexes.clear()
