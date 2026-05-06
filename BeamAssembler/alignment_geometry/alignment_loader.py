@@ -35,7 +35,10 @@ class BVEAlignmentIntersapter:
         with open(file_path, 'r') as file:
             for line in file:
                 # 쉼표로 구분된 값을 읽어서 float로 변환
-                x, y, z = map(float, line.strip().split(','))
+                try:
+                    sta, x, y, z = map(float, line.strip().split(','))
+                except ValueError:
+                    x, y, z = map(float, line.strip().split(','))
                 points.append((x, y, z))
         return points
 
