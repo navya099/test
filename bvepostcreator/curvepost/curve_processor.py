@@ -33,10 +33,7 @@ class CurveProcessor:
                 openfile_name = f'{curvetype}_{structure}용'
                 speed = int(cal_speed(ip.radius))
 
-                if self.al_type == '도시철도':
-                    self.processor.process_cityline(ip, curvetype, img_f_name, openfile_name, structure, speed)
-                else:
-                    self.processor.process_trainline(ip, curvetype, station_text, img_f_name, openfile_name, structure)
+                self.processor.process(ip, curvetype, station_text, img_f_name, openfile_name, structure, speed)
 
                 csvobject = self.factory.create(ip, curvetype, structure, station, object_index,
                                                 img_f_name, object_folder, speed)
