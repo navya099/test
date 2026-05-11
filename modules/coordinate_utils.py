@@ -1,4 +1,11 @@
+# coordinate_utils.py
 import pyproj
+from functools import lru_cache
+
+@lru_cache(maxsize=8)
+def _get_transformer(src: int, target: int):
+    """Transformer 객체 캐싱 - 매 호출마다 재생성 방지"""
+    return pyproj.Transformer.from_crs(src, target, always_xy=True)
 
 def convert_coordinates(coords, src: int, target: int):
     """
@@ -11,12 +18,13 @@ def convert_coordinates(coords, src: int, target: int):
     Returns:
         tuple 또는 list[tuple]
     """
-    transformer = pyproj.Transformer.from_crs(src, target, always_xy=True)
+    transformer = _get_transformer(src, target)  # ✅ 캐시에서 꺼냄
 
     # 단일 좌표
     if isinstance(coords[0], (int, float)):
-        x, y = coords
-        return transformer.transform(x, y)
+        return transformer.transform(coords[0], coords[1])
 
-    # 여러 좌표
-    return [transformer.transform(x, y) for x, y in coords]
+    # ✅ 배치 변환 - 루프 없이 한번에 처리
+    xs, ys = zip(*coords)
+    result_xs, result_ys = transformer.transform(xs, ys)
+    return list(zip(result_xs, result_ys))
