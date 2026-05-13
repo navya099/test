@@ -204,18 +204,20 @@ def plot_cross_section(ax, res):
 
     center_elev = (le[2] + re[2]) / 2
 
-    # 좌우 수평거리
-    dist_left = -res['left_dist']
-    dist_right = res['right_dist']
+    # 좌우 트랙 끝점의 수평거리
+    dist_left = -horizontal_distance(res['center'], lt)
+    dist_right = horizontal_distance(res['center'], rt)
+
+    # 좌우 daylight의 수평거리
     dist_left_end = -horizontal_distance(res['center'], le)
     dist_right_end = horizontal_distance(res['center'], re)
 
-    # 트랙 (중심~좌우 끝점)
+    # 트랙
     ax.plot([dist_left, 0, dist_right],
             [lt[2], cz, rt[2]],
             'o-', color='black', label='Track')
 
-    # 사면 (트랙 끝점~daylight)
+    # 사면
     ax.plot([dist_left, dist_left_end],
             [lt[2], le[2]],
             'c-', label='Left Slope')
@@ -223,8 +225,10 @@ def plot_cross_section(ax, res):
             [rt[2], re[2]],
             'm-', label='Right Slope')
 
-    # 트랙 레벨 기준선
-    ax.axhline(y=center_elev, color='gray', linestyle='--', label='Track Level')
+    # ✅ 원지반선 추가
+    if 'ground_profile' in res:
+        gx, gy = res['ground_profile']
+        ax.plot(gx, gy, 'g-', label='Original Ground')
 
     ax.set_title("Cross Section View")
     ax.set_xlabel("Horizontal Distance (m)")
@@ -233,6 +237,26 @@ def plot_cross_section(ax, res):
     ax.legend()
     ax.figure.canvas.draw()
 
+
+def extract_ground_profile(center, direction_vec, dem, width=25, step=5):
+    """중심점 기준 좌우 폭으로 원지반선 추출"""
+    cx, cy, cz = center
+    dx, dy = direction_vec
+    # 좌우 단위 벡터 (트랙 방향에 수직)
+    ux, uy = -dy, dx
+    length = math.sqrt(ux**2 + uy**2)
+    ux, uy = ux/length, uy/length
+
+    distances = []
+    elevations = []
+    for offset in np.arange(-width, width+step, step):
+        px = cx + ux * offset
+        py = cy + uy * offset
+        lon, lat = convert_coordinates([px, py], 5186, 4326)
+        elev = dem.get_elevation(lon, lat)
+        distances.append(offset)
+        elevations.append(elev + 100)
+    return distances, elevations
 
 
 def gui_select_point(results):
@@ -248,7 +272,7 @@ def gui_select_point(results):
         if idx >= 0:
             plot_cross_section(ax, results[idx])
 
-    combo = ttk.Combobox(root, values=[str(i) for i in range(len(results))])
+    combo = ttk.Combobox(root, values=[f'{i * 25}' for i in range(len(results))])
     combo.current(0)
     combo.bind("<<ComboboxSelected>>", update_plot)
     combo.pack(side=tk.BOTTOM, fill=tk.X)
@@ -360,11 +384,16 @@ def main():
     right_end = sb.add_slope(right_side, dem, slope_ratio, side="right")
 
     results = []
-    print('결과 생성 시작')
-    for i in range(len(read_coords)):
+
+    for i in tqdm(range(len(read_coords)), desc="트랙 처리"):
         center = read_coords[i]
         ld = horizontal_distance(left_side[i], left_end[i])
         rd = horizontal_distance(right_side[i], right_end[i])
+
+        # 방향 벡터는 좌우 트랙 끝점으로부터 구함
+        direction_vec = (right_side[i][0] - left_side[i][0],
+                         right_side[i][1] - left_side[i][1])
+        ground_x, ground_y = extract_ground_profile(center, direction_vec, dem)
 
         results.append({
             'center': center,
@@ -373,7 +402,8 @@ def main():
             'left_end': left_end[i],
             'right_end': right_end[i],
             'left_dist': ld,
-            'right_dist': rd
+            'right_dist': rd,
+            'ground_profile': (ground_x, ground_y)  # ✅ 원지반선 저장
         })
 
     # TXT 저장
