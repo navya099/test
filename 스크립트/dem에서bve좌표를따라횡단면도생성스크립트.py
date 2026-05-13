@@ -6,10 +6,37 @@ import math
 import numpy as np
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
+import pandas as pd
 import rasterio
 import glob
 from rasterio.windows import Window
+
+def is_bridge_tunnel(sta, structure_list):
+    """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
+    for name, start, end in structure_list['bridge']:
+        if start <= sta <= end:
+            return True
+
+    for name, start, end in structure_list['tunnel']:
+        if start <= sta <= end:
+            return True
+
+    return False
+
+def parse_structure(filepath):
+    structure_list = {'bridge': [], 'tunnel': []}
+
+    df_bridge = pd.read_excel(filepath, sheet_name='교량', header=None)
+    df_tunnel = pd.read_excel(filepath, sheet_name='터널', header=None)
+
+    df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
+    df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
+
+    for _, row in df_bridge.iterrows():
+        structure_list['bridge'].append((row['br_NAME'], row['br_START_STA'], row['br_END_STA']))
+    for _, row in df_tunnel.iterrows():
+        structure_list['tunnel'].append((row['tn_NAME'], row['tn_START_STA'], row['tn_END_STA']))
+    return structure_list
 
 class SrtmDEM30:
     def __init__(self, coords: list):
@@ -146,6 +173,12 @@ def read_coordinates(file_path):
             y = float(parts[1].strip())
             z = float(parts[2].strip())
             coordinates.append((x,y, z))
+        elif len(parts) == 4:
+            station = float(parts[0].strip())
+            x = float(parts[1].strip())
+            y = float(parts[2].strip())
+            z = float(parts[3].strip())
+            coordinates.append((station, x, y, z))
     return coordinates
 
 def get_track_edges(coords, track_width):
@@ -177,14 +210,30 @@ def horizontal_distance(p1, p2):
 def write_slope_file(path, results):
     with open(path, 'w') as f:
         for res in results:
-            cx, cy, cz = res['center']   # ✅ z까지 포함
+            # 구조물 구간이면 None 처리
+            if res['left'] is None or res['right'] is None:
+                f.write(
+                    f"Station {res['station']} - 구조물 구간\n"
+                )
+                continue
+
+            cx, cy, cz = res['center']
             lx, ly, lz = res['left']
             rx, ry, rz = res['right']
             le = res['left_end']
             re = res['right_end']
             ld = res['left_dist']
             rd = res['right_dist']
+
+            # None 값 방어
+            if le is None or re is None:
+                f.write(
+                    f"Station {res['station']} - 사면 계산 불가\n"
+                )
+                continue
+
             f.write(
+                f"Station {res['station']} "
                 f"Center({cx:.2f},{cy:.2f},{cz:.2f}) "
                 f"L({lx:.2f},{ly:.2f},{lz:.2f}) R({rx:.2f},{ry:.2f},{rz:.2f}) "
                 f"Lend({le[0]:.2f},{le[1]:.2f},{le[2]:.2f}) "
@@ -194,9 +243,28 @@ def write_slope_file(path, results):
 
 
 
+
 def plot_cross_section(ax, res):
     ax.clear()
+    isstructure = res['isstructure']
     cx, cy, cz = res['center']
+    if isstructure:
+        # ✅ 원지반선 추가
+        if 'ground_profile' in res:
+            gx, gy = res['ground_profile']
+            ax.plot(gx, gy, 'g-', label='Original Ground')
+
+        # 구조물 구간 → 원지반선만 표시하거나 빈 화면
+        ax.set_title("Cross Section View")
+        ax.set_xlabel("Horizontal Distance (m)")
+        ax.set_ylabel("Elevation (m)")
+        ax.set_aspect('equal')
+        ax.legend()
+        ax.set_xlim(-50, 50)
+        ax.set_ylim(cz - 50, cz + 50)
+        ax.figure.canvas.draw()
+        return
+
     lt = res['left']
     rt = res['right']
     le = res['left_end']
@@ -234,6 +302,8 @@ def plot_cross_section(ax, res):
     ax.set_xlabel("Horizontal Distance (m)")
     ax.set_ylabel("Elevation (m)")
     ax.set_aspect('equal')
+    ax.set_xlim(-50, 50)
+    ax.set_ylim(cz - 50, cz + 50)
     ax.legend()
     ax.figure.canvas.draw()
 
@@ -358,11 +428,25 @@ class SlopeBuilder:
         return l_daylight, r_daylight
 
 def main():
-    read_file = askopenfilename()
+    read_file = askopenfilename(title='좌표 파일 선택')
     if not read_file:
         raise FileNotFoundError('파일 오류')
+    structure_file = askopenfilename(title='구조물 파일 선택')
+    if not structure_file:
+        raise FileNotFoundError('파일 오류')
     read_coords = read_coordinates(read_file)
-    xy_list = [[x, y] for x, y, z in read_coords]
+
+    #리스트 길이에 따라 측점 선택
+    if read_coords and len(read_coords[0]) == 4:
+        stations = [sta for sta, x, y, z in read_coords]
+        xy_list = [[x, y] for sta, x, y, z in read_coords]
+    elif read_coords and len(read_coords[0]) == 3:
+        stations = [i * 25 for i, (x, y, z) in enumerate(read_coords)]
+        xy_list = [[x, y] for x, y, z in read_coords]
+    else:
+        raise ValueError(f'an error occured while reading {read_coords}')
+
+    structure_list = parse_structure(structure_file)
 
     # 좌표 변환
     print('좌표변환 시작')
@@ -394,17 +478,33 @@ def main():
         direction_vec = (right_side[i][0] - left_side[i][0],
                          right_side[i][1] - left_side[i][1])
         ground_x, ground_y = extract_ground_profile(center, direction_vec, dem)
-
-        results.append({
-            'center': center,
-            'left': left_side[i],
-            'right': right_side[i],
-            'left_end': left_end[i],
-            'right_end': right_end[i],
-            'left_dist': ld,
-            'right_dist': rd,
-            'ground_profile': (ground_x, ground_y)  # ✅ 원지반선 저장
-        })
+        station = stations[i]
+        if is_bridge_tunnel(station, structure_list):
+            results.append({
+                'station': station,
+                'isstructure': True,
+                'center': center,
+                'left': None,
+                'right': None,
+                'left_end': None,
+                'right_end': None,
+                'left_dist': None,
+                'right_dist': None,
+                'ground_profile': (ground_x, ground_y)  # ✅ 원지반선 저장
+            })
+        else:
+            results.append({
+                'station': station,
+                'isstructure': False,
+                'center': center,
+                'left': left_side[i],
+                'right': right_side[i],
+                'left_end': left_end[i],
+                'right_end': right_end[i],
+                'left_dist': ld,
+                'right_dist': rd,
+                'ground_profile': (ground_x, ground_y)  # ✅ 원지반선 저장
+            })
 
     # TXT 저장
     print('result 저장 시작')
