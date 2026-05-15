@@ -1,15 +1,260 @@
 
 from tkinter.filedialog import askopenfilename
 import tkinter as tk
+
+import meshio
 from matplotlib import pyplot as plt
 import math
 import numpy as np
-from tkinter import ttk
+from tkinter import ttk, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import pandas as pd
 import rasterio
 import glob
 from rasterio.windows import Window
+from rasterio.merge import merge
+import threading
+from tkinter import messagebox
+from scipy.interpolate import LinearNDInterpolator
+
+class ExistGround:
+    @staticmethod
+    def extract_ground_line(terrain_mesh, center_pt, normal_vec, width=50, step=1.0):
+        """
+        3D Mesh로부터 2D 횡단면 데이터를 추출하는 핵심 함수
+
+        :param terrain_mesh: meshio.Mesh 또는 정점/면 데이터
+        :param center_pt: 중심점 좌표 [x, y, z]
+        :param normal_vec: 진행방향 법선 벡터 (좌우 방향) [dx, dy, 0]
+        :param width: 추출할 좌우 폭 (예: 50이면 좌 50m, 우 50m 총 100m)
+        :param step: 샘플링 간격 (m)
+        :return: (distances, elevations) 튜플
+        """
+        try:
+            # 1. 메쉬 데이터 추출 (meshio 기준)
+            points = terrain_mesh.points  # [N, 3] 배열
+            x_mesh = points[:, 0]
+            y_mesh = points[:, 1]
+            z_mesh = points[:, 2]
+
+            # 2. 2D 보간 함수 생성 (Scipy의 LinearNDInterpolator 사용)
+            # 3D 공간의 (x, y) 좌표를 입력하면 z(고도)를 반환하는 함수입니다.
+            interp_func = LinearNDInterpolator(list(zip(x_mesh, y_mesh)), z_mesh)
+
+            # 3. 샘플링 포인트 생성
+            # 법선 벡터를 단위 벡터로 정규화
+            normal_vec = np.array(normal_vec[:2])  # z축 제외한 2D 평면 벡터
+            norm = np.linalg.norm(normal_vec)
+            if norm == 0:
+                return np.array([]), np.array([])
+            unit_normal = normal_vec / norm
+
+            # 중심에서 좌(-)에서 우(+)까지 거리 생성
+            distances = np.arange(-width, width + step, step)
+
+            # 실제 좌표(X, Y) 계산
+            sample_pts_x = center_pt[0] + distances * unit_normal[0]
+            sample_pts_y = center_pt[1] + distances * unit_normal[1]
+
+            # 4. 고도값 보간 (Interpolation)
+            elevations = interp_func(sample_pts_x, sample_pts_y)
+
+            # 5. 결과 필터링 (NaN 값 제거 - 메쉬 범위를 벗어난 지점)
+            mask = ~np.isnan(elevations)
+            return distances[mask], elevations[mask]
+
+        except Exception as e:
+            print(f"Ground extraction error: {e}")
+            return np.array([]), np.array([])
+def create_segment(xy_coord, buffer_x: int, buffer_y: int):
+    """
+    구간 분할 설정 (직사각형 범위)
+    buffer_x: 노선 횡방향(또는 X축) 확장 거리
+    buffer_y: 노선 진행방향(또는 Y축) 확장 거리
+    """
+    x, y = xy_coord
+    minx = x - buffer_x
+    miny = y - buffer_y
+    maxx = x + buffer_x
+    maxy = y + buffer_y
+
+    return minx, miny, maxx, maxy
+
+class SectionProvider:
+    def __init__(self, dem_processor, structure_list, track_edges, slope_ratio, read_coords):
+        self.dem_p = dem_processor
+        self.structures = structure_list
+        self.track_edges = track_edges
+        self.slope_ratio = slope_ratio
+        self.read_coords = read_coords
+
+    def get_section(self, station_idx):
+        """특정 인덱스의 측점을 3D Slice하여 2D 데이터로 반환"""
+        try:
+            center = self.xy_list[station_idx]
+            seg = create_segment(center, buffer_x=500, buffer_y=100)
+            # 1. Micro-Mesh 범위 설정 (중심 기준 좌우 50m, 전후 5m)
+            # TerrainBuilder가 이 범위를 인식하도록 수정하거나,
+            # seg 데이터를 해당 범위에 맞게 crop해서 전달
+            terrain_builder = TerrainBuilder(self.dem_p, seg)
+            terrain_mesh = terrain_builder.build(station_idx)
+
+            # 2. 사면 생성 (해당 지점만)
+            # SlopeManager 역시 Micro-Mesh 위에서만 동작하므로 매우 빠름
+            slope_manager = SlopeManager(self.dem_p, terrain_mesh)
+            slope_left, slope_right = slope_manager.build_slopes(self.track_edges[station_idx], self.slope_ratio)
+            lside, rside = self.track_edges[station_idx]
+
+            # get_section 내부에서 호출 시
+            # normal_vec 계산 (진행방향 벡터 [dx, dy]를 90도 회전)
+            p1 = np.array(self.xy_list[station_idx])
+            p2 = np.array(self.xy_list[min(station_idx + 1, len(self.xy_list) - 1)])
+            direction = p2 - p1
+            normal = np.array([-direction[1], direction[0]])  # 시계반대방향 90도 회전
+
+            ld = horizontal_distance(lside, slope_left)
+            rd = horizontal_distance(rside, slope_right)
+
+            # 함수 실행
+            dist_g, elev_g = ExistGround.extract_ground_line(
+                terrain_mesh=terrain_mesh,
+                center_pt=self.xy_list[station_idx][1:4],  # [x, y, z]
+                normal_vec=normal,
+                width=50,  # 좌우 50m
+                step=0.5  # 0.5m 간격으로 정밀하게 추출
+            )
+            return {
+                'station': station, #측점
+                'isstructure': False, #구조물 여부
+                'center': center, #중심 좌표 x,y,z
+                'left': lside, #좌측 선로끝 좌표
+                'right': rside, #우측 선로 끝 좌표
+                'left_end': slope_left, #좌측 사면 좌표
+                'right_end': slope_right, #우측 사면 좌표
+                'left_dist': dist_g[0], #좌측 선로끝 좌표에서 좌측사면 끝까지의 수평거리
+                'right_dist': dist_g[1],#우측 선로끝 좌표에서 우측사면 끝까지의 수평거리
+                'ground_profile': (dist_g, elev_g)  # ✅ 원지반선 저장
+            }
+        except Exception as e:
+            raise e
+class SlopeManager:
+    """슬로프 빌더"""
+    def __init__(self, dem, terrain_mesh):
+        self.dem = dem
+        self.slope_builder = None
+        self.terrain_mesh = terrain_mesh
+    def build_slopes(self, track_edges, slope_ratio=1.5):
+        #트랙 사이드
+        left_side, right_side = track_edges
+        #빌더 초기화
+        self.slope_builder = SlopeBuilder(self.terrain_mesh)
+
+        # 좌측 사면
+        slope_left = self.slope_builder.add_slope(left_side, self.dem, slope_ratio, side="left")
+
+        # 우측 사면
+        slope_right = self.slope_builder.add_slope(right_side, self.dem, slope_ratio, side="right")
+
+        return slope_left, slope_right
+
+
+
+class DEMExporter:
+    """DEM 출력 모듈"""
+    @staticmethod
+    def export_as_geotiff(mosaic, out_transform, filename):
+        # mosaic은 (bands, rows, cols) 형태
+        band = mosaic[0]
+        rows, cols = band.shape
+
+
+        with rasterio.open(
+                filename,
+                'w',
+                driver='GTiff',
+                height=rows,
+                width=cols,
+                count=1,
+                dtype=band.dtype,
+                crs=CRS.from_epsg(4326),  # 좌표계 WGS84 (EPSG:4326)
+                transform=out_transform,
+        ) as dst:
+            dst.write(band, 1)
+
+    @staticmethod
+    def export_as_mesh(band, transform):
+        rows, cols = band.shape
+        jj, ii = np.meshgrid(np.arange(cols), np.arange(rows))
+        lon, lat = rasterio.transform.xy(transform, ii, jj, offset='center')
+        lon = np.array(lon).flatten()
+        lat = np.array(lat).flatten()
+        coords = list(zip(lon, lat))
+        xy = np.array(convert_coordinates(coords, 4326, 5186))
+        z = band.flatten()
+        vertices = np.column_stack((xy[:, 0], xy[:, 1], z))
+        faces = []
+        for i in range(rows - 1):
+            for j in range(cols - 1):
+                v1 = i * cols + j
+                v2 = v1 + 1
+                v3 = v1 + cols
+                v4 = v3 + 1
+                faces.append([v1, v2, v3])
+                faces.append([v2, v4, v3])
+        mesh = meshio.Mesh(points=vertices, cells=[("triangle", np.array(faces))])
+        return mesh
+
+class TerrainBuilder:
+    """지형 빌더"""
+    def __init__(self, dem_processor, seg_coords):
+        self.dem_processor = dem_processor
+        self.seg_coords = seg_coords
+
+    def build(self, idx):
+        """메쉬 빌드"""
+        dem_mosaic, dem_out_transform = self.dem_processor.extract_segment(self.seg_coords)
+        terrain_mesh = DEMExporter.export_as_mesh(dem_mosaic[0] + 100, dem_out_transform)
+
+        return terrain_mesh
+
+class DEMProcessor:
+    """DEM 처리 클래스"""
+    def __init__(self, coords):
+        self.strm = SrtmDEM30(coords)
+
+    def close(self):
+        """DEM 닫기"""
+        self.strm.close()
+
+    def extract_by_segments(self, segments):
+        """전체 세그먼트 처리"""
+        results = []
+        for idx, segment in enumerate(segments, start=1):
+            mosaic, out_transform = self.extract_segment(segment)
+            if mosaic is None:
+                print(f"Segment {idx}: DEM 없음, 건너뜀")
+                continue
+            results.append((idx, mosaic, out_transform))
+        return results
+
+    def extract_segment(self, segment):
+        """세그먼트별 DEM 추출"""
+        try:
+            minx, miny, maxx, maxy = segment
+            bounds_4326 = convert_coordinates([(minx, miny), (maxx, maxy)], 5186, 4326)
+            minx, miny = bounds_4326[0]
+            maxx, maxy = bounds_4326[1]
+
+            datasets = self.strm.selected_datasets
+            if not datasets:
+                return None, None
+
+            mosaic, out_transform = merge(datasets, bounds=(minx, miny, maxx, maxy))
+            return mosaic, out_transform
+        except Exception as e:
+            raise e
+    def extract_tiff(self, segment):
+        mosaic, out_transform = self.extract_segment(segment)
 
 def is_bridge_tunnel(sta, structure_list):
     """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
@@ -333,9 +578,7 @@ def gui_select_point(results):
     root = tk.Tk()
     root.title("Cross Section Viewer")
 
-    fig, ax = plt.subplots(figsize=(8,6))
-    canvas = FigureCanvasTkAgg(fig, master=root)
-    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
 
     def update_plot(event):
         idx = combo.current()
@@ -355,11 +598,14 @@ def gui_select_point(results):
 from tqdm import tqdm
 
 class SlopeBuilder:
+    def __init__(self, mesh):
+        self.mesh = mesh
+
     def add_slope(self, track_edges, dem, slope_ratio, side="left"):
         slope_side = []
         n = len(track_edges)
 
-        for i in tqdm(range(n), desc=f"{side} 사면 계산"):
+        for i in range(n):
             x, y, z = track_edges[i]
 
             # 1. 해당 지점의 법선 벡터(Normal Vector) 계산
@@ -372,7 +618,9 @@ class SlopeBuilder:
             # 3. 이진 탐색으로 Daylight Point(교점) 찾기
             fx, fy, fz = self._find_daylight_point(x, y, z, nx, ny, slope_ratio, is_cut, dem)
             slope_side.append((fx, fy, fz))
-        return slope_side
+
+        # 4. 메쉬 생성 (기존 로직 유지)
+        return self._build_mesh(track_edges, slope_side)
 
     def _compute_normal_vector(self, track_edges, i, side):
         x, y = track_edges[i][:2]
@@ -388,7 +636,7 @@ class SlopeBuilder:
 
     def _is_cut(self, x, y, z, nx, ny, dem):
         lon, lat = convert_coordinates([x + nx * 0.1, y + ny * 0.1], 5186, 4326)
-        dem_z = dem.get_elevation(lon, lat) + 100
+        dem_z = dem.strm.get_elevation(lon, lat) + 100
         return z < dem_z
 
     def _find_daylight_point(self, x, y, z, nx, ny, slope_ratio, is_cut, dem):
@@ -398,7 +646,7 @@ class SlopeBuilder:
             curr_x, curr_y = x + nx * mid, y + ny * mid
             slope_z = z + (mid / slope_ratio) if is_cut else z - (mid / slope_ratio)
             lon, lat = convert_coordinates([curr_x, curr_y], 5186, 4326)
-            curr_dem_z = dem.get_elevation(lon, lat) + 100
+            curr_dem_z = dem.strm.get_elevation(lon, lat) + 100
 
             if is_cut:
                 if slope_z < curr_dem_z:
@@ -414,8 +662,19 @@ class SlopeBuilder:
         final_dist = (low + high) / 2
         fx, fy = x + nx * final_dist, y + ny * final_dist
         lon, lat = convert_coordinates([fx, fy], 5186, 4326)
-        fz = dem.get_elevation(lon, lat) + 100
+        fz = dem.strm.get_elevation(lon, lat) + 100
         return fx, fy, fz
+
+    def _build_mesh(self, track_edges, slope_side):
+        n = len(track_edges)
+        vertices = np.array(track_edges + slope_side)
+        faces = []
+        for i in range(n - 1):
+            ti, ti_next = i, i + 1
+            si, si_next = i + n, i + 1 + n
+            faces.append([ti, si, ti_next])
+            faces.append([si, si_next, ti_next])
+        return meshio.Mesh(points=vertices, cells=[("triangle", np.array(faces))])
 
     def extract_daylight_points(self, slope_l, slope_r):
         """사면의 끝점을 추출하여 폴리곤 경계 생성"""
@@ -427,94 +686,269 @@ class SlopeBuilder:
 
         return l_daylight, r_daylight
 
-def main():
-    read_file = askopenfilename(title='좌표 파일 선택')
-    if not read_file:
-        raise FileNotFoundError('파일 오류')
-    structure_file = askopenfilename(title='구조물 파일 선택')
-    if not structure_file:
-        raise FileNotFoundError('파일 오류')
-    read_coords = read_coordinates(read_file)
+    def create_polygon(self, l_daylight, r_daylight):
+        # 왼쪽 끝점과 오른쪽 끝점을 역순으로 이어 붙여 닫힌 루프 생성
+        poly_coords = np.concatenate([l_daylight[:, :2], r_daylight[::-1, :2]])
 
-    #리스트 길이에 따라 측점 선택
-    if read_coords and len(read_coords[0]) == 4:
-        stations = [sta for sta, x, y, z in read_coords]
-        xy_list = [[x, y] for sta, x, y, z in read_coords]
-    elif read_coords and len(read_coords[0]) == 3:
-        stations = [i * 25 for i, (x, y, z) in enumerate(read_coords)]
-        xy_list = [[x, y] for x, y, z in read_coords]
-    else:
-        raise ValueError(f'an error occured while reading {read_coords}')
+        return Polygon(poly_coords)
 
-    structure_list = parse_structure(structure_file)
 
-    # 좌표 변환
-    print('좌표변환 시작')
-    converted_coord = convert_coordinates(xy_list, 5186, 4326)
-    dem = SrtmDEM30(converted_coord)
+class Run(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.provider = None
+        self.title('DEM 횡단면도 실시간 뷰어 (3D Slice 기반)')
+        self.geometry('1000x800')
+        self.current_idx = -1
+        self.read_coords = []
+        self.provider = None
+        self.track_width = 8.0
+        self.slope_ratio = 1.5
+        self.is_processing = False  # 스레드 중복 실행 방지 플래그
+        # --- UI 구성 ---
+        # 상단 제어바 (슬라이더 및 스테이션 정보)
+        self.ctrl_frame = ttk.Frame(self)
+        self.ctrl_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
 
-    track_width = 8.0 # 예시: 5m 폭
-    slope_ratio = 1.5  # 기본 1:1.5
+        self.station_label = ttk.Label(self.ctrl_frame, text="측점: 0 (No Data)")
+        self.station_label.pack(side=tk.LEFT, padx=5)
 
-    results = []
-    #트랙 생성
-    print('트랙 생성 시작')
-    left_side, right_side = get_track_edges(read_coords, track_width)
+        self.slider = ttk.Scale(self.ctrl_frame, from_=0, to=len(self.read_coords) - 1,
+                                orient=tk.HORIZONTAL, command=self._on_slider_move)
+        self.slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
 
-    # 좌우 사면 끝점 찾기
-    print('사면 생성 시작')
-    sb = SlopeBuilder()
-    left_end = sb.add_slope(left_side, dem, slope_ratio, side="left")
-    right_end = sb.add_slope(right_side, dem, slope_ratio, side="right")
+        # 수정 코드
+        self.btn_run = ttk.Button(self.ctrl_frame, text='실행', command=self._start_process)
+        self.btn_run.pack(side=tk.LEFT, padx=5)
+        # 수정 코드
+        ttk.Button(self.ctrl_frame, text='종료', command=self.destroy).pack(side=tk.LEFT, padx=5)
+        # 수정 코드
+        ttk.Button(self.ctrl_frame, text='옵션', command=self.show_option).pack(side=tk.LEFT, padx=5)
 
-    results = []
+        # 상태 표시줄
+        self.status_var = tk.StringVar(value="대기 중...")
+        # 수정 후 (복사 가능한 Entry로 변경)
+        self.status_bar = tk.Entry(self, textvariable=self.status_var,
+                                   relief=tk.SUNKEN,
+                                   state='readonly',  # 사용자가 직접 타이핑하는 것은 방지
+                                   readonlybackground='#f0f0f0',  # 배경색을 라벨처럼 설정
+                                   borderwidth=1)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-    for i in tqdm(range(len(read_coords)), desc="트랙 처리"):
-        center = read_coords[i]
-        ld = horizontal_distance(left_side[i], left_end[i])
-        rd = horizontal_distance(right_side[i], right_end[i])
+        # 차트 영역
+        self.fig, self.ax = plt.subplots(figsize=(8, 6))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
-        # 방향 벡터는 좌우 트랙 끝점으로부터 구함
-        direction_vec = (right_side[i][0] - left_side[i][0],
-                         right_side[i][1] - left_side[i][1])
-        ground_x, ground_y = extract_ground_profile(center, direction_vec, dem)
-        station = stations[i]
-        if is_bridge_tunnel(station, structure_list):
-            results.append({
-                'station': station,
-                'isstructure': True,
-                'center': center,
-                'left': None,
-                'right': None,
-                'left_end': None,
-                'right_end': None,
-                'left_dist': None,
-                'right_dist': None,
-                'ground_profile': (ground_x, ground_y)  # ✅ 원지반선 저장
-            })
-        else:
-            results.append({
-                'station': station,
-                'isstructure': False,
-                'center': center,
-                'left': left_side[i],
-                'right': right_side[i],
-                'left_end': left_end[i],
-                'right_end': right_end[i],
-                'left_dist': ld,
-                'right_dist': rd,
-                'ground_profile': (ground_x, ground_y)  # ✅ 원지반선 저장
-            })
+    def show_option(self):
+        """트랙 폭과 사면 기울기를 설정하는 팝업 창 생성"""
+        # 팝업 창 설정
+        option_win = tk.Toplevel(self)
+        option_win.title("설정 옵션")
+        option_win.geometry("300x200")
+        option_win.grab_set()  # 설정 창이 닫히기 전까지 메인 창 조작 방지 (Modal)
 
-    # TXT 저장
-    print('result 저장 시작')
-    save_file = r'c:/temp/slope_result.txt'
-    write_slope_file(save_file, results)
+        # 기본값 설정 (현재 클래스에 저장된 값 혹은 기본값)
+        current_width = getattr(self, 'track_width', 8.0)
+        current_ratio = getattr(self, 'slope_ratio', 1.5)
 
-    # GUI로 측점 선택 → 횡단면도 표시
-    print('횡단면도 작성 시작')
-    gui_select_point(results)
+        # 입력 필드 레이아웃
+        tk.Label(option_win, text="트랙 폭 (m):").pack(pady=(15, 0))
+        ent_width = tk.Entry(option_win)
+        ent_width.insert(0, str(current_width))
+        ent_width.pack(pady=5)
 
-    print('프로그램 종료')
+        tk.Label(option_win, text="사면 기울기 (1:n):").pack(pady=(10, 0))
+        ent_ratio = tk.Entry(option_win)
+        ent_ratio.insert(0, str(current_ratio))
+        ent_ratio.pack(pady=5)
+
+        def save_and_close():
+            try:
+                # 입력값 검증 및 저장
+                self.track_width = float(ent_width.get())
+                self.slope_ratio = float(ent_ratio.get())
+                self.status_var.set(f"옵션 변경 완료: 폭 {self.track_width}m, 기울기 1:{self.slope_ratio}")
+                option_win.destroy()
+
+                # 값이 바뀌었으므로 현재 화면 갱신 (이미 데이터가 로드된 경우)
+                if self.provider:
+                    self._on_slider_move(self.current_idx)
+
+            except ValueError:
+
+                messagebox.showerror("입력 오류", "숫자 형식을 입력해주세요.")
+
+        # 저장 버튼
+        tk.Button(option_win, text="적용", command=save_and_close).pack(pady=15)
+
+    def _start_process(self):
+        """데이터 로드 및 엔진 초기화 예외 처리 강화"""
+        try:
+            self.status_var.set('파일 선택 중...')
+
+            # 1. 파일 선택 예외 처리
+            read_file = filedialog.askopenfilename(title='좌표 파일 선택',
+                                                   filetypes=[("CSV/TXT", "*.csv *.txt"), ("All Files", "*.*")])
+            if not read_file: return
+
+            struct_file = filedialog.askopenfilename(title='구조물 파일 선택',
+                                                     filetypes=[("xlsx", "*.xlsx"), ("All Files", "*.*")])
+            if not struct_file: return
+
+            # 2. 데이터 로드 및 파싱 검증
+            self.read_coords = read_coordinates(read_file)
+            if not self.read_coords:
+                raise ValueError("좌표 파일이 비어있거나 형식이 잘못되었습니다.")
+
+            self.structure_list = parse_structure(struct_file)
+
+            # 3. 데이터 추출 (stations, xy_list)
+            if len(self.read_coords[0]) == 4:
+                self.xy_list = [[x, y] for sta, x, y, z in self.read_coords]
+                self.xyz_list = [[x, y, z] for sta, x, y, z in self.read_coords]
+                self.stations = [sta for sta, x, y, z in self.read_coords]
+            elif len(self.read_coords[0]) == 3:
+                self.xy_list = [[x, y] for x, y, z in self.read_coords]
+                self.xy_zlist = [[x, y, z] for x, y, z in self.read_coords]
+                self.stations = [i * 25 for i, (x, y, z) in enumerate(self.read_coords)]
+            else:
+                raise ValueError("좌표 데이터의 컬럼 수가 맞지 않습니다. (Station, X, Y, Z 필요)")
+
+            # 4. 좌표 변환 및 엔진 가동
+            self.status_var.set('좌표변환 중...')
+            converted_coord = convert_coordinates(self.xy_list, 5186, 4326)
+            track_edges = get_track_edges(self.read_coords, self.track_width)
+
+            self.status_var.set('DEM 데이터 처리 중...')
+            self.dem_processor = DEMProcessor(converted_coord)
+
+            self.provider = SectionProvider(
+                dem_processor=self.dem_processor,
+                structure_list=self.structure_list,
+                track_edges=track_edges,
+                slope_ratio=self.slope_ratio,
+                read_coords=self.read_coords
+            )
+
+            # 5. UI 업데이트
+            self.btn_run.config(state='disabled')
+            self.slider.configure(from_=0, to=len(self.read_coords) - 1)
+            self.slider.set(0)
+            self._on_slider_move(0)
+
+        except Exception as e:
+            messagebox.showerror("실행 오류", f"프로세스 시작 중 오류가 발생했습니다:\n{str(e)}")
+            self.status_var.set("준비 단계에서 오류 발생")
+            self.btn_run.config(state='enabled')
+
+    def _on_slider_move(self, val):
+        """슬라이더 이동 시 메인 스레드에서 직접 호출"""
+        if self.provider is None:
+            return
+
+        idx = int(float(val))
+        if idx == self.current_idx:
+            return
+
+        self.current_idx = idx
+
+        try:
+            # 1. 상태 표시줄 업데이트 및 UI 강제 갱신
+            self.status_var.set(f"측점 {idx} 연산 중... (Main Thread)")
+            self.update_idletasks()  # "연산 중" 메시지가 화면에 즉시 보이게 함
+
+            # 2. 직접 연산 수행 (스레드 없이 실행)
+            data = self.provider.get_section(idx)
+
+            # 3. 차트 그리기
+            if data:
+                self._draw_chart(data)
+                self.status_var.set("연산 완료")
+            else:
+                self.status_var.set("데이터 없음")
+
+        except Exception as e:
+            error_msg = str(e)
+            self._show_error(error_msg)
+            messagebox.showerror("연산 오류", f"측점 {idx} 처리 중 오류:\n{error_msg}")
+            self.btn_run.config(state='enabled')
+
+    def _async_update(self, idx):
+        """백그라운드 연산 및 GUI 업데이트 요청"""
+        try:
+            # SectionProvider에서 3D Micro-Mesh 기반 데이터 추출
+            data = self.provider.get_section(idx)
+
+            # GUI 업데이트는 메인 스레드에서 수행
+            self.after(0, self._draw_chart, data)
+        except Exception as e:
+            import traceback
+            err_details = traceback.format_exc()  # 상세 에러 내용 추출
+            error_msg = str(e)
+            # 람다 대신 직접 인자를 전달하는 메서드 호출
+            self.after(0, self._show_error, err_details)
+
+    def _show_error(self, message):
+        self.status_var.set(f"Error: {message}")
+
+    def _draw_chart(self, data):
+        """전달받은 2D 데이터를 Matplotlib에 그리기"""
+        self.ax.clear()
+
+        # 지반선
+        dist_g, elev_g = data['ground']
+        self.ax.plot(dist_g, elev_g, color='green', label='Ground')
+
+        # 사면
+        dist_l, elev_l = data['slope_l']
+        dist_r, elev_r = data['slope_r']
+        self.ax.plot(dist_l, elev_l, color='purple', lw=2, label='Left Slope')
+        self.ax.plot(dist_r, elev_r, color='red', lw=2, label='Right Slope')
+
+        self.ax.legend()
+        self.ax.set_title(f"Station: {data['station']}")
+        self.canvas.draw()
+
+        self.status_var.set("연산 완료")
+        self.station_label.config(text=f"측점: {data['station']}")
+
+    def _fetch_and_plot(self, idx):
+        """SectionProvider를 통한 데이터 수집 및 그래프 갱신"""
+        try:
+            # 3D Micro-Mesh 생성 및 Slice 연산 (핵심 로직)
+            data = self.provider.get_section(idx)
+
+            # 메인 스레드에서 차트 업데이트 호출
+            self.after(0, self._update_chart, data)
+        except Exception as e:
+            self.after(0, lambda: self.status_var.set(f"오류 발생: {str(e)}"))
+
+    def _update_chart(self, data):
+        """데이터를 바탕으로 실제 Matplotlib 그래프 갱신"""
+        self.ax.clear()
+
+        # 1. 지반선 (초록색)
+        g_dist, g_elev = data['ground']
+        self.ax.plot(g_dist, g_elev, color='green', label='Original Ground', lw=1.5)
+        self.ax.fill_between(g_dist, g_elev, min(g_elev) - 5, color='green', alpha=0.1)
+
+        # 2. 좌/우 사면 (보라색/빨간색 등)
+        l_dist, l_elev = data['slope_l']
+        r_dist, r_elev = data['slope_r']
+        self.ax.plot(l_dist, l_elev, color='purple', lw=2, label='Left Slope')
+        self.ax.plot(r_dist, r_elev, color='red', lw=2, label='Right Slope')
+
+        self.ax.set_title(f"Cross Section at Station {data['station']}")
+        self.ax.grid(True, alpha=0.3)
+        self.ax.legend()
+        self.ax.set_xlabel("Distance from Center (m)")
+        self.ax.set_ylabel("Elevation (m)")
+
+        self.canvas.draw()
+        self.status_var.set("연산 완료")
+        self.station_label.config(text=f"측점: {data['station']}")
+
 if __name__ == '__main__':
-    main()
+    r = Run()
+    r.mainloop()
