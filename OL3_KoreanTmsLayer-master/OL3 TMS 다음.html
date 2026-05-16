@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>OpenLayers3 KML Viewer (EPSG:5181)</title>
+
+<style>
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.map {
+    width: 100%;
+    height: calc(100% - 40px);
+}
+
+#control-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 40px;
+    background: rgba(255,255,255,0.9);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    z-index: 10;
+}
+</style>
+
+<link rel="stylesheet" href="javascript/ol.css">
+<script src="javascript/ol.js"></script>
+<script src="javascript/proj4.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<script>
+proj4.defs("EPSG:5181","+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=GRS80 +units=m +no_defs");
+ol.proj.setProj4(proj4);
+
+var map;
+var vectorLayer;
+var hybridEnabled = false;
+
+var resolutions = [2048,1024,512,256,128,64,32,16,8,4,2,1,0.5,0.25];
+var extent = [-30000,-60000,494288,988576];
+
+var projection = new ol.proj.Projection({
+    code: 'EPSG:5181',
+    extent: extent,
+    units: 'm'
+});
+
+// ===== 베이스맵 =====
+function createTileLayer(title, urlFunc, visible) {
+    return new ol.layer.Tile({
+        title: title,
+        visible: visible,
+        source: new ol.source.XYZ({
+            projection: projection,
+            tileGrid: new ol.tilegrid.TileGrid({
+                origin: [extent[0], extent[1]],
+                resolutions: resolutions
+            }),
+            tileUrlFunction: urlFunc
+        })
+    });
+}
+
+var baseLayers = [
+    createTileLayer('과거항공', c => c ? `http://map${Math.floor(Math.random()*4)}.daumcdn.net/map_skyview_past/2008/L${resolutions.length-c[0]}/${c[2]}/${c[1]}.jpg` : ''),
+    createTileLayer('현재항공', c => c ? `http://map${Math.floor(Math.random()*4)}.daumcdn.net/map_skyview/L${resolutions.length-c[0]}/${c[2]}/${c[1]}.jpg` : ''),
+    createTileLayer('기본지도', c => c ? `https://mts.daumcdn.net/api/v1/tile/PNGSD02/v19_ktmbq/latest/${resolutions.length-c[0]}/${c[2]}/${c[1]}.png` : ''),
+    createTileLayer('지적도', c => c ? `https://map.daumcdn.net/map_k3f_prod/bakery/image_map_png/PNGSD_CAD01/v15/${resolutions.length-c[0]}/${c[2]}/${c[1]}.png` : '')
+];
+
+// ===== 하이브리드 =====
+var hybridLayer = new ol.layer.Tile({
+    visible: false,
+    source: new ol.source.XYZ({
+        projection: projection,
+        tileGrid: new ol.tilegrid.TileGrid({
+            origin: [extent[0], extent[1]],
+            resolutions: resolutions
+        }),
+        tileUrlFunction: function(c) {
+            if (!c) return;
+            return `https://mts.daumcdn.net/api/v1/tile/PNGSD_SKYH02/v19_nzhdi/latest/${resolutions.length-c[0]}/${c[2]}/${c[1]}.png`;
+        }
+    })
+});
+
+// ===== 초기화 =====
+function init() {
+    map = new ol.Map({
+        target: 'map',
+        layers: [
+            new ol.layer.Group({ layers: baseLayers }),
+            hybridLayer
+        ],
+        view: new ol.View({
+            projection: projection,
+            extent: extent,
+            resolutions: resolutions,
+            center: [(extent[0]+extent[2])/2, (extent[1]+extent[3])/2],
+            zoom: 0
+        })
+    });
+
+    changeBaseMap(0);
+}
+
+// ===== 베이스맵 변경 =====
+function changeBaseMap(index) {
+    baseLayers.forEach(l => l.setVisible(false));
+    baseLayers[index].setVisible(true);
+
+    updateHybrid();
+}
+
+// ===== 하이브리드 체크 =====
+function toggleHybrid(checked) {
+    hybridEnabled = checked;
+    updateHybrid();
+}
+
+// ===== 하이브리드 상태 반영 =====
+function updateHybrid() {
+    var baseIndex = baseLayers.findIndex(l => l.getVisible());
+
+    // 위성일 때만 허용
+    if ((baseIndex === 0 || baseIndex === 1) && hybridEnabled) {
+        hybridLayer.setVisible(true);
+    } else {
+        hybridLayer.setVisible(false);
+        document.getElementById("hybridChk").checked = false;
+        hybridEnabled = false;
+    }
+}
+
+// ===== KML =====
+function loadKML(file) {
+    var reader = new FileReader();
+
+    reader.onload = function() {
+        var format = new ol.format.KML();
+        var features = format.readFeatures(reader.result, {
+            featureProjection: 'EPSG:5181'
+        });
+
+        if (vectorLayer) map.removeLayer(vectorLayer);
+
+        vectorLayer = new ol.layer.Vector({
+            source: new ol.source.Vector({ features: features })
+        });
+
+        map.addLayer(vectorLayer);
+        map.getView().fit(vectorLayer.getSource().getExtent(), { padding: [20,20,20,20] });
+    };
+
+    reader.readAsText(file);
+}
+
+function saveKML() {
+    if (!vectorLayer) return;
+
+    var format = new ol.format.KML();
+    var features = vectorLayer.getSource().getFeatures();
+
+    var kml = format.writeFeatures(features, {
+        featureProjection: 'EPSG:5181',
+        dataProjection: 'EPSG:4326'
+    });
+
+    saveAs(new Blob([kml]), 'map.kml');
+}
+</script>
+</head>
+
+<body onload="init()">
+
+<div id="control-container">
+    <input type="file" onchange="loadKML(this.files[0])">
+    <button onclick="saveKML()">Save KML</button>
+
+    <label><input type="radio" name="base" onclick="changeBaseMap(0)" checked> 과거</label>
+    <label><input type="radio" name="base" onclick="changeBaseMap(1)"> 현재</label>
+    <label><input type="radio" name="base" onclick="changeBaseMap(2)"> 지도</label>
+    <label><input type="radio" name="base" onclick="changeBaseMap(3)"> 지적</label>
+
+    <!-- ✅ 추가된 부분 -->
+    <label>
+        <input type="checkbox" id="hybridChk" onchange="toggleHybrid(this.checked)">
+        하이브리드 ON
+    </label>
+</div>
+
+<div id="map" class="map"></div>
+
+</body>
+</html>
