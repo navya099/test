@@ -41,6 +41,7 @@ body, html {
 proj4.defs("EPSG:5181","+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=GRS80 +units=m +no_defs");
 ol.proj.setProj4(proj4);
 
+var kmlLayers = [];   // 👉 레이어 목록
 var map;
 var vectorLayer;
 var hybridEnabled = false;
@@ -53,6 +54,13 @@ var projection = new ol.proj.Projection({
     extent: extent,
     units: 'm'
 });
+
+var kmlColorIndex = 0;
+
+var colorPalette = [
+    'red', 'blue', 'green', 'orange', 'purple',
+    'cyan', 'magenta', 'yellow', 'brown', 'black'
+];
 
 // ===== 베이스맵 =====
 function createTileLayer(title, urlFunc, visible) {
@@ -100,6 +108,7 @@ function init() {
         layers: [
             new ol.layer.Group({ layers: baseLayers }),
             hybridLayer
+
         ],
         view: new ol.View({
             projection: projection,
@@ -111,6 +120,16 @@ function init() {
     });
 
     changeBaseMap(0);
+}
+
+function handleFiles(input) {
+    const files = input.files;
+
+    for (let i = 0; i < files.length; i++) {
+        loadKML(files[i]);
+    }
+
+    input.value = ""; // 🔥 중요
 }
 
 // ===== 베이스맵 변경 =====
@@ -147,18 +166,49 @@ function loadKML(file) {
 
     reader.onload = function() {
         var format = new ol.format.KML();
+
         var features = format.readFeatures(reader.result, {
             featureProjection: 'EPSG:5181'
         });
 
-        if (vectorLayer) map.removeLayer(vectorLayer);
+        // 🎨 색상 선택
+        var color = colorPalette[kmlColorIndex % colorPalette.length];
+        kmlColorIndex++;
 
-        vectorLayer = new ol.layer.Vector({
-            source: new ol.source.Vector({ features: features })
+        // 스타일
+        var style = new ol.style.Style({
+            stroke: new ol.style.Stroke({
+                color: color,
+                width: 3
+            }),
+            fill: new ol.style.Fill({
+                color: color + '33'
+            }),
+            image: new ol.style.Circle({
+                radius: 6,
+                fill: new ol.style.Fill({ color: color }),
+                stroke: new ol.style.Stroke({ color: '#fff', width: 1 })
+            })
         });
 
-        map.addLayer(vectorLayer);
-        map.getView().fit(vectorLayer.getSource().getExtent(), { padding: [20,20,20,20] });
+        // 👉 레이어 생성
+        var layer = new ol.layer.Vector({
+            source: new ol.source.Vector({
+                features: features
+            }),
+            style: style
+        });
+
+        map.addLayer(layer);
+
+        // 👉 리스트 저장
+        kmlLayers.push({
+            name: file.name,
+            layer: layer
+        });
+
+        // ✅ 여기로 이동!!!!
+        addLayerToUI(file.name, layer, color);
     };
 
     reader.readAsText(file);
@@ -177,13 +227,112 @@ function saveKML() {
 
     saveAs(new Blob([kml]), 'map.kml');
 }
+
+function colorToHex(color) {
+    const temp = document.createElement("div");
+    temp.style.color = color;
+    document.body.appendChild(temp);
+
+    const rgb = getComputedStyle(temp).color;
+    document.body.removeChild(temp);
+
+    const result = rgb.match(/\d+/g).map(x => parseInt(x).toString(16).padStart(2, '0'));
+    return "#" + result.join('');
+}
+
+
+function addLayerToUI(name, layer, color) {
+    const container = document.getElementById("layerList");
+
+    const item = document.createElement("div");
+    item.style.borderBottom = "1px solid #ddd";
+    item.style.padding = "5px";
+
+    // 체크박스
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.onchange = () => {
+        layer.setVisible(checkbox.checked);
+    };
+
+    // 이름
+    const label = document.createElement("span");
+    label.innerText = " " + name;
+
+    // ❌ 삭제 버튼
+    const deleteBtn = document.createElement("button");
+    deleteBtn.innerText = "❌";
+    deleteBtn.style.float = "right";
+    deleteBtn.onclick = () => removeLayer(layer, item);
+
+    // 색상 선택
+    const colorInput = document.createElement("input");
+    colorInput.type = "color";
+    colorInput.value = colorToHex(color);
+    colorInput.style.marginLeft = "5px";
+
+    // 굵기
+    const widthInput = document.createElement("input");
+    widthInput.type = "number";
+    widthInput.value = 3;
+    widthInput.min = 1;
+    widthInput.style.width = "50px";
+    widthInput.style.marginLeft = "5px";
+
+    function updateStyle() {
+        const newColor = colorInput.value;
+        const width = parseInt(widthInput.value);
+
+        const newStyle = new ol.style.Style({
+            stroke: new ol.style.Stroke({
+                color: newColor,
+                width: width
+            }),
+            fill: new ol.style.Fill({
+                color: newColor + '33'
+            }),
+            image: new ol.style.Circle({
+                radius: 6,
+                fill: new ol.style.Fill({ color: newColor }),
+                stroke: new ol.style.Stroke({ color: '#fff', width: 1 })
+            })
+        });
+
+        layer.setStyle(newStyle);
+    }
+
+    colorInput.oninput = updateStyle;
+    widthInput.oninput = updateStyle;
+
+    item.appendChild(deleteBtn); // 🔥 먼저 넣어야 오른쪽 정렬 깔끔
+    item.appendChild(checkbox);
+    item.appendChild(label);
+    item.appendChild(document.createElement("br"));
+    item.appendChild(colorInput);
+    item.appendChild(widthInput);
+
+    container.appendChild(item);
+}
+
+function removeLayer(layer, item) {
+    // 지도에서 제거
+    map.removeLayer(layer);
+
+    // UI 제거
+    item.remove();
+
+    // 배열에서도 제거
+    kmlLayers = kmlLayers.filter(l => l.layer !== layer);
+}
+
 </script>
 </head>
 
 <body onload="init()">
 
 <div id="control-container">
-    <input type="file" onchange="loadKML(this.files[0])">
+    <input type="file" multiple onchange="handleFiles(this)">
     <button onclick="saveKML()">Save KML</button>
 
     <label><input type="radio" name="base" onclick="changeBaseMap(0)" checked> 과거</label>
@@ -199,6 +348,22 @@ function saveKML() {
 </div>
 
 <div id="map" class="map"></div>
+
+<div id="layerPanel" style="
+    position:absolute;
+    top:50px;
+    right:10px;
+    width:250px;
+    max-height:400px;
+    overflow:auto;
+    background:rgba(255,255,255,0.95);
+    border:1px solid #ccc;
+    padding:10px;
+    z-index:20;
+">
+    <b>KML Layers</b>
+    <div id="layerList"></div>
+</div>
 
 </body>
 </html>
