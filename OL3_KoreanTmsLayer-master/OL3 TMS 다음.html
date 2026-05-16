@@ -299,7 +299,9 @@ function addLayerToUI(name, layer, color) {
             })
         });
 
-        layer.setStyle(newStyle);
+        // 🔥 핵심: 모든 feature에 직접 적용
+        const features = layer.getSource().getFeatures();
+        features.forEach(f => f.setStyle(newStyle));
     }
 
     colorInput.oninput = updateStyle;
