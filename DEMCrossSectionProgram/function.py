@@ -83,3 +83,11 @@ def create_segment(xy_coord, buffer_x: int, buffer_y: int):
     maxy = y + buffer_y
 
     return minx, miny, maxx, maxy
+
+def filter_coords_by_segment(coords, segment_bounds):
+    """구간 bounding box 안에 포함되는 좌표만 추출"""
+    minx, miny, maxx, maxy = segment_bounds
+    if len(coords[0]) == 3:
+        return [(x, y, z) for (x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]
+    elif len(coords[0]) == 4:
+        return [(sta, x, y, z) for (sta, x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]

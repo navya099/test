@@ -127,7 +127,7 @@ class Run(tk.Tk):
                 self.stations = [sta for sta, x, y, z in self.read_coords]
             elif len(self.read_coords[0]) == 3:
                 self.xy_list = [[x, y] for x, y, z in self.read_coords]
-                self.xy_zlist = [[x, y, z] for x, y, z in self.read_coords]
+                self.xyz_list = [[x, y, z] for x, y, z in self.read_coords]
                 self.stations = [i * 25 for i, (x, y, z) in enumerate(self.read_coords)]
             else:
                 raise ValueError("좌표 데이터의 컬럼 수가 맞지 않습니다. (Station, X, Y, Z 필요)")
@@ -135,7 +135,6 @@ class Run(tk.Tk):
             # 4. 좌표 변환 및 엔진 가동
             self.status_var.set('좌표변환 중...')
             converted_coord = convert_coordinates(self.xy_list, 5186, 4326)
-            track_edges = get_track_edges(self.read_coords, self.track_width)
 
             self.status_var.set('DEM 데이터 처리 중...')
             self.dem_processor = DEMProcessor(converted_coord)
@@ -143,10 +142,11 @@ class Run(tk.Tk):
             self.provider = SectionProvider(
                 dem_processor=self.dem_processor,
                 structure_list=self.structure_list,
-                track_edges=track_edges,
                 slope_ratio=self.slope_ratio,
                 read_coords=self.read_coords,
-                xylist = self.xy_list
+                xylist = self.xy_list,
+                track_width = self.track_width,
+                xyzlist= self.xyz_list
             )
 
             # 5. UI 업데이트
