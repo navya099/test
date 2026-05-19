@@ -1,9 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from tkinter.filedialog import asksaveasfilename
 
 import numpy as np
 
 from dem import DEMProcessor
+from dxfexporter import DXFExporter
 from function import read_coordinates, parse_structure, convert_coordinates
 from plot import PlotCrossSection
 from processor import Processor
@@ -52,6 +54,8 @@ class Run(tk.Tk):
         ttk.Button(self.ctrl_frame, text='종료', command=self.destroy).pack(side=tk.LEFT, padx=5)
         ttk.Button(self.ctrl_frame, text='옵션', command=self.show_option).pack(side=tk.LEFT, padx=5)
         ttk.Button(self.ctrl_frame, text='3D보기', command=self.show_3dmesh).pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.ctrl_frame, text='bve저장', command=self.export_to_bve).pack(side=tk.LEFT, padx=5)
+        ttk.Button(self.ctrl_frame, text='도면저장', command=self.export_to_dxf).pack(side=tk.LEFT, padx=5)
 
         # 상태 표시줄
         self.status_var = tk.StringVar(value="대기 중...")
@@ -232,3 +236,35 @@ class Run(tk.Tk):
         except Exception as e:
             messagebox.showerror("검색 오류", f"측점 검색 중 오류가 발생했습니다:\n{str(e)}")
             self.status_var.set(f"Staion Not found.")
+
+    # 2. Run 클래스 내부에 export_to_dxf 메서드 추가
+    def export_to_dxf(self):
+        """현재 화면에 표시 중인 단면 데이터를 DXF 파일로 익스포트"""
+        if not self.data:
+            messagebox.showerror('에러', '저장할 횡단 데이터가 없습니다. 먼저 데이터를 로드하세요.')
+            return
+
+        try:
+            # 파일 저장 경로 다이얼로그 열기
+            default_name = f"Section_{int(self.data['station'])}.dxf"
+            save_file = filedialog.asksaveasfilename(
+                title='DXF 도면 저장',
+                initialfile=default_name,
+                filetypes=[("AutoCAD DXF", "*.dxf")]
+            )
+            if not save_file:
+                return
+
+            # 데이터에 현재 옵션 폭 강제 동기화 후 내보내기
+            self.data['track_width'] = self.track_width
+
+            DXFExporter.export_section(save_file, self.data)
+
+            self.status_var.set(f"DXF 도면 내보내기 성공: {default_name}")
+            messagebox.showinfo("성공", f"횡단면 도면이 성공적으로 저장되었습니다.\n{save_file}")
+
+        except Exception as e:
+            messagebox.showerror("dxf 저장 오류", f"도면 생성 중 오류가 발생했습니다:\n{str(e)}")
+
+    def export_to_bve(self):
+        pass
