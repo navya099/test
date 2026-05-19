@@ -124,7 +124,8 @@ class SectionProvider:
                 'ground': (dist_g, elev_g),  # ✅ 원지반선 저장,
                 'slope_right_mesh': slope_right,
                 'slope_left_mesh': slope_left,
-                'terrain_mesh': terrain_mesh
+                'terrain_mesh': terrain_mesh,
+                'track_width': self.track_width
             }
             return section_result
 
