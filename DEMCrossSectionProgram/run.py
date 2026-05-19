@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
+import numpy as np
+
 from dem import DEMProcessor
 from function import read_coordinates, parse_structure, convert_coordinates
 from plot import PlotCrossSection
@@ -29,6 +31,16 @@ class Run(tk.Tk):
 
         self.station_label = ttk.Label(self.ctrl_frame, text="측점: 0 (No Data)")
         self.station_label.pack(side=tk.LEFT, padx=5)
+
+        # 2. [신규 추가] 특정 측점 직접 입력 이동 UI
+        ttk.Label(self.ctrl_frame, text=" |  이동:").pack(side=tk.LEFT, padx=(5, 2))
+        self.ent_search = ttk.Entry(self.ctrl_frame, width=8)
+        self.ent_search.pack(side=tk.LEFT, padx=2)
+        # 엔터 키를 누르면 즉시 해당 측점으로 점프하는 바인딩
+        self.ent_search.bind("<Return>", lambda event: self._jump_to_station())
+
+        btn_jump = ttk.Button(self.ctrl_frame, text="이동", width=5, command=self._jump_to_station)
+        btn_jump.pack(side=tk.LEFT, padx=(2, 10))
 
         self.slider = ttk.Scale(self.ctrl_frame, from_=0, to=1,
                                 orient=tk.HORIZONTAL, command=self._on_slider_move)
@@ -182,3 +194,41 @@ class Run(tk.Tk):
 
     def _draw_chart(self, data):
         self.plotter.draw_chart(data)
+
+    # -------------------------------------------------------------
+    # ⚡ [신규 핵심 로직] 원하는 측점으로 순간이동(Jump)하는 함수
+    # -------------------------------------------------------------
+    def _jump_to_station(self):
+        """입력창의 값을 분석하여 해당 인덱스나 스테이션으로 슬라이더와 화면을 강제 점프"""
+        if self.processor is None:
+            messagebox.showwarning("경고", "먼저 데이터를 실행하여 로드해주세요.")
+            return
+
+        search_val = self.ent_search.get().strip()
+        if not search_val:
+            return
+
+        try:
+            target_idx = -1
+            stations_arr = np.array(self.processor.stations, dtype=float)
+
+            # Case 1: 사용자가 숫자로 된 스테이션 명(예: 6800, 45200)을 직접 입력한 경우 추적
+            try:
+                input_station = float(search_val)
+                # 입력한 스테이션 값과 가장 가까운 실제 측점 인덱스를 검색
+                target_idx = int(np.argmin(np.abs(stations_arr - input_station)))
+            except ValueError:
+                # Case 2: 숫자가 아니라 인덱스 매칭이나 다른 텍스트 규칙일 경우 처리 예외
+                pass
+
+            # 범위 유효성 검증
+            if 0 <= target_idx < len(self.processor.read_coords):
+                # 슬라이더 위치를 옮겨주면 _on_slider_move가 연쇄 호출되어 화면이 갱신됩니다.
+                self.slider.set(target_idx)
+                self.status_var.set(f"측점 {search_val}번 위치로 다이렉트 점프 완료.")
+            else:
+                messagebox.showerror("범위 초과", f"존재하지 않는 측점입니다.\n범위: {stations_arr[0]} ~ {stations_arr[-1]}")
+                self.status_var.set(f"Staion Out Of Range.")
+        except Exception as e:
+            messagebox.showerror("검색 오류", f"측점 검색 중 오류가 발생했습니다:\n{str(e)}")
+            self.status_var.set(f"Staion Not found.")

@@ -1,3 +1,4 @@
+import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
@@ -22,7 +23,8 @@ class PlotCrossSection:
         track_width = data['track_width']
         # 1. 지반선 플로팅 (기존 유지)
         dist_g, elev_g = data['ground']
-        self.ax.plot(dist_g, elev_g, color='green', label='Ground', lw=1.5)
+        corrected_dist_g = -np.array(dist_g)
+        self.ax.plot(corrected_dist_g, elev_g, color='green', label='Ground', lw=1.5)
 
         # 2. 동적 선로 폭 계산 (하드코딩 제거)
         # SectionProvider에서 리턴해준 left, right 좌표의 상대 변위를 계산하거나
