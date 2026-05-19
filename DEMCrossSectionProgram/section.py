@@ -66,11 +66,7 @@ class SectionProvider:
             p2 = np.array(self.xy_list[min(station_idx + 1, len(self.xy_list) - 1)])
             direction = p2 - p1
             normal = np.array([-direction[1], direction[0]])  # 시계반대방향 90도 회전
-
-            #디버그
-            print("lside:", type(lside), lside)
-            print("slope_left:", type(slope_left), slope_left)
-
+            
             # --- [수정] 메쉬의 정점 인덱스 구조를 활용한 1:1 다이렉트 매칭 ---
             # SlopeBuilder가 생성한 메쉬는 points의 앞쪽 절반이 선로 에지, 뒤쪽 절반이 사면 끝점입니다.
             # 이 규칙을 활용하면 슬라이싱 노이즈 없이 완벽한 3D 교점을 즉시 가져옵니다.
@@ -96,11 +92,6 @@ class SectionProvider:
             # 우측 에지에서 우측 사면 끝점까지의 변위 벡터 -> 법선 정사영
             v_r = np.array([slope_right_end[0] - current_rside[0], slope_right_end[1] - current_rside[1]])
             rd = abs(np.dot(v_r, unit_normal))
-
-            # 디버그 콘솔 출력
-            print(f"[인덱스 매칭 완료] 측점 내부 인덱스: {current_local_idx}")
-            print(f"정밀 ld: {ld:.4f}m, 끝점 고도: {slope_left_end[2]:.2f}m")
-            print(f"정밀 rd: {rd:.4f}m, 끝점 고도: {slope_right_end[2]:.2f}m")
 
             # 함수 실행
             dist_g, elev_g = ExistGround.extract_ground_line(

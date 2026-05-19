@@ -5,6 +5,16 @@ class BVEExporter:
     """BVE 구문 익스포터 (OpenBVE 노선 뼈대 스크립트 자동 생성)"""
 
     @staticmethod
+    def initialize_files(save_folder):
+        """출력 파일이 기존에 존재한다면 초기화(삭제)"""
+        left_slope_file = os.path.join(save_folder, '사면좌.txt')
+        right_slope_file = os.path.join(save_folder, '사면우.txt')
+
+        for filepath in [left_slope_file, right_slope_file]:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+
+    @staticmethod
     def export_section(save_folder, data, use_relative_height=True):
         """
         현재 섹션의 사면 위치를 BVE 타겟 레일 구문(.rail)으로 누적 저장
