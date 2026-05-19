@@ -4,6 +4,7 @@ from tkinter.filedialog import asksaveasfilename
 
 import numpy as np
 
+from bveexporter import BVEExporter
 from dem import DEMProcessor
 from dxfexporter import DXFExporter
 from function import read_coordinates, parse_structure, convert_coordinates
@@ -267,4 +268,23 @@ class Run(tk.Tk):
             messagebox.showerror("dxf 저장 오류", f"도면 생성 중 오류가 발생했습니다:\n{str(e)}")
 
     def export_to_bve(self):
-        pass
+        """전체 단면 데이터를 BVE 구문 파일로 익스포트"""
+
+        if not self.data:
+            messagebox.showerror('에러', '저장할 횡단 데이터가 없습니다. 먼저 데이터를 로드하세요.')
+            return
+
+        try:
+            # 파일 저장 경로 다이얼로그 열기
+            save_folder = filedialog.askdirectory(title='사면 구문 BVE 저장 경로 선택')
+
+            if not save_folder:
+                return
+
+            BVEExporter.export_section(save_folder, self.data)
+
+            self.status_var.set(f"BVE 구문 내보내기 성공!")
+            messagebox.showinfo("성공", f"횡단면 구문이 성공적으로 저장되었습니다.")
+
+        except Exception as e:
+            messagebox.showerror("BVE 구문 내보내기 오류", f"횡단면 구문 생성 중 오류가 발생했습니다:\n{str(e)}")
