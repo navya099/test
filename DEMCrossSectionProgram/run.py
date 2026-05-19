@@ -4,22 +4,24 @@ from tkinter import ttk, messagebox, filedialog
 from dem import DEMProcessor
 from function import read_coordinates, parse_structure, convert_coordinates
 from plot import PlotCrossSection
+from processor import Processor
 from section import SectionProvider
 from visualize import SectionVisualizer
 
 class Run(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.provider = None
+
+        #내부 속성
+        self.processor = None
         self.data = None
         self.title('DEM 횡단면도 실시간 뷰어 (3D Slice 기반)')
         self.geometry('1000x800')
         self.current_idx = -1
-        self.read_coords = []
-        self.provider = None
         self.track_width = 8.0
         self.slope_ratio = 1.5
         self.is_processing = False  # 스레드 중복 실행 방지 플래그
+
         # --- UI 구성 ---
         # 상단 제어바 (슬라이더 및 스테이션 정보)
         self.ctrl_frame = ttk.Frame(self)
@@ -28,19 +30,17 @@ class Run(tk.Tk):
         self.station_label = ttk.Label(self.ctrl_frame, text="측점: 0 (No Data)")
         self.station_label.pack(side=tk.LEFT, padx=5)
 
-        self.slider = ttk.Scale(self.ctrl_frame, from_=0, to=len(self.read_coords) - 1,
+        self.slider = ttk.Scale(self.ctrl_frame, from_=0, to=1,
                                 orient=tk.HORIZONTAL, command=self._on_slider_move)
         self.slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
 
-        # 수정 코드
+        #버튼
         self.btn_run = ttk.Button(self.ctrl_frame, text='실행', command=self._start_process)
         self.btn_run.pack(side=tk.LEFT, padx=5)
-        # 수정 코드
         ttk.Button(self.ctrl_frame, text='종료', command=self.destroy).pack(side=tk.LEFT, padx=5)
-        # 수정 코드
         ttk.Button(self.ctrl_frame, text='옵션', command=self.show_option).pack(side=tk.LEFT, padx=5)
-        # 수정 코드
         ttk.Button(self.ctrl_frame, text='3D보기', command=self.show_3dmesh).pack(side=tk.LEFT, padx=5)
+
         # 상태 표시줄
         self.status_var = tk.StringVar(value="대기 중...")
         # 수정 후 (복사 가능한 Entry로 변경)
@@ -88,7 +88,7 @@ class Run(tk.Tk):
                 option_win.destroy()
 
                 # 값이 바뀌었으므로 현재 화면 갱신 (이미 데이터가 로드된 경우)
-                if self.provider:
+                if self.processor:
                     self._on_slider_move(self.current_idx)
 
             except ValueError:
@@ -111,47 +111,14 @@ class Run(tk.Tk):
             struct_file = filedialog.askopenfilename(title='구조물 파일 선택',
                                                      filetypes=[("xlsx", "*.xlsx"), ("All Files", "*.*")])
             if not struct_file: return
-
-            # 2. 데이터 로드 및 파싱 검증
-            self.read_coords = read_coordinates(read_file)
-            if not self.read_coords:
-                raise ValueError("좌표 파일이 비어있거나 형식이 잘못되었습니다.")
-
-            self.structure_list = parse_structure(struct_file)
-
-            # 3. 데이터 추출 (stations, xy_list)
-            if len(self.read_coords[0]) == 4:
-                self.xy_list = [[x, y] for sta, x, y, z in self.read_coords]
-                self.xyz_list = [[x, y, z] for sta, x, y, z in self.read_coords]
-                self.stations = [sta for sta, x, y, z in self.read_coords]
-            elif len(self.read_coords[0]) == 3:
-                self.xy_list = [[x, y] for x, y, z in self.read_coords]
-                self.xyz_list = [[x, y, z] for x, y, z in self.read_coords]
-                self.stations = [i * 25 for i, (x, y, z) in enumerate(self.read_coords)]
-            else:
-                raise ValueError("좌표 데이터의 컬럼 수가 맞지 않습니다. (Station, X, Y, Z 필요)")
-
-            # 4. 좌표 변환 및 엔진 가동
-            self.status_var.set('좌표변환 중...')
-            converted_coord = convert_coordinates(self.xy_list, 5186, 4326)
-
-            self.status_var.set('DEM 데이터 처리 중...')
-            self.dem_processor = DEMProcessor(converted_coord)
-
-            self.provider = SectionProvider(
-                dem_processor=self.dem_processor,
-                structure_list=self.structure_list,
-                slope_ratio=self.slope_ratio,
-                read_coords=self.read_coords,
-                xylist = self.xy_list,
-                track_width = self.track_width,
-                xyzlist= self.xyz_list,
-                stations = self.stations
-            )
+            self.status_var.set('프로세스 준비 중...')
+            self.processor = Processor()
+            self.processor.run(read_file, struct_file, self.slope_ratio, self.track_width)
 
             # 5. UI 업데이트
+            self.status_var.set('UI 업데이트 중...')
             self.btn_run.config(state='disabled')
-            self.slider.configure(from_=0, to=len(self.read_coords) - 1)
+            self.slider.configure(from_=0, to=len(self.processor.read_coords) - 1)
             self.slider.set(0)
             self._on_slider_move(0)
 
@@ -162,7 +129,7 @@ class Run(tk.Tk):
 
     def _on_slider_move(self, val):
         """슬라이더 이동 시 메인 스레드에서 직접 호출"""
-        if self.provider is None:
+        if self.processor is None:
             return
 
         idx = int(float(val))
@@ -177,7 +144,7 @@ class Run(tk.Tk):
             self.update_idletasks()  # "연산 중" 메시지가 화면에 즉시 보이게 함
 
             # 2. 직접 연산 수행 (스레드 없이 실행)
-            self.data = self.provider.get_section(idx)
+            self.data = self.processor.provider.get_section(idx)
 
             # 3. 차트 그리기
             if self.data:
@@ -185,32 +152,15 @@ class Run(tk.Tk):
                 self.status_var.set("연산 완료")
             else:
                 self.status_var.set("데이터 없음")
-
+            self.btn_run.config(state='enabled')
         except Exception as e:
             error_msg = str(e)
             self._show_error(error_msg)
             messagebox.showerror("연산 오류", f"측점 {idx} 처리 중 오류:\n{error_msg}")
             self.btn_run.config(state='enabled')
 
-    def _async_update(self, idx):
-        """백그라운드 연산 및 GUI 업데이트 요청"""
-        try:
-            # SectionProvider에서 3D Micro-Mesh 기반 데이터 추출
-            self.data = self.provider.get_section(idx)
-
-            # GUI 업데이트는 메인 스레드에서 수행
-            self.after(0, self._draw_chart, self.data)
-        except Exception as e:
-            import traceback
-            err_details = traceback.format_exc()  # 상세 에러 내용 추출
-            error_msg = str(e)
-            # 람다 대신 직접 인자를 전달하는 메서드 호출
-            self.after(0, self._show_error, err_details)
-
     def _show_error(self, message):
         self.status_var.set(f"Error: {message}")
-
-
 
     def show_3dmesh(self):
         if self.data:
