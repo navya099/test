@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+import numpy as np
 import pandas as pd
 import pyproj
 import math
@@ -91,3 +92,22 @@ def filter_coords_by_segment(coords, segment_bounds):
         return [(x, y, z) for (x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]
     elif len(coords[0]) == 4:
         return [(sta, x, y, z) for (sta, x, y, z) in coords if minx <= x <= maxx and miny <= y <= maxy]
+
+def farthest_point(base, pts):
+    dists = np.linalg.norm(pts[:,:2] - np.array(base[:2]), axis=1)
+    return pts[np.argmax(dists)]
+
+def format_distance(number):
+    negative = False
+    if number < 0:
+        negative = True
+        number = abs(number)
+
+    km = int(number) // 1000
+    remainder = "{:.2f}".format(number % 1000)
+    formatted_distance = "{:d}km{:06.2f}".format(km, float(remainder))
+
+    if negative:
+        formatted_distance = "-" + formatted_distance
+
+    return formatted_distance

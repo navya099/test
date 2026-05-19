@@ -5,15 +5,17 @@ import plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from dem import DEMProcessor
-from function import read_coordinates, parse_structure, convert_coordinates
+from function import read_coordinates, parse_structure, convert_coordinates, format_distance
 from section import SectionProvider
 from track import get_track_edges
+from visualize import SectionVisualizer
 
 
 class Run(tk.Tk):
     def __init__(self):
         super().__init__()
         self.provider = None
+        self.data = None
         self.title('DEM 횡단면도 실시간 뷰어 (3D Slice 기반)')
         self.geometry('1000x800')
         self.current_idx = -1
@@ -41,7 +43,8 @@ class Run(tk.Tk):
         ttk.Button(self.ctrl_frame, text='종료', command=self.destroy).pack(side=tk.LEFT, padx=5)
         # 수정 코드
         ttk.Button(self.ctrl_frame, text='옵션', command=self.show_option).pack(side=tk.LEFT, padx=5)
-
+        # 수정 코드
+        ttk.Button(self.ctrl_frame, text='3D보기', command=self.show_3dmesh).pack(side=tk.LEFT, padx=5)
         # 상태 표시줄
         self.status_var = tk.StringVar(value="대기 중...")
         # 수정 후 (복사 가능한 Entry로 변경)
@@ -146,7 +149,8 @@ class Run(tk.Tk):
                 read_coords=self.read_coords,
                 xylist = self.xy_list,
                 track_width = self.track_width,
-                xyzlist= self.xyz_list
+                xyzlist= self.xyz_list,
+                stations = self.stations
             )
 
             # 5. UI 업데이트
@@ -177,11 +181,11 @@ class Run(tk.Tk):
             self.update_idletasks()  # "연산 중" 메시지가 화면에 즉시 보이게 함
 
             # 2. 직접 연산 수행 (스레드 없이 실행)
-            data = self.provider.get_section(idx)
+            self.data = self.provider.get_section(idx)
 
             # 3. 차트 그리기
-            if data:
-                self._draw_chart(data)
+            if self.data:
+                self._draw_chart(self.data)
                 self.status_var.set("연산 완료")
             else:
                 self.status_var.set("데이터 없음")
@@ -196,10 +200,10 @@ class Run(tk.Tk):
         """백그라운드 연산 및 GUI 업데이트 요청"""
         try:
             # SectionProvider에서 3D Micro-Mesh 기반 데이터 추출
-            data = self.provider.get_section(idx)
+            self.data = self.provider.get_section(idx)
 
             # GUI 업데이트는 메인 스레드에서 수행
-            self.after(0, self._draw_chart, data)
+            self.after(0, self._draw_chart, self.data)
         except Exception as e:
             import traceback
             err_details = traceback.format_exc()  # 상세 에러 내용 추출
@@ -214,18 +218,45 @@ class Run(tk.Tk):
         """전달받은 2D 데이터를 Matplotlib에 그리기"""
         self.ax.clear()
 
-        # 지반선
+        center = data['center']
+        fh_z = center[2]  # 계획고(FH)
+
+        # 1. 지반선 플로팅 (기존 유지)
         dist_g, elev_g = data['ground']
-        self.ax.plot(dist_g, elev_g, color='green', label='Ground')
+        self.ax.plot(dist_g, elev_g, color='green', label='Ground', lw=1.5)
 
-        # 사면
-        dist_l, elev_l = data['slope_l']
-        dist_r, elev_r = data['slope_r']
-        self.ax.plot(dist_l, elev_l, color='purple', lw=2, label='Left Slope')
-        self.ax.plot(dist_r, elev_r, color='red', lw=2, label='Right Slope')
+        # 2. 동적 선로 폭 계산 (하드코딩 제거)
+        # SectionProvider에서 리턴해준 left, right 좌표의 상대 변위를 계산하거나
+        # 클래스 속성의 track_width를 활용합니다.
+        # 여기서는 data['left']가 3D 절대좌표이므로, 중심선(0) 기준 상대좌표인 half_w를 정의합니다.
+        half_w = self.track_width / 2.0  # 만약 클래스 내부라면 self.track_width 사용
 
+        # 3. 사면 데이터 파싱
+        ld = data['left_dist']
+        rd = data['right_dist']
+
+        # 사면 끝점 고도(Z) 추출
+        _, elev_l = data['slope_l']
+        _, elev_r = data['slope_r']
+
+        # 4. 좌측 사면선 (선로 좌측 에지에서 사면 외곽 Catch Point까지)
+        # X축: [-half_w - ld] 에서 [-half_w] 까지
+        # Y축: [elev_l] 에서 [fh_z] 까지
+        self.ax.plot([-half_w - ld, -half_w], [elev_l, fh_z], color='purple', lw=2, label='Left Slope')
+
+        # 5. 우측 사면선 (선로 우측 에지에서 사면 외곽 Catch Point까지)
+        # X축: [half_w] 에서 [half_w + rd] 까지
+        # Y축: [fh_z] 에서 [elev_r] 까지 (elev_l 오타 수정)
+        self.ax.plot([half_w, half_w + rd], [fh_z, elev_r], color='red', lw=2, label='Right Slope')
+
+        # 6. [옵션] 선로 상면 노반선 (도면의 완성도를 위해 좌측 에지와 우측 에지를 연결)
+        self.ax.plot([-half_w, half_w], [fh_z, fh_z], color='black', lw=3, label='Track Bed')
+
+        # 7. 레이아웃 및 뷰 설정
         self.ax.legend()
-        self.ax.set_title(f"Station: {data['station']}")
+        self.ax.set_aspect('equal', adjustable='box')  # 1:1 정스케일 강제 (클레임 방지 필수)
+        self.ax.set_ylim(fh_z - 30, fh_z + 30)  # 타겟 주변으로 뷰 좁혀서 가독성 확보
+        self.ax.set_title(f"Station: {format_distance(data['station'])} FH: {fh_z:.2f}")
         self.canvas.draw()
 
         self.status_var.set("연산 완료")
@@ -266,3 +297,21 @@ class Run(tk.Tk):
         self.canvas.draw()
         self.status_var.set("연산 완료")
         self.station_label.config(text=f"측점: {data['station']}")
+
+    def show_3dmesh(self):
+        if self.data:
+            self.status_var.set("3D 보기 실행")
+            # 디버그로 pyvista 시각화
+            # 시각화 클래스 구동
+            visualizer = SectionVisualizer()
+            visualizer.verify_section_3d(
+                section_data=self.data,
+                terrain_mesh=self.data['terrain_mesh'],
+                slope_left_mesh=self.data['slope_left_mesh'],
+                slope_right_mesh=self.data['slope_right_mesh']
+            )
+            self.status_var.set("3D 보기 종료")
+        else:
+            messagebox.showerror('에러', '정의된 횡단 데이터가 없습니다.')
+            self.status_var.set("3D 보기 오류")
+            return
