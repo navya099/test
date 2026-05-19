@@ -20,6 +20,7 @@ class PlotCrossSection:
 
         center = data['center']
         fh_z = center[2]  # 계획고(FH)
+        gh_z = data['gl']
         track_width = data['track_width']
         # 1. 지반선 플로팅 (기존 유지)
         dist_g, elev_g = data['ground']
@@ -57,7 +58,7 @@ class PlotCrossSection:
         self.ax.legend()
         self.ax.set_aspect('equal', adjustable='box')  # 1:1 정스케일 강제 (클레임 방지 필수)
         self.ax.set_ylim(fh_z - 30, fh_z + 30)  # 타겟 주변으로 뷰 좁혀서 가독성 확보
-        self.ax.set_title(f"Station: {format_distance(data['station'])} FH: {fh_z:.2f}")
+        self.ax.set_title(f"Station: {format_distance(data['station'])} FH: {fh_z:.2f} GH: {gh_z:.2f}")
         self.canvas.draw()
 
         self.master.status_var.set("연산 완료")

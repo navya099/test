@@ -36,6 +36,7 @@ class DXFExporter:
         # 3. 데이터 파싱 및 기하학적 기준점 정의
         center = data['center']
         fh_z = center[2]  # 계획고 (FH)
+        gh_z = data['gl'] #지반고 GH()
         track_width = data.get('track_width', 8.0)
         half_w = track_width / 2.0
 
@@ -96,7 +97,7 @@ class DXFExporter:
             station_text = f"STATION: {data['station']}"
 
         fh_text = f"FH: {fh_z:.2f}m"
-
+        gh_text = f"GH: {gh_z:.2f}m"
         # 🚨 [안정화 교정] add_text 엔티티의 정렬 방식을 일반 TEXT 문법에 맞춰 중앙 정렬(CENTER)로 제어합니다.
         t1 = msp.add_text(
             text=station_text,
@@ -109,6 +110,12 @@ class DXFExporter:
             dxfattribs={'layer': '05_TEXT', 'height': 1.2, 'style': 'Standard'}
         )
         t2.set_placement((0, fh_z + 3.0), align=ezdxf.enums.TextEntityAlignment.CENTER)
+
+        t3 = msp.add_text(
+            text=gh_text,
+            dxfattribs={'layer': '05_TEXT', 'height': 1.2, 'style': 'Standard'}
+        )
+        t3.set_placement((0, gh_z + 1.0), align=ezdxf.enums.TextEntityAlignment.CENTER)
 
         # 4. DXF 파일 저장
         doc.saveas(file_path)

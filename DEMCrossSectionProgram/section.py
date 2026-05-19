@@ -1,7 +1,7 @@
 import numpy as np
 
 from daylight import SlopeManager
-from function import horizontal_distance, create_segment, filter_coords_by_segment, farthest_point
+from function import horizontal_distance, create_segment, filter_coords_by_segment, farthest_point, convert_coordinates
 from ground import ExistGround
 from terrain import TerrainBuilder
 from track import get_track_edges
@@ -25,7 +25,8 @@ class SectionProvider:
             station = self.stations[station_idx] #현재 측점
             center = self.xy_list[station_idx] #현재 측점 좌표 z미포함)
             centerz = self.xyz_list[station_idx] #현재 측점 좌표 z 포함)
-
+            center_latlon = convert_coordinates(center, 5186, 4326)
+            ground_level = self.dem_p.strm.get_elevation(center_latlon[0], center_latlon[1]) + 100
             # 코리더 영역
             corridor = create_segment(center, buffer_x=500, buffer_y=100) #중심 좌표에서 좌우 +-500 앞뒤 100의 세미지형 생성을 위한 영역생성
             #코리더 영역으로 지형 메쉬 생성. 메쉬는 meshio.Mesh객체
@@ -66,7 +67,7 @@ class SectionProvider:
             p2 = np.array(self.xy_list[min(station_idx + 1, len(self.xy_list) - 1)])
             direction = p2 - p1
             normal = np.array([-direction[1], direction[0]])  # 시계반대방향 90도 회전
-            
+
             # --- [수정] 메쉬의 정점 인덱스 구조를 활용한 1:1 다이렉트 매칭 ---
             # SlopeBuilder가 생성한 메쉬는 points의 앞쪽 절반이 선로 에지, 뒤쪽 절반이 사면 끝점입니다.
             # 이 규칙을 활용하면 슬라이싱 노이즈 없이 완벽한 3D 교점을 즉시 가져옵니다.
@@ -116,7 +117,8 @@ class SectionProvider:
                 'slope_right_mesh': slope_right,
                 'slope_left_mesh': slope_left,
                 'terrain_mesh': terrain_mesh,
-                'track_width': self.track_width
+                'track_width': self.track_width,
+                'gl': ground_level
             }
             return section_result
 
