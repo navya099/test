@@ -20,18 +20,16 @@ class PlotCrossSection:
 
         center = data['center']
         fh_z = center[2]  # 계획고(FH)
-        gh_z = data['gl']
+        gh_z = data.get('gl', fh_z)  # 안전장치 적용
         track_width = data['track_width']
-        # 1. 지반선 플로팅 (기존 유지)
+
+        # 1. 지반선 플로팅
         dist_g, elev_g = data['ground']
         corrected_dist_g = -np.array(dist_g)
         self.ax.plot(corrected_dist_g, elev_g, color='green', label='Ground', lw=1.5)
 
-        # 2. 동적 선로 폭 계산 (하드코딩 제거)
-        # SectionProvider에서 리턴해준 left, right 좌표의 상대 변위를 계산하거나
-        # 클래스 속성의 track_width를 활용합니다.
-        # 여기서는 data['left']가 3D 절대좌표이므로, 중심선(0) 기준 상대좌표인 half_w를 정의합니다.
-        half_w = track_width / 2.0  # 만약 클래스 내부라면 self.track_width 사용
+        # 2. 동적 선로 폭 계산
+        half_w = track_width / 2.0
 
         # 3. 사면 데이터 파싱
         ld = data['left_dist']
@@ -42,23 +40,59 @@ class PlotCrossSection:
         _, elev_r = data['slope_r']
 
         # 4. 좌측 사면선 (선로 좌측 에지에서 사면 외곽 Catch Point까지)
-        # X축: [-half_w - ld] 에서 [-half_w] 까지
-        # Y축: [elev_l] 에서 [fh_z] 까지
-        self.ax.plot([-half_w - ld, -half_w], [elev_l, fh_z], color='purple', lw=2, label='Left Slope')
+        x_left = [-half_w - ld, -half_w]
+        y_left = [elev_l, fh_z]
+        self.ax.plot(x_left, y_left, color='purple', lw=2, label='Left Slope')
 
         # 5. 우측 사면선 (선로 우측 에지에서 사면 외곽 Catch Point까지)
-        # X축: [half_w] 에서 [half_w + rd] 까지
-        # Y축: [fh_z] 에서 [elev_r] 까지 (elev_l 오타 수정)
-        self.ax.plot([half_w, half_w + rd], [fh_z, elev_r], color='red', lw=2, label='Right Slope')
+        x_right = [half_w, half_w + rd]
+        y_right = [fh_z, elev_r]
+        self.ax.plot(x_right, y_right, color='red', lw=2, label='Right Slope')
 
-        # 6. [옵션] 선로 상면 노반선 (도면의 완성도를 위해 좌측 에지와 우측 에지를 연결)
+        # 6. 선로 상면 노반선
         self.ax.plot([-half_w, half_w], [fh_z, fh_z], color='black', lw=3, label='Track Bed')
+
+        # -------------------------------------------------------------
+        # 🏷️ [신규 추가] 사면 기울기(1:n) 텍스트 마킹 로직
+        # -------------------------------------------------------------
+        # 메인 가동 중인 기울기 속성(slope_ratio)을 마스터에서 가져옴 (없으면 역산)
+        slope_ratio = getattr(self.master, 'slope_ratio', 1.5)
+
+        # 좌측 사면 중점 및 텍스트 배치 계산
+        if ld > 0 and abs(fh_z - elev_l) > 0.01:
+            mid_x_l = sum(x_left) / 2.0
+            mid_y_l = sum(y_left) / 2.0
+            # 수평 거리와 수직 고도차를 이용해 실제 기울기비(n) 검증 후 포맷팅
+            n_l = ld / abs(fh_z - elev_l)
+            # 사면선 살짝 위쪽으로 여백 배치
+            self.ax.text(
+                mid_x_l, mid_y_l + 1.0, f"1:{n_l:.1f}",
+                color='purple', fontsize=10, weight='bold',
+                horizontalalignment='center', verticalalignment='bottom'
+            )
+
+        # 우측 사면 중점 및 텍스트 배치 계산
+        if rd > 0 and abs(fh_z - elev_r) > 0.01:
+            mid_x_r = sum(x_right) / 2.0
+            mid_y_r = sum(y_right) / 2.0
+            n_r = rd / abs(fh_z - elev_r)
+            self.ax.text(
+                mid_x_r, mid_y_r + 1.0, f"1:{n_r:.1f}",
+                color='red', fontsize=10, weight='bold',
+                horizontalalignment='center', verticalalignment='bottom'
+            )
 
         # 7. 레이아웃 및 뷰 설정
         self.ax.legend()
-        self.ax.set_aspect('equal', adjustable='box')  # 1:1 정스케일 강제 (클레임 방지 필수)
+        self.ax.set_aspect('equal', adjustable='box')  # 1:1 정스케일 강제
         self.ax.set_ylim(fh_z - 30, fh_z + 30)  # 타겟 주변으로 뷰 좁혀서 가독성 확보
-        self.ax.set_title(f"Station: {format_distance(data['station'])} FH: {fh_z:.2f} GH: {gh_z:.2f}")
+
+        try:
+            station_text = format_distance(data['station'])
+        except Exception:
+            station_text = f"{data['station']}"
+
+        self.ax.set_title(f"Station: {station_text}  FH: {fh_z:.2f}  GH: {gh_z:.2f}")
         self.canvas.draw()
 
         self.master.status_var.set("연산 완료")
