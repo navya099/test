@@ -4,7 +4,7 @@ from section import SectionProvider
 
 
 class Processor:
-    def __init__(self):
+    def __init__(self, uidata):
         self.provider = None
         self.stations = None
         self.xyz_list = None
@@ -12,8 +12,15 @@ class Processor:
         self.structure_list = None
         self.dem_processor = None
         self.read_coords = None
+        self.uidata = uidata
 
-    def run(self, read_file, struct_file, slope_ratio, track_width):
+    def run(self):
+        # 1. UI데이터 언팩
+        read_file = self.uidata['read_file']
+        struct_file = self.uidata['struct_file']
+        track_width = self.uidata['track_width']
+        slope_ratio = self.uidata['slope_ratio']
+
         # 2. 데이터 로드 및 파싱 검증
         self.read_coords = read_coordinates(read_file)
         if not self.read_coords:

@@ -17,6 +17,8 @@ class Run(tk.Tk):
         super().__init__()
 
         # 내부 속성
+        self.track_type = '단선'
+        self.track_distance = 4.3
         self.processor = None
         self.data = None
         self.title('DEM 횡단면도 실시간 뷰어 (Hybrid Async Cache)')
@@ -74,11 +76,13 @@ class Run(tk.Tk):
     def show_option(self):
         option_win = tk.Toplevel(self)
         option_win.title("설정 옵션")
-        option_win.geometry("300x200")
+        option_win.geometry("300x300")
         option_win.grab_set()
 
         current_width = getattr(self, 'track_width', 8.0)
         current_ratio = getattr(self, 'slope_ratio', 1.5)
+        current_track_distance = getattr(self, 'track_distance', 4.3)
+        current_track_type = getattr(self, 'track_type', '단선')
 
         tk.Label(option_win, text="트랙 폭 (m):").pack(pady=(15, 0))
         ent_width = tk.Entry(option_win)
@@ -90,16 +94,28 @@ class Run(tk.Tk):
         ent_ratio.insert(0, str(current_ratio))
         ent_ratio.pack(pady=5)
 
+        tk.Label(option_win, text="선로중심간격 D:").pack(pady=(10, 0))
+        ent_track_distance = tk.Entry(option_win)
+        ent_track_distance.insert(0, str(current_track_distance))
+        ent_track_distance.pack(pady=5)
+
+        tk.Label(option_win, text="선로타입 T:").pack(pady=(10, 0))
+        ent_track_type = tk.Entry(option_win)
+        ent_track_type.insert(0, str(current_track_type))
+        ent_track_type.pack(pady=5)
+
         def save_and_close():
             try:
                 self.track_width = float(ent_width.get())
                 self.slope_ratio = float(ent_ratio.get())
+                self.track_distance = float(ent_track_distance.get())
+                self.track_type = ent_track_type.get()
 
                 # 🚀 옵션이 바뀌면 기존 캐시 데이터를 전부 비우고 새로 비동기 러닝을 돌아야 함
                 with self.cache_lock:
                     self.cache_data.clear()
 
-                self.status_var.set(f"옵션 변경: 폭 {self.track_width}m, 기울기 1:{self.slope_ratio} (캐시 재적재)")
+                self.status_var.set(f"옵션 변경: 폭 {self.track_width}m, 기울기 1:{self.slope_ratio}, 선로중심간격: {self.track_distance}, 선로종류: {self.track_type} (캐시 재적재)")
                 option_win.destroy()
 
                 if self.processor:
@@ -132,9 +148,17 @@ class Run(tk.Tk):
 
             self.status_var.set('엔진 초기화 중...')
             self.update_idletasks()
+            ui_input_data = {
+                'read_file': read_file,
+                'struct_file': struct_file,
+                'track_width': self.track_width, #노반 폭
+                'slope_ratio': self.slope_ratio, # 사면 기울기
+                'track_distance': self.track_distance, #선로중심간격
+                'track_type': self.track_type, #선로타입
 
-            self.processor = Processor()
-            self.processor.run(read_file, struct_file, self.slope_ratio, self.track_width)
+            }
+            self.processor = Processor(ui_input_data)
+            self.processor.run()
 
             # 캐시 공간 초기화 및 제어 플래그 리셋
             self.cache_data.clear()
