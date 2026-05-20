@@ -43,7 +43,7 @@ class BVEExporter:
             ground_lines = []
 
             half_w = track_width / 2.0
-
+            side_width = (track_width - track_distance) / 2 #시공기면 폭
             # 2. 인덱스 순서대로 정렬하여 전구간 순회 연산
             sorted_indices = sorted(all_section_results.keys())
 
@@ -77,11 +77,11 @@ class BVEExporter:
                     left_distance = -(half_w + ld)
                     right_distance = (half_w + rd)
                 elif track_type == "복선-하선":
-                    left_distance = -(half_w + ld)
-                    right_distance = track_distance + half_w + rd
+                    left_distance = -(side_width + ld)
+                    right_distance = (side_width + rd) + track_distance
                 elif track_type == "복선-상선":
-                    left_distance = -(track_distance + half_w + ld)
-                    right_distance = (half_w + rd)
+                    left_distance = -(side_width + ld + track_distance)
+                    right_distance = (side_width + rd)
                 else:
                     left_distance = -(half_w + ld)
                     right_distance = (half_w + rd)
