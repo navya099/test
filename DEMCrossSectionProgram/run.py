@@ -48,8 +48,16 @@ class Run(tk.Tk):
         btn_jump = ttk.Button(self.ctrl_frame, text="이동", width=5, command=self._jump_to_station)
         btn_jump.pack(side=tk.LEFT, padx=(2, 10))
 
+        # 🚀 [신규 추가] 이전 측점 이동 버튼 (<)
+        self.btn_prev = ttk.Button(self.ctrl_frame, text="<", width=3, command=lambda: self._move_step(-1))
+        self.btn_prev.pack(side=tk.LEFT, padx=(5, 0))
+
         self.slider = ttk.Scale(self.ctrl_frame, from_=0, to=1, orient=tk.HORIZONTAL, command=self._on_slider_move)
         self.slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+
+        # 🚀 [신규 추가] 다음 측점 이동 버튼 (>)
+        self.btn_next = ttk.Button(self.ctrl_frame, text=">", width=3, command=lambda: self._move_step(1))
+        self.btn_next.pack(side=tk.LEFT, padx=(0, 5))
 
         self.btn_run = ttk.Button(self.ctrl_frame, text='실행', command=self._start_process)
         self.btn_run.pack(side=tk.LEFT, padx=5)
@@ -70,9 +78,28 @@ class Run(tk.Tk):
         self.plotframe.pack(side=tk.BOTTOM, fill=tk.X)
         self.plotter = PlotCrossSection(self)
 
+        # 🚀 [보너스 편의기능] 키보드 좌우 방향키 핫키 바인딩 (프로그램 찍고 방향키 누르면 이동 가능)
+        self.bind("<Left>", lambda event: self._move_step(-1))
+        self.bind("<Right>", lambda event: self._move_step(1))
+
         # 창이 닫힐 때 백그라운드 스레드도 안전하게 죽도록 설정
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
+    # -------------------------------------------------------------
+    # 🚀 [신규 제어 로직] 버튼 클릭 및 키보드 조작 시 1단계씩 이동하는 함수
+    # -------------------------------------------------------------
+    def _move_step(self, step):
+        """현재 슬라이더 위치에서 수동으로 step 만큼 전후진 처리 (경계면 예외 포함)"""
+        if self.processor is None:
+            return
+
+        total_count = len(self.processor.read_coords)
+        current_val = int(self.slider.get())
+        next_val = current_val + step
+
+        # 0번 측점 미만이나 맨 마지막 측점 초과 시 가드 처리
+        if 0 <= next_val < total_count:
+            self.slider.set(next_val)  # Scale 값이 바뀌면서 _on_slider_move가 자동으로 호출됩니다.
     def show_option(self):
         """트랙 폭, 사면 기울기, 선로 종류(콤보박스) 및 중심간격을 설정하는 팝업 창"""
         option_win = tk.Toplevel(self)
