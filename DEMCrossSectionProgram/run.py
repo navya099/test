@@ -424,9 +424,35 @@ class Run(tk.Tk):
 
     def show_3dmesh(self):
         if self.data:
-            visualizer = SectionVisualizer()
-            visualizer.verify_section_3d(self.data, self.data['terrain_mesh'], self.data['slope_left_mesh'],
-                                         self.data['slope_right_mesh'])
+            try:
+                self.status_var.set("3D 시각화 구동 중... (메인 창 조작 제어)")
+
+                # 1. 🚨 메인 윈도우의 마우스/키보드 이벤트를 잠시 비활성화 (포커스 가드)
+                # 대안으로 grab_set을 쓸 수도 있으나, Toplevel이 아니므로 메인 창의 위젯 반응을 막음
+                self.config(cursor="watch")
+
+                # 기존 버튼들이 누락되지 않게 상단 제어바나 버튼을 잠시 disabled 시키는 것이 안전합니다.
+                # 혹은 간단하게 윈도우 창 전체를 숨겼다가 다시 띄우는 편법도 실무에서 자주 쓰입니다.
+                self.withdraw() # 창 숨기기 (선택 사항)
+
+                visualizer = SectionVisualizer()
+
+                # 2. PyVista 3D 창 구동 (유저가 이 창을 닫을 때까지 여기서 블로킹됨)
+                visualizer.verify_section_3d(
+                    self.data,
+                    self.data['terrain_mesh'],
+                    self.data['slope_left_mesh'],
+                    self.data['slope_right_mesh']
+                )
+
+            except Exception as e:
+                messagebox.showerror('3D 오류', f'시각화 중 오류가 발생했습니다:\n{str(e)}')
+            finally:
+                # 3. 🚨 PyVista 창이 닫히면 다시 메인 창을 정상 상태로 복구
+                self.deiconify() # 창 다시 보이기 (위에서 숨겼을 경우)
+                self.config(cursor="")
+                self.status_var.set("3D 시각화 종료.")
+                self.update()
         else:
             messagebox.showerror('에러', '데이터가 없습니다.')
 
