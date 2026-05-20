@@ -256,9 +256,6 @@ class Run(tk.Tk):
 
         self.btn_run.config(state='enabled')
 
-    # -------------------------------------------------------------
-    # ⚡ [초고속 해방] 수집 완료된 데이터를 단 1초 만에 텍스트 파일로 일괄 출력
-    # -------------------------------------------------------------
     def export_to_bve(self):
         if self.processor is None:
             messagebox.showerror('에러', '로드된 데이터가 없습니다.')
@@ -269,7 +266,7 @@ class Run(tk.Tk):
         with self.cache_lock:
             cached_count = len(self.cache_data)
 
-        # 백그라운드가 다 돌았는지 여부 검사 및 유저 안내 인터페이스
+        # 1. 백그라운드가 다 돌았는지 여부 검사 및 유저 안내 인터페이스
         if cached_count < total_stations:
             confirm = messagebox.askyesno(
                 "캐싱 미완료 안내",
@@ -278,58 +275,60 @@ class Run(tk.Tk):
             )
             if not confirm: return
 
-        save_folder = filedialog.askdirectory(title='사면 구문 BVE 저장 경로 선택')
+        self.status_var.set("BVE 저장 경로 확인중...")
+        save_folder = filedialog.askdirectory(title='BVE 노선 스크립트 출력 폴더 선택')
         if not save_folder: return
 
-        section_data =  None
         try:
-            BVEExporter.initialize_files(save_folder)
+            # 2. 락을 걸고 안전하게 현재까지 수집된 캐시 데이터의 스냅샷 복사
+            with self.cache_lock:
+                cache_snapshot = self.cache_data.copy()
 
-            left_lines = []
-            right_lines = []
+            # 🚨 [치명적 버그 교정: 미완료 구간 실시간 강제 보충]
+            # 스냅샷에 없는 인덱스가 있다면, 유저가 기다리는 동안 메인 스레드가 즉시 연산해서 스냅샷을 100% 꽉 채웁니다.
+            if len(cache_snapshot) < total_stations:
+                self.config(cursor="watch")  # 모래시계 커서 가동
+                has_fast_mode = hasattr(self.processor.provider, 'get_section_fast')
 
-            self.status_var.set("메모리 캐시 덤프 중...")
-            self.config(cursor="watch")
+                for i in range(total_stations):
+                    if i not in cache_snapshot:
+                        self.status_var.set(f"미완료 구간 실시간 연산 중... ({i}/{total_stations})")
+                        self.update_idletasks()
+
+                        # 고속 추출 모드가 있으면 활용, 없으면 일반 모드 백업
+                        if has_fast_mode:
+                            missing_data = self.processor.provider.get_section_fast(i)
+                        else:
+                            missing_data = self.processor.provider.get_section(i)
+
+                        if missing_data:
+                            missing_data['track_width'] = self.track_width
+                            cache_snapshot[i] = missing_data
+
+                            # 가로채서 연산한 귀한 결과물은 다음 슬라이더 조회를 위해 실제 전역 캐시에도 보충해 줍니다.
+                            with self.cache_lock:
+                                self.cache_data[i] = missing_data
+
+            # 3. 고속 일괄 변환 처리기 작동 (이제 무조건 100% 꽉 찬 완벽한 데이터셋 보장)
+            self.status_var.set("BVE 4종 스크립트 파일 덤프중...")
             self.update_idletasks()
 
-            for i in range(total_stations):
-                with self.cache_lock:
-                    section_data = self.cache_data.get(i)
+            BVEExporter.export_all_sections(
+                save_folder=save_folder,
+                all_section_results=cache_snapshot,
+                track_type=self.track_type,  # 예: "복선-하선"
+                track_distance=self.track_distance,  # 예: 4.0
+                track_width=self.track_width  # 예: 8.0
+            )
 
-                # 아직 캐싱 안 된 부위는 루프 내에서 가볍게 처리
-                if not section_data:
-                    section_data = self.processor.provider.get_section(i)
-                    if section_data:
-                        section_data['track_width'] = self.track_width
-                        with self.cache_lock:
-                            self.cache_data[i] = section_data
-
-                if section_data:
-                    track_width = self.track_width
-                    left_distance = -(track_width / 2.0 + section_data['left_dist'])
-                    right_distance = (track_width / 2.0 + section_data['right_dist'])
-
-                    fh_z = section_data['center'][2]
-                    left_level = section_data['slope_l'][1] - fh_z
-                    right_level = section_data['slope_r'][1] - fh_z
-                    station = section_data['station']
-
-                    left_lines.append(f"{station},.rail 200;{left_distance:.3f};{left_level:.3f};86;\n")
-                    right_lines.append(f"{station},.rail 201;{right_distance:.3f};{right_level:.3f};87;\n")
-
-            # 대량 버퍼 디스크 파일 쓰기 (1초 마법 구간)
-            with open(os.path.join(save_folder, '사면좌.txt'), 'w', encoding='utf-8') as f:
-                f.writelines(left_lines)
-            with open(os.path.join(save_folder, '사면우.txt'), 'w', encoding='utf-8') as f:
-                f.writelines(right_lines)
-
-            self.config(cursor="")
-            self.status_var.set("BVE 내보내기 1초 컷 성공!")
-            messagebox.showinfo("성공", f"전구간({total_stations}개) 사면 구문이 메모리 덤프 방식으로 초고속 저장되었습니다.")
+            self.config(cursor="")  # 커서 원복
+            messagebox.showinfo("성공", "사면좌, 사면우, height, ground 4종 파일이 일괄 생성되었습니다!")
+            self.status_var.set("BVE 전구간 덤프 성공")
 
         except Exception as e:
             self.config(cursor="")
-            messagebox.showerror("오류", str(e))
+            messagebox.showerror("오류", f"BVE 내보내기 중 장애 발생:\n{str(e)}")
+            self.status_var.set("BVE 내보내기 오류")
 
     def export_to_dxf(self):
         if not self.data:
