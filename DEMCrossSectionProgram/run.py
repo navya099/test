@@ -74,60 +74,92 @@ class Run(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def show_option(self):
+        """트랙 폭, 사면 기울기, 선로 종류(콤보박스) 및 중심간격을 설정하는 팝업 창"""
         option_win = tk.Toplevel(self)
         option_win.title("설정 옵션")
-        option_win.geometry("300x300")
+        option_win.geometry("320x350")  # 컴포넌트 추가에 따라 세로폭 살짝 확장
+        option_win.resizable(False, False)
         option_win.grab_set()
 
+        # 현재 클래스에 저장된 기존 설정값 로드
         current_width = getattr(self, 'track_width', 8.0)
         current_ratio = getattr(self, 'slope_ratio', 1.5)
         current_track_distance = getattr(self, 'track_distance', 4.3)
         current_track_type = getattr(self, 'track_type', '단선')
 
-        tk.Label(option_win, text="트랙 폭 (m):").pack(pady=(15, 0))
-        ent_width = tk.Entry(option_win)
+        # 1. 트랙 폭 입력창
+        tk.Label(option_win, text="트랙 폭 (m):", font=("맑은 고딕", 9, "bold")).pack(pady=(15, 0))
+        ent_width = ttk.Entry(option_win, width=20)
         ent_width.insert(0, str(current_width))
-        ent_width.pack(pady=5)
+        ent_width.pack(pady=3)
 
-        tk.Label(option_win, text="사면 기울기 (1:n):").pack(pady=(10, 0))
-        ent_ratio = tk.Entry(option_win)
+        # 2. 사면 기울기 입력창
+        tk.Label(option_win, text="사면 기울기 (1:n):", font=("맑은 고딕", 9, "bold")).pack(pady=(10, 0))
+        ent_ratio = ttk.Entry(option_win, width=20)
         ent_ratio.insert(0, str(current_ratio))
-        ent_ratio.pack(pady=5)
+        ent_ratio.pack(pady=3)
 
-        tk.Label(option_win, text="선로중심간격 D:").pack(pady=(10, 0))
-        ent_track_distance = tk.Entry(option_win)
+        # 3. 선로타입 콤보박스 선택창
+        tk.Label(option_win, text="선로 타입 T:", font=("맑은 고딕", 9, "bold")).pack(pady=(10, 0))
+
+        # ttk.Combobox 배치 (사용자가 임의 타이핑 못 하도록 state='readonly' 강제)
+        combo_track_type = ttk.Combobox(option_win, values=['단선', '복선-하선', '복선-상선'], width=18, state='readonly')
+        combo_track_type.set(current_track_type)
+        combo_track_type.pack(pady=3)
+
+        # 4. 선로중심간격 입력창
+        tk.Label(option_win, text="선로중심간격 D (m):", font=("맑은 고딕", 9, "bold")).pack(pady=(10, 0))
+        ent_track_distance = ttk.Entry(option_win, width=20)
         ent_track_distance.insert(0, str(current_track_distance))
-        ent_track_distance.pack(pady=5)
+        ent_track_distance.pack(pady=3)
 
-        tk.Label(option_win, text="선로타입 T:").pack(pady=(10, 0))
-        ent_track_type = tk.Entry(option_win)
-        ent_track_type.insert(0, str(current_track_type))
-        ent_track_type.pack(pady=5)
+        # 💡 [UI 인터랙션 가드] 단선일 때는 중심간격 입력창을 막고, 복선일 때만 풀어주는 함수
+        def toggle_distance_entry(event=None):
+            if combo_track_type.get() == "단선":
+                ent_track_distance.config(state='disabled')
+            else:
+                ent_track_distance.config(state='normal')
 
+        # 콤보박스 선택이 바뀔 때마다 위 토글 함수가 실행되도록 이벤트 바인딩
+        combo_track_type.bind("<<ComboboxSelected>>", toggle_distance_entry)
+
+        # 팝업창이 처음 켜질 때도 현재 상태에 맞춰 초기 상태 세팅 (단선이면 처음부터 disabled)
+        toggle_distance_entry()
+
+        # 5. 저장 및 캐시 갱신 로직
         def save_and_close():
             try:
                 self.track_width = float(ent_width.get())
                 self.slope_ratio = float(ent_ratio.get())
-                self.track_distance = float(ent_track_distance.get())
-                self.track_type = ent_track_type.get()
+                self.track_type = combo_track_type.get()
 
-                # 🚀 옵션이 바뀌면 기존 캐시 데이터를 전부 비우고 새로 비동기 러닝을 돌아야 함
+                # 복선 계열일 때만 입력된 중심간격을 파싱, 단선이면 기존값 유지 혹은 0.0 처리
+                if self.track_type != "단선":
+                    self.track_distance = float(ent_track_distance.get())
+                else:
+                    self.track_distance = 0.0
+
+                # 🚀 옵션이 바뀌면 데이터 왜곡을 막기 위해 기존 비동기 캐시 데이터를 싹 비움
                 with self.cache_lock:
                     self.cache_data.clear()
 
-                self.status_var.set(f"옵션 변경: 폭 {self.track_width}m, 기울기 1:{self.slope_ratio}, 선로중심간격: {self.track_distance}, 선로종류: {self.track_type} (캐시 재적재)")
+                self.status_var.set(
+                    f"옵션 변경 완료: 폭 {self.track_width}m, 기울기 1:{self.slope_ratio}, "
+                    f"종류: {self.track_type}, 중심간격: {self.track_distance}m (캐시 재적재 가동)"
+                )
                 option_win.destroy()
 
                 if self.processor:
-                    # 현재 화면 강제 갱신 및 백그라운드 재가동
+                    # 현재 보고 있는 화면을 새 구배 정보로 강제 즉시 갱신 및 백그라운드 재가동
                     self._start_background_caching()
                     self.current_idx = -1
                     self._on_slider_move(self.slider.get())
 
             except ValueError:
-                messagebox.showerror("입력 오류", "숫자 형식을 입력해주세요.")
+                messagebox.showerror("입력 오류", "숫자 형식을 정확하게 입력해주세요.")
 
-        tk.Button(option_win, text="적용", command=save_and_close).pack(pady=15)
+        # 적용 버튼 배치
+        ttk.Button(option_win, text="적용", command=save_and_close).pack(pady=18)
 
     def _start_process(self):
         """데이터 로드 및 무조건 즉시 실행"""
