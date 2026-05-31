@@ -1,5 +1,5 @@
 import math
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, asksaveasfilename, askdirectory
 
 import chardet
 import pandas as pd
@@ -178,8 +178,6 @@ def main():
 
     # 곡선반경 계산
     curve_cmds, radii, cmds = generate_curve_cmds(chainages, coords, bearings, mode)
-    filepath_curve = r"D:\BVE\루트\Railway\Route\연습용루트\평면선형.txt"
-    save_txt(cmds, filepath_curve)
 
     # 좌표 검산
     result = compute_coords(chainages, bearings, radii, start_coord=coords[0], mode=mode)
@@ -187,8 +185,17 @@ def main():
     # 에러 체크 (Δx, Δy, 거리오차)
     error_check_list = error_check(result, coords)
 
-    # 오차 저장
-    filepath_error = r"D:\BVE\루트\Railway\Route\연습용루트\좌표오차.txt"
+    #저장
+    filepath_curve = askdirectory()
+    if not filepath_curve:
+        raise FileNotFoundError('저장 파일 경로가 선택되지 않았습니다.')
+
+    # 곡선 결과 저장
+    curve_file = os.path.join(filepath_curve, '평면선형.txt')
+    save_txt(cmds, curve_file)
+
+    # 오차 결과 저장
+    filepath_error = os.path.join(filepath_curve, 'error_check.txt')
     save_errors(error_check_list, chainages, filepath_error)
 
 def normalize_angle_diff(theta1, theta2):
