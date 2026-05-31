@@ -27,7 +27,7 @@ def extract_images_from_pdf(pdf_path, output_folder):
 
 # 예제 사용법
 pdf_path = filedialog.askopenfilename()
-output_folder = "output_images"
+output_folder = "C:/TEMP/output_images"
 
 # 폴더가 존재하지 않으면 생성
 import os
