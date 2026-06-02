@@ -55,11 +55,12 @@ def read_sta(file_path):
     stations = []
     for line in lines:
         parts = line.strip().split(',')
-        if len(parts) == 3:
-            x = float(parts[0].strip())
-            y = float(parts[1].strip())
-            name = parts[2].strip()
-            stations.append((x, y, name))
+        if len(parts) == 4:
+            sta = float(parts[0])
+            x = float(parts[1].strip())
+            y = float(parts[2].strip())
+            name = parts[3].strip()
+            stations.append((sta, x, y, name))
     return stations
 
 class DXFManger:
@@ -114,7 +115,7 @@ class DXFManger:
         textmargin = 5
         num_segments = 36
 
-        for x, y, name in self.stations:
+        for sta, x, y, name in self.stations:
             coord = (x, y)
             offset = (x + text_height, y + text_height)
             offsetx, offsety = offset
@@ -155,9 +156,12 @@ class DXFManger:
         profile_layer = "profile"
         ground_layer = "ground"
         grid_layer = "grid"
+        station_layer = "profile_station"
+
         self.doc.layers.new(name=profile_layer, dxfattribs={'color': 1})  # 빨강
         self.doc.layers.new(name=ground_layer, dxfattribs={'color': 3})  # 녹색
         self.doc.layers.new(name=grid_layer, dxfattribs={'color': 8})  # 회색 (보조선)
+        self.doc.layers.new(name=station_layer, dxfattribs={'color': 6})  # 마젠타
 
         profile_coords = [(data.station, data.z) for data in self.bvedatas]
         ground_coords = [(data.station, data.z - data.height) for data in self.bvedatas]
@@ -192,6 +196,34 @@ class DXFManger:
         for sta in range(int(sta_min), int(sta_max) + 1, 100):
             self.msp.add_line((sta, h_min), (sta, h_max), dxfattribs={'layer': grid_layer})
 
+            # 범위 계산
+            sta_min = min([d.station for d in self.bvedatas])
+            sta_max = max([d.station for d in self.bvedatas])
+            h_min = min([d.z for d in self.bvedatas]) - 20
+            h_max = max([d.z for d in self.bvedatas]) + 20
+
+        # 정거장 표시 (수직선 + 텍스트 + 원)
+
+        for chain, x, y, name in self.stations:
+            sta = chain
+            # 해당 station과 가장 가까운 bvedata 찾기
+            nearest = min(self.bvedatas, key=lambda d: abs(d.station - sta))
+            level = nearest.z
+            # 수직선
+            self.msp.add_line((sta, level), (sta, level + 100),
+                              dxfattribs={'layer': station_layer})
+
+            # 원 기호 (기준선 근처)
+            self.msp.add_circle(center=(sta, level + 50), radius=5,
+                                dxfattribs={'layer': station_layer})
+
+            # 텍스트 (원 옆에 배치)
+            self.msp.add_text(name,
+                              dxfattribs={'insert': (sta + 10, level + 70),
+                                          'height': 8,
+                                          'layer': station_layer,
+                                          'color': 6,
+                                          'style': "myStandard"})
 
 class BveDxfConverter:
     def __init__(self, root):
