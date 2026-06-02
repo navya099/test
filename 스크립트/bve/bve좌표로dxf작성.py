@@ -4,6 +4,30 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 
+def read_csv_by_type(file_path):
+    """
+    프리오브젝트 파서
+    """
+    with open(file_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+
+    result = []
+    for line in lines:
+        parts = line.strip().split(',')
+        try:
+            station = float(parts[0].strip())
+            railindex = int(parts[1].strip())
+            object_index = int(parts[2].strip())
+            name = parts[3].strip()
+            x = float(parts[4].strip())
+            y = float(parts[5].strip())
+            z = float(parts[6].strip())
+            result.append((object_index, name, x, y, z))
+        except Exception as e:
+            print(f"[Warning] Failed to parse line: {line.strip()} - {e}")
+            continue
+    return result
+
 class BVEData:
     def __init__(self, station, x, y, z, bearing, radius, cant, pitch, height):
         self.station = station
@@ -65,14 +89,16 @@ def read_sta(file_path):
 
 class DXFManger:
     def __init__(self):
+        self.freeobjects = None
         self.stations = None
         self.bvedatas = None
         self.doc = ezdxf.new(dxfversion='R2010')
         self.msp = self.doc.modelspace()
 
-    def create_dxf(self, bvedatas: list[BVEData], stations, output_path):
+    def create_dxf(self, bvedatas: list[BVEData], stations, freeobjects, output_path):
         self.bvedatas = bvedatas
         self.stations = stations
+        self.freeobjects = freeobjects
 
         #평면선형 작성
         self.create_plan()
@@ -82,6 +108,8 @@ class DXFManger:
         #종단선형 작성
         self.create_profile()
 
+        #freeobj작성
+        self.create_freeobj()
         #저장
         self.doc.saveas(output_path)
     def create_plan(self):
@@ -224,6 +252,16 @@ class DXFManger:
                                           'layer': station_layer,
                                           'color': 6,
                                           'style': "myStandard"})
+    def create_freeobj(self):
+        # 프리오브젝트
+        if self.freeobjects:
+            for objidx, name, x, y, z in self.freeobjects:
+                coord = (x, y)
+                objname = f'{str(objidx)}[{name}]'
+                text = self.msp.add_text(objname,
+                                    dxfattribs={'insert': coord, 'height': 1, 'color': 6,
+                                                "style": "myStandard"})
+
 
 class BveDxfConverter:
     def __init__(self, root):
@@ -242,18 +280,31 @@ class BveDxfConverter:
         self.entry_input2.grid(row=1, column=1, padx=5, pady=2)
         tk.Button(root, text="찾기", command=self.browse_input2).grid(row=1, column=2, padx=5)
 
-        # 출력 파일
-        tk.Label(root, text="출력 DXF 파일:").grid(row=2, column=0, sticky="w")
-        self.entry_output = tk.Entry(root, width=50)
-        self.entry_output.grid(row=2, column=1, padx=5, pady=2)
-        tk.Button(root, text="저장", command=self.browse_output).grid(row=2, column=2, padx=5)
+        #프리오브젝트 파일
+        tk.Label(root, text="프리오브젝트 파일:").grid(row=2, column=0, sticky="w")
+        self.entry_input3 = tk.Entry(root, width=50)
+        self.entry_input3.grid(row=2, column=1, padx=5, pady=2)
+        tk.Button(root, text="찾기", command=self.browse_input3).grid(row=2, column=2, padx=5)
 
-        # 실행 버튼
-        tk.Button(root, text="DXF 생성", command=self.run_process, width=20, bg="lightblue").grid(row=3, column=0, columnspan=3, pady=10)
+        # 출력 파일
+        tk.Label(root, text="출력 DXF 파일:").grid(row=3, column=0, sticky="w")
+        self.entry_output = tk.Entry(root, width=50)
+        self.entry_output.grid(row=3, column=1, padx=5, pady=2)
+        tk.Button(root, text="저장", command=self.browse_output).grid(row=3, column=2, padx=5)
+
+        frame_buttons = tk.Frame(root)
+        frame_buttons.grid(row=4, column=0, columnspan=3, pady=10)
+
+        tk.Button(frame_buttons, text="DXF 생성", command=self.run_process,
+                  width=10, bg="lightblue").pack(side="left", padx=5)
+
+        tk.Button(frame_buttons, text="종료", command=root.destroy,
+                  width=10, bg="lightblue").pack(side="left", padx=5)
 
     def run_process(self):
         input_file = self.entry_input1.get()
         input_file2 = self.entry_input2.get()
+        input_file3 = self.entry_input3.get() if self.entry_input3.get() else None
         output_file = self.entry_output.get()
 
         if not input_file or not os.path.exists(input_file):
@@ -271,13 +322,14 @@ class BveDxfConverter:
             parser.read_lines(input_file)
             bvedatas = parser.parse()
             stations = read_sta(input_file2)
-            dxfmger.create_dxf(bvedatas, stations, output_file)
+            freeobjects = read_csv_by_type(input_file3) if input_file3 else None
+            dxfmger.create_dxf(bvedatas, stations, freeobjects, output_file)
             messagebox.showinfo("완료", f"DXF 파일이 생성되었습니다.\n{output_file}")
         except Exception as e:
             messagebox.showerror("에러", f"처리 중 오류 발생:\n{e}")
 
     def browse_input1(self):
-        filename = filedialog.askopenfilename(title="좌표 파일 선택",
+        filename = filedialog.askopenfilename(title="선형 파일 선택",
                                               filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if filename:
             self.entry_input1.delete(0, tk.END)
@@ -290,6 +342,13 @@ class BveDxfConverter:
             self.entry_input2.delete(0, tk.END)
             self.entry_input2.insert(0, filename)
 
+    def browse_input3(self):
+        filename = filedialog.askopenfilename(title="프리오브젝트 파일 선택",
+                                              filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if filename:
+            self.entry_input3.delete(0, tk.END)
+            self.entry_input3.insert(0, filename)
+
     def browse_output(self):
         filename = filedialog.asksaveasfilename(title="DXF 파일 저장",
                                                 defaultextension=".dxf",
@@ -297,6 +356,8 @@ class BveDxfConverter:
         if filename:
             self.entry_output.delete(0, tk.END)
             self.entry_output.insert(0, filename)
+    def destroy(self):
+        self.root.destroy()
 
 def main():
     root = tk.Tk()
