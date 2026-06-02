@@ -62,62 +62,136 @@ def read_sta(file_path):
             stations.append((x, y, name))
     return stations
 
-def create_dxf(bvedatas: list[BVEData], stations, output_path):
-    doc = ezdxf.new(dxfversion='R2010')
-    msp = doc.modelspace()
-    
-    # Create a 3D polyline
-    layer_name = "rail 0"
-    layer_color = 250
-    layer = doc.layers.new(name=layer_name, dxfattribs={'color': layer_color})
-    xyz_coords = [(data.x, data.y, data.z) for data in bvedatas]
-    chainages = [(data.station, data.x, data.y) for data in bvedatas]
-    # 각 station 위치에 텍스트 추가
-    for chain, x, y in chainages:
-        msp.add_text(str(chain), dxfattribs={'height': 4, 'layer': 'chainage', 'insert': (x, y)})
+class DXFManger:
+    def __init__(self):
+        self.stations = None
+        self.bvedatas = None
+        self.doc = ezdxf.new(dxfversion='R2010')
+        self.msp = self.doc.modelspace()
 
-    msp.add_polyline3d(xyz_coords , dxfattribs={'layer': layer_name})
-    msp.add_lwpolyline(xyz_coords , dxfattribs={'layer': layer_name,'const_width': 4})
-    # Add text annotations for stations
-    doc.styles.new("myStandard", dxfattribs={"font" : "Gulim.ttf"})
-    
-    text_height = 40
-    radius = 20
-    blank = 15
-    textmargin = 5
-    num_segments =36
-    for x, y, name in stations:
-        coord = (x,y)
-        offset = (x + text_height,y + text_height)
-        offsetx,offsety = offset
-        
-        msp.add_circle(center=coord, radius=radius)#서클대신 포리선으로 불가능하면 폴리선 생성
-        hatch = msp.add_hatch(color=130)
-        edge_path = hatch.paths.add_edge_path()
-        edge_path.add_arc(center=coord, radius=radius, start_angle=0, end_angle=360)
+    def create_dxf(self, bvedatas: list[BVEData], stations, output_path):
+        self.bvedatas = bvedatas
+        self.stations = stations
 
-        # Approximate circle with polyline
-        points = []
-        for i in range(num_segments):
-            angle = 2 * math.pi * i / num_segments
-            px = x + radius * math.cos(angle)
-            py = y + radius * math.sin(angle)
-            points.append((px, py))
-        points.append(points[0])  # Close the polyline
-        msp.add_lwpolyline(points,dxfattribs={'const_width': 2})
-        
-        text = msp.add_text(name, dxfattribs={'insert': offset, 'height': text_height, 'color': 250,"style": "myStandard"})
+        #평면선형 작성
+        self.create_plan()
+        #평면 정거장 작성
+        self.create_plan_stations()
 
-        # Add bounding rectangle
-        text_width = 40 * (len(name)) + (blank *len(name))  # Get the width of the text
-        lower_left = (offsetx, offsety - textmargin)
-        lower_right = (offsetx + text_width, offsety - textmargin)
-        upper_left = (offsetx, offsety + text_height + textmargin)
-        upper_right = (offsetx + text_width, offsety + text_height + textmargin)
-        
-        msp.add_lwpolyline([lower_left, lower_right, upper_right, upper_left, lower_left],dxfattribs={'const_width': 2})
-    
-    doc.saveas(output_path)
+        #종단선형 작성
+        self.create_profile()
+
+        #저장
+        self.doc.saveas(output_path)
+    def create_plan(self):
+        # Create a 3D polyline
+        plan_2d_name = "plan2d"
+        plan_3d_name = "plan3d"
+        layer_color = 1
+        plan_2d_layer = self.doc.layers.new(name=plan_2d_name, dxfattribs={'color': layer_color})
+        plan_3d_layer = self.doc.layers.new(name=plan_3d_name, dxfattribs={'color': layer_color})
+
+        xyz_coords = [(data.x, data.y, data.z) for data in self.bvedatas]
+        chainages = [(data.station, data.x, data.y) for data in self.bvedatas]
+        # 각 station 위치에 텍스트 추가
+        for chain, x, y in chainages:
+            self.msp.add_text(str(chain), dxfattribs={'height': 4, 'layer': 'chainage', 'insert': (x, y)})
+
+        self.msp.add_polyline3d(xyz_coords, dxfattribs={'layer': plan_3d_name})
+        self.msp.add_lwpolyline(xyz_coords, dxfattribs={'layer': plan_2d_name, 'const_width': 4})
+
+    def create_plan_stations(self):
+        # 역 표시용 레이어 생성
+        station_layer = "plan_station"
+        self.doc.layers.new(name=station_layer, dxfattribs={'color': 1})  # 빨강
+
+        # 텍스트 스타일
+        self.doc.styles.new("myStandard", dxfattribs={"font": "Gulim.ttf"})
+
+        text_height = 40
+        radius = 20
+        blank = 15
+        textmargin = 5
+        num_segments = 36
+
+        for x, y, name in self.stations:
+            coord = (x, y)
+            offset = (x + text_height, y + text_height)
+            offsetx, offsety = offset
+
+            # 원
+            self.msp.add_circle(center=coord, radius=radius,
+                                dxfattribs={'layer': station_layer})
+            hatch = self.msp.add_hatch(color=130, dxfattribs={'layer': station_layer})
+            edge_path = hatch.paths.add_edge_path()
+            edge_path.add_arc(center=coord, radius=radius, start_angle=0, end_angle=360)
+
+            # 원을 근사하는 폴리선
+            points = []
+            for i in range(num_segments):
+                angle = 2 * math.pi * i / num_segments
+                px = x + radius * math.cos(angle)
+                py = y + radius * math.sin(angle)
+                points.append((px, py))
+            points.append(points[0])
+            self.msp.add_lwpolyline(points, dxfattribs={'const_width': 2, 'layer': station_layer})
+
+            # 역 이름 텍스트
+            self.msp.add_text(name, dxfattribs={'insert': offset, 'height': text_height,
+                                                'color': 250, 'style': "myStandard",
+                                                'layer': station_layer})
+
+            # 텍스트 박스
+            text_width = 40 * len(name) + (blank * len(name))
+            lower_left = (offsetx, offsety - textmargin)
+            lower_right = (offsetx + text_width, offsety - textmargin)
+            upper_left = (offsetx, offsety + text_height + textmargin)
+            upper_right = (offsetx + text_width, offsety + text_height + textmargin)
+
+            self.msp.add_lwpolyline([lower_left, lower_right, upper_right, upper_left, lower_left],
+                                    dxfattribs={'const_width': 2, 'layer': station_layer})
+
+    def create_profile(self):
+        profile_layer = "profile"
+        ground_layer = "ground"
+        grid_layer = "grid"
+        self.doc.layers.new(name=profile_layer, dxfattribs={'color': 1})  # 빨강
+        self.doc.layers.new(name=ground_layer, dxfattribs={'color': 3})  # 녹색
+        self.doc.layers.new(name=grid_layer, dxfattribs={'color': 8})  # 회색 (보조선)
+
+        profile_coords = [(data.station, data.z) for data in self.bvedatas]
+        ground_coords = [(data.station, data.z - data.height) for data in self.bvedatas]
+
+        # 종단선형 polyline
+        self.msp.add_lwpolyline(profile_coords, dxfattribs={'layer': profile_layer})
+        self.msp.add_lwpolyline(ground_coords, dxfattribs={'layer': ground_layer})
+
+        # 텍스트
+        for sta, h in profile_coords:
+            self.msp.add_text(f"{h:.2f}m",
+                              dxfattribs={'insert': (sta, h + 10),
+                                          'height': 5,
+                                          'layer': profile_layer,
+                                          'color': 2})
+            self.msp.add_text(f"{int(sta)}",
+                              dxfattribs={'insert': (sta, 0),
+                                          'height': 5,
+                                          'layer': profile_layer,
+                                          'color': 1})
+
+        # 가로선 (예: 0m ~ 최대고도까지 50m 간격)
+        sta_min = min([d.station for d in self.bvedatas])
+        sta_max = max([d.station for d in self.bvedatas])
+        h_min = min([d.z for d in self.bvedatas]) - 20
+        h_max = max([d.z for d in self.bvedatas]) + 20
+
+        for h in range(int(h_min), int(h_max) + 1, 50):
+            self.msp.add_line((sta_min, h), (sta_max, h), dxfattribs={'layer': grid_layer})
+
+        # 세로선 (예: 100m 간격)
+        for sta in range(int(sta_min), int(sta_max) + 1, 100):
+            self.msp.add_line((sta, h_min), (sta, h_max), dxfattribs={'layer': grid_layer})
+
 
 class BveDxfConverter:
     def __init__(self, root):
@@ -160,12 +234,12 @@ class BveDxfConverter:
             messagebox.showerror("에러", "출력 DXF 파일 경로를 지정하세요.")
             return
         parser = BVEParser()
-
+        dxfmger = DXFManger()
         try:
             parser.read_lines(input_file)
             bvedatas = parser.parse()
             stations = read_sta(input_file2)
-            create_dxf(bvedatas, stations, output_file)
+            dxfmger.create_dxf(bvedatas, stations, output_file)
             messagebox.showinfo("완료", f"DXF 파일이 생성되었습니다.\n{output_file}")
         except Exception as e:
             messagebox.showerror("에러", f"처리 중 오류 발생:\n{e}")
