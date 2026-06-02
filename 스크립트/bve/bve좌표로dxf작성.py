@@ -4,26 +4,49 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 
-def read_coordinates(file_path):
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
-        
-    coordinates = []
-    for i, line in enumerate(lines):
-        parts = line.strip().split(',')
-        if len(parts) == 3:
-            sta = i * 25
-            x = float(parts[0].strip())
-            y = float(parts[1].strip())
-            z = float(parts[2].strip())
-            coordinates.append((sta, x, y, z))
-        if len(parts) == 4:
-            sta = float(parts[0].strip())
-            x = float(parts[1].strip())
-            y = float(parts[2].strip())
-            z = float(parts[3].strip())
-            coordinates.append((sta, x, y, z))
-    return coordinates
+class BVEData:
+    def __init__(self, station, x, y, z, bearing, radius, cant, pitch, height):
+        self.station = station
+        self.x = x
+        self.y = y
+        self.z = z
+        self.bearing = bearing
+        self.radius = radius
+        self.cant = cant
+        self.pitch = pitch
+        self.height = height
+
+
+class BVEParser:
+    def __init__(self):
+        self.lines = []
+    def read_lines(self, filepath):
+        with open(filepath, encoding='utf-8', errors='ignore', mode='r') as f:
+            self.lines = f.readlines()
+
+    def parse(self):
+        #1 헤더확인
+        #측점,X,Y,Z,Bearing,Radius,Cant,Pitch,height
+        if not '측점,X,Y,Z,Bearing,Radius,Cant,Pitch,height' in self.lines[0]:
+            raise ValueError('올바른 BVE 선형 파일이 아닙니다.')
+        bvedatas = []
+        for line in self.lines[1:]:
+            try:
+                line = line.strip()
+                parts = line.split(',')
+                station = float(parts[0])
+                x = float(parts[1])
+                y = float(parts[2])
+                z = float(parts[3])
+                bearing = float(parts[4])
+                radius = float(parts[5])
+                cant = float(parts[6])
+                pitch = float(parts[7])
+                height = float(parts[8])
+                bvedatas.append(BVEData(station, x, y, z, bearing, radius, cant,pitch,height))
+            except (ValueError, IndexError):
+                continue
+        return bvedatas
 
 def read_sta(file_path):
     with open(file_path, 'r',encoding='utf-8') as file:
@@ -39,7 +62,7 @@ def read_sta(file_path):
             stations.append((x, y, name))
     return stations
 
-def create_dxf(coordinates, stations, output_path):
+def create_dxf(bvedatas: list[BVEData], stations, output_path):
     doc = ezdxf.new(dxfversion='R2010')
     msp = doc.modelspace()
     
@@ -47,8 +70,8 @@ def create_dxf(coordinates, stations, output_path):
     layer_name = "rail 0"
     layer_color = 250
     layer = doc.layers.new(name=layer_name, dxfattribs={'color': layer_color})
-    xyz_coords  = [(x,y,z) for sta, x, y, z in coordinates]
-    chainages = [(sta,x,y) for sta, x, y, z in coordinates ]
+    xyz_coords = [(data.x, data.y, data.z) for data in bvedatas]
+    chainages = [(data.station, data.x, data.y) for data in bvedatas]
     # 각 station 위치에 텍스트 추가
     for chain, x, y in chainages:
         msp.add_text(str(chain), dxfattribs={'height': 4, 'layer': 'chainage', 'insert': (x, y)})
@@ -102,7 +125,7 @@ class BveDxfConverter:
         root.title("BVE DXF 변환기")
 
         # 좌표 파일
-        tk.Label(root, text="좌표 파일:").grid(row=0, column=0, sticky="w")
+        tk.Label(root, text="BVE선형 파일:").grid(row=0, column=0, sticky="w")
         self.entry_input1 = tk.Entry(root, width=50)
         self.entry_input1.grid(row=0, column=1, padx=5, pady=2)
         tk.Button(root, text="찾기", command=self.browse_input1).grid(row=0, column=2, padx=5)
@@ -136,11 +159,13 @@ class BveDxfConverter:
         if not output_file:
             messagebox.showerror("에러", "출력 DXF 파일 경로를 지정하세요.")
             return
+        parser = BVEParser()
 
         try:
-            coordinates = read_coordinates(input_file)
+            parser.read_lines(input_file)
+            bvedatas = parser.parse()
             stations = read_sta(input_file2)
-            create_dxf(coordinates, stations, output_file)
+            create_dxf(bvedatas, stations, output_file)
             messagebox.showinfo("완료", f"DXF 파일이 생성되었습니다.\n{output_file}")
         except Exception as e:
             messagebox.showerror("에러", f"처리 중 오류 발생:\n{e}")
