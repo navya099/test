@@ -3,6 +3,33 @@ import math
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
+import random
+
+class BVERail:
+    def __init__(self, station, x, y, z, index):
+        self.station = station
+        self.x = x
+        self.y = y
+        self.z = z
+        self.index = index
+
+
+def read_railinfo(file_path):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    coordinates = []
+    for line in lines:
+        parts = line.strip().split(',')
+        if len(parts) == 5:
+            station = float(parts[0].strip())
+            railindex = int(parts[1].strip())
+            x = float(parts[2].strip())
+            y = float(parts[3].strip())
+            z = float(parts[4].strip())
+            coordinates.append(BVERail(station, x, y, z, index=railindex))  # Corrected order of z and y
+
+    return coordinates
 
 def read_csv_by_type(file_path):
     """
@@ -89,16 +116,18 @@ def read_sta(file_path):
 
 class DXFManger:
     def __init__(self):
+        self.bverails = None
         self.freeobjects = None
         self.stations = None
         self.bvedatas = None
         self.doc = ezdxf.new(dxfversion='R2010')
         self.msp = self.doc.modelspace()
 
-    def create_dxf(self, bvedatas: list[BVEData], stations, freeobjects, output_path):
+    def create_dxf(self, bvedatas: list[BVEData], stations, freeobjects, output_path, bverails: list[BVERail]):
         self.bvedatas = bvedatas
         self.stations = stations
         self.freeobjects = freeobjects
+        self.bverails = bverails
 
         #평면선형 작성
         self.create_plan()
@@ -110,8 +139,12 @@ class DXFManger:
 
         #freeobj작성
         self.create_freeobj()
+
+        #배선 작성
+        self.create_layout()
         #저장
         self.doc.saveas(output_path)
+
     def create_plan(self):
         # Create a 3D polyline
         plan_2d_name = "plan2d"
@@ -262,7 +295,51 @@ class DXFManger:
                                     dxfattribs={'insert': coord, 'height': 1, 'color': 6,
                                                 "style": "myStandard"})
 
+    def create_layout(self):
+        # 레이어 및 색상 처리
+        color_map = {}
+        used_colors = set()
+        aci_colors = list(range(256))
+        aci_colors.remove(10)  # 10번 컬러는 사용하지 않음
 
+        def get_random_color():
+            while True:
+
+                color = random.choice(aci_colors)
+                if color not in used_colors:
+                    used_colors.add(color)
+                    return color
+
+        # Group coordinates by railindex
+        rail_coordinates = {}
+        stationtexts = {}
+        for rail in self.bverails:
+            station = rail.station
+            railindex = rail.index
+            x, y, z = rail.x , rail.y, rail.z
+
+            if railindex not in rail_coordinates:
+                rail_coordinates[railindex] = []
+            rail_coordinates[railindex].append((x, y, z))
+
+            if railindex not in stationtexts:
+                stationtexts[railindex] = []
+            stationtexts[railindex].append((station, x, y))
+
+        # Create layers and add polylines for each railindex
+        for railindex, coords in rail_coordinates.items():
+            layer_name = f"rail {railindex}"
+            layer_color = get_random_color()
+
+            # Add layer with specified color
+            layer = self.doc.layers.new(name=layer_name, dxfattribs={'color': layer_color})
+
+            # Add 3D polylines to the modelspace
+            self.msp.add_polyline3d(coords, dxfattribs={'layer': layer_name})
+
+            # 각 station 위치에 텍스트 추가
+            for station, x, y in stationtexts[railindex]:
+                self.msp.add_text(str(station), dxfattribs={'height': 4, 'layer': layer_name, 'insert': (x, y)})
 class BveDxfConverter:
     def __init__(self, root):
         self.root = root
@@ -286,14 +363,20 @@ class BveDxfConverter:
         self.entry_input3.grid(row=2, column=1, padx=5, pady=2)
         tk.Button(root, text="찾기", command=self.browse_input3).grid(row=2, column=2, padx=5)
 
+        #배선 파일
+        tk.Label(root, text="배선 파일:").grid(row=3, column=0, sticky="w")
+        self.layout_entry = tk.Entry(root, width=50)
+        self.layout_entry.grid(row=3, column=1, padx=5, pady=2)
+        tk.Button(root, text="찾기", command=self.browse_railinfo).grid(row=3, column=2, padx=5)
+
         # 출력 파일
-        tk.Label(root, text="출력 DXF 파일:").grid(row=3, column=0, sticky="w")
+        tk.Label(root, text="출력 DXF 파일:").grid(row=4, column=0, sticky="w")
         self.entry_output = tk.Entry(root, width=50)
-        self.entry_output.grid(row=3, column=1, padx=5, pady=2)
-        tk.Button(root, text="저장", command=self.browse_output).grid(row=3, column=2, padx=5)
+        self.entry_output.grid(row=4, column=1, padx=5, pady=2)
+        tk.Button(root, text="저장", command=self.browse_output).grid(row=4, column=2, padx=5)
 
         frame_buttons = tk.Frame(root)
-        frame_buttons.grid(row=4, column=0, columnspan=3, pady=10)
+        frame_buttons.grid(row=5, column=0, columnspan=3, pady=10)
 
         tk.Button(frame_buttons, text="DXF 생성", command=self.run_process,
                   width=10, bg="lightblue").pack(side="left", padx=5)
@@ -306,6 +389,7 @@ class BveDxfConverter:
         input_file2 = self.entry_input2.get()
         input_file3 = self.entry_input3.get() if self.entry_input3.get() else None
         output_file = self.entry_output.get()
+        layoutfile = self.layout_entry.get()
 
         if not input_file or not os.path.exists(input_file):
             messagebox.showerror("에러", "좌표 파일을 선택하세요.")
@@ -323,7 +407,8 @@ class BveDxfConverter:
             bvedatas = parser.parse()
             stations = read_sta(input_file2)
             freeobjects = read_csv_by_type(input_file3) if input_file3 else None
-            dxfmger.create_dxf(bvedatas, stations, freeobjects, output_file)
+            bverails = read_railinfo(layoutfile)
+            dxfmger.create_dxf(bvedatas, stations, freeobjects, output_file, bverails)
             messagebox.showinfo("완료", f"DXF 파일이 생성되었습니다.\n{output_file}")
         except Exception as e:
             messagebox.showerror("에러", f"처리 중 오류 발생:\n{e}")
@@ -348,6 +433,13 @@ class BveDxfConverter:
         if filename:
             self.entry_input3.delete(0, tk.END)
             self.entry_input3.insert(0, filename)
+
+    def browse_railinfo(self):
+        filename = filedialog.askopenfilename(title="배선 파일 선택",
+                                              filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if filename:
+            self.layout_entry.delete(0, tk.END)
+            self.layout_entry.insert(0, filename)
 
     def browse_output(self):
         filename = filedialog.asksaveasfilename(title="DXF 파일 저장",
