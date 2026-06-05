@@ -69,31 +69,36 @@ class CSVObject:
         self.lines = new_lines
         return self.lines
 
-    def rotate(self, axis_x=0, axis_y=0, axis_z=0, angle=0.0):
+    def rotate(self, axis_x=0, axis_y=0, axis_z=0, angle=0.0, center=(0.0, 0.0, 0.0)):
         """
         CSV오브젝트 Rotate
-        :param axis_x:
-        :param axis_y:
-        :param axis_z:
-        :param angle:
-        :return:
+        :param axis_x: 회전축 X
+        :param axis_y: 회전축 Y
+        :param axis_z: 회전축 Z
+        :param angle: 회전각 (deg)
+        :param center: 회전 기준점 (정거장 중심 좌표)
         """
         new_lines = []
         for line in self.lines:
             if line.strip().startswith('AddVertex'):
-                new_lines.append(self._rotate_line(line, axis_x, axis_y, axis_z, angle))
+                new_lines.append(self._rotate_line(line, axis_x, axis_y, axis_z, angle, center))
             else:
                 new_lines.append(line)
         self.lines = new_lines
 
     @staticmethod
-    def _rotate_line(line, x, y, z, angle):
+    def _rotate_line(line, x, y, z, angle, center):
         if 'AddVertex' not in line:
             return line
 
         # 좌표 추출
         parts = line.strip().split(',')
         vx, vy, vz = float(parts[1]), float(parts[2]), float(parts[3])
+
+        # 기준점 기준으로 이동
+        vx -= center[0]
+        vy -= center[1]
+        vz -= center[2]
 
         # 회전축 정규화
         length = math.sqrt(x ** 2 + y ** 2 + z ** 2)
@@ -108,14 +113,22 @@ class CSVObject:
         one_minus_cos = 1 - cos_theta
 
         # Rodrigues' 회전
-        new_x = (cos_theta + x * x * one_minus_cos) * vx + (x * y * one_minus_cos - z * sin_theta) * vy + (x * z * one_minus_cos + y * sin_theta) * vz
-        new_y = (y * x * one_minus_cos + z * sin_theta) * vx + (cos_theta + y * y * one_minus_cos) * vy + (y * z * one_minus_cos - x * sin_theta) * vz
-        new_z = (z * x * one_minus_cos - y * sin_theta) * vx + (z * y * one_minus_cos + x * sin_theta) * vy + (cos_theta + z * z * one_minus_cos) * vz
+        new_x = (cos_theta + x * x * one_minus_cos) * vx + (x * y * one_minus_cos - z * sin_theta) * vy + (
+                    x * z * one_minus_cos + y * sin_theta) * vz
+        new_y = (y * x * one_minus_cos + z * sin_theta) * vx + (cos_theta + y * y * one_minus_cos) * vy + (
+                    y * z * one_minus_cos - x * sin_theta) * vz
+        new_z = (z * x * one_minus_cos - y * sin_theta) * vx + (z * y * one_minus_cos + x * sin_theta) * vy + (
+                    cos_theta + z * z * one_minus_cos) * vz
+
+        # 다시 기준점으로 복귀
+        new_x += center[0]
+        new_y += center[1]
+        new_z += center[2]
 
         parts[1] = str(new_x)
         parts[2] = str(new_y)
         parts[3] = str(new_z)
-        return ','.join(parts)  + '\n'
+        return ','.join(parts) + '\n'
 
     def mirror(self, mirror_x=0, mirror_y=0, mirror_z=0) -> list:
         """
@@ -297,29 +310,39 @@ def main():
     filemgr = FileManager()
     csv_lines = filemgr.readfile(csv_path)
     nlines = []
-
+    texts= [f'_PLINE\n']
+    center = [180858.538, 282423.282, 116.035]
     for i, (sta, (x, y), z, azimuth) in enumerate(zip(chainages, coords, elevations, bearings)):
+        print(f"\n=== Station {sta} ===")
+        print(f"원시 좌표: Easting={x}, Northing={y}, Elevation={z}, Bearing(rad)={azimuth}")
+
         csvobj = CSVObject(csv_lines)
-        csvobj.translate(dx=x, dy=z, dz=y) #평면이동
-        angle= 90 - math.degrees(azimuth) #북측 방위각으로 변환
-        csvobj.rotate(axis_x=1, angle=angle) #XY평면회전(BVE에서는 XZ회전)
 
-        # pitch 계산: 고도 변화량 / 거리 변화량
-        if i < len(elevations) - 1:
-            dz = elevations[i + 1] - elevations[i]
-            dx = chainages[i + 1] - chainages[i]
-            pitch = math.degrees(math.atan2(dz, dx))
-        else:
-            pitch = 0.0
-        csvobj.rotate(axis_y=1, angle=pitch)  # YZ평면회전(BVE에서는 ZY회전)
-        #다시 로컬 좌표로 변환
-        center = [0,0,0] #기준점
-        local_x = x - center[0] #로컬좌표X
-        local_y = y - center[1] #로컬좌표Y
-        local_z = z - center[2] #로컬좌표Z
-        csvobj.translate(dx=local_x, dy=local_z, dz=local_y)
+        # 절대좌표 → 로컬좌표 변환
+        local_x = x - center[0]
+        local_y = z - center[2]
+        local_z = y - center[1]
+        texts.append(f"{local_x},{local_z}\n")
+
+        csvobj.translate(dx=local_x, dy=local_y, dz=local_z)
+
+        # 회전 (로컬좌표 기준)
+        angle = math.degrees(azimuth)  # Bearing 라디안 → 도
+        print(f"회전 각도(도): {angle}")
+        csvobj.rotate(axis_y=1, angle=angle, center=(local_x, local_y, local_z))
+
+        # 결과 좌표 확인
+        for line in csvobj.get():
+            if line.strip().startswith("AddVertex"):
+                parts = line.strip().split(',')
+                vx, vy, vz = parts[1], parts[2], parts[3]
+                print(f"회전 후 Vertex: X={vx}, Y={vy}, Z={vz}")
+
         nlines.extend(csvobj.get())
+    texts.append(f'\n')
     filemgr.save_csv(save_obj_path, nlines)
-
+    temp_text = rf'c:/temp/tmetrewtew.txt'
+    with open(temp_text, 'w', encoding='utf-8') as f:
+        f.writelines(texts)
 if __name__ == '__main__':
     main()
