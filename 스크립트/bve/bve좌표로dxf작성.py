@@ -5,6 +5,89 @@ from tkinter import filedialog, messagebox
 import os
 import random
 
+class BVEDataLoader:
+    """BVE 관련 모든 CSV/TXT 데이터 파일을 통합하여 로드하는 파서 클래스"""
+
+    @staticmethod
+    def _safe_read_lines(file_path):
+        """안전하게 파일을 열고 줄 단위로 정제하여 반환하는 공통 헬퍼 메서드"""
+        if not file_path or not os.path.exists(file_path):
+            return []
+
+        # 인코딩 에러 방지를 위해 utf-8 + ignore 공통 적용
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            return [line.strip() for line in f if line.strip()]
+
+    def load_track_alignment(self, file_path):
+        """BVE 선형 파일 파싱 (측점,X,Y,Z...)"""
+        lines = self._safe_read_lines(file_path)
+        if not lines:
+            return []
+
+        if '측점,X,Y,Z,Bearing,Radius,Cant,Pitch,height' not in lines[0]:
+            raise ValueError('올바른 BVE 선형 파일이 아닙니다.')
+
+        bve_datas = []
+        for line in lines[1:]:
+            parts = line.split(',')
+            try:
+                if len(parts) < 9: continue
+                bve_datas.append(BVEData(
+                    station=float(parts[0]), x=float(parts[1]), y=float(parts[2]), z=float(parts[3]),
+                    bearing=float(parts[4]), radius=float(parts[5]), cant=float(parts[6]),
+                    pitch=float(parts[7]), height=float(parts[8])
+                ))
+            except (ValueError, IndexError):
+                continue
+        return bve_datas
+
+    def load_rail_info(self, file_path):
+        """배선 파일 파싱"""
+        lines = self._safe_read_lines(file_path)
+        coordinates = []
+        for line in lines:
+            parts = line.split(',')
+            if len(parts) == 5:
+                try:
+                    coordinates.append(BVERail(
+                        station=float(parts[0]), index=int(parts[1]),
+                        x=float(parts[2]), y=float(parts[3]), z=float(parts[4])
+                    ))
+                except ValueError:
+                    continue
+        return coordinates
+
+    def load_free_objects(self, file_path):
+        """프리오브젝트 파싱"""
+        lines = self._safe_read_lines(file_path)
+        result = []
+        for line in lines:
+            parts = line.split(',')
+            try:
+                # 리스트 슬라이싱이나 언패킹을 쓰면 더 직관적입니다.
+                result.append((
+                    int(parts[2]), parts[3].strip(),
+                    float(parts[4]), float(parts[5]), float(parts[6])
+                ))
+            except (ValueError, IndexError):
+                continue
+        return result
+
+    def load_stations(self, file_path):
+        """역 좌표 파일 파싱"""
+        lines = self._safe_read_lines(file_path)
+        stations = []
+        for line in lines:
+            parts = line.split(',')
+            if len(parts) == 4:
+                try:
+                    stations.append((
+                        float(parts[0]), float(parts[1]), float(parts[2]), parts[3].strip()
+                    ))
+                except ValueError:
+                    continue
+        return stations
+
 class BVERail:
     def __init__(self, station, x, y, z, index):
         self.station = station
@@ -12,48 +95,6 @@ class BVERail:
         self.y = y
         self.z = z
         self.index = index
-
-
-def read_railinfo(file_path):
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
-
-    coordinates = []
-    for line in lines:
-        parts = line.strip().split(',')
-        if len(parts) == 5:
-            station = float(parts[0].strip())
-            railindex = int(parts[1].strip())
-            x = float(parts[2].strip())
-            y = float(parts[3].strip())
-            z = float(parts[4].strip())
-            coordinates.append(BVERail(station, x, y, z, index=railindex))  # Corrected order of z and y
-
-    return coordinates
-
-def read_csv_by_type(file_path):
-    """
-    프리오브젝트 파서
-    """
-    with open(file_path, 'r', encoding='utf-8') as file:
-        lines = file.readlines()
-
-    result = []
-    for line in lines:
-        parts = line.strip().split(',')
-        try:
-            station = float(parts[0].strip())
-            railindex = int(parts[1].strip())
-            object_index = int(parts[2].strip())
-            name = parts[3].strip()
-            x = float(parts[4].strip())
-            y = float(parts[5].strip())
-            z = float(parts[6].strip())
-            result.append((object_index, name, x, y, z))
-        except Exception as e:
-            print(f"[Warning] Failed to parse line: {line.strip()} - {e}")
-            continue
-    return result
 
 class BVEData:
     def __init__(self, station, x, y, z, bearing, radius, cant, pitch, height):
@@ -66,53 +107,6 @@ class BVEData:
         self.cant = cant
         self.pitch = pitch
         self.height = height
-
-
-class BVEParser:
-    def __init__(self):
-        self.lines = []
-    def read_lines(self, filepath):
-        with open(filepath, encoding='utf-8', errors='ignore', mode='r') as f:
-            self.lines = f.readlines()
-
-    def parse(self):
-        #1 헤더확인
-        #측점,X,Y,Z,Bearing,Radius,Cant,Pitch,height
-        if not '측점,X,Y,Z,Bearing,Radius,Cant,Pitch,height' in self.lines[0]:
-            raise ValueError('올바른 BVE 선형 파일이 아닙니다.')
-        bvedatas = []
-        for line in self.lines[1:]:
-            try:
-                line = line.strip()
-                parts = line.split(',')
-                station = float(parts[0])
-                x = float(parts[1])
-                y = float(parts[2])
-                z = float(parts[3])
-                bearing = float(parts[4])
-                radius = float(parts[5])
-                cant = float(parts[6])
-                pitch = float(parts[7])
-                height = float(parts[8])
-                bvedatas.append(BVEData(station, x, y, z, bearing, radius, cant,pitch,height))
-            except (ValueError, IndexError):
-                continue
-        return bvedatas
-
-def read_sta(file_path):
-    with open(file_path, 'r',encoding='utf-8') as file:
-        lines = file.readlines()
-        
-    stations = []
-    for line in lines:
-        parts = line.strip().split(',')
-        if len(parts) == 4:
-            sta = float(parts[0])
-            x = float(parts[1].strip())
-            y = float(parts[2].strip())
-            name = parts[3].strip()
-            stations.append((sta, x, y, name))
-    return stations
 
 class DXFManger:
     def __init__(self):
@@ -296,6 +290,8 @@ class DXFManger:
                                                 "style": "myStandard"})
 
     def create_layout(self):
+        if not self.bverails:
+            return
         # 레이어 및 색상 처리
         color_map = {}
         used_colors = set()
@@ -313,6 +309,7 @@ class DXFManger:
         # Group coordinates by railindex
         rail_coordinates = {}
         stationtexts = {}
+
         for rail in self.bverails:
             station = rail.station
             railindex = rail.index
@@ -400,14 +397,15 @@ class BveDxfConverter:
         if not output_file:
             messagebox.showerror("에러", "출력 DXF 파일 경로를 지정하세요.")
             return
-        parser = BVEParser()
+        # 2. 통합 파서 인스턴스 생성 및 호출
+        loader = BVEDataLoader()
         dxfmger = DXFManger()
         try:
-            parser.read_lines(input_file)
-            bvedatas = parser.parse()
-            stations = read_sta(input_file2)
-            freeobjects = read_csv_by_type(input_file3) if input_file3 else None
-            bverails = read_railinfo(layoutfile)
+            bvedatas = loader.load_track_alignment(input_file)
+            stations = loader.load_stations(input_file2)
+            freeobjects = loader.load_free_objects(input_file3) if input_file3 else None
+            bverails = loader.load_rail_info(layoutfile) if layoutfile else None
+
             dxfmger.create_dxf(bvedatas, stations, freeobjects, output_file, bverails)
             messagebox.showinfo("완료", f"DXF 파일이 생성되었습니다.\n{output_file}")
         except Exception as e:
