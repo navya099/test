@@ -1,4 +1,4 @@
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, askopenfilenames
 import os
 import pandas as pd
 import chardet
@@ -282,67 +282,59 @@ def read_civil3d_data(filepath):
     return chainages, coords, elevations, bearings
 
 def main():
-    while True:
-        filepath = None
-        file_select_cancled = False
-        try:
-            filepath = askopenfilename(title="절대좌표 CSV파일 선택")
-            if not filepath:
-                file_select_cancled = True
-                raise FileNotFoundError("대상 파일을 찾을 수 없습니다")
+    # 여러 절대좌표 CSV 파일 선택
+    filepaths = askopenfilenames(title="절대좌표 CSV파일 선택")
+    if not filepaths:
+        print("파일을 선택하지 않았습니다. 프로그램을 종료합니다.")
+        exit(0)
 
-            # Civil3D 데이터 읽기
-            chainages, coords, elevations, bearings = read_civil3d_data(filepath)
-            print(f"파일 읽기 성공: {filepath}")
-            break
-
-        except Exception as e:
-            print(f"오류 발생: 파일: {filepath}, 에러: {e}")
-            print("올바른 절대좌표 파일을 선택하세요.")
-            if file_select_cancled:
-                print("파일 선택을 취소하여 프로그램을 종료합니다.")
-                exit(0)
-
-    # CSV 오브젝트 불러오기
+    # CSV 오브젝트 원본 파일
     csv_path = r'D:\BVE\루트\Railway\Object\철도표준라이브러리\궤도\표준단면\자갈도상\일반철도\5M레일_신선_전차선X.csv'
     save_obj_path = os.path.join("c:/temp", "openbveraillayout_test.csv")
 
     filemgr = FileManager()
     csv_lines = filemgr.readfile(csv_path)
     nlines = []
-    texts= [f'_PLINE\n']
+    texts = []
+
     center = [180858.538, 282423.282, 116.035]
-    for i, (sta, (x, y), z, azimuth) in enumerate(zip(chainages, coords, elevations, bearings)):
-        print(f"\n=== Station {sta} ===")
-        print(f"원시 좌표: Easting={x}, Northing={y}, Elevation={z}, Bearing(rad)={azimuth}")
 
-        csvobj = CSVObject(csv_lines)
+    # 여러 파일을 순회
+    for idx, filepath in enumerate(filepaths):
+        try:
+            chainages, coords, elevations, bearings = read_civil3d_data(filepath)
+            print(f"파일 읽기 성공: {filepath}")
 
-        # 절대좌표 → 로컬좌표 변환
-        local_x = x - center[0]
-        local_y = z - center[2]
-        local_z = y - center[1]
-        texts.append(f"{local_x},{local_z}\n")
+            nlines = []
+            texts = ["_PLINE\n"]  # 파일마다 새로 초기화
 
-        csvobj.translate(dx=local_x, dy=local_y, dz=local_z)
+            for sta, (x, y), z, azimuth in zip(chainages, coords, elevations, bearings):
+                csvobj = CSVObject(csv_lines)
 
-        # 회전 (로컬좌표 기준)
-        angle = math.degrees(azimuth)  # Bearing 라디안 → 도
-        print(f"회전 각도(도): {angle}")
-        csvobj.rotate(axis_y=1, angle=angle, center=(local_x, local_y, local_z))
+                local_x = x - center[0]
+                local_y = z - center[2]
+                local_z = y - center[1]
+                texts.append(f"{local_x},{local_z}\n")
 
-        # 결과 좌표 확인
-        for line in csvobj.get():
-            if line.strip().startswith("AddVertex"):
-                parts = line.strip().split(',')
-                vx, vy, vz = parts[1], parts[2], parts[3]
-                print(f"회전 후 Vertex: X={vx}, Y={vy}, Z={vz}")
+                csvobj.translate(dx=local_x, dy=local_y, dz=local_z)
 
-        nlines.extend(csvobj.get())
-    texts.append(f'\n')
-    filemgr.save_csv(save_obj_path, nlines)
-    temp_text = rf'c:/temp/tmetrewtew.txt'
-    with open(temp_text, 'w', encoding='utf-8') as f:
-        f.writelines(texts)
+                angle = math.degrees(azimuth)
+                csvobj.rotate(axis_y=1, angle=angle, center=(local_x, local_y, local_z))
+
+                nlines.extend(csvobj.get())
+
+            # 파일 이름 기반으로 저장
+            name = os.path.basename(filepath)
+            save_obj_path = f"c:/temp/openbveraillayout_part_{name}.csv"
+            filemgr.save_csv(save_obj_path, nlines)
+
+            temp_text = f"c:/temp/{name}_pline.txt"
+            with open(temp_text, 'w', encoding='utf-8') as f:
+                f.writelines(texts)
+
+        except Exception as e:
+            print(f"오류 발생: 파일: {filepath}, 에러: {e}")
+
+
 if __name__ == '__main__':
     main()
