@@ -1,39 +1,33 @@
 import pandas as pd
-from tkinter.filedialog import askopenfilename, asksaveasfilename
+import os
+from tkinter.filedialog import askopenfilenames, asksaveasfilename
 
-# 엑셀 파일 선택
-excel_file = askopenfilename(title="엑셀 파일 선택", filetypes=[("Excel files", "*.xlsx")])
-if not excel_file:
-    raise FileNotFoundError("엑셀 파일이 선택되지 않았습니다.")
+# 여러 CSV 파일 선택
+file_paths = askopenfilenames(title="CSV 파일들을 선택하세요", filetypes=[("CSV files", "*.csv")])
+if not file_paths:
+    raise FileNotFoundError("CSV 파일이 선택되지 않았습니다.")
 
-# 결과 TXT 파일 지정
-output_file = asksaveasfilename(title="저장할 TXT 파일 이름 지정", defaultextension=".txt")
+# 결과 저장할 엑셀 파일 지정
+output_file = asksaveasfilename(title="저장할 엑셀 파일 이름 지정", defaultextension=".xlsx")
 if not output_file:
     raise FileNotFoundError("저장 파일이 선택되지 않았습니다.")
 
-# 엑셀 파일 읽기 (모든 시트)
-xls = pd.ExcelFile(excel_file)
+# 새 ExcelWriter 생성
+with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+    for file_path in file_paths:
+        # 파일 이름에서 시트 이름 추출
+        sheet_name = os.path.splitext(os.path.basename(file_path))[0]
 
-output_lines = []
-for sheet_name in xls.sheet_names:
-    # 시트별 주석 추가
-    output_lines.append(f",;{sheet_name}")
+        # CSV 읽기
+        df = pd.read_csv(file_path)
 
-    df = pd.read_excel(excel_file, sheet_name=sheet_name)
+        # 필요한 열만 추출 (BaseStation, OffsetX, OffsetZ)
+        new_df = df[["BaseStation", "OffsetX", "OffsetZ"]]
 
-    # 각 행을 지정된 양식으로 변환
-    for _, row in df.iterrows():
-        base_station = row.get("BaseStation", "")
-        rail_index = row.get("Railindex", "")
-        offset_x = row.get("OffsetX", "")
-        offset_z = row.get("OffsetZ", "")
+        # 중간에 빈 열 2개 추가 (열 이름은 임시로 지정)
+        new_df.insert(1, "Railindex", "")
 
-        # 문자열 포맷
-        line = f"{base_station},.rail {rail_index};{offset_x};{offset_z}"
-        output_lines.append(line)
+        # 시트에 쓰기
+        new_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-# 결과 TXT 파일 저장
-with open(output_file, "w", encoding="utf-8") as f:
-    f.write("\n".join(output_lines))
-
-print(f"✅ 변환 완료! 모든 시트가 '{output_file}' 파일에 저장되었습니다.")
+print(f"✅ 변환 완료! 결과가 '{output_file}' 파일에 저장되었습니다.")
