@@ -8,6 +8,12 @@ if not file_path:
 # 기준 STATION 값 입력
 station_limit = int(input("기준 STATION 값을 입력하세요: ").strip())
 
+# 자르기 방향 선택
+print("자르기 옵션을 선택하세요:")
+print("1. 기준값 이하만 남기기 (앞쪽)")
+print("2. 기준값 이상만 남기기 (뒤쪽)")
+option = input("번호 입력: ").strip()
+
 # 결과 저장할 파일 선택
 output_file = asksaveasfilename(title="결과 저장할 파일 이름 지정", defaultextension=".txt")
 if not output_file:
@@ -31,9 +37,12 @@ for line in input_text.splitlines():
     except ValueError:
         station_value = None
 
-    # 기준 이하만 남기기
-    if station_value is not None and station_value <= station_limit:
-        output_lines.append(line)
+    # 기준값에 따라 필터링
+    if station_value is not None:
+        if option == "1" and station_value <= station_limit:
+            output_lines.append(line)
+        elif option == "2" and station_value >= station_limit:
+            output_lines.append(line)
 
 result = "\n".join(output_lines)
 
