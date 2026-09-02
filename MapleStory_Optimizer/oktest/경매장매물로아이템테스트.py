@@ -1,3 +1,4 @@
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
@@ -73,7 +74,7 @@ class Item:
         self.tax = tax
 
     # --------------------------------------------------------
-    # 남은 가횟
+    # 잔여 가횟
     # --------------------------------------------------------
 
     @property
@@ -81,18 +82,19 @@ class Item:
         return self.max_count - self.used_count
 
     # --------------------------------------------------------
-    # 실제 구매가
+    # 실구매가
     # --------------------------------------------------------
 
     @property
     def actual_price(self):
+
         if self.tax:
             return self.price * 1.10
 
         return self.price
 
     # --------------------------------------------------------
-    # JSON 저장용
+    # JSON 변환
     # --------------------------------------------------------
 
     def to_dict(self):
@@ -116,10 +118,6 @@ class Item:
             "used_count": self.used_count,
             "max_count": self.max_count
         }
-
-    # --------------------------------------------------------
-    # JSON 불러오기
-    # --------------------------------------------------------
 
     @classmethod
     def from_dict(cls, data):
@@ -163,7 +161,7 @@ class Equipment:
         self.items = []
 
     # --------------------------------------------------------
-    # 기준템 설정
+    # 기준템
     # --------------------------------------------------------
 
     def set_base(self, item):
@@ -179,13 +177,14 @@ class Equipment:
         self.items.append(item)
 
     # --------------------------------------------------------
-    # 이름으로 매물 삭제
+    # 매물 삭제
     # --------------------------------------------------------
 
     def remove_item_by_name(self, name):
 
         self.items = [
-            item for item in self.items
+            item
+            for item in self.items
             if item.name != name
         ]
 
@@ -198,7 +197,7 @@ class Equipment:
         self.items.clear()
 
     # --------------------------------------------------------
-    # JSON 저장
+    # JSON
     # --------------------------------------------------------
 
     def to_dict(self):
@@ -212,10 +211,6 @@ class Equipment:
             ]
         }
 
-    # --------------------------------------------------------
-    # JSON 불러오기
-    # --------------------------------------------------------
-
     @classmethod
     def from_dict(cls, name, data):
 
@@ -224,7 +219,9 @@ class Equipment:
         base_data = data.get("base_item")
 
         if base_data:
-            equipment.base_item = Item.from_dict(base_data)
+            equipment.base_item = Item.from_dict(
+                base_data
+            )
 
         equipment.items = [
             Item.from_dict(item_data)
@@ -235,14 +232,12 @@ class Equipment:
 
 
 # ============================================================
-# EquipmentManager
+# Character
 # ============================================================
 
-class EquipmentManager:
+class Character:
 
-    SAVE_VERSION = 1
-
-    DEFAULT_EQUIPMENTS = [
+    DEFAULT_EQUIPMENT_NAMES = [
         "귀고리",
         "펜던트",
         "반지",
@@ -258,12 +253,12 @@ class EquipmentManager:
         "무기"
     ]
 
-    def __init__(self):
+    def __init__(self, name):
 
+        self.name = name
+
+        # 실제 사용하는 장비만 생성
         self.equipments = {}
-
-        for name in self.DEFAULT_EQUIPMENTS:
-            self.add_equipment(name)
 
     # --------------------------------------------------------
     # 장비 추가
@@ -272,6 +267,7 @@ class EquipmentManager:
     def add_equipment(self, name):
 
         if name not in self.equipments:
+
             self.equipments[name] = Equipment(name)
 
     # --------------------------------------------------------
@@ -281,6 +277,7 @@ class EquipmentManager:
     def remove_equipment(self, name):
 
         if name in self.equipments:
+
             del self.equipments[name]
 
     # --------------------------------------------------------
@@ -292,15 +289,101 @@ class EquipmentManager:
         return self.equipments.get(name)
 
     # --------------------------------------------------------
-    # 장비 이름 목록
+    # 장비 목록
+    # --------------------------------------------------------
+
+    def get_equipment_names(self):
+
+        return list(self.equipments.keys())
+
+    # --------------------------------------------------------
+    # JSON
+    # --------------------------------------------------------
+
+    def to_dict(self):
+
+        return {
+            "equipments": {
+
+                name: equipment.to_dict()
+
+                for name, equipment
+                in self.equipments.items()
+            }
+        }
+
+    @classmethod
+    def from_dict(cls, name, data):
+
+        character = cls(name)
+
+        equipments_data = data.get(
+            "equipments",
+            {}
+        )
+
+        for equipment_name, equipment_data \
+                in equipments_data.items():
+
+            character.equipments[equipment_name] = \
+                Equipment.from_dict(
+                    equipment_name,
+                    equipment_data
+                )
+
+        return character
+
+
+# ============================================================
+# CharacterManager
+# ============================================================
+
+class CharacterManager:
+
+    SAVE_VERSION = 2
+
+    def __init__(self):
+
+        self.characters = {}
+
+    # --------------------------------------------------------
+    # 캐릭터 추가
+    # --------------------------------------------------------
+
+    def add_character(self, name):
+
+        if name not in self.characters:
+
+            self.characters[name] = Character(name)
+
+    # --------------------------------------------------------
+    # 캐릭터 삭제
+    # --------------------------------------------------------
+
+    def remove_character(self, name):
+
+        if name in self.characters:
+
+            del self.characters[name]
+
+    # --------------------------------------------------------
+    # 캐릭터 가져오기
+    # --------------------------------------------------------
+
+    def get_character(self, name):
+
+        return self.characters.get(name)
+
+    # --------------------------------------------------------
+    # 캐릭터 목록
     # --------------------------------------------------------
 
     def get_names(self):
 
-        return list(self.equipments.keys())
+        return list(self.characters.keys())
 
     # ========================================================
-    # JSON 저장
+    # 전체 저장
     # ========================================================
 
     def save(self, filepath):
@@ -309,9 +392,12 @@ class EquipmentManager:
             "version": self.SAVE_VERSION,
             "app": "MapleAuctionCalculator",
 
-            "equipments": {
-                name: equipment.to_dict()
-                for name, equipment in self.equipments.items()
+            "characters": {
+
+                name: character.to_dict()
+
+                for name, character
+                in self.characters.items()
             }
         }
 
@@ -329,7 +415,7 @@ class EquipmentManager:
             )
 
     # ========================================================
-    # JSON 로드
+    # 전체 로드
     # ========================================================
 
     def load(self, filepath):
@@ -342,26 +428,34 @@ class EquipmentManager:
 
             data = json.load(f)
 
-        version = data.get("version", 1)
+        version = data.get(
+            "version",
+            1
+        )
 
         if version != self.SAVE_VERSION:
 
             raise ValueError(
-                f"지원하지 않는 저장 파일 버전입니다.\n"
-                f"파일 버전: {version}\n"
-                f"현재 버전: {self.SAVE_VERSION}"
+                f"지원하지 않는 저장 파일 버전입니다.\n\n"
+                f"파일 버전 : {version}\n"
+                f"현재 버전 : {self.SAVE_VERSION}"
             )
 
-        equipments_data = data.get("equipments", {})
+        characters_data = data.get(
+            "characters",
+            {}
+        )
 
-        self.equipments = {}
+        self.characters = {}
 
-        for name, equipment_data in equipments_data.items():
+        for name, character_data \
+                in characters_data.items():
 
-            self.equipments[name] = Equipment.from_dict(
-                name,
-                equipment_data
-            )
+            self.characters[name] = \
+                Character.from_dict(
+                    name,
+                    character_data
+                )
 
 
 # ============================================================
@@ -375,11 +469,12 @@ class Calculator:
 
         return (
             EFF_TABLE[stat_name]["final"]
-            / EFF_TABLE[stat_name]["value"]
+            /
+            EFF_TABLE[stat_name]["value"]
         )
 
     # --------------------------------------------------------
-    # 최종뎀 계산
+    # 최종뎀
     # --------------------------------------------------------
 
     @classmethod
@@ -429,15 +524,20 @@ class Calculator:
         return damage
 
     # --------------------------------------------------------
-    # 기준템 대비 최종뎀
+    # 기준 대비
     # --------------------------------------------------------
 
     @classmethod
-    def damage_difference(cls, item, base):
+    def damage_difference(
+        cls,
+        item,
+        base
+    ):
 
         return (
             cls.final_damage(item)
-            - cls.final_damage(base)
+            -
+            cls.final_damage(base)
         )
 
     # --------------------------------------------------------
@@ -445,11 +545,15 @@ class Calculator:
     # --------------------------------------------------------
 
     @staticmethod
-    def price_difference(item, base):
+    def price_difference(
+        item,
+        base
+    ):
 
         return (
             item.actual_price
-            - base.actual_price
+            -
+            base.actual_price
         )
 
     # --------------------------------------------------------
@@ -457,7 +561,11 @@ class Calculator:
     # --------------------------------------------------------
 
     @classmethod
-    def efficiency_score(cls, item, base):
+    def efficiency_score(
+        cls,
+        item,
+        base
+    ):
 
         damage_diff = cls.damage_difference(
             item,
@@ -469,7 +577,7 @@ class Calculator:
             base
         )
 
-        # 가격 동일 + 성능 상승
+        # 가격 동일
         if price_diff == 0:
 
             if damage_diff > 0:
@@ -477,7 +585,7 @@ class Calculator:
 
             return 0
 
-        # 더 비싼데 성능이 같거나 낮음
+        # 더 비싼 경우
         if price_diff > 0:
 
             if damage_diff <= 0:
@@ -485,25 +593,32 @@ class Calculator:
 
             return (
                 damage_diff
-                / price_diff
+                /
+                price_diff
             )
 
         # 더 싼데 성능이 같거나 좋음
         if damage_diff >= 0:
+
             return math.inf
 
         # 더 싼 대신 성능 하락
         return (
             damage_diff
-            / abs(price_diff)
+            /
+            abs(price_diff)
         )
 
     # --------------------------------------------------------
-    # 정렬용 점수
+    # 정렬용
     # --------------------------------------------------------
 
     @classmethod
-    def ranking_score(cls, item, base):
+    def ranking_score(
+        cls,
+        item,
+        base
+    ):
 
         value = cls.efficiency_score(
             item,
@@ -511,6 +626,7 @@ class Calculator:
         )
 
         if math.isinf(value):
+
             return 999999999
 
         return value
@@ -531,24 +647,51 @@ class AuctionCalculator:
         )
 
         self.root.geometry(
-            "1450x850"
+            "1500x900"
         )
 
         # ----------------------------------------------------
         # 데이터
         # ----------------------------------------------------
 
-        self.manager = EquipmentManager()
+        self.manager = CharacterManager()
 
-        self.current_equipment_name = (
-            self.manager.get_names()[0]
+        # 기본 캐릭터 하나 생성
+        self.manager.add_character(
+            "캐릭터 1"
         )
 
+        self.current_character_name = (
+            "캐릭터 1"
+        )
+
+        self.current_equipment_name = None
+
         # ----------------------------------------------------
-        # 상단
+        # UI
         # ----------------------------------------------------
 
-        title_frame = ttk.Frame(root)
+        self.create_ui()
+
+        self.refresh_character_buttons()
+
+        self.refresh_equipment_buttons()
+
+        self.refresh_ui()
+
+    # ========================================================
+    # 전체 UI
+    # ========================================================
+
+    def create_ui(self):
+
+        # ----------------------------------------------------
+        # 제목 + 저장/로드
+        # ----------------------------------------------------
+
+        title_frame = ttk.Frame(
+            self.root
+        )
 
         title_frame.pack(
             fill="x",
@@ -560,11 +703,9 @@ class AuctionCalculator:
             title_frame,
             text="메이플 경매장 장비 가성비 계산기",
             font=("맑은 고딕", 18, "bold")
-        ).pack(side="left")
-
-        # ----------------------------------------------------
-        # 저장 / 로드
-        # ----------------------------------------------------
+        ).pack(
+            side="left"
+        )
 
         ttk.Button(
             title_frame,
@@ -585,12 +726,71 @@ class AuctionCalculator:
         )
 
         # ----------------------------------------------------
-        # 장비 선택
+        # 캐릭터
+        # ----------------------------------------------------
+
+        character_frame = ttk.LabelFrame(
+            self.root,
+            text="캐릭터"
+        )
+
+        character_frame.pack(
+            fill="x",
+            padx=10,
+            pady=5
+        )
+
+        self.character_buttons_frame = ttk.Frame(
+            character_frame
+        )
+
+        self.character_buttons_frame.pack(
+            side="left",
+            fill="x",
+            expand=True
+        )
+
+        ttk.Button(
+            character_frame,
+            text="+ 캐릭터 추가",
+            command=self.add_character
+        ).pack(
+            side="right",
+            padx=5
+        )
+
+        ttk.Button(
+            character_frame,
+            text="현재 캐릭터 삭제",
+            command=self.delete_character
+        ).pack(
+            side="right",
+            padx=5
+        )
+
+        # ----------------------------------------------------
+        # 현재 캐릭터
+        # ----------------------------------------------------
+
+        self.character_label = ttk.Label(
+            self.root,
+            text="",
+            font=("맑은 고딕", 13, "bold")
+        )
+
+        self.character_label.pack(
+            anchor="w",
+            padx=15,
+            pady=(5, 0)
+        )
+
+        # ----------------------------------------------------
+        # 장비
         # ----------------------------------------------------
 
         equipment_frame = ttk.LabelFrame(
-            root,
-            text="장비 선택"
+            self.root,
+            text="장비"
         )
 
         equipment_frame.pack(
@@ -627,29 +827,29 @@ class AuctionCalculator:
             padx=5
         )
 
-        self.refresh_equipment_buttons()
-
         # ----------------------------------------------------
-        # 현재 장비 표시
+        # 현재 장비
         # ----------------------------------------------------
 
-        self.current_label = ttk.Label(
-            root,
+        self.equipment_label = ttk.Label(
+            self.root,
             text="",
-            font=("맑은 고딕", 13, "bold")
+            font=("맑은 고딕", 11, "bold")
         )
 
-        self.current_label.pack(
+        self.equipment_label.pack(
             anchor="w",
             padx=15,
-            pady=5
+            pady=(2, 5)
         )
 
         # ----------------------------------------------------
         # 입력 영역
         # ----------------------------------------------------
 
-        input_frame = ttk.Frame(root)
+        input_frame = ttk.Frame(
+            self.root
+        )
 
         input_frame.pack(
             fill="x",
@@ -657,10 +857,7 @@ class AuctionCalculator:
             pady=5
         )
 
-        # ====================================================
-        # 기준 아이템
-        # ====================================================
-
+        # 기준템
         base_frame = ttk.LabelFrame(
             input_frame,
             text="기준 아이템"
@@ -688,10 +885,7 @@ class AuctionCalculator:
             pady=8
         )
 
-        # ====================================================
-        # 경매장 매물
-        # ====================================================
-
+        # 매물
         item_frame = ttk.LabelFrame(
             input_frame,
             text="경매장 매물"
@@ -725,7 +919,7 @@ class AuctionCalculator:
         # ----------------------------------------------------
 
         result_frame = ttk.LabelFrame(
-            root,
+            self.root,
             text="경매장 매물 비교"
         )
 
@@ -828,10 +1022,12 @@ class AuctionCalculator:
         )
 
         # ----------------------------------------------------
-        # 하단 버튼
+        # 하단
         # ----------------------------------------------------
 
-        bottom_frame = ttk.Frame(root)
+        bottom_frame = ttk.Frame(
+            self.root
+        )
 
         bottom_frame.pack(
             fill="x",
@@ -866,14 +1062,8 @@ class AuctionCalculator:
             padx=3
         )
 
-        # ----------------------------------------------------
-        # 초기화
-        # ----------------------------------------------------
-
-        self.refresh_ui()
-
     # ========================================================
-    # 입력창 생성
+    # Item 입력 UI
     # ========================================================
 
     def create_item_inputs(
@@ -972,7 +1162,7 @@ class AuctionCalculator:
         return vars
 
     # ========================================================
-    # 숫자 가져오기
+    # 숫자
     # ========================================================
 
     @staticmethod
@@ -1047,15 +1237,53 @@ class AuctionCalculator:
         )
 
     # ========================================================
-    # 현재 장비
+    # 현재 Character
+    # ========================================================
+
+    @property
+    def current_character(self):
+
+        return self.manager.get_character(
+            self.current_character_name
+        )
+
+    # ========================================================
+    # 현재 Equipment
     # ========================================================
 
     @property
     def current_equipment(self):
 
-        return self.manager.get_equipment(
+        if not self.current_equipment_name:
+
+            return None
+
+        return self.current_character.get_equipment(
             self.current_equipment_name
         )
+
+    # ========================================================
+    # 캐릭터 버튼 갱신
+    # ========================================================
+
+    def refresh_character_buttons(self):
+
+        for widget in \
+                self.character_buttons_frame.winfo_children():
+
+            widget.destroy()
+
+        for name in self.manager.get_names():
+
+            ttk.Button(
+                self.character_buttons_frame,
+                text=name,
+                command=lambda n=name:
+                    self.select_character(n)
+            ).pack(
+                side="left",
+                padx=2
+            )
 
     # ========================================================
     # 장비 버튼 갱신
@@ -1063,23 +1291,52 @@ class AuctionCalculator:
 
     def refresh_equipment_buttons(self):
 
-        for widget in self.equipment_buttons_frame.winfo_children():
+        for widget in \
+                self.equipment_buttons_frame.winfo_children():
 
             widget.destroy()
 
-        for name in self.manager.get_names():
+        character = self.current_character
 
-            button = ttk.Button(
+        if character is None:
+            return
+
+        for name in character.get_equipment_names():
+
+            ttk.Button(
                 self.equipment_buttons_frame,
                 text=name,
                 command=lambda n=name:
                     self.select_equipment(n)
-            )
-
-            button.pack(
+            ).pack(
                 side="left",
                 padx=2
             )
+
+    # ========================================================
+    # 캐릭터 선택
+    # ========================================================
+
+    def select_character(self, name):
+
+        self.current_character_name = name
+
+        equipment_names = (
+            self.current_character.get_equipment_names()
+        )
+
+        if equipment_names:
+
+            self.current_equipment_name = \
+                equipment_names[0]
+
+        else:
+
+            self.current_equipment_name = None
+
+        self.refresh_equipment_buttons()
+
+        self.refresh_ui()
 
     # ========================================================
     # 장비 선택
@@ -1092,20 +1349,42 @@ class AuctionCalculator:
         self.refresh_ui()
 
     # ========================================================
-    # UI 갱신
+    # 전체 UI 갱신
     # ========================================================
 
     def refresh_ui(self):
 
-        self.current_label.config(
-            text=f"현재 장비 : {self.current_equipment_name}"
+        self.character_label.config(
+            text=(
+                f"현재 캐릭터 : "
+                f"{self.current_character_name}"
+            )
         )
+
+        if self.current_equipment_name:
+
+            self.equipment_label.config(
+                text=(
+                    f"현재 장비 : "
+                    f"{self.current_equipment_name}"
+                )
+            )
+
+        else:
+
+            self.equipment_label.config(
+                text="현재 장비 : 없음"
+            )
 
         equipment = self.current_equipment
 
-        # ----------------------------------------------------
-        # 기준템 표시
-        # ----------------------------------------------------
+        if equipment is None:
+
+            self.clear_base_inputs()
+
+            self.refresh_results()
+
+            return
 
         base = equipment.base_item
 
@@ -1152,6 +1431,22 @@ class AuctionCalculator:
         self.refresh_results()
 
     # ========================================================
+    # 기준 입력 초기화
+    # ========================================================
+
+    def clear_base_inputs(self):
+
+        for key, var in self.base_vars.items():
+
+            if key == "tax":
+
+                var.set(False)
+
+            else:
+
+                var.set("")
+
+    # ========================================================
     # 숫자 표시
     # ========================================================
 
@@ -1174,6 +1469,15 @@ class AuctionCalculator:
     # ========================================================
 
     def apply_base(self):
+
+        if self.current_equipment is None:
+
+            messagebox.showwarning(
+                "장비 없음",
+                "먼저 장비를 추가해주세요."
+            )
+
+            return
 
         try:
 
@@ -1199,6 +1503,15 @@ class AuctionCalculator:
     # ========================================================
 
     def add_item(self):
+
+        if self.current_equipment is None:
+
+            messagebox.showwarning(
+                "장비 없음",
+                "먼저 장비를 추가해주세요."
+            )
+
+            return
 
         try:
 
@@ -1232,7 +1545,7 @@ class AuctionCalculator:
             )
 
     # ========================================================
-    # 매물 입력창 초기화
+    # 매물 입력 초기화
     # ========================================================
 
     def clear_item_input(self):
@@ -1258,6 +1571,9 @@ class AuctionCalculator:
             self.tree.delete(row)
 
         equipment = self.current_equipment
+
+        if equipment is None:
+            return
 
         base = equipment.base_item
 
@@ -1298,10 +1614,6 @@ class AuctionCalculator:
                 base
             )
 
-            # ------------------------------------------------
-            # 표시
-            # ------------------------------------------------
-
             flame_text = (
                 f"INT {item.flame_int:g} / "
                 f"올스탯 {item.flame_all:g}%"
@@ -1331,7 +1643,11 @@ class AuctionCalculator:
                     f"{efficiency:.5f}"
                 )
 
-            tax_text = "O" if item.tax else "X"
+            tax_text = (
+                "O"
+                if item.tax
+                else "X"
+            )
 
             self.tree.insert(
                 "",
@@ -1369,10 +1685,15 @@ class AuctionCalculator:
             )
 
     # ========================================================
-    # 선택 매물 삭제
+    # 매물 삭제
     # ========================================================
 
     def delete_selected(self):
+
+        equipment = self.current_equipment
+
+        if equipment is None:
+            return
 
         selected = self.tree.selection()
 
@@ -1392,11 +1713,11 @@ class AuctionCalculator:
                 values[1]
             )
 
-        self.current_equipment.items = [
+        equipment.items = [
 
             item
 
-            for item in self.current_equipment.items
+            for item in equipment.items
 
             if item.name not in names
         ]
@@ -1404,29 +1725,169 @@ class AuctionCalculator:
         self.refresh_results()
 
     # ========================================================
-    # 현재 장비 매물 전체 삭제
+    # 매물 전체 삭제
     # ========================================================
 
     def clear_items(self):
 
+        equipment = self.current_equipment
+
+        if equipment is None:
+            return
+
         result = messagebox.askyesno(
             "확인",
-            f"[{self.current_equipment_name}] "
-            "모든 매물을 삭제하시겠습니까?"
+            (
+                f"[{self.current_character_name}] "
+                f"[{self.current_equipment_name}]의 "
+                "모든 매물을 삭제하시겠습니까?"
+            )
         )
 
         if not result:
             return
 
-        self.current_equipment.clear_items()
+        equipment.clear_items()
 
         self.refresh_results()
+
+    # ========================================================
+    # 캐릭터 추가
+    # ========================================================
+
+    def add_character(self):
+
+        dialog = tk.Toplevel(
+            self.root
+        )
+
+        dialog.title(
+            "캐릭터 추가"
+        )
+
+        dialog.geometry(
+            "320x140"
+        )
+
+        ttk.Label(
+            dialog,
+            text="캐릭터 이름"
+        ).pack(
+            pady=(15, 5)
+        )
+
+        name_var = tk.StringVar()
+
+        entry = ttk.Entry(
+            dialog,
+            textvariable=name_var
+        )
+
+        entry.pack()
+
+        entry.focus()
+
+        def confirm():
+
+            name = name_var.get().strip()
+
+            if not name:
+                return
+
+            if name in self.manager.characters:
+
+                messagebox.showwarning(
+                    "중복",
+                    "이미 존재하는 캐릭터입니다."
+                )
+
+                return
+
+            self.manager.add_character(
+                name
+            )
+
+            self.current_character_name = name
+
+            self.current_equipment_name = None
+
+            self.refresh_character_buttons()
+
+            self.refresh_equipment_buttons()
+
+            self.refresh_ui()
+
+            dialog.destroy()
+
+        ttk.Button(
+            dialog,
+            text="추가",
+            command=confirm
+        ).pack(
+            pady=10
+        )
+
+    # ========================================================
+    # 캐릭터 삭제
+    # ========================================================
+
+    def delete_character(self):
+
+        if len(self.manager.characters) <= 1:
+
+            messagebox.showwarning(
+                "삭제 불가",
+                "최소 한 명의 캐릭터는 남아있어야 합니다."
+            )
+
+            return
+
+        result = messagebox.askyesno(
+            "캐릭터 삭제",
+            (
+                f"[{self.current_character_name}] 캐릭터와 "
+                "그 안의 모든 장비/매물을 삭제하시겠습니까?"
+            )
+        )
+
+        if not result:
+            return
+
+        self.manager.remove_character(
+            self.current_character_name
+        )
+
+        self.current_character_name = (
+            self.manager.get_names()[0]
+        )
+
+        equipment_names = (
+            self.current_character.get_equipment_names()
+        )
+
+        if equipment_names:
+
+            self.current_equipment_name = \
+                equipment_names[0]
+
+        else:
+
+            self.current_equipment_name = None
+
+        self.refresh_character_buttons()
+
+        self.refresh_equipment_buttons()
+
+        self.refresh_ui()
 
     # ========================================================
     # 장비 추가
     # ========================================================
 
     def add_equipment(self):
+
+        if self.current_character is None:
+            return
 
         dialog = tk.Toplevel(
             self.root
@@ -1437,7 +1898,7 @@ class AuctionCalculator:
         )
 
         dialog.geometry(
-            "300x130"
+            "320x140"
         )
 
         ttk.Label(
@@ -1465,7 +1926,7 @@ class AuctionCalculator:
             if not name:
                 return
 
-            if name in self.manager.equipments:
+            if name in self.current_character.equipments:
 
                 messagebox.showwarning(
                     "중복",
@@ -1474,7 +1935,7 @@ class AuctionCalculator:
 
                 return
 
-            self.manager.add_equipment(
+            self.current_character.add_equipment(
                 name
             )
 
@@ -1500,31 +1961,42 @@ class AuctionCalculator:
 
     def delete_equipment(self):
 
-        if len(self.manager.equipments) <= 1:
+        character = self.current_character
 
-            messagebox.showwarning(
-                "삭제 불가",
-                "최소 하나의 장비는 남아있어야 합니다."
-            )
+        if character is None:
+            return
 
+        if self.current_equipment_name is None:
             return
 
         result = messagebox.askyesno(
             "장비 삭제",
-            f"[{self.current_equipment_name}] 장비와 "
-            "그 안의 모든 매물을 삭제하시겠습니까?"
+            (
+                f"[{self.current_character_name}]의 "
+                f"[{self.current_equipment_name}] 장비와 "
+                "모든 매물을 삭제하시겠습니까?"
+            )
         )
 
         if not result:
             return
 
-        self.manager.remove_equipment(
+        character.remove_equipment(
             self.current_equipment_name
         )
 
-        self.current_equipment_name = (
-            self.manager.get_names()[0]
+        equipment_names = (
+            character.get_equipment_names()
         )
+
+        if equipment_names:
+
+            self.current_equipment_name = \
+                equipment_names[0]
+
+        else:
+
+            self.current_equipment_name = None
 
         self.refresh_equipment_buttons()
 
@@ -1559,7 +2031,7 @@ class AuctionCalculator:
 
             messagebox.showinfo(
                 "저장 완료",
-                "전체 장비 데이터가 저장되었습니다."
+                "전체 캐릭터 데이터가 저장되었습니다."
             )
 
         except Exception as e:
@@ -1570,7 +2042,7 @@ class AuctionCalculator:
             )
 
     # ========================================================
-    # 전체 불러오기
+    # 전체 로드
     # ========================================================
 
     def load_all(self):
@@ -1590,8 +2062,11 @@ class AuctionCalculator:
 
         result = messagebox.askyesno(
             "데이터 불러오기",
-            "현재 데이터가 불러온 데이터로 교체됩니다.\n"
-            "계속하시겠습니까?"
+            (
+                "현재 데이터가 불러온 데이터로 "
+                "전체 교체됩니다.\n\n"
+                "계속하시겠습니까?"
+            )
         )
 
         if not result:
@@ -1607,13 +2082,28 @@ class AuctionCalculator:
 
             if not names:
 
-                self.manager.add_equipment(
-                    "귀고리"
+                self.manager.add_character(
+                    "캐릭터 1"
                 )
 
-            self.current_equipment_name = (
+            self.current_character_name = (
                 self.manager.get_names()[0]
             )
+
+            equipment_names = (
+                self.current_character.get_equipment_names()
+            )
+
+            if equipment_names:
+
+                self.current_equipment_name = \
+                    equipment_names[0]
+
+            else:
+
+                self.current_equipment_name = None
+
+            self.refresh_character_buttons()
 
             self.refresh_equipment_buttons()
 
@@ -1621,7 +2111,7 @@ class AuctionCalculator:
 
             messagebox.showinfo(
                 "불러오기 완료",
-                "전체 장비 데이터가 불러와졌습니다."
+                "전체 캐릭터 데이터가 불러와졌습니다."
             )
 
         except json.JSONDecodeError:
@@ -1639,10 +2129,15 @@ class AuctionCalculator:
             )
 
     # ========================================================
-    # CSV 저장
+    # CSV
     # ========================================================
 
     def export_csv(self):
+
+        equipment = self.current_equipment
+
+        if equipment is None:
+            return
 
         filepath = filedialog.asksaveasfilename(
 
@@ -1657,8 +2152,6 @@ class AuctionCalculator:
 
         if not filepath:
             return
-
-        equipment = self.current_equipment
 
         base = equipment.base_item
 
@@ -1677,8 +2170,12 @@ class AuctionCalculator:
 
                 writer.writerow([
 
+                    "캐릭터",
+                    "장비",
+
                     "순위",
                     "이름",
+
                     "판매가",
                     "관세",
                     "실구매가",
@@ -1740,12 +2237,19 @@ class AuctionCalculator:
                     )
 
                     efficiency_text = (
+
                         "INF"
+
                         if math.isinf(efficiency)
+
                         else f"{efficiency:.6f}"
                     )
 
                     writer.writerow([
+
+                        self.current_character_name,
+
+                        self.current_equipment_name,
 
                         rank,
 
