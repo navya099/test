@@ -1,4 +1,6 @@
-# calculator.py
+# ============================================================
+# Calculator
+# ============================================================
 
 
 class Calculator:
@@ -9,6 +11,17 @@ class Calculator:
 
     @staticmethod
     def efficiency(character, stat_name):
+        """
+        캐릭터의 효율표에서 특정 스탯의
+        1당 최종 데미지 상승량을 반환한다.
+
+        예:
+            INT 30 = 최종뎀 0.282
+
+            → INT 1당
+              0.282 / 30
+        """
+
         table = character.efficiency_table
 
         if stat_name not in table:
@@ -16,13 +29,58 @@ class Calculator:
 
         data = table[stat_name]
 
-        value = float(data["value"])
-        final = float(data["final"])
+        value = float(data.get("value", 0))
+        final = float(data.get("final", 0))
 
         if value == 0:
             return 0.0
 
         return final / value
+
+    # ========================================================
+    # 옵션 하나의 최종뎀 계산
+    # ========================================================
+
+    @classmethod
+    def option_damage(cls, option, character):
+        """
+        StatOption 하나가 만들어내는 최종뎀을 계산한다.
+
+        예:
+            INT +84
+            → 84 × INT 효율
+
+            올스탯 +4%
+            → 4 × 올스탯% 효율
+        """
+
+        return (
+            float(option.value)
+            * cls.efficiency(
+                character,
+                option.stat
+            )
+        )
+
+    # ========================================================
+    # 옵션 목록의 최종뎀 계산
+    # ========================================================
+
+    @classmethod
+    def options_damage(cls, options, character):
+        """
+        옵션 목록 전체의 최종뎀을 계산한다.
+        """
+
+        result = 0.0
+
+        for option in options:
+            result += cls.option_damage(
+                option,
+                character
+            )
+
+        return result
 
     # ========================================================
     # 최종뎀
@@ -37,51 +95,36 @@ class Calculator:
         # 추옵
         # ----------------------------------------------------
 
-        result += (
-            item.flame_int
-            * cls.efficiency(character, "INT")
-        )
-
-        result += (
-            item.flame_all
-            * cls.efficiency(character, "올스탯%")
+        result += cls.options_damage(
+            item.flame_options,
+            character
         )
 
         # ----------------------------------------------------
         # 작
         # ----------------------------------------------------
 
-        result += (
-            item.scroll_int
-            * cls.efficiency(character, "INT")
-        )
-
-        result += (
-            item.scroll_magic
-            * cls.efficiency(character, "마력")
+        result += cls.options_damage(
+            item.scroll_options,
+            character
         )
 
         # ----------------------------------------------------
         # 잠재
         # ----------------------------------------------------
 
-        result += (
-            item.potential_int
-            * cls.efficiency(character, "INT%")
+        result += cls.options_damage(
+            item.potential_options,
+            character
         )
 
         # ----------------------------------------------------
-        # 에디
+        # 에디셔널 잠재
         # ----------------------------------------------------
 
-        result += (
-            item.additional_int
-            * cls.efficiency(character, "INT%")
-        )
-
-        result += (
-            item.additional_magic
-            * cls.efficiency(character, "마력")
+        result += cls.options_damage(
+            item.additional_potential_options,
+            character
         )
 
         return result
@@ -91,17 +134,36 @@ class Calculator:
     # ========================================================
 
     @classmethod
-    def damage_difference(cls, item, base, character):
+    def damage_difference(
+        cls,
+        item,
+        base,
+        character
+    ):
+
         return (
-            cls.final_damage(item, character)
-            - cls.final_damage(base, character)
+            cls.final_damage(
+                item,
+                character
+            )
+            -
+            cls.final_damage(
+                base,
+                character
+            )
         )
+
+    # ========================================================
+    # 가격 차이
+    # ========================================================
 
     @staticmethod
     def price_difference(item, base):
+
         return (
             item.actual_price
-            - base.actual_price
+            -
+            base.actual_price
         )
 
     # ========================================================
@@ -109,7 +171,12 @@ class Calculator:
     # ========================================================
 
     @classmethod
-    def efficiency_score(cls, item, base, character):
+    def efficiency_score(
+        cls,
+        item,
+        base,
+        character
+    ):
 
         damage_diff = cls.damage_difference(
             item,
@@ -122,7 +189,10 @@ class Calculator:
             base
         )
 
+        # ----------------------------------------------------
         # 가격 동일
+        # ----------------------------------------------------
+
         if price_diff == 0:
 
             if damage_diff > 0:
@@ -130,26 +200,43 @@ class Calculator:
 
             return 0.0
 
+        # ----------------------------------------------------
         # 더 비싼데 성능이 같거나 낮음
+        # ----------------------------------------------------
+
         if price_diff > 0:
 
             if damage_diff <= 0:
                 return 0.0
 
-            return damage_diff / price_diff
+            return (
+                damage_diff
+                / price_diff
+            )
 
+        # ----------------------------------------------------
         # 더 싼 경우
+        # ----------------------------------------------------
+
         if damage_diff >= 0:
             return float("inf")
 
-        return damage_diff / abs(price_diff)
+        return (
+            damage_diff
+            / abs(price_diff)
+        )
 
     # ========================================================
     # 정렬용 점수
     # ========================================================
 
     @classmethod
-    def ranking_score(cls, item, base, character):
+    def ranking_score(
+        cls,
+        item,
+        base,
+        character
+    ):
 
         efficiency = cls.efficiency_score(
             item,
