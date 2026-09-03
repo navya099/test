@@ -2,8 +2,8 @@
 
 import tkinter as tk
 
-from models import CharacterManager
 from gui.main_window import MainWindow
+from models.charactermanager import CharacterManager
 
 
 def main():

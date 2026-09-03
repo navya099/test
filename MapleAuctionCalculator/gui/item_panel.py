@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from models import Item
+from models.item import Item
 
 
 class ItemPanel(ttk.LabelFrame):
