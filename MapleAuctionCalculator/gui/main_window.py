@@ -150,16 +150,32 @@ class MainWindow:
         # 아이템 입력
         # ----------------------------------------------------
 
-        self.item_panel = ItemPanel(
-            self.root,
-            self.set_base_item,
-            self.add_auction_item
+        item_button_frame = ttk.Frame(
+            self.root
         )
 
-        self.item_panel.pack(
+        item_button_frame.pack(
             fill="x",
             padx=8,
             pady=5
+        )
+
+        ttk.Button(
+            item_button_frame,
+            text="기준 아이템 설정",
+            command=self.open_base_item_panel
+        ).pack(
+            side="left",
+            padx=3
+        )
+
+        ttk.Button(
+            item_button_frame,
+            text="경매장 매물 추가",
+            command=self.open_auction_item_panel
+        ).pack(
+            side="left",
+            padx=3
         )
 
         # ----------------------------------------------------
@@ -731,3 +747,105 @@ class MainWindow:
             "CSV 파일을 저장했습니다.",
             parent=self.root
         )
+
+    # ========================================================
+    # 아이템 입력 창
+    # ========================================================
+
+    def open_base_item_panel(self):
+
+        if self.current_equipment is None:
+            messagebox.showwarning(
+                "선택 필요",
+                "먼저 장비를 선택해주세요.",
+                parent=self.root
+            )
+
+            return
+
+        self._open_item_panel(
+            mode="base"
+        )
+
+    def open_auction_item_panel(self):
+
+        if self.current_equipment is None:
+            messagebox.showwarning(
+                "선택 필요",
+                "먼저 장비를 선택해주세요.",
+                parent=self.root
+            )
+
+            return
+
+        self._open_item_panel(
+            mode="auction"
+        )
+
+    def _open_item_panel(self, mode):
+
+        window = tk.Toplevel(
+            self.root
+        )
+
+        if mode == "base":
+            window.title(
+                "기준 아이템 설정"
+            )
+        else:
+            window.title(
+                "경매장 매물 추가"
+            )
+
+        window.resizable(
+            False,
+            False
+        )
+
+        # ----------------------------------------
+        # ItemPanel
+        # ----------------------------------------
+
+        panel = ItemPanel(
+            window,
+            on_base_set=self.set_base_item,
+            on_item_add=self.add_auction_item,
+            mode=mode,
+            on_close=window.destroy
+        )
+
+        panel.pack(
+            fill="both",
+            expand=True,
+            padx=5,
+            pady=5
+        )
+
+        # ----------------------------------------
+        # 모달 창
+        # ----------------------------------------
+
+        window.transient(
+            self.root
+        )
+
+        window.grab_set()
+
+        # 부모 창 중앙에 배치
+        self.root.update_idletasks()
+
+        x = (
+                self.root.winfo_x()
+                + (self.root.winfo_width() - window.winfo_reqwidth()) // 2
+        )
+
+        y = (
+                self.root.winfo_y()
+                + (self.root.winfo_height() - window.winfo_reqheight()) // 2
+        )
+
+        window.geometry(
+            f"+{max(x, 0)}+{max(y, 0)}"
+        )
+
+        window.focus_force()
