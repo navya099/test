@@ -1,0 +1,308 @@
+{
+    "version": 3,
+    "characters": {
+        "레테": {
+            "efficiency_table": {
+                "보총뎀": {
+                    "value": 40,
+                    "final": 5.35
+                },
+                "마력": {
+                    "value": 30,
+                    "final": 0.823
+                },
+                "마력%": {
+                    "value": 12,
+                    "final": 5.192
+                },
+                "크뎀": {
+                    "value": 8,
+                    "final": 3.082
+                },
+                "방무(300)": {
+                    "value": 40,
+                    "final": 0.763
+                },
+                "방무(380)": {
+                    "value": 40,
+                    "final": 0.971
+                },
+                "INT": {
+                    "value": 30,
+                    "final": 0.282
+                },
+                "INT%": {
+                    "value": 12,
+                    "final": 1.247
+                },
+                "%미반영 INT": {
+                    "value": 200,
+                    "final": 0.364
+                },
+                "LUK": {
+                    "value": 30,
+                    "final": 0.025
+                },
+                "LUK%": {
+                    "value": 12,
+                    "final": 0.163
+                },
+                "%미반영 LUK": {
+                    "value": 200,
+                    "final": 0.091
+                },
+                "올스탯%": {
+                    "value": 9,
+                    "final": 1.057
+                }
+            },
+            "equipments": {
+                "귀고리": {
+                    "base_item": {
+                        "name": "에스텔라 이어링",
+                        "slot": "귀고리",
+                        "starforce": 18,
+                        "price": 0.0,
+                        "tax": false,
+                        "used_count": 0,
+                        "max_count": 10,
+                        "flame_options": [
+                                {
+                                    "stat": "INT",
+                                    "value": 25
+                                },
+                                {
+                                    "stat": "올스탯%",
+                                    "value": 5
+                                }
+                            ],
+                        "scroll_options": [
+                                {
+                                    "stat": "마력",
+                                    "value": 17
+                                },
+                                {
+                                    "stat": "INT",
+                                    "value": 11
+                                },
+                                {
+                                    "stat": "LUK",
+                                    "value": 13
+                                }
+                        ],
+                        "potential_grade": "유니크",
+                        "potential_options": [
+                                {
+                                    "stat": "INT%",
+                                    "value": 15
+                                }
+                            ],
+                        "additional_grade": "에픽",
+                        "additional_potential_options": [
+                                {
+                                    "stat": "올스탯%",
+                                    "value": 2
+                                },
+                                {
+                                    "stat": "마력",
+                                    "value": 10
+                                }
+                            ]
+                    },
+                    "items": [
+                        {
+                            "name": "에스텔라 이어링",
+                            "slot": "",
+                            "starforce": 22,
+                            "price": 88.97,
+                            "tax": true,
+                            "used_count": 4,
+                            "max_count": 10,
+                            "flame_options": [
+                                {
+                                    "stat": "INT",
+                                    "value": 70
+                                },
+                                {
+                                    "stat": "올스탯%",
+                                    "value": 6
+                                }
+                            ],
+                            "scroll_options": [
+                                {
+                                    "stat": "마력",
+                                    "value": 16
+                                }
+                            ],
+                            "potential_grade": "레전드리",
+                            "potential_options": [
+                                {
+                                    "stat": "INT%",
+                                    "value": 30
+                                }
+                            ],
+                            "additional_grade": "에픽",
+                            "additional_potential_options": [
+                                {
+                                    "stat": "INT%",
+                                    "value": 4
+                                },
+                                {
+                                    "stat": "마력",
+                                    "value": 10
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "눈장식": {
+                    "base_item": {
+                        "name": "블랙빈 마크",
+                        "slot": "",
+                        "starforce": 0,
+                        "price": 24.0,
+                        "tax": true,
+                        "used_count": 0,
+                        "max_count": 10,
+                        "flame_options": [
+                            {
+                                "stat": "INT",
+                                "value": 34.0
+                            },
+                            {
+                                "stat": "올스탯%",
+                                "value": 5.0
+                            }
+                        ],
+                        "scroll_options": [
+                            {
+                                "stat": "마력",
+                                "value": 34.0
+                            }
+                        ],
+                        "potential_grade": "",
+                        "potential_options": [
+                            {
+                                "stat": "INT%",
+                                "value": 12.0
+                            }
+                        ],
+                        "additional_grade": "",
+                        "additional_potential_options": [
+                            {
+                                "stat": "INT%",
+                                "value": 4.0
+                            },
+                            {
+                                "stat": "마력",
+                                "value": 10.0
+                            }
+                        ]
+                    },
+                    "items": [
+                        {
+                            "name": "블랙빈 마크",
+                            "slot": "",
+                            "starforce": 0,
+                            "price": 24.0,
+                            "tax": true,
+                            "used_count": 0,
+                            "max_count": 10,
+                            "flame_options": [
+                                {
+                                    "stat": "INT",
+                                    "value": 34.0
+                                },
+                                {
+                                    "stat": "올스탯%",
+                                    "value": 5.0
+                                }
+                            ],
+                            "scroll_options": [
+                                {
+                                    "stat": "마력",
+                                    "value": 34.0
+                                }
+                            ],
+                            "potential_grade": "",
+                            "potential_options": [
+                                {
+                                    "stat": "INT%",
+                                    "value": 12.0
+                                }
+                            ],
+                            "additional_grade": "",
+                            "additional_potential_options": [
+                                {
+                                    "stat": "INT%",
+                                    "value": 4.0
+                                },
+                                {
+                                    "stat": "마력",
+                                    "value": 10.0
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "렌": {
+            "efficiency_table": {
+                "보총뎀": {
+                    "value": 40,
+                    "final": 5.35
+                },
+                "마력": {
+                    "value": 30,
+                    "final": 0.823
+                },
+                "마력%": {
+                    "value": 12,
+                    "final": 5.192
+                },
+                "크뎀": {
+                    "value": 8,
+                    "final": 3.082
+                },
+                "방무(300)": {
+                    "value": 40,
+                    "final": 0.763
+                },
+                "방무(380)": {
+                    "value": 40,
+                    "final": 0.971
+                },
+                "INT": {
+                    "value": 30,
+                    "final": 0.282
+                },
+                "INT%": {
+                    "value": 12,
+                    "final": 1.247
+                },
+                "%미반영 INT": {
+                    "value": 200,
+                    "final": 0.364
+                },
+                "LUK": {
+                    "value": 30,
+                    "final": 0.025
+                },
+                "LUK%": {
+                    "value": 12,
+                    "final": 0.163
+                },
+                "%미반영 LUK": {
+                    "value": 200,
+                    "final": 0.091
+                },
+                "올스탯%": {
+                    "value": 9,
+                    "final": 1.057
+                }
+            },
+            "equipments": {}
+        }
+    }
+}
