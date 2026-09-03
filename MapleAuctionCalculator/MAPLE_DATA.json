@@ -4,55 +4,55 @@
         "레테": {
             "efficiency_table": {
                 "보총뎀": {
-                    "value": 40,
+                    "value": 40.0,
                     "final": 5.35
                 },
                 "마력": {
-                    "value": 30,
+                    "value": 30.0,
                     "final": 0.823
                 },
                 "마력%": {
-                    "value": 12,
+                    "value": 12.0,
                     "final": 5.192
                 },
                 "크뎀": {
-                    "value": 8,
+                    "value": 8.0,
                     "final": 3.082
                 },
                 "방무(300)": {
-                    "value": 40,
+                    "value": 40.0,
                     "final": 0.763
                 },
                 "방무(380)": {
-                    "value": 40,
+                    "value": 40.0,
                     "final": 0.971
                 },
                 "INT": {
-                    "value": 30,
+                    "value": 30.0,
                     "final": 0.282
                 },
                 "INT%": {
-                    "value": 12,
+                    "value": 12.0,
                     "final": 1.247
                 },
                 "%미반영 INT": {
-                    "value": 200,
+                    "value": 200.0,
                     "final": 0.364
                 },
                 "LUK": {
-                    "value": 30,
+                    "value": 30.0,
                     "final": 0.025
                 },
                 "LUK%": {
-                    "value": 12,
+                    "value": 12.0,
                     "final": 0.163
                 },
                 "%미반영 LUK": {
-                    "value": 200,
+                    "value": 200.0,
                     "final": 0.091
                 },
                 "올스탯%": {
-                    "value": 9,
+                    "value": 9.0,
                     "final": 1.057
                 }
             },
@@ -67,89 +67,168 @@
                         "used_count": 0,
                         "max_count": 10,
                         "flame_options": [
-                                {
-                                    "stat": "INT",
-                                    "value": 25
-                                },
-                                {
-                                    "stat": "올스탯%",
-                                    "value": 5
-                                }
-                            ],
+                            {
+                                "stat": "INT",
+                                "value": 70
+                            },
+                            {
+                                "stat": "올스탯%",
+                                "value": 5.0
+                            }
+                        ],
                         "scroll_options": [
-                                {
-                                    "stat": "마력",
-                                    "value": 17
-                                },
-                                {
-                                    "stat": "INT",
-                                    "value": 11
-                                },
-                                {
-                                    "stat": "LUK",
-                                    "value": 13
-                                }
+                            {
+                                "stat": "마력",
+                                "value": 17.0
+                            },
+                            {
+                                "stat": "INT",
+                                "value": 11.0
+                            },
+                            {
+                                "stat": "LUK",
+                                "value": 13.0
+                            }
                         ],
                         "potential_grade": "유니크",
                         "potential_options": [
-                                {
-                                    "stat": "INT%",
-                                    "value": 15
-                                }
-                            ],
+                            {
+                                "stat": "INT%",
+                                "value": 9
+                            },
+                            {
+                                "stat": "INT%",
+                                "value": 6
+                            }
+                        ],
                         "additional_grade": "에픽",
                         "additional_potential_options": [
-                                {
-                                    "stat": "올스탯%",
-                                    "value": 2
-                                },
-                                {
-                                    "stat": "마력",
-                                    "value": 10
-                                }
-                            ]
+                            {
+                                "stat": "올스탯%",
+                                "value": 2.0
+                            },
+                            {
+                                "stat": "마력",
+                                "value": 10.0
+                            }
+                        ]
                     },
                     "items": [
                         {
                             "name": "에스텔라 이어링",
-                            "slot": "",
+                            "slot": "귀고리",
                             "starforce": 22,
-                            "price": 88.97,
+                            "price": 138.8888,
                             "tax": true,
-                            "used_count": 4,
+                            "used_count": 2,
                             "max_count": 10,
                             "flame_options": [
                                 {
                                     "stat": "INT",
-                                    "value": 70
+                                    "value": 85
                                 },
                                 {
                                     "stat": "올스탯%",
-                                    "value": 6
+                                    "value": 4
                                 }
                             ],
                             "scroll_options": [
                                 {
+                                    "stat": "INT",
+                                    "value": 10
+                                },
+                                {
+                                    "stat": "LUK",
+                                    "value": 12
+                                },
+                                {
                                     "stat": "마력",
-                                    "value": 16
+                                    "value": 22
                                 }
                             ],
                             "potential_grade": "레전드리",
                             "potential_options": [
                                 {
                                     "stat": "INT%",
-                                    "value": 30
+                                    "value": 12
+                                },
+                                {
+                                    "stat": "INT%",
+                                    "value": 9
+                                },
+                                {
+                                    "stat": "INT%",
+                                    "value": 9
                                 }
                             ],
                             "additional_grade": "에픽",
                             "additional_potential_options": [
                                 {
                                     "stat": "INT%",
-                                    "value": 4
+                                    "value": 4.0
+                                },
+                                {
+                                    "stat": "INT%",
+                                    "value": 2
+                                },
+                                {
+                                    "stat": "INT",
+                                    "value": 10
+                                }
+                            ]
+                        },
+                        {
+                            "name": "오션 글로우 이어링",
+                            "slot": "귀고리",
+                            "starforce": 21,
+                            "price": 134.0,
+                            "tax": true,
+                            "used_count": 4,
+                            "max_count": 10,
+                            "flame_options": [
+                                {
+                                    "stat": "INT",
+                                    "value": 60.0
+                                },
+                                {
+                                    "stat": "올스탯%",
+                                    "value": 7.0
+                                }
+                            ],
+                            "scroll_options": [
+                                {
+                                    "stat": "마력",
+                                    "value": 16.0
+                                }
+                            ],
+                            "potential_grade": "레전드리",
+                            "potential_options": [
+                                {
+                                    "stat": "INT%",
+                                    "value": 12.0
+                                },
+                                {
+                                    "stat": "INT%",
+                                    "value": 9.0
+                                },
+                                {
+                                    "stat": "INT%",
+                                    "value": 9.0
+                                }
+                            ],
+                            "additional_grade": "에픽",
+                            "additional_potential_options": [
+                                {
+                                    "stat": "INT%",
+                                    "value": 4.0
                                 },
                                 {
                                     "stat": "마력",
-                                    "value": 10
+                                    "value": 10.0
+                                },
+                                {
+                                    "stat": null,
+                                    "value": 0.0
                                 }
                             ]
                         }
@@ -250,55 +329,55 @@
         "렌": {
             "efficiency_table": {
                 "보총뎀": {
-                    "value": 40,
+                    "value": 40.0,
                     "final": 5.35
                 },
                 "마력": {
-                    "value": 30,
+                    "value": 30.0,
                     "final": 0.823
                 },
                 "마력%": {
-                    "value": 12,
+                    "value": 12.0,
                     "final": 5.192
                 },
                 "크뎀": {
-                    "value": 8,
+                    "value": 8.0,
                     "final": 3.082
                 },
                 "방무(300)": {
-                    "value": 40,
+                    "value": 40.0,
                     "final": 0.763
                 },
                 "방무(380)": {
-                    "value": 40,
+                    "value": 40.0,
                     "final": 0.971
                 },
                 "INT": {
-                    "value": 30,
+                    "value": 30.0,
                     "final": 0.282
                 },
                 "INT%": {
-                    "value": 12,
+                    "value": 12.0,
                     "final": 1.247
                 },
                 "%미반영 INT": {
-                    "value": 200,
+                    "value": 200.0,
                     "final": 0.364
                 },
                 "LUK": {
-                    "value": 30,
+                    "value": 30.0,
                     "final": 0.025
                 },
                 "LUK%": {
-                    "value": 12,
+                    "value": 12.0,
                     "final": 0.163
                 },
                 "%미반영 LUK": {
-                    "value": 200,
+                    "value": 200.0,
                     "final": 0.091
                 },
                 "올스탯%": {
-                    "value": 9,
+                    "value": 9.0,
                     "final": 1.057
                 }
             },
