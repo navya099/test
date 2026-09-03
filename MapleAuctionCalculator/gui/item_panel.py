@@ -21,25 +21,31 @@ class ItemPanel(ttk.LabelFrame):
     def __init__(
         self,
         parent,
-        on_base_set,
-        on_item_add,
+        on_base_set=None,
+        on_item_add=None,
         mode="auction",
+        item=None,
         on_close=None
     ):
         super().__init__(
             parent,
             text="아이템 입력"
+            if mode != "view"
+            else "아이템 상세 정보"
         )
 
         self.on_base_set = on_base_set
         self.on_item_add = on_item_add
         self.mode = mode
+        self.item = item
         self.on_close = on_close
+
         # ====================================================
         # 변수
         # ====================================================
 
         self.name_var = tk.StringVar()
+
         self.slot_var = tk.StringVar(
             value=SLOTS[0] if SLOTS else ""
         )
@@ -54,6 +60,7 @@ class ItemPanel(ttk.LabelFrame):
         )
 
         self.price_var = tk.StringVar()
+
         self.tax_var = tk.BooleanVar(
             value=False
         )
@@ -110,16 +117,27 @@ class ItemPanel(ttk.LabelFrame):
             tk.StringVar(value="없음"),
         ]
 
+        # ====================================================
+        # 생성된 입력 위젯
+        #
+        # view 모드에서 한꺼번에 disabled 처리하기 위해
+        # 직접 관리한다.
+        # ====================================================
+
+        self.input_widgets = []
+
         self._build_ui()
+
+        # 기존 Item을 상세보기로 불러온 경우
+        if self.mode == "view" and self.item is not None:
+            self._load_item(self.item)
+            self._set_view_mode()
 
     # ========================================================
     # 공통
     # ========================================================
 
     def _section(self, title):
-        """
-        섹션 제목 + 내부 Frame 생성.
-        """
 
         frame = ttk.LabelFrame(
             self,
@@ -134,6 +152,17 @@ class ItemPanel(ttk.LabelFrame):
 
         return frame
 
+    def _register_input(self, widget):
+        """
+        입력 위젯을 저장한다.
+
+        view 모드에서 전체 입력을 disabled 하기 위해 사용.
+        """
+
+        self.input_widgets.append(widget)
+
+        return widget
+
     def _label_entry(
         self,
         parent,
@@ -143,6 +172,7 @@ class ItemPanel(ttk.LabelFrame):
         column,
         width=10
     ):
+
         ttk.Label(
             parent,
             text=label
@@ -167,6 +197,8 @@ class ItemPanel(ttk.LabelFrame):
             pady=3,
             sticky="w"
         )
+
+        self._register_input(entry)
 
         return entry
 
@@ -231,6 +263,10 @@ class ItemPanel(ttk.LabelFrame):
             sticky="w"
         )
 
+        self._register_input(
+            self.slot_combo
+        )
+
         # ----------------------------------------------------
         # 이름
         # ----------------------------------------------------
@@ -275,6 +311,10 @@ class ItemPanel(ttk.LabelFrame):
             sticky="w"
         )
 
+        self._register_input(
+            self.item_preset_combo
+        )
+
     # ========================================================
     # 스타포스
     # ========================================================
@@ -294,19 +334,23 @@ class ItemPanel(ttk.LabelFrame):
             sticky="e"
         )
 
-        ttk.Spinbox(
+        widget = ttk.Spinbox(
             frame,
             from_=0,
             to=30,
             textvariable=self.starforce_var,
             width=8
-        ).grid(
+        )
+
+        widget.grid(
             row=0,
             column=1,
             padx=4,
             pady=4,
             sticky="w"
         )
+
+        self._register_input(widget)
 
     # ========================================================
     # 추옵
@@ -357,6 +401,10 @@ class ItemPanel(ttk.LabelFrame):
             self._apply_flame_preset
         )
 
+        self._register_input(
+            self.flame_preset_combo
+        )
+
         # ----------------------------------------------------
         # 스탯
         # ----------------------------------------------------
@@ -393,17 +441,21 @@ class ItemPanel(ttk.LabelFrame):
                 sticky="e"
             )
 
-            ttk.Entry(
+            widget = ttk.Entry(
                 frame,
                 textvariable=variable,
                 width=7
-            ).grid(
+            )
+
+            widget.grid(
                 row=row,
                 column=column + 1,
                 padx=3,
                 pady=3,
                 sticky="w"
             )
+
+            self._register_input(widget)
 
     # ========================================================
     # 작
@@ -454,6 +506,10 @@ class ItemPanel(ttk.LabelFrame):
             self._apply_scroll_preset
         )
 
+        self._register_input(
+            self.scroll_preset_combo
+        )
+
         # ----------------------------------------------------
         # 스탯
         # ----------------------------------------------------
@@ -489,17 +545,21 @@ class ItemPanel(ttk.LabelFrame):
                 sticky="e"
             )
 
-            ttk.Entry(
+            widget = ttk.Entry(
                 frame,
                 textvariable=variable,
                 width=7
-            ).grid(
+            )
+
+            widget.grid(
                 row=row,
                 column=column + 1,
                 padx=3,
                 pady=3,
                 sticky="w"
             )
+
+            self._register_input(widget)
 
     # ========================================================
     # 잠재
@@ -524,18 +584,24 @@ class ItemPanel(ttk.LabelFrame):
             sticky="e"
         )
 
-        ttk.Combobox(
+        self.potential_grade_combo = ttk.Combobox(
             frame,
             textvariable=self.potential_grade_var,
             values=POTENTIAL_GRADES,
             state="readonly",
             width=14
-        ).grid(
+        )
+
+        self.potential_grade_combo.grid(
             row=0,
             column=1,
             padx=4,
             pady=3,
             sticky="w"
+        )
+
+        self._register_input(
+            self.potential_grade_combo
         )
 
         # ----------------------------------------------------
@@ -546,6 +612,8 @@ class ItemPanel(ttk.LabelFrame):
             option[0]
             for option in POTENTIAL_OPTIONS
         ]
+
+        self.potential_combos = []
 
         for index, variable in enumerate(
             self.potential_vars
@@ -562,18 +630,28 @@ class ItemPanel(ttk.LabelFrame):
                 sticky="e"
             )
 
-            ttk.Combobox(
+            combo = ttk.Combobox(
                 frame,
                 textvariable=variable,
                 values=option_values,
                 state="readonly",
                 width=22
-            ).grid(
+            )
+
+            combo.grid(
                 row=index + 1,
                 column=1,
                 padx=4,
                 pady=3,
                 sticky="w"
+            )
+
+            self.potential_combos.append(
+                combo
+            )
+
+            self._register_input(
+                combo
             )
 
     # ========================================================
@@ -599,18 +677,24 @@ class ItemPanel(ttk.LabelFrame):
             sticky="e"
         )
 
-        ttk.Combobox(
+        self.additional_grade_combo = ttk.Combobox(
             frame,
             textvariable=self.additional_grade_var,
             values=POTENTIAL_GRADES,
             state="readonly",
             width=14
-        ).grid(
+        )
+
+        self.additional_grade_combo.grid(
             row=0,
             column=1,
             padx=4,
             pady=3,
             sticky="w"
+        )
+
+        self._register_input(
+            self.additional_grade_combo
         )
 
         # ----------------------------------------------------
@@ -621,6 +705,8 @@ class ItemPanel(ttk.LabelFrame):
             option[0]
             for option in ADDITIONAL_OPTIONS
         ]
+
+        self.additional_combos = []
 
         for index, variable in enumerate(
             self.additional_vars
@@ -637,18 +723,28 @@ class ItemPanel(ttk.LabelFrame):
                 sticky="e"
             )
 
-            ttk.Combobox(
+            combo = ttk.Combobox(
                 frame,
                 textvariable=variable,
                 values=option_values,
                 state="readonly",
                 width=22
-            ).grid(
+            )
+
+            combo.grid(
                 row=index + 1,
                 column=1,
                 padx=4,
                 pady=3,
                 sticky="w"
+            )
+
+            self.additional_combos.append(
+                combo
+            )
+
+            self._register_input(
+                combo
             )
 
     # ========================================================
@@ -674,16 +770,22 @@ class ItemPanel(ttk.LabelFrame):
             sticky="e"
         )
 
-        ttk.Entry(
+        self.price_entry = ttk.Entry(
             frame,
             textvariable=self.price_var,
             width=10
-        ).grid(
+        )
+
+        self.price_entry.grid(
             row=0,
             column=1,
             padx=4,
             pady=3,
             sticky="w"
+        )
+
+        self._register_input(
+            self.price_entry
         )
 
         ttk.Label(
@@ -697,16 +799,22 @@ class ItemPanel(ttk.LabelFrame):
             sticky="w"
         )
 
-        ttk.Checkbutton(
+        self.tax_checkbutton = ttk.Checkbutton(
             frame,
             text="관세 +10%",
             variable=self.tax_var
-        ).grid(
+        )
+
+        self.tax_checkbutton.grid(
             row=0,
             column=3,
             padx=8,
             pady=3,
             sticky="w"
+        )
+
+        self._register_input(
+            self.tax_checkbutton
         )
 
         # ----------------------------------------------------
@@ -724,18 +832,24 @@ class ItemPanel(ttk.LabelFrame):
             sticky="e"
         )
 
-        ttk.Spinbox(
+        self.used_count_spinbox = ttk.Spinbox(
             frame,
             from_=0,
             to=10,
             textvariable=self.used_count_var,
             width=7
-        ).grid(
+        )
+
+        self.used_count_spinbox.grid(
             row=1,
             column=1,
             padx=4,
             pady=3,
             sticky="w"
+        )
+
+        self._register_input(
+            self.used_count_spinbox
         )
 
         ttk.Label(
@@ -764,6 +878,29 @@ class ItemPanel(ttk.LabelFrame):
             padx=8,
             pady=8
         )
+
+        self.button_frame = frame
+
+        # ----------------------------------------------------
+        # 상세보기
+        # ----------------------------------------------------
+
+        if self.mode == "view":
+
+            ttk.Button(
+                frame,
+                text="닫기",
+                command=self._cancel
+            ).pack(
+                side="right",
+                padx=4
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # 일반 입력
+        # ----------------------------------------------------
 
         ttk.Button(
             frame,
@@ -821,11 +958,9 @@ class ItemPanel(ttk.LabelFrame):
         if preset is None:
             return
 
-        # 기존값 초기화
         for variable in self.flame_entries.values():
             variable.set("")
 
-        # 프리셋 적용
         for stat, value in preset.items():
 
             if stat in self.flame_entries:
@@ -853,11 +988,9 @@ class ItemPanel(ttk.LabelFrame):
         if preset is None:
             return
 
-        # 기존값 초기화
         for variable in self.scroll_entries.values():
             variable.set("")
 
-        # 프리셋 적용
         for stat, value in preset.items():
 
             if stat in self.scroll_entries:
@@ -907,6 +1040,7 @@ class ItemPanel(ttk.LabelFrame):
         self,
         entries
     ):
+
         options = []
 
         for stat, variable in entries.items():
@@ -939,16 +1073,6 @@ class ItemPanel(ttk.LabelFrame):
         selected,
         option_data
     ):
-        """
-        option_data:
-
-            [
-                ("INT +12%", "INT%", 12),
-                ...
-            ]
-
-        selected 문자열을 StatOption으로 변환.
-        """
 
         for display, stat, value in option_data:
 
@@ -1158,7 +1282,8 @@ class ItemPanel(ttk.LabelFrame):
         if not self._validate_item(item):
             return
 
-        self.on_base_set(item)
+        if self.on_base_set is not None:
+            self.on_base_set(item)
 
         self._cancel()
 
@@ -1173,9 +1298,191 @@ class ItemPanel(ttk.LabelFrame):
         if not self._validate_item(item):
             return
 
-        self.on_item_add(item)
+        if self.on_item_add is not None:
+            self.on_item_add(item)
 
         self._cancel()
+
+    # ========================================================
+    # 기존 Item → UI
+    # ========================================================
+
+    def _load_item(self, item):
+
+        # ----------------------------------------------------
+        # 기본
+        # ----------------------------------------------------
+
+        self.name_var.set(
+            item.name
+        )
+
+        self.slot_var.set(
+            item.slot
+        )
+
+        # ----------------------------------------------------
+        # 스타포스
+        # ----------------------------------------------------
+
+        self.starforce_var.set(
+            item.starforce
+        )
+
+        # ----------------------------------------------------
+        # 추옵
+        # ----------------------------------------------------
+
+        for variable in self.flame_entries.values():
+            variable.set("")
+
+        for option in item.flame_options:
+
+            stat = option.stat
+
+            if stat in self.flame_entries:
+
+                self.flame_entries[stat].set(
+                    f"{option.value:g}"
+                )
+
+        # 프리셋은 실제 Item에서 알 수 없으므로
+        # 임의의 프리셋을 선택하지 않는다.
+        self.flame_preset_var.set("")
+
+        # ----------------------------------------------------
+        # 작
+        # ----------------------------------------------------
+
+        for variable in self.scroll_entries.values():
+            variable.set("")
+
+        for option in item.scroll_options:
+
+            stat = option.stat
+
+            if stat in self.scroll_entries:
+
+                self.scroll_entries[stat].set(
+                    f"{option.value:g}"
+                )
+
+        self.scroll_preset_var.set("")
+
+        # ----------------------------------------------------
+        # 잠재
+        # ----------------------------------------------------
+
+        self.potential_grade_var.set(
+            item.potential_grade
+        )
+
+        for index in range(3):
+
+            self.potential_vars[index].set(
+                "없음"
+            )
+
+        for index, option in enumerate(
+            item.potential_options[:3]
+        ):
+
+            display = self._option_to_display(
+                option,
+                POTENTIAL_OPTIONS
+            )
+
+            if display is not None:
+                self.potential_vars[index].set(
+                    display
+                )
+
+        # ----------------------------------------------------
+        # 에디
+        # ----------------------------------------------------
+
+        self.additional_grade_var.set(
+            item.additional_grade
+        )
+
+        for index in range(3):
+
+            self.additional_vars[index].set(
+                "없음"
+            )
+
+        for index, option in enumerate(
+            item.additional_potential_options[:3]
+        ):
+
+            display = self._option_to_display(
+                option,
+                ADDITIONAL_OPTIONS
+            )
+
+            if display is not None:
+                self.additional_vars[index].set(
+                    display
+                )
+
+        # ----------------------------------------------------
+        # 가격
+        # ----------------------------------------------------
+
+        self.price_var.set(
+            f"{item.price:g}"
+        )
+
+        self.tax_var.set(
+            item.tax
+        )
+
+        self.used_count_var.set(
+            item.used_count
+        )
+
+    # ========================================================
+    # StatOption → 화면 표시 문자열
+    # ========================================================
+
+    @staticmethod
+    def _option_to_display(
+        option,
+        option_data
+    ):
+        """
+        Item 내부의 StatOption을
+        Combobox에서 사용하는 표시 문자열로 변환.
+        """
+
+        if option is None:
+            return None
+
+        for display, stat, value in option_data:
+
+            if (
+                stat == option.stat
+                and float(value) == float(option.value)
+            ):
+                return display
+
+        return None
+
+    # ========================================================
+    # 상세보기 모드
+    # ========================================================
+
+    def _set_view_mode(self):
+
+        # 모든 입력 컨트롤 비활성화
+        for widget in self.input_widgets:
+
+            try:
+                widget.configure(
+                    state="disabled"
+                )
+            except tk.TclError:
+                pass
 
     # ========================================================
     # 초기화

@@ -6,11 +6,20 @@ from tkinter import ttk
 
 class ResultTable(ttk.LabelFrame):
 
-    def __init__(self, parent):
+    def __init__(
+        self,
+        parent,
+        on_item_double_click=None
+    ):
         super().__init__(
             parent,
             text="경매장 매물 비교"
         )
+
+        self.on_item_double_click = on_item_double_click
+
+        # Treeview row id → 실제 Item 객체
+        self.item_map = {}
 
         self.columns = [
             "rank",
@@ -102,6 +111,37 @@ class ResultTable(ttk.LabelFrame):
             pady=5
         )
 
+        # 더블클릭 이벤트
+        self.tree.bind(
+            "<Double-1>",
+            self._on_double_click
+        )
+
+    # ========================================================
+    # 더블클릭
+    # ========================================================
+
+    def _on_double_click(self, event):
+
+        # 마우스가 클릭한 row
+        item_id = self.tree.identify_row(
+            event.y
+        )
+
+        if not item_id:
+            return
+
+        # 실제 Item 객체 가져오기
+        item = self.item_map.get(
+            item_id
+        )
+
+        if item is None:
+            return
+
+        if self.on_item_double_click:
+            self.on_item_double_click(item)
+
     # ========================================================
     # 전체 삭제
     # ========================================================
@@ -110,6 +150,8 @@ class ResultTable(ttk.LabelFrame):
 
         for item in self.tree.get_children():
             self.tree.delete(item)
+
+        self.item_map.clear()
 
     # ========================================================
     # 선택
@@ -125,6 +167,23 @@ class ResultTable(ttk.LabelFrame):
         item_id = selected[0]
 
         return self.tree.index(item_id)
+
+    # ========================================================
+    # 선택된 실제 Item
+    # ========================================================
+
+    def get_selected_item(self):
+
+        selected = self.tree.selection()
+
+        if not selected:
+            return None
+
+        item_id = selected[0]
+
+        return self.item_map.get(
+            item_id
+        )
 
     # ========================================================
     # 결과 표시
@@ -209,8 +268,12 @@ class ResultTable(ttk.LabelFrame):
                 efficiency_text,
             ]
 
-            self.tree.insert(
+            # Treeview row 생성
+            item_id = self.tree.insert(
                 "",
                 "end",
                 values=values
             )
+
+            # row → 실제 Item 연결
+            self.item_map[item_id] = item

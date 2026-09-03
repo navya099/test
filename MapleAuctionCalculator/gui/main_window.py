@@ -183,7 +183,8 @@ class MainWindow:
         # ----------------------------------------------------
 
         self.result_table = ResultTable(
-            self.root
+            self.root,
+            on_item_double_click=self.open_item_detail
         )
 
         self.result_table.pack(
@@ -842,6 +843,57 @@ class MainWindow:
         y = (
                 self.root.winfo_y()
                 + (self.root.winfo_height() - window.winfo_reqheight()) // 2
+        )
+
+        window.geometry(
+            f"+{max(x, 0)}+{max(y, 0)}"
+        )
+
+        window.focus_force()
+
+    #장비 상세보기 코드
+    def open_item_detail(self, item):
+
+        window = tk.Toplevel(self.root)
+
+        window.title("아이템 상세 정보")
+        window.resizable(False, False)
+
+        panel = ItemPanel(
+            window,
+            on_base_set=None,
+            on_item_add=None,
+            mode="view",
+            item=item,
+            on_close=window.destroy
+        )
+
+        panel.pack(
+            fill="both",
+            expand=True,
+            padx=5,
+            pady=5
+        )
+
+        window.transient(self.root)
+        window.grab_set()
+
+        self.root.update_idletasks()
+
+        x = (
+                self.root.winfo_x()
+                + (
+                        self.root.winfo_width()
+                        - window.winfo_reqwidth()
+                ) // 2
+        )
+
+        y = (
+                self.root.winfo_y()
+                + (
+                        self.root.winfo_height()
+                        - window.winfo_reqheight()
+                ) // 2
         )
 
         window.geometry(
