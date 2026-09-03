@@ -237,40 +237,48 @@
                 "눈장식": {
                     "base_item": {
                         "name": "블랙빈 마크",
-                        "slot": "",
-                        "starforce": 0,
-                        "price": 24.0,
-                        "tax": true,
+                        "slot": "눈장식",
+                        "starforce": 18,
+                        "price": 0,
+                        "tax": false,
                         "used_count": 0,
                         "max_count": 10,
                         "flame_options": [
                             {
                                 "stat": "INT",
-                                "value": 34.0
+                                "value": 58
+                            },
+                            {
+                                "stat": "LUK",
+                                "value": 16
                             },
                             {
                                 "stat": "올스탯%",
-                                "value": 5.0
+                                "value": 6
                             }
                         ],
                         "scroll_options": [
                             {
                                 "stat": "마력",
-                                "value": 34.0
+                                "value": 24
                             }
                         ],
-                        "potential_grade": "",
+                        "potential_grade": "유니크",
                         "potential_options": [
                             {
                                 "stat": "INT%",
-                                "value": 12.0
+                                "value": 9
+                            },
+                            {
+                                "stat": "INT%",
+                                "value": 6
                             }
                         ],
-                        "additional_grade": "",
+                        "additional_grade": "에픽",
                         "additional_potential_options": [
                             {
                                 "stat": "INT%",
-                                "value": 4.0
+                                "value": 2
                             },
                             {
                                 "stat": "마력",
@@ -280,41 +288,57 @@
                     },
                     "items": [
                         {
-                            "name": "블랙빈 마크",
-                            "slot": "",
-                            "starforce": 0,
-                            "price": 24.0,
+                            "name": "파풀라투스 마크",
+                            "slot": "눈장식",
+                            "starforce": 22,
+                            "price": 125.5555,
                             "tax": true,
-                            "used_count": 0,
+                            "used_count": 2,
                             "max_count": 10,
                             "flame_options": [
                                 {
                                     "stat": "INT",
-                                    "value": 34.0
+                                    "value": 56
+                                },
+                                {
+                                "stat": "LUK",
+                                "value": 16
                                 },
                                 {
                                     "stat": "올스탯%",
-                                    "value": 5.0
+                                    "value": 6
                                 }
                             ],
                             "scroll_options": [
                                 {
                                     "stat": "마력",
-                                    "value": 34.0
+                                    "value": 24
                                 }
                             ],
-                            "potential_grade": "",
+                            "potential_grade": "레전드리",
                             "potential_options": [
                                 {
                                     "stat": "INT%",
                                     "value": 12.0
-                                }
-                            ],
-                            "additional_grade": "",
-                            "additional_potential_options": [
+                                },
                                 {
                                     "stat": "INT%",
-                                    "value": 4.0
+                                    "value": 12.0
+                                },
+                                {
+                                    "stat": "올스탯%",
+                                    "value": 6
+                                }
+                            ],
+                            "additional_grade": "에픽",
+                            "additional_potential_options": [
+                                {
+                                    "stat": "마력",
+                                    "value": 11
+                                },
+                                {
+                                    "stat": "INT",
+                                    "value": 10
                                 },
                                 {
                                     "stat": "마력",
