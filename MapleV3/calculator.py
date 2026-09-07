@@ -3,7 +3,7 @@
 # ============================================================
 
 from config import TARIFF_RATE
-from models import Item, StarforceResult, RouteResult
+from models import Item, StarforceResult, RouteResult, FinishedItem
 from starforce_data import STARFORCE_TABLE
 
 
@@ -120,8 +120,11 @@ def calculate_direct_route(item: Item) -> RouteResult:
 
     return RouteResult(
         name="깡통 + 직접 강화",
-        total_cost=craft_cost + starforce.cost,
+
+        base_craft_cost=craft_cost,
         starforce_cost=starforce.cost,
+        total_cost=craft_cost + starforce.cost,
+
         destroy=starforce.destroy,
         attempt=starforce.attempt,
     )
@@ -132,28 +135,29 @@ def calculate_direct_route(item: Item) -> RouteResult:
 # 강화권 사용
 # ============================================================
 
-def calculate_coupon_route(item: Item) -> RouteResult | None:
+def calculate_coupon_route(
+    item: Item,
+) -> RouteResult | None:
 
     if item.coupon_star is None:
         return None
 
     coupon_star = item.coupon_star
 
-    # 목표보다 강화권이 높은 경우
     if coupon_star > item.target_star:
         return None
 
     craft_cost = get_base_craft_cost(item)
 
-    # 강화권으로 목표에 도달
+    # 강화권으로 목표 성 달성
     if coupon_star == item.target_star:
 
         return RouteResult(
             name=f"{coupon_star}성권 사용",
-            total_cost=craft_cost,
+
+            base_craft_cost=craft_cost,
             starforce_cost=0.0,
-            destroy=0.0,
-            attempt=0.0,
+            total_cost=craft_cost,
         )
 
     # 강화권 이후 추가 강화
@@ -165,8 +169,11 @@ def calculate_coupon_route(item: Item) -> RouteResult | None:
 
     return RouteResult(
         name=f"{coupon_star}성권 + 추가 강화",
-        total_cost=craft_cost + starforce.cost,
+
+        base_craft_cost=craft_cost,
         starforce_cost=starforce.cost,
+        total_cost=craft_cost + starforce.cost,
+
         destroy=starforce.destroy,
         attempt=starforce.attempt,
     )
@@ -177,24 +184,80 @@ def calculate_coupon_route(item: Item) -> RouteResult | None:
 # 완제품 구매
 # ============================================================
 
-def calculate_finished_route(item: Item) -> RouteResult:
+# ============================================================
+# 완제품 후보 필터
+# ============================================================
 
-    finished = apply_tariff(
-        item.finished_price,
-        item.finished_has_tariff,
+def get_finished_candidates(
+    item: Item,
+    finished_items: list[FinishedItem],
+) -> list[FinishedItem]:
+    """
+    목표 스타/잠재 이상을 만족하는 완제품만 반환
+    """
+
+    candidates = []
+
+    for finished in finished_items:
+
+        # 목표 스타 미만
+        if finished.star < item.target_star:
+            continue
+
+        # 목표 잠재 미만
+        if finished.potential < item.target_potential:
+            continue
+
+        candidates.append(finished)
+
+    return candidates
+
+def calculate_finished_routes(
+    item: Item,
+    finished_items: list[FinishedItem],
+) -> list[RouteResult]:
+
+    candidates = get_finished_candidates(
+        item,
+        finished_items,
     )
 
-    return RouteResult(
-        name="완제품 구매",
-        total_cost=finished,
-    )
+    routes = []
+
+    for finished in candidates:
+
+        price = apply_tariff(
+            finished.price,
+            finished.has_tariff,
+        )
+
+        routes.append(
+            RouteResult(
+                name=(
+                    f"완제품 "
+                    f"{finished.star}성 / "
+                    f"{finished.potential}%"
+                ),
+
+                base_craft_cost=0.0,
+                starforce_cost=0.0,
+                total_cost=price,
+
+                finished_item=finished,
+            )
+        )
+
+    return routes
 
 
 # ============================================================
 # 전체 루트 계산
 # ============================================================
 
-def calculate_all_routes(item: Item) -> list[RouteResult]:
+def calculate_all_routes(
+    item: Item,
+    finished_items: list[FinishedItem],
+) -> list[RouteResult]:
 
     routes = []
 
@@ -209,9 +272,12 @@ def calculate_all_routes(item: Item) -> list[RouteResult]:
     if coupon_route is not None:
         routes.append(coupon_route)
 
-    # 완제품
-    routes.append(
-        calculate_finished_route(item)
+    # 완제품 여러 개
+    routes.extend(
+        calculate_finished_routes(
+            item,
+            finished_items,
+        )
     )
 
     return routes
@@ -221,9 +287,19 @@ def calculate_all_routes(item: Item) -> list[RouteResult]:
 # 최적 루트
 # ============================================================
 
-def get_best_route(item: Item) -> RouteResult:
+# ============================================================
+# 최저가 추천
+# ============================================================
 
-    routes = calculate_all_routes(item)
+def get_best_route(
+    item: Item,
+    finished_items: list[FinishedItem],
+) -> RouteResult:
+
+    routes = calculate_all_routes(
+        item,
+        finished_items,
+    )
 
     return min(
         routes,

@@ -7,21 +7,13 @@ from dataclasses import dataclass
 
 @dataclass
 class Item:
-    """
-    아이템의 기본 입력 정보
-    """
-
     name: str
-
-    # 아이템 레벨
     item_level: int
 
     # 기본 아이템 가격
-    # 예: 노작 도미 17억
     base_price: float
 
     # 잠재 깡통 / 토드용 아이템 가격
-    # 예: 유니크 + 에디 토드용 도미 15억
     potential_blank_price: float
 
     # 현재 스타포스
@@ -30,20 +22,32 @@ class Item:
     # 목표 스타포스
     target_star: int
 
-    # 완제품 가격
-    finished_price: float
+    # 현재 잠재
+    current_potential: int
+
+    # 목표 잠재
+    target_potential: int
 
     # 강화권
-    # None = 없음
-    # 17 = 17성권
-    # 18 = 18성권
     coupon_star: int | None = None
 
-    # 관세 적용 여부
+    # 관세
     base_has_tariff: bool = True
     blank_has_tariff: bool = True
-    finished_has_tariff: bool = True
 
+
+# ============================================================
+# 완제품 경매장 매물
+# ============================================================
+
+@dataclass
+class FinishedItem:
+
+    star: int
+    potential: int
+    price: float
+
+    has_tariff: bool = True
 
 @dataclass
 class StarforceResult:
@@ -58,13 +62,21 @@ class StarforceResult:
 
 @dataclass
 class RouteResult:
-    """
-    하나의 제작/구매 루트 결과
-    """
 
     name: str
+
+    # 기본 제작비
+    base_craft_cost: float
+
+    # 스타포스 비용
+    starforce_cost: float
+
+    # 최종 총 비용
     total_cost: float
 
-    starforce_cost: float = 0.0
+    # 스타포스 부가 정보
     destroy: float = 0.0
     attempt: float = 0.0
+
+    # 완제품 매물 정보
+    finished_item: FinishedItem | None = None
