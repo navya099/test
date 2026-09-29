@@ -26,3 +26,12 @@ class Vector2:
     def toradian(self) -> float:
         """벡터의 방향을 라디안 단위로 반환 (0°=+X, 반시계 증가)."""
         return math.atan2(self.y, self.x)
+
+    def normalize(self):
+        norm = self.x * self.x + self.y * self.y
+        if norm == 0.0:
+            raise ZeroDivisionError
+        else:
+            factor = 1.0 / math.sqrt(norm)
+            self.x *= factor
+            self.y *= factor
