@@ -126,8 +126,22 @@ def deg2num(lat, lon, zoom):
     return xtile, ytile
 
 # =========================
-# 타일 다운로드
+# 🔥 HTTP 세션 설정
 # =========================
+
+session = requests.Session()
+
+session.headers.update({
+    "User-Agent": "Mozilla/5.0"
+})
+
+MAX_RETRIES = 5
+REQUEST_DELAY = 0.15
+
+# =========================
+# 🔥 타일 다운로드 (재시도 지원)
+# =========================
+
 def get_tile(x, y, z):
 
     if mode == "Street":
@@ -142,23 +156,57 @@ def get_tile(x, y, z):
             f"2d/Satellite/service/{z}/{x}/{y}.jpeg"
         )
 
-    time.sleep(0.05)
+    else:
+        raise ValueError(f"지원하지 않는 지도 모드: {mode}")
 
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    for attempt in range(1, MAX_RETRIES + 1):
 
-    r = requests.get(
-        url,
-        headers=headers,
-        timeout=10
-    )
+        try:
+            time.sleep(REQUEST_DELAY)
 
-    r.raise_for_status()
+            response = session.get(
+                url,
+                timeout=(10, 30)
+            )
 
-    return Image.open(
-        BytesIO(r.content)
-    ).convert("RGB")
+            response.raise_for_status()
+
+            image = Image.open(
+                BytesIO(response.content)
+            ).convert("RGB")
+
+            return image
+
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.HTTPError
+        ) as e:
+
+            # 403/404 등은 무조건 반복하지 않음
+            if isinstance(e, requests.exceptions.HTTPError):
+                status = e.response.status_code
+
+                if status not in (429, 500, 502, 503, 504):
+                    raise
+
+            print(
+                f"⚠ 타일 요청 실패 "
+                f"({attempt}/{MAX_RETRIES}) "
+                f"Z={z}, X={x}, Y={y}: {e}"
+            )
+
+            if attempt == MAX_RETRIES:
+                raise RuntimeError(
+                    f"타일 다운로드 최종 실패: "
+                    f"Z={z}, X={x}, Y={y}"
+                ) from e
+
+            # 재시도 간격 증가
+            wait = min(2 ** attempt, 30)
+
+            print(f"  → {wait}초 후 재시도")
+            time.sleep(wait)
 
 # =========================
 # 🔥 extent → 위경도 변환
@@ -265,8 +313,27 @@ print("=" * 45)
 # =========================
 project = QgsProject.instance()
 
-for i in range(start_segment,end_segment + 1):
+for i in range(start_segment, end_segment + 1):
+
     layer_name = f"segment_{i}"
+
+    filename = os.path.join(
+        output_path,
+        f"{layer_name}.png"
+    )
+
+    # 이미 저장된 파일 건너뛰기
+    if os.path.isfile(filename):
+        try:
+            with Image.open(filename) as existing:
+                existing.verify()
+
+            print(f"⏭ {layer_name} 이미 완료 → 건너뛰기")
+            continue
+
+        except Exception:
+            print(f"⚠ {layer_name} 파일 손상 → 다시 다운로드")
+
     layers = project.mapLayersByName(layer_name)
 
     if not layers:
@@ -276,31 +343,35 @@ for i in range(start_segment,end_segment + 1):
     layer = layers[0]
     extent = layer.extent()
 
-    if extent.width() == 0 or extent.height() == 0:
+    if extent.width() <= 0 or extent.height() <= 0:
         print(f"{layer_name} extent 오류")
         continue
 
     print(f"{layer_name} 처리중...")
 
-
-    # 🔥 extent → 위경도
-    min_lat, min_lon, max_lat, max_lon = extent_to_wgs84(extent, layer.crs())
-
-    # 🔥 타일 다운로드 + 합성
-    image = download_and_stitch(min_lat, min_lon, max_lat, max_lon, zoom)
-
-    # 🔥 저장
-    filename = os.path.join(
-        output_path,
-        f"{layer_name}.png"
+    min_lat, min_lon, max_lat, max_lon = extent_to_wgs84(
+        extent,
+        layer.crs()
     )
 
-    image.save(filename)
+    image = download_and_stitch(
+        min_lat,
+        min_lon,
+        max_lat,
+        max_lon,
+        zoom
+    )
 
+    # 임시 파일에 저장 후 정상 완료 시 교체
+    temp_filename = filename + ".tmp.png"
 
-
-
+    try:
+        image.save(temp_filename, format="PNG")
+        os.replace(temp_filename, filename)
+    finally:
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
 
     print(f"{filename} 저장 완료")
-    time.sleep(1)
-print("모든 파일 저장 완료")
+
+print("모든 Segment 처리 완료")
