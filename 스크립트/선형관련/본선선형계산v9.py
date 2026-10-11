@@ -9,6 +9,7 @@ import time
 import ezdxf
 import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale=1000):
     doc = ezdxf.new()
@@ -1888,6 +1889,266 @@ def get_station_at_coordinates(p, curve, data):
 def is_close(a, b, tol=1e-4):
     return abs(a - b) < tol
 
+def save_total_coordinates(data, filename="C:/temp/total_coord.txt"):
+    import csv
+    from pathlib import Path
+
+    path = Path(filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    total_coords = []
+
+    # 모든 IP의 측점 데이터 취합
+    for station_group in data:
+        for station_data in station_group:
+            for row in station_data:
+                label, sta, offset, coord, shiftx, shifty, Ta, S, Q, T, Azimuth = row
+
+                x, y = coord
+                total_coords.append((sta, x, y, label))
+
+    # 측점 기준 정렬
+    total_coords.sort(key=lambda item: item[0])
+
+    # 동일 측점 중복 제거
+    unique_coords = []
+    seen = set()
+
+    for sta, x, y, label in total_coords:
+        key = round(sta, 6)
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        unique_coords.append((sta, x, y, label))
+
+    # TXT 저장
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["STA", "X", "Y", "LABEL"])
+
+        for sta, x, y, label in unique_coords:
+            writer.writerow([
+                f"{sta:.4f}",
+                f"{x:.4f}",
+                f"{y:.4f}",
+                label
+            ])
+
+    print(f"좌표 저장 완료: {path}")
+    print(f"총 좌표 수: {len(unique_coords)}")
+
+    return unique_coords
+
+def format_station(sta):
+    km = int(sta // 1000)
+    meter = sta - km * 1000
+    return f"{km}+{meter:06.2f}"
+
+def format_bearing(angle):
+    # 기존 Ta는 북쪽 0도, 시계방향 증가 방식
+    angle = angle % 360
+    total_seconds = round(angle * 3600) % (360 * 3600)
+    deg, remainder = divmod(total_seconds, 3600)
+    minute, second = divmod(remainder, 60)
+    return f'N {deg:03d}° {minute:02d}\' {second:02d}"'
+
+def create_incremental_station_report(
+    data,
+    unit=25,
+    alignment_name="복선중심선",
+    filename="C:/temp/Incremental_Station_Report",
+    file_ext='xlsx'
+):
+
+
+    # IP별 좌표 통합
+    records = []
+
+    for station_group in data:
+        for station_data in station_group:
+            for row in station_data:
+                label, sta, offset, coord, shiftx, shifty, Ta, S, Q, T, Azimuth = row
+
+                # 증분 측점만 추출 (부동소수점 오차 허용)
+                if abs(sta / unit - round(sta / unit)) > 1e-7:
+                    continue
+
+                x, y = coord
+                records.append((sta, x, y, Ta))
+
+    # 측점 정렬 및 중복 제거
+    records.sort(key=lambda r: r[0])
+    unique_records = []
+    seen = set()
+
+    for record in records:
+        key = round(record[0], 6)
+        if key not in seen:
+            seen.add(key)
+            unique_records.append(record)
+
+    if not unique_records:
+        raise ValueError("출력할 증분 측점 데이터가 없습니다.")
+
+    if file_ext not in ("xls", "xlsx"):
+        raise ValueError(f"지원하지 않는 형식: {file_ext}")
+
+    # 확장자 자동 일치
+    from pathlib import Path
+    path = Path(filename).with_suffix(f".{file_ext}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Excel 생성
+    if file_ext == 'xls':
+        wb = create_xls(unique_records, alignment_name, unit=unit)
+    else:
+        wb = create_xlsx(unique_records, alignment_name, unit=unit)
+
+    wb.save(path)
+    print(f"증분 측점 보고서 저장 완료: {path}")
+    print(f"출력 측점 수: {len(unique_records)}")
+
+def create_xls(unique_records, alignment_name, unit=25):
+    import xlwt
+
+    # Excel 97-2003 통합 문서 생성
+    wb = xlwt.Workbook(encoding="utf-8")
+    ws = wb.add_sheet("선형 증분 측점 보고서")
+
+    # 열 너비
+    ws.col(0).width = 23 * 256
+    ws.col(1).width = 25 * 256
+    ws.col(2).width = 25 * 256
+    ws.col(3).width = 28 * 256
+
+    # 스타일
+    title_style = xlwt.easyxf(
+        "font: bold on, height 320;"
+        "align: horiz left;"
+    )
+
+    header_style = xlwt.easyxf(
+        "font: bold on, colour white;"
+        "pattern: pattern solid, fore_colour ocean_blue;"
+        "align: horiz center;"
+    )
+
+    number_style = xlwt.easyxf(
+        num_format_str='#,##0.0000"미터"'
+    )
+
+    start_sta = unique_records[0][0]
+    end_sta = unique_records[-1][0]
+
+    # 제목
+    ws.write_merge(0, 0, 0, 3, "선형 증분 측점 보고서", title_style)
+
+    # 상단 정보
+    ws.write(2, 0, "클라이언트:")
+    ws.write(2, 1, "작성자:")
+    ws.write(3, 0, "Client")
+    ws.write(3, 1, "Preparer")
+    ws.write(4, 0, "Client Company")
+    ws.write(4, 1, "Your Company Name")
+    ws.write(5, 0, "Address 1")
+    ws.write(5, 1, "123 Main Street")
+
+    ws.write(6, 0, f"날짜: {datetime.now():%Y-%m-%d %H:%M:%S}")
+    ws.write(9, 0, f"선형 이름: {alignment_name}")
+    ws.write(10, 0, f"설명:")
+    ws.write(11, 0, f"측점 범위: 시작: {format_station(start_sta)}, 끝: {format_station(end_sta)}")
+    ws.write(12, 0, f"측점 증분: {unit:.2f}")
+
+    # 헤더
+    headers = ["측점", "Northing", "Easting", "접선 방향"]
+
+    for col, header in enumerate(headers):
+        ws.write(14, col, header, header_style)
+
+    # 측점 데이터
+    for row_idx, (sta, x, y, Ta) in enumerate(unique_records, 15):
+        ws.write(row_idx, 0, format_station(sta))
+        ws.write(row_idx, 1, x, number_style)
+        ws.write(row_idx, 2, y, number_style)
+        ws.write(row_idx, 3, format_bearing(Ta))
+
+    return wb
+
+def create_xlsx(unique_records, alignment_name, unit=25):
+    """xlsx저장함수"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "선형 증분 측점 보고서"
+
+    ws.column_dimensions["A"].width = 23
+    ws.column_dimensions["B"].width = 25
+    ws.column_dimensions["C"].width = 25
+    ws.column_dimensions["D"].width = 28
+
+    ws.merge_cells("A1:D1")
+    ws["A1"] = "선형 증분 측점 보고서"
+    ws["A1"].font = Font(size=16, bold=True)
+    ws["A1"].alignment = Alignment(horizontal="left")
+
+    ws["A3"] = "클라이언트:"
+    ws["B3"] = "작성자:"
+    ws["A4"] = "Client"
+    ws["B4"] = "Preparer"
+    ws["A5"] = "Client Company"
+    ws["B5"] = "Your Company Name"
+    ws["A6"] = "Address 1"
+    ws["B6"] = "123 Main Street"
+
+    ws["A7"] = f"날짜: {datetime.now():%Y-%m-%d %H:%M:%S}"
+
+    ws["A10"] = f"선형 이름: {alignment_name}"
+    ws["A11"] = "설명:"
+
+    start_sta = unique_records[0][0]
+    end_sta = unique_records[-1][0]
+
+    ws["A12"] = (
+        f"측점 범위: 시작: {format_station(start_sta)}, "
+        f"끝: {format_station(end_sta)}"
+    )
+    ws["A13"] = f"측점 증분: {unit:.2f}"
+
+    # 데이터 헤더
+    headers = ["측점", "Northing", "Easting", "접선 방향"]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=15, column=col, value=header)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="4472C4")
+        cell.alignment = Alignment(horizontal="center")
+
+    thin = Side(style="thin", color="D9E2F3")
+
+    # 측점 데이터
+    for row_idx, (sta, x, y, Ta) in enumerate(unique_records, 16):
+        ws.cell(row_idx, 1, format_station(sta))
+
+        northing = ws.cell(row_idx, 2, x)
+        easting = ws.cell(row_idx, 3, y)
+
+        northing.number_format = '#,##0.0000"미터"'
+        easting.number_format = '#,##0.0000"미터"'
+
+        ws.cell(row_idx, 4, format_bearing(Ta))
+
+        for cell in ws[row_idx][:4]:
+            cell.border = Border(bottom=thin)
+            cell.alignment = Alignment(vertical="center")
+
+    ws.freeze_panes = "A16"
+    ws.auto_filter.ref = f"A15:D{15 + len(unique_records)}"
+
+    return wb
 
 def main_gui():
     global unit
@@ -1935,6 +2196,16 @@ def main_gui():
 
             write_report(alignment_report_variable_list, final_result)
             create_civil3d_xlsx(alignment_report_variable_list)
+            # 모든 좌표 취합 및 TXT 저장
+            save_total_coordinates(final_result)
+            # Civil 3D 증분 측점 보고서 추가
+            create_incremental_station_report(
+                final_result,
+                unit=unit,
+                alignment_name="복선중심선",
+                file_ext='xls'
+            )
+
             messagebox.showinfo("Success", "Report and Civil3D output generated successfully!")
 
         except ValueError:
