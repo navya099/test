@@ -87,9 +87,9 @@ LAB_004026dd:
       FUN_00412670(0xffff7b30,0,0,0);//FUN_00412670 메시지/로그 버퍼 등록 함수
       pcStack_204 = (char *)(&DAT_00655484)[local_14 * 2];
       pcStack_208 = (char *)(&DAT_00655480)[local_14 * 2];
-      FUN_00412940();
+      FUN_00412940();//FUN_00416540래퍼(저수준 저수준 버퍼 쓰기)
       pcStack_204 = (char *)0x4028cc;
-      FUN_00412850();
+      FUN_00412850();//버퍼커밋함수
       local_14 = local_14 + 1;
     }
 
@@ -102,6 +102,8 @@ LAB_004026dd:
                            (uint)((POPCOUNT(_DAT_00664e88 & 0xff) & 1U) == 0) * 4 |
                            (uint)(bVar34 & 1) * 0x200000 | (uint)(bVar32 & 1) * 0x100000 |
                            (uint)(bVar30 & 1) * 0x80000 | (uint)(bVar27 & 1) * 0x40000);
+
+    //180.0으로 나누기
     if (DAT_0043f89c == 0) {
       fVar38 = (float10)(double)CONCAT44(DAT_00441f5c,DAT_00441f58) / (float10)180.0;
     }
@@ -109,6 +111,7 @@ LAB_004026dd:
       pcStack_208 = (char *)0x40668000;
       fVar38 = (float10)__adj_fdiv_m64(0);
     }
+
     bVar25 = ((uint)pcStack_204 & 0x4000) != 0;
     bVar34 = ((uint)pcStack_204 & 0x800) != 0;
     uVar10 = (uint)pcStack_204 & 0x400;
@@ -123,14 +126,21 @@ LAB_004026dd:
     bVar28 = ((uint)pcStack_204 & 0x40000) != 0;
     bVar33 = 0;
     bVar31 = 0;
-    _DAT_00664e90 = (double)(fVar38 * (float10)3.1415927410125732);
+
+    //각도(Degree)를 라디안(Radian)으로 변환
+
+    _DAT_00664e90 = (double)(fVar38 * (float10)3.1415927410125732); //fVar38각도
     pcStack_204 = (char *)0x40291b;
+
+    //도·분·초(DMS) 분할 연산
     DAT_00664e98 = __ftol();
     _DAT_00664ea0 = (double)DAT_00664e98;
     _DAT_00664ea8 = ((double)CONCAT44(DAT_00441f5c,DAT_00441f58) - (double)DAT_00664e98) * 100.0;
     pcStack_204 = (char *)0x40294e;
     DAT_00664eb0 = __ftol();
     _DAT_00664eb8 = (_DAT_00664ea8 - (double)DAT_00664eb0) * 100.0;
+
+    
     pcStack_204 = (char *)((uint)(bVar25 & 1) * 0x4000 | (uint)(bVar34 & 1) * 0x800 |
                            (uint)(uVar10 != 0) * 0x400 | (uint)(bVar32 & 1) * 0x200 |
                            (uint)(bVar30 & 1) * 0x100 | (uint)(bVar27 & 1) * 0x80 |
@@ -138,6 +148,8 @@ LAB_004026dd:
                            (uint)(bVar18 & 1) * 4 | (uint)(bVar16 & 1) |
                            (uint)(bVar35 & 1) * 0x200000 | (uint)(bVar33 & 1) * 0x100000 |
                            (uint)(bVar31 & 1) * 0x80000 | (uint)(bVar28 & 1) * 0x40000);
+    
+    //분(Minute) 단위의 값(DAT_00664eb0)을 다시 60으로 나누어 도(Degree) 단위의 소수점 값으로 환산
     if (DAT_0043f89c == 0) {
       fVar38 = (float10)DAT_00664eb0 / (float10)60.0;
     }
@@ -145,6 +157,7 @@ LAB_004026dd:
       pcStack_208 = (char *)0x42700000;
       fVar38 = (float10)__adj_fdiv_m32();
     }
+
     pcStack_204 = (char *)((uint)(((uint)pcStack_204 & 0x4000) != 0) * 0x4000 |
                            (uint)(((uint)pcStack_204 & 0x800) != 0) * 0x800 |
                            (uint)(((uint)pcStack_204 & 0x400) != 0) * 0x400 |
@@ -185,7 +198,8 @@ LAB_004026dd:
       pcStack_208 = (char *)0x40668000;
       fVar38 = (float10)__adj_fdiv_m64(0);
     }
-    _DAT_00664e90 = (double)fVar38;
+    _DAT_00664e90 = (double)fVar38;//최종 각도 라디안
+    
     pcStack_204 = (char *)((uint)(((uint)pcStack_204 & 0x4000) != 0) * 0x4000 |
                            (uint)(((uint)pcStack_204 & 0x800) != 0) * 0x800 |
                            (uint)(((uint)pcStack_204 & 0x400) != 0) * 0x400 |
