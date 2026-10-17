@@ -1,19 +1,29 @@
 LAB_004026dd:
+    //*"핵심 내부 계산으로 추정"*/
+
+    //"pcStack_204 = CPU 상태 플래그 및 레지스터 값의 임시 저장소"/
     pcStack_204 = (char *)((uint)(in_NT & 1) * 0x4000 | (uint)bVar20 * 0x400 |
                            (uint)(in_IF & 1) * 0x200 | (uint)(in_TF & 1) * 0x100 |
                            (uint)bVar21 * 0x80 | (uint)bVar22 * 0x40 | (uint)(bVar16 & 1) * 0x10 |
                            (uint)bVar23 * 4 | (uint)(in_ID & 1) * 0x200000 |
                            (uint)(in_VIP & 1) * 0x100000 | (uint)(in_VIF & 1) * 0x80000 |
                           (uint)(in_AC & 1) * 0x40000);
+
+    //"두 개의 데이터 차이(변화량)를 특정 기준 값으로 나누어 비율이나 기울기를 구하는 핵심 연산 과정"/
+    //"표준 나누기 연산"/
     if (DAT_0043f89c == 0) {
       fVar38 = ((float10)(double)CONCAT44(DAT_00441f74,DAT_00441f70) -
                (float10)(double)CONCAT44(DAT_00441f64,DAT_00441f60)) /
                (float10)(double)CONCAT44(DAT_00441f6c,DAT_00441f68);
     }
+    //"거짓(False) 블록: 예외/안전 처리 나누기 연산"
     else {
       pcStack_208 = DAT_00441f6c;
       fVar38 = (float10)__adj_fdiv_m64(DAT_00441f68);
     }
+
+    /*CPU 플래그 보존 및 추출 (비트마스크)*/  
+
     bVar24 = ((uint)pcStack_204 & 0x4000) != 0;
     uVar10 = (uint)pcStack_204 & 0x400;
     bVar19 = ((uint)pcStack_204 & 0x200) != 0;
@@ -23,9 +33,13 @@ LAB_004026dd:
     bVar27 = ((uint)pcStack_204 & 0x40000) != 0;
     bVar32 = 0;
     bVar30 = 0;
+
+    /*"루프 반복 횟수 계산"*/
     _DAT_00655468 = (double)(fVar38 + (float10)1.0);
     pcStack_204 = (char *)0x402735;
     DAT_00655470 = __ftol();
+
+    /*"상태 제어 변수 및 데이터 구조체 초기화"*/
     uVar7 = DAT_00645a64;
     DAT_00655474 = 1;
     DAT_00655478 = 2;
@@ -34,6 +48,13 @@ LAB_004026dd:
     *(undefined4 *)((int)&DAT_00645a68 + uVar7 * 8 + 4) = 0x4197d784;
     DAT_00655480 = 1;
     local_14 = 1;
+
+    /*
+    반복문은 일정한 간격(Step)으로 선형 데이터를 쭉 생성해 나가다가, 
+    특정 구간 경계(Boundary)에 도달하면 값을 보정하고, 
+    각 단계마다 계산된 결과를 내부 시스템(로그/버퍼)에 등록하는 구간 분할 및 생성 루틴
+    */
+
     for (local_6c = DAT_00655470; 0 < local_6c; local_6c = local_6c + -1) {
       if (DAT_00655478 == 8) {
         DAT_00655484 = (local_14 - _DAT_0065547c) + -1;
@@ -57,10 +78,13 @@ LAB_004026dd:
         DAT_00655478 = 8;
         DAT_00655480 = DAT_00655480 + -1;
       }
+
+      //로그 및 후속 처리 함수 호출
+      
       DAT_00655480 = DAT_00655480 + 1;
       pcStack_204 = (char *)0x0;
       pcStack_208 = (char *)0x0;
-      FUN_00412670(0xffff7b30,0,0,0);
+      FUN_00412670(0xffff7b30,0,0,0);//FUN_00412670 메시지/로그 버퍼 등록 함수
       pcStack_204 = (char *)(&DAT_00655484)[local_14 * 2];
       pcStack_208 = (char *)(&DAT_00655480)[local_14 * 2];
       FUN_00412940();
@@ -68,6 +92,8 @@ LAB_004026dd:
       FUN_00412850();
       local_14 = local_14 + 1;
     }
+
+
     _DAT_00664e88 = local_18 - 1;
     pcStack_204 = (char *)((uint)(bVar24 & 1) * 0x4000 | (uint)SBORROW4(local_18,1) * 0x800 |
                            (uint)(uVar10 != 0) * 0x400 | (uint)(bVar19 & 1) * 0x200 |
