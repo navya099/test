@@ -1,7 +1,0 @@
-*.pyc
-__pycache__/
-.idea/
-*.md
-*.csv
-*.dxf
-
