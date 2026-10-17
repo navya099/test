@@ -4,7 +4,7 @@ from ip2_engine import parse_dat_multi, solve_curve
 from alignment import *
 import out_writer as W
 
-dat = parse_dat_multi(open("c:/temp/A8C.DAT", encoding="cp949").read())
+dat = parse_dat_multi(open("c:/temp/s97.DAT", encoding="cp949").read())
 f, l = dat[0], dat[-1]
 def pt(ip, az, d): a = math.radians(az); return (ip.ip_n + d*math.cos(a), ip.ip_e + d*math.sin(a))
 pts = [pt(f, f.az_in_deg + 180, 700)] + [(i.ip_n, i.ip_e) for i in dat] + [pt(l, l.az_out_deg, 700)]
