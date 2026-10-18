@@ -12,7 +12,37 @@ ip2_engine.py - 레거시 포트란 'I.P 2' (CLOTHOID CURVE) 계산 엔진의 �
 from __future__ import annotations
 import math
 from dataclasses import dataclass, field
-from scipy.optimize import brentq
+
+
+def brentq(f, a, b, xtol=1e-13, maxiter=200):
+    """scipy 없이 쓰는 근 찾기 (이분법 + 시컨트 혼합, 부호가 다른 구간 필요)"""
+    fa, fb = f(a), f(b)
+    if fa == 0:
+        return a
+    if fb == 0:
+        return b
+    if fa * fb > 0:
+        raise ValueError("f(a) and f(b) must have different signs")
+    for _ in range(maxiter):
+        c = b - fb * (b - a) / (fb - fa)                # 시컨트(거짓위치)
+        if not (min(a, b) < c < max(a, b)):
+            c = (a + b) / 2
+        fc = f(c)
+        if fc == 0 or abs(b - a) < xtol * max(1.0, abs(c)):
+            return c
+        if fa * fc < 0:
+            b, fb = c, fc
+        else:
+            a, fa = c, fc
+        if abs(fb - fa) < 1e-300:
+            break
+        m = (a + b) / 2                                  # 수렴이 느리면 이분법 한 번
+        fm = f(m)
+        if fa * fm < 0:
+            b, fb = m, fm
+        else:
+            a, fa = m, fm
+    return (a + b) / 2
 
 
 # ----------------------------------------------------------------- 각도 유틸
@@ -70,6 +100,7 @@ class IP2Input:
     ip_e: float | None = None
     az_in_deg: float | None = None
     az_out_deg: float | None = None
+    l_ref: str = "outside"      # 입력 L 이 어느 선의 완화곡선장인가: outside(원본 프로그램 방식)/center/inside
 
 
 def parse_dat(text: str) -> IP2Input:
@@ -147,6 +178,11 @@ class Curve:
 
 
 def solve_curve(inp: IP2Input) -> Curve:
+    """세 선(외측/중앙/내측)은 같은 원 중심을 공유한다.
+      직선부 오프셋 = D/2 (외측 +D/2, 내측 -D/2)  → 각 선의 YM = R0 ± D/2
+      원곡선부 반경 : R_out = R_c + A",  R_in = R_c - B   (B, A" 는 확폭이 반영된 고정 입력값)
+    입력 L 은 inp.l_ref 로 지정한 선의 완화곡선장이며, 그 선의 R 을 풀고 나머지 R, L 을 역산한다.
+    (원본 프로그램의 입력 L 은 outside 기준 — 21개 IP 에서 확인)"""
     ia = math.radians(inp.ia_deg)
     R0, B = inp.R, inp.B          # B: 내측궤도
     t = math.tan(ia / 2)
@@ -156,24 +192,23 @@ def solve_curve(inp: IP2Input) -> Curve:
     EC = BC + CL0
     cv = Curve(inp, ia, TL0, CL0, SL0, BC, EC)
 
-    # 외측선: L 고정, R 을 풀어 YM = R0 + B
-    R_out = brentq(lambda R: R + clothoid_end(R, inp.L)[3] - (R0 + inp.D / 2), 50, 1e4)
-    R_c = R_out - inp.A2
-    R_in = R_c - B
-
-    # 매뉴얼: B=내측궤도, A"=외측궤도(곡선부 중심선으로부터의 거리), D=직선일 때의 궤간
-    # 직선부 오프셋은 D/2 로 가정 (샘플 2건 모두 D=2B 라서 아직 미확정)
     h = inp.D / 2
-    spec = [("outside", +h, R_out, inp.L, R0 + h),
-            ("center", 0.0, R_c, None, R0),
-            ("inside", -h, R_in, None, R0 - h)]
-    for name, y_ex, R, L, YMi in spec:
-        if L is None:
-            L = brentq(lambda LL: R + clothoid_end(R, LL)[3] - YMi, 1, R)
+    ref = getattr(inp, "l_ref", "outside")
+    y_ex = {"outside": +h, "center": 0.0, "inside": -h}            # 기존선(중앙)이 접선에서 원중심 쪽으로 떨어진 거리
+    ym = {k: R0 + v for k, v in y_ex.items()}
+    off = {"outside": inp.A2, "center": 0.0, "inside": -B}          # R_i = R_c + off_i
+    R_ref = brentq(lambda R: R + clothoid_end(R, inp.L)[3] - ym[ref], 50, 1e4)
+    R_c = R_ref - off[ref]
+    for name in ("outside", "center", "inside"):
+        R = R_c + off[name]
+        if name == ref:
+            L = inp.L
+        else:
+            L = brentq(lambda LL: R + clothoid_end(R, LL)[3] - ym[name], 1, R)
         X, Y, th, dR, XM = clothoid_end(R, L)
         sig = ia - 2 * th
         cv.lines[name] = Line(
-            name, y_ex, R, L, X, Y, th, dR, XM, YMi, YMi * t + XM, sig, R * sig,
+            name, y_ex[name], R, L, X, Y, th, dR, XM, ym[name], ym[name] * t + XM, sig, R * sig,
             BC - XM, BC + R0 * th, EC - R0 * th, EC + XM)
     return cv
 

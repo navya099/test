@@ -50,7 +50,7 @@ class Project:
         return self.vertices[1:-1]
 
 
-def build_inputs(prj: Project, sta_ranges=None):
+def build_inputs(prj: Project, sta_ranges=None, l_ref: str = "outside"):
     """Project -> list[IP2Input].  반환: (inputs, 계산 요약 list[dict])"""
     v = prj.vertices
     n = len(v) - 2
@@ -79,14 +79,21 @@ def build_inputs(prj: Project, sta_ranges=None):
         sta_ip_prev = sta
         if ia < 1e-9:
             prj.warnings.append(f"{ip.name}: 교각이 0 입니다")
-        if abs(ip.D - 2 * ip.B) > 1e-9:
-            prj.warnings.append(f"{ip.name}: D≠2B — 원본과 대조되지 않은 조건입니다")
+        if abs(ip.B - ip.D / 2) > 1e-9:
+            prj.warnings.append(f"[참고] {ip.name}: B≠D/2 — 원본 프로그램과 대조되지 않은 조건입니다(곡선부 확폭 고정값 입력)")
         item = IP2Input(k, ip.R, ip.L, ip.B, ip.A2, ip.D, sta, ia, 0.0, 0.0, prj.chain,
                         "Y", ip.x, ip.y, az[k - 1], az[k])
+        item.l_ref = l_ref
         if sta_ranges:
             item.sta_start, item.sta_end = sta_ranges[k - 1]
         else:                                    # 곡선 전체(BTC~ETC)를 chain 배수로 감싸는 범위를 자동 결정
-            cv0 = solve_curve(item)
+            try:
+                cv0 = solve_curve(item)
+            except Exception:
+                w = ip.A2 - ip.D / 2
+                hint = (f" — 중앙/안쪽선 기준 L 은 약 {math.sqrt(24 * ip.R * w):.0f} m 이상이어야 합니다 (확폭 A\"-D/2 = {w:.3f} m)"
+                        if l_ref != "outside" and w > 0 else "")
+                raise ValueError(f"{ip.name}: 이 R·L·A\"·B·D 조합으로 완화곡선을 풀 수 없습니다 (L 이 너무 크거나 R 이 너무 작음){hint}")
             lo = min(l.BTC for l in cv0.lines.values()); hi = max(l.ETC for l in cv0.lines.values())
             item.sta_start = math.floor(lo / prj.chain) * prj.chain
             item.sta_end = math.ceil(hi / prj.chain) * prj.chain
@@ -137,7 +144,9 @@ def write_dat(path: str, inputs) -> None:
     """원본 CLOXY 가 읽는 DAT 로 내보내기 (교차 검증/프로젝트 보관용)"""
     L = [f"{len(inputs):3d}"]
     for i in inputs:
-        L.append(f"{i.ip_no:5d}{i.R:12.4f}{i.L:12.4f}{i.B:11.4f}{i.A2:11.4f}{i.D:11.4f}")
+        # 원본 DAT 의 L 은 바깥선(OUTSIDE) 기준이므로, 다른 기준선으로 입력된 경우 바깥선 L 로 환산해서 쓴다
+        L_out = i.L if getattr(i, "l_ref", "outside") == "outside" else solve_curve(i).lines["outside"].L
+        L.append(f"{i.ip_no:5d}{i.R:12.4f}{L_out:12.4f}{i.B:11.4f}{i.A2:11.4f}{i.D:11.4f}")
         L.append(f"{i.ip_sta:14.6f}{deg_to_packed(i.ia_deg):17.8f}")
         L.append(f"{i.sta_start:14.6f}{i.sta_end:14.6f}{i.sta_step:13.6f}")
         L.append("y" if i.ip_n is not None else "n")
