@@ -249,6 +249,10 @@ def station_point(cv: Curve, ln: Line, s: float):
         zone = "E"
     X, Y, phi = clothoid_xy(l, ln.R, ln.L)
     if zone in "AE":
+        xs = (s - ln.BTC) if zone == "A" else (ln.ETC - s)
+        if xs < 0:                                  # 완화곡선 밖의 직선부: 접선 위로 연장
+            X, Y, phi = xs, 0.0, 0.0
+    if zone in "AE":
         S = abs(Y - ln.y_ex)
     else:
         rho = math.hypot(X - ln.XM, ln.YM - Y)

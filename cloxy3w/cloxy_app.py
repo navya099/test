@@ -15,7 +15,7 @@ HEAD = {"name": "구분", "x": "X (북)", "y": "Y (동)", "R": "R", "L": "L", "B
 WIDTH = {"name": 60, "x": 100, "y": 100, "R": 62, "L": 62, "B": 48, "A2": 52, "D": 48}
 LINE_STYLE = {"outside": ("#d9480f", "바깥선"), "center": ("#212529", "중앙선"), "inside": ("#1971c2", "안쪽선")}
 L_REF_LABEL = {"outside": "바깥선 (원본 프로그램 방식)", "center": "중앙선", "inside": "안쪽선"}
-DXF_LABEL = {"local": "로컬: IP별 파일 (원점=IP)", "global": "전체 좌표: 한 파일"}
+DXF_LABEL = {"local": "로컬: IP별 파일 (원점=IP)", "global": "전체 좌표: 곡선구간만", "full": "전체 좌표: BP~EP 직선 포함"}
 
 
 def _fmt(col, v):
@@ -29,6 +29,7 @@ class PlanView(tk.Canvas):
     def __init__(self, master, **kw):
         super().__init__(master, background="white", highlightthickness=0, **kw)
         self.lines, self.ips, self.ends, self.sel = [], [], [], None
+        self.straights = []
         self.scale, self.cE, self.cN = 1.0, 0.0, 0.0
         self._drag = None
         self.bind("<Configure>", lambda e: self.redraw())
@@ -39,8 +40,9 @@ class PlanView(tk.Canvas):
         self.bind("<Button-5>", lambda e: self._zoom(e, 0.8))
         self.bind("<Double-Button-1>", lambda e: self.fit())
 
-    def set_data(self, lines, ips, ends, refit=True):
+    def set_data(self, lines, ips, ends, refit=True, straights=None):
         self.lines, self.ips, self.ends = lines, ips, ends
+        self.straights = straights or []
         if refit:
             self.fit()
         else:
@@ -77,6 +79,8 @@ class PlanView(tk.Canvas):
         poly = [self._xy(e, n) for _, e, n in self.ends[:1] + self.ips + self.ends[-1:]] if self.ends else []
         if len(poly) >= 2:
             self.create_line(*[c for q in poly for c in q], fill="#adb5bd", dash=(4, 3))
+        for p, q in self.straights:
+            self.create_line(*self._xy(*p), *self._xy(*q), fill="#495057", width=1.2)
         for ip_no, name, pts in self.lines:
             col, _ = LINE_STYLE[name]
             width = 3 if ip_no == self.sel else 1.4
@@ -186,26 +190,31 @@ class App:
     def _build_settings(self):
         sf = ttk.LabelFrame(self.root, text="프로젝트 설정", padding=(8, 4))
         sf.pack(side="top", fill="x", padx=6)
+        r1 = ttk.Frame(sf); r1.pack(fill="x")
+        r2 = ttk.Frame(sf); r2.pack(fill="x", pady=(4, 0))
         self.v_start = tk.StringVar(value=f"{self.m.start_station:g}")
         self.v_chain = tk.StringVar(value=f"{self.m.chain:g}")
         self.v_defB = tk.StringVar(value=f"{self.m.def_B:g}")
         self.v_defD = tk.StringVar(value=f"{self.m.def_D:g}")
         self.v_lref = tk.StringVar(value=L_REF_LABEL[self.m.l_ref])
         self.v_dxf = tk.StringVar(value=DXF_LABEL[self.m.dxf_mode])
+        self.v_fullout = tk.BooleanVar(value=self.m.full_out)
         def ent(label, var, w=9):
-            ttk.Label(sf, text=label).pack(side="left", padx=(8, 2))
-            e = ttk.Entry(sf, textvariable=var, width=w)
+            ttk.Label(r1, text=label).pack(side="left", padx=(8, 2))
+            e = ttk.Entry(r1, textvariable=var, width=w)
             e.pack(side="left")
             e.bind("<Return>", lambda ev: self.on_settings()); e.bind("<FocusOut>", lambda ev: self.on_settings())
             return e
         ent("BP 측점", self.v_start, 11); ent("chain(m)", self.v_chain, 6)
         ent("새 IP 기본 B", self.v_defB, 5); ent("D", self.v_defD, 5)
-        ttk.Label(sf, text="L 기준").pack(side="left", padx=(14, 2))
-        cb = ttk.Combobox(sf, textvariable=self.v_lref, values=list(L_REF_LABEL.values()), state="readonly", width=24)
+        ttk.Label(r1, text="L 기준").pack(side="left", padx=(14, 2))
+        cb = ttk.Combobox(r1, textvariable=self.v_lref, values=list(L_REF_LABEL.values()), state="readonly", width=26)
         cb.pack(side="left"); cb.bind("<<ComboboxSelected>>", lambda ev: self.on_settings())
-        ttk.Label(sf, text="DXF").pack(side="left", padx=(14, 2))
-        cd = ttk.Combobox(sf, textvariable=self.v_dxf, values=list(DXF_LABEL.values()), state="readonly", width=24)
+        ttk.Label(r2, text="DXF 범위").pack(side="left", padx=(8, 2))
+        cd = ttk.Combobox(r2, textvariable=self.v_dxf, values=list(DXF_LABEL.values()), state="readonly", width=30)
         cd.pack(side="left"); cd.bind("<<ComboboxSelected>>", lambda ev: self.on_settings())
+        ttk.Checkbutton(r2, text="OUT 끝에 BP~EP 전체 측점 좌표표 추가", variable=self.v_fullout,
+                        command=self.on_settings).pack(side="left", padx=(18, 0))
 
     def _build_body(self):
         pw = ttk.PanedWindow(self.root, orient="horizontal")
@@ -399,6 +408,7 @@ class App:
         inv = {v: k for k, v in L_REF_LABEL.items()}
         self.m.l_ref = inv.get(self.v_lref.get(), "outside")
         self.m.dxf_mode = {v: k for k, v in DXF_LABEL.items()}.get(self.v_dxf.get(), "local")
+        self.m.full_out = bool(self.v_fullout.get())
         self.refresh_table()
         self.schedule_compute()
 
@@ -435,7 +445,7 @@ class App:
         ends = [(r.name, r.y, r.x) for r in (rows[0], rows[-1]) if r.x is not None and r.y is not None]
         if not res.ok:
             ips = [(k, r.y, r.x) for k, r in enumerate(rows[1:-1], 1) if r.x is not None and r.y is not None]
-        self.plan.set_data(lines, ips, ends, refit=True)
+        self.plan.set_data(lines, ips, ends, refit=True, straights=self.m.preview_straights() if res.ok else [])
         bad = {r.split(":")[0] for r in res.errors}
         for i, r in enumerate(rows):
             if self.tree.exists(str(i)):
@@ -508,6 +518,7 @@ class App:
         self.v_start.set(f"{self.m.start_station:g}"); self.v_chain.set(f"{self.m.chain:g}")
         self.v_defB.set(f"{self.m.def_B:g}"); self.v_defD.set(f"{self.m.def_D:g}")
         self.v_lref.set(L_REF_LABEL[self.m.l_ref]); self.v_dxf.set(DXF_LABEL[self.m.dxf_mode])
+        self.v_fullout.set(self.m.full_out)
 
     def open_project_file(self, path):
         kind = self.m.open_project(path); self.sync_settings_vars(); self.refresh_table(); self.compute()
@@ -550,7 +561,7 @@ class App:
         if self._need():
             p = filedialog.asksaveasfilename(title="DXF 저장", defaultextension=".dxf", filetypes=[("DXF", "*.dxf")])
             if p:
-                made = self.m.write_dxf(p); self.set_status(f"DXF {len(made)}개 파일 저장")
+                made = self.m.write_dxf(p); self.set_status(f"DXF {len(made)}개 파일 저장 ({DXF_LABEL[self.m.dxf_mode]})")
 
     def cmd_dat(self):
         if self._need():

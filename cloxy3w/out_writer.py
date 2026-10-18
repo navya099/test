@@ -221,11 +221,31 @@ def ip_block(cv, no: int, distribution: bool = True, coordinates: bool = True) -
     return out
 
 
-def render(inputs, distribution: bool = True, coordinates: bool = True) -> str:
+def full_section(full) -> list:
+    """BP ~ EP 전체 선형의 측점별 좌표 (직선부 포함). 좌측/중앙/우측 궤도 각각 한 표"""
+    from fullalign import SIDES, SIDE_LABEL, SIDE_KO
+    eq, dash = " " * 10 + "=" * 55, " " * 10 + "-" * 55
+    out = ["\f", "", " " * 24 + TITLE, "", "", " " * 14 + "( 전체 선형 STATION 좌표 : BP ~ EP, 직선구간 포함 )"]
+    for side in SIDES:
+        out += ["", "", " " * 15 + f"{SIDE_LABEL[side].lower()} x, y   ({SIDE_KO[side]})", "", eq,
+                " " * 10 + "|    STA.    |   X(north)    |   Y(earth)    |  비고  |", eq]
+        for s, tag, ip in full.stations(side):
+            n, e = full.point(side, s)
+            km, m = kmsplit(s)
+            note = tag if ip == 0 else f"{tag}{ip}"
+            out.append(" " * 10 + "|" + f"{km:2d}K{fF(m, 7, 3)}  " + "|" + f"  {n:11.4f}  " + "|"
+                       + f"  {e:11.4f}  " + "|" + note.ljust(8) + "|")
+            out.append(dash)
+    return out
+
+
+def render(inputs, distribution: bool = True, coordinates: bool = True, full=None) -> str:
     lines = []
     for inp in inputs:
         cv = solve_curve(inp)
         lines += ip_block(cv, inp.ip_no, distribution, coordinates)
+    if full is not None:
+        lines += full_section(full)
     return "\r\n".join(lines) + "\r\n"
 
 

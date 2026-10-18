@@ -122,7 +122,7 @@ def _ang(u):
 
 
 # ------------------------------------------------------------------ IP 하나
-def build_ip(d: Dxf, inp, mode: str = "local", grid: bool = True):
+def build_ip(d: Dxf, inp, mode: str = "local", grid: bool = True, ticks: bool = True, sides: bool = False):
     """한 IP 의 엔티티를 d 에 추가.  mode: 'local'(IP 원점, 진입접선 +y) | 'global'(프로젝트 좌표)"""
     g = _local_input(inp) if mode == "local" else inp
     cv = solve_curve(g)
@@ -132,6 +132,10 @@ def build_ip(d: Dxf, inp, mode: str = "local", grid: bool = True):
     O = (O[1], O[0])
     names = ("outside", "center", "inside")
     layer = {"outside": "OUTSIDE", "center": "CENTER", "inside": "INSIDE"}
+    if sides:                              # 전체 선형: 진행 방향 기준 좌/우 궤도 레이어
+        left_turn = fr["s_turn"] > 0
+        layer = {"outside": "RIGHT" if left_turn else "LEFT", "center": "CENTER",
+                 "inside": "LEFT" if left_turn else "RIGHT"}
     half = inp.D / 2
     pts_all = []
 
@@ -153,7 +157,7 @@ def build_ip(d: Dxf, inp, mode: str = "local", grid: bool = True):
     c = cv.lines["center"]
     chain = inp.sta_step
     k = math.ceil(c.BTC / chain - 1e-9)
-    while k * chain <= c.ETC + 1e-9:
+    while ticks and k * chain <= c.ETC + 1e-9:
         s = k * chain
         P = _xy(cv, c, s, fr)
         t = _tangent(cv, c, s, fr)
@@ -213,11 +217,47 @@ def build_ip(d: Dxf, inp, mode: str = "local", grid: bool = True):
     return cv
 
 
-def render_dxf(inputs, mode: str = "local", ip_no=None, grid: bool = True) -> str:
-    """local: ip_no 로 지정한 IP 하나(기본: 첫 IP) / global: 모든 IP 를 한 파일에"""
+def build_full(d: Dxf, inputs, full):
+    """BP~EP 전체: 각 곡선(완화곡선+원호) + 직선구간 + chain 눈금 + IP 연결선/라벨"""
+    from fullalign import SIDES
+    for inp in inputs:
+        build_ip(d, inp, "global", grid=False, ticks=False, sides=True)
+    for side in SIDES:                                              # 직선구간
+        layer = side.upper()
+        for p, q in full.straights(side):
+            d.line(layer, (p[1], p[0]), (q[1], q[0]))
+    fi = full.fi                                                    # 중앙선 chain 눈금 / 100 m 원
+    k = math.floor(fi.start_sta / fi.chain) + 1
+    while k * fi.chain < fi.end_sta - 1e-9:
+        s = k * fi.chain
+        n, e = full.point("center", s)
+        n1, e1 = full.point("center", s - 1e-3)
+        n2, e2 = full.point("center", s + 1e-3)
+        h = math.hypot(e2 - e1, n2 - n1)
+        t = ((e2 - e1) / h, (n2 - n1) / h)
+        nr = (-t[1], t[0])
+        d.line("CHAIN", (e + nr[0] * TICK / 2, n + nr[1] * TICK / 2), (e - nr[0] * TICK / 2, n - nr[1] * TICK / 2))
+        if abs(s / 100.0 - round(s / 100.0)) < 1e-9:
+            d.circle("CHAIN", (e, n), 1.0)
+        k += 1
+    pts = [(fi.bp_xy[1], fi.bp_xy[0])] + [(i.ip_e, i.ip_n) for i in inputs] + [(fi.ep_xy[1], fi.ep_xy[0])]
+    d.polyline("IPLINE", pts)                                       # BP-IP1-...-EP 접선
+    for i in inputs:
+        d.circle("IPLINE", (i.ip_e, i.ip_n), 1.5)
+        d.text((i.ip_e + 3.0, i.ip_n + 3.0), 3.0, _sta_label(f"IP{i.ip_no}", i.ip_sta), 0.0, layer="IPTXT")
+    d.text((pts[0][0] + 3.0, pts[0][1] + 3.0), 3.0, _sta_label("BP", fi.start_sta), 0.0, layer="IPTXT")
+    d.text((pts[-1][0] + 3.0, pts[-1][1] + 3.0), 3.0, _sta_label("EP", fi.end_sta), 0.0, layer="IPTXT")
+
+
+def render_dxf(inputs, mode: str = "local", ip_no=None, grid: bool = True, full=None) -> str:
+    """local: ip_no 로 지정한 IP 하나(기본: 첫 IP) / global: 모든 곡선 / full: BP~EP 직선 포함 전체(full 필요)"""
     d = Dxf()
     d.begin()
-    if mode == "local":
+    if mode == "full":
+        if full is None:
+            raise ValueError("full 모드에는 Full 정보가 필요합니다")
+        build_full(d, inputs, full)
+    elif mode == "local":
         inp = next((i for i in inputs if ip_no in (None, i.ip_no)), inputs[0])
         build_ip(d, inp, "local", grid)
     else:

@@ -44,6 +44,7 @@ class Project:
     start_station: float = 0.0            # BP 의 측점
     chain: float = 20.0                   # 측점 간격
     warnings: list = field(default_factory=list)
+    ep_station: float = 0.0               # build_inputs 가 계산
 
     @property
     def ips(self):
@@ -100,6 +101,11 @@ def build_inputs(prj: Project, sta_ranges=None, l_ref: str = "outside"):
         out.append(item)
         info.append(dict(name=ip.name, sta=sta, ia=ia, left=left, az_in=az[k - 1], az_out=az[k],
                          TL=TL, CL=CL))
+    last = v[n]
+    p_ia, _ = deflection(az[n - 1], az[n])
+    TLl = last.R * math.tan(math.radians(p_ia) / 2)
+    CLl = last.R * math.radians(p_ia)
+    prj.ep_station = sta_ip_prev - TLl + CLl + distance(last, v[-1]) - TLl
     return out, info
 
 

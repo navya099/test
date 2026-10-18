@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from alignment import (Vertex, Project, build_inputs, read_xy_txt, write_dat, azimuth, distance, deflection)
 from ip2_engine import solve_curve, frame, parse_dat_multi, station_coord, deg_to_dms
 import out_writer, dxf_writer
+from fullalign import Full, FullInfo
 
 COLS = ("name", "x", "y", "R", "L", "B", "A2", "D")
 L_REFS = {"outside": "바깥선(OUTSIDE)", "center": "중앙선(CENTER)", "inside": "안쪽선(INSIDE)"}
@@ -34,6 +35,7 @@ class Result:
     curves: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     errors: list = field(default_factory=list)
+    full: object = None                   # fullalign.Full (BP~EP 전체 선형)
 
     @property
     def ok(self):
@@ -46,7 +48,8 @@ class ProjectModel:
         self.start_station = 0.0
         self.chain = 20.0
         self.l_ref = "outside"
-        self.dxf_mode = "local"
+        self.dxf_mode = "local"          # local | global | full
+        self.full_out = True              # OUT 끝에 BP~EP 전체 측점 좌표표를 붙임
         self.def_B = 2.2
         self.def_D = 4.4
         self.result = Result()
@@ -178,6 +181,8 @@ class ProjectModel:
             if e > b:
                 res.warnings.append(f"IP{k + 1}-IP{k + 2}: 곡선이 {e - b:.3f} m 겹칩니다 (앞 곡선 ETC > 다음 곡선 BTC)")
         res.inputs, res.info = inputs, info
+        res.full = Full(res.curves, FullInfo((rows[0].x, rows[0].y), (rows[-1].x, rows[-1].y),
+                                             self.start_station, prj.ep_station, self.chain))
         self.result = res
         return res
 
@@ -204,16 +209,30 @@ class ProjectModel:
                 out.append((inp.ip_no, name, pts))
         return out
 
+    def preview_straights(self):
+        """BP~EP 직선구간 [((E,N),(E,N))] (좌/중/우 궤도)"""
+        res = self.result
+        if not res.ok or res.full is None:
+            return []
+        out = []
+        for side in ("left", "center", "right"):
+            for p, q in res.full.straights(side):
+                out.append(((p[1], p[0]), (q[1], q[0])))
+        return out
+
     # ------------------------------------------------------------ 출력/저장
     def write_out(self, path: str, distribution: bool = True):
         self._need_ok()
-        out_writer.write_out(path, self.result.inputs, distribution=distribution)
+        out_writer.write_out(path, self.result.inputs, distribution=distribution,
+                             full=self.result.full if self.full_out else None)
 
     def write_dxf(self, path: str) -> list:
         """local: IP 마다 파일(<이름>_IPn.dxf), global: 한 파일.  만든 파일 경로 목록 반환"""
         self._need_ok()
         made = []
-        if self.dxf_mode == "global":
+        if self.dxf_mode == "full":
+            dxf_writer.write_dxf(path, self.result.inputs, mode="full", full=self.result.full); made.append(path)
+        elif self.dxf_mode == "global":
             dxf_writer.write_dxf(path, self.result.inputs, mode="global"); made.append(path)
         else:
             base, ext = os.path.splitext(path)
@@ -233,7 +252,7 @@ class ProjectModel:
     def save_project(self, path: str):
         base, _ = os.path.splitext(path)
         data = dict(version=1, start_station=self.start_station, chain=self.chain, l_ref=self.l_ref,
-                    dxf_mode=self.dxf_mode, def_B=self.def_B, def_D=self.def_D,
+                    dxf_mode=self.dxf_mode, full_out=self.full_out, def_B=self.def_B, def_D=self.def_D,
                     rows=[{k: getattr(r, k) for k in COLS} for r in self.rows])
         with open(base + ".cxp", "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=1)
@@ -251,6 +270,7 @@ class ProjectModel:
         self.rows = [Row(**{k: r.get(k) for k in COLS}) for r in data["rows"]]
         self.start_station = data.get("start_station", 0.0); self.chain = data.get("chain", 20.0)
         self.l_ref = data.get("l_ref", "outside"); self.dxf_mode = data.get("dxf_mode", "local")
+        self.full_out = data.get("full_out", True)
         self.def_B = data.get("def_B", 2.2); self.def_D = data.get("def_D", 4.4)
         self.renumber(); self.path = path
         return "cxp"
