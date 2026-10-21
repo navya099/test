@@ -1,7 +1,7 @@
 import datetime
 from time import time
 
-import ezdxf  # DXF 생성을 위한 라이브러리
+import ezdxf
 import numpy as np
 
 
@@ -54,18 +54,21 @@ def create_sweep_mesh(path_points, profile_2d):
     return np.array(all_vertices), faces
 
 
-def save_mesh_to_dxf(filename, vertices, faces):
-    """생성된 정점과 면 데이터를 3DFACE 엔티티로 DXF 파일에 저장"""
+def save_mesh_and_path_to_dxf(filename, vertices, faces, path_points):
+    """3D 메쉬(Face)와 원본 중심선(3D Polyline)을 함께 DXF 파일에 저장"""
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
+    # 1. 원본 철도 중심선 그리기 (빨간색, color=1) -> add_polyline3d 로 수정
+    msp.add_polyline3d(path_points, dxfattribs={"color": 1})
+
+    # 2. 3D 스위프 구조물 메쉬 면 그리기 (초록색 계열, color=3)
     for face in faces:
-        # 각 면을 구성하는 4개의 3차원 정점 좌표 가져오기
         pts = [vertices[idx] for idx in face]
-        msp.add_3dface(pts)
+        msp.add_3dface(pts, dxfattribs={"color": 3})
 
     doc.saveas(filename)
-    print(f"DXF 파일 저장 완료: {filename}")
+    print(f"DXF 파일 저장 완료 (중심선 + 메쉬): {filename}")
 
 
 # ==================== 사용 예시 ====================
@@ -87,9 +90,9 @@ start_time = time()
 
 vertices, faces = create_sweep_mesh(rail_path, structural_profile)
 
-# DXF 파일로 출력
-output_filename = "c:/temp/rail_sweep_structure.dxf"
-save_mesh_to_dxf(output_filename, vertices, faces)
+# 중심선과 메쉬를 함께 DXF 파일로 출력
+output_filename = "c:/temp/rail_path_and_sweep.dxf"
+save_mesh_and_path_to_dxf(output_filename, vertices, faces, rail_path)
 
 end_time = time()
 elapsed_time = end_time - start_time
