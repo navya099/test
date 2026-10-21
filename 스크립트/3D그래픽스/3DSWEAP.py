@@ -76,12 +76,14 @@ structural_profile = [
     [-2, 0.5]
 ]
 
-# 소요시간 계산
+# 소요 시간 측정
 start_time = time()
-print(f"작업 시작: {start_time}")
+
 vertices, faces = create_sweep_mesh(rail_path, structural_profile)
+
+end_time = time()
+elapsed_time = end_time - start_time
+
 print(f"생성된 총 3D 정점 개수: {len(vertices)}")
 print(f"생성된 총 3D 면(Face) 개수: {len(faces)}")
-end_time = time()
-print(f"작업 끝: {end_time}")
-print(f"총 소요 시간: {end_time - start_time:.6f}초")
+print(f"총 소요 시간: {elapsed_time:.6f}초 (밀리초: {elapsed_time * 1000:.3f}ms)")
