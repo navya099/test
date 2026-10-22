@@ -396,33 +396,36 @@ class TestMainWindow(QMainWindow):
         dialog.exec()
 
     def on_alignment_props_clicked(self):
-        """선형 제원 및 PVI 편집 다이얼로그 호출"""
-        # 다이얼로그에 전달할 선형 데이터 묶음
+        """선형 제원 및 PVI 편집 다이얼로그 호출 (Modeless & 실시간 양방향 연동)"""
+
+        # 이미 속성창이 열려있다면 앞으로 가져오기
+        if hasattr(self, '_props_dialog') and self._props_dialog and self._props_dialog.isVisible():
+            self._props_dialog.raise_()
+            self._props_dialog.activateWindow()
+            return
+
         al_data = {
             'id': 0,
             'name': getattr(self, 'alignment_name', 'Main Alignment'),
             'start': 0.0,
             'min_r': 0.0,
-            'pis': self.alignment_pis  # 메인 뷰어의 PI 리스트 참조 공유
+            'pis': self.alignment_pis
         }
 
         ctx = {
             'project': self.project,
-            'units': 'm'  # 미터법 기준 (필요시 동적 연동)
+            'units': 'm'
         }
 
-        # AlignmentPropsDialog 팝업 실행
-        dialog = AlignmentPropsDialog(al_data, ctx, parent=self)
+        # 값이 바뀔 때마다 메인 뷰어 화면을 다시 그리도록 하는 콜백 함수
+        def on_alignment_changed():
+            self.update()  # 메인 캐드 뷰어 갱신
 
-        # 다이얼로그가 닫힐 때 변경된 데이터 반영 및 뷰 갱신
-        if dialog.exec():
-            # 이름이나 PI 정보가 변경되었을 경우 동기화
-            if 'name' in al_data:
-                self.alignment_name = al_data['name']
-            self.alignment_pis = al_data['pis']
-
-            # 메인 뷰어 화면 다시 그리기
-            self.update()
+        # Modeless 방식으로 다이얼로그 생성 및 표시 (self._props_dialog에 참조 유지)
+        self._props_dialog = AlignmentPropsDialog(
+            al_data, ctx, on_change_callback=on_alignment_changed, parent=self
+        )
+        self._props_dialog.show()  # exec() 대신 show() 사용하여 창 밖 조작 가능
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
