@@ -7,6 +7,7 @@ from PyQt6.QtGui import QPen, QColor, QBrush, QPainter
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout
 
 from alignment import build_alignment
+from alignment_props_ui import AlignmentPropsDialog
 from project import Project
 from plan_view import PlanViewWidget
 from scene import plan_scene
@@ -52,6 +53,10 @@ class TestMainWindow(QMainWindow):
         self.btn_staking = QPushButton("측량 보고서 (Staking)")  # [추가됨]
         self.btn_staking.clicked.connect(self.on_staking_clicked)
         toolbar_layout.addWidget(self.btn_staking)
+
+        self.btn_al_props = QPushButton("선형 속성 (Properties)")  # [추가됨]
+        self.btn_al_props.clicked.connect(self.on_alignment_props_clicked)
+        toolbar_layout.addWidget(self.btn_al_props)
 
         layout.addLayout(toolbar_layout)
 
@@ -389,6 +394,35 @@ class TestMainWindow(QMainWindow):
         # StakingDialog 팝업 실행
         dialog = StakingDialog(alignment_id=0, ctx=ctx, parent=self)
         dialog.exec()
+
+    def on_alignment_props_clicked(self):
+        """선형 제원 및 PVI 편집 다이얼로그 호출"""
+        # 다이얼로그에 전달할 선형 데이터 묶음
+        al_data = {
+            'id': 0,
+            'name': getattr(self, 'alignment_name', 'Main Alignment'),
+            'start': 0.0,
+            'min_r': 0.0,
+            'pis': self.alignment_pis  # 메인 뷰어의 PI 리스트 참조 공유
+        }
+
+        ctx = {
+            'project': self.project,
+            'units': 'm'  # 미터법 기준 (필요시 동적 연동)
+        }
+
+        # AlignmentPropsDialog 팝업 실행
+        dialog = AlignmentPropsDialog(al_data, ctx, parent=self)
+
+        # 다이얼로그가 닫힐 때 변경된 데이터 반영 및 뷰 갱신
+        if dialog.exec():
+            # 이름이나 PI 정보가 변경되었을 경우 동기화
+            if 'name' in al_data:
+                self.alignment_name = al_data['name']
+            self.alignment_pis = al_data['pis']
+
+            # 메인 뷰어 화면 다시 그리기
+            self.update()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
