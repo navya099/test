@@ -12,57 +12,6 @@ def norm_ang(a):
     return a
 
 
-def clothoid_point(A, s, start_pos=(0, 0), start_dir=0, ccw=True):
-    if A <= 1e-9:
-        return {'x': start_pos[0] + s * math.cos(start_dir), 'y': start_pos[1] + s * math.sin(start_dir),
-                'dir': start_dir}
-
-    steps = max(10, int(s / 0.5))
-    ds = s / steps
-    cx, cy = start_pos
-    curr_s = 0.0
-
-    for _ in range(steps):
-        s_mid = curr_s + ds / 2.0
-        cur_tau = (s_mid ** 2) / (2.0 * (A ** 2))
-        if not ccw:
-            cur_tau = -cur_tau
-        d_angle = start_dir + cur_tau
-        cx += ds * math.cos(d_angle)
-        cy += ds * math.sin(d_angle)
-        curr_s += ds
-
-    final_dir = start_dir + ((s ** 2) / (2.0 * (A ** 2)) * (1 if ccw else -1))
-    return {'x': cx, 'y': cy, 'dir': final_dir}
-
-
-def clothoid_exit_point(A, r, ls, s, start_pos=(0, 0), start_dir=0, ccw=True):
-    if A <= 1e-9 or ls <= 1e-9:
-        return {'x': start_pos[0] + s * math.cos(start_dir), 'y': start_pos[1] + s * math.sin(start_dir),
-                'dir': start_dir}
-
-    steps = max(10, int(s / 0.5)) if s > 0 else 1
-    ds = s / steps if steps > 0 else 0
-    cx, cy = start_pos
-    curr_s = 0.0
-
-    for _ in range(steps):
-        s_mid = curr_s + ds / 2.0
-        cur_tau = (s_mid / r) - ((s_mid ** 2) / (2.0 * (A ** 2)))
-        if not ccw:
-            cur_tau = -cur_tau
-        d_angle = start_dir + cur_tau
-        cx += ds * math.cos(d_angle)
-        cy += ds * math.sin(d_angle)
-        curr_s += ds
-
-    final_tau = (s / r) - ((s ** 2) / (2.0 * (A ** 2)))
-    if not ccw:
-        final_tau = -final_tau
-    final_dir = start_dir + final_tau
-    return {'x': cx, 'y': cy, 'dir': final_dir}
-
-
 def build_alignment(pis, start=0):
     errors = []
     elements = []
@@ -96,7 +45,6 @@ def build_alignment(pis, start=0):
             curves[i] = {'r': 0, 'ls': 0, 'Ts': 0, 'd': d, 'delta': delta_abs}
             continue
 
-        # 완화곡선 고려한 접선장 Ts 계산
         p_shift = (ls ** 2) / (6.0 * r) if ls > 0 else 0.0
         q_offset = (ls / 2.0) if ls > 0 else 0.0
         Ts = (r + p_shift) * math.tan(delta_abs / 2.0) + q_offset
@@ -110,7 +58,7 @@ def build_alignment(pis, start=0):
         Ts_curr = curves[i + 1].get('Ts', 0) if i < n - 1 and curves[i + 1] else 0
 
         if Ts_prev + Ts_curr > L + 1e-9:
-            errors.append(f"PI {i + 1}과 PI {i + 2} 사이의 곡선이 겹칩니다. (필요 접선합: {Ts_prev + Ts_curr:.2f}, 실제 거리: {L:.2f})")
+            errors.append(f"PI {i + 1}과 PI {i + 2} 사이의 곡선이 겹칩니다.")
 
     if errors:
         return Alignment([], start, errors, Q)
@@ -156,9 +104,10 @@ def build_alignment(pis, start=0):
                     'type': 'transition_in', 'p0': cur, 'r_start': float('inf'), 'r_end': r,
                     'A': A, 'ls': ls, 'ccw': ccw, 'sta': sta, 'len': ls, 'dir': cur_dir
                 })
-                tr_end = clothoid_point(A, ls, (cur['x'], cur['y']), cur_dir, ccw)
-                cur = {'x': tr_end['x'], 'y': tr_end['y']}
-                cur_dir = tr_end['dir']
+                # 끝점 계산 (단일 적분)
+                tr_end_pt, cur_dir = _calc_clothoid_endpoint(A, ls, cur['x'], cur['y'], cur_dir, ccw, is_exit=False,
+                                                             r=r)
+                cur = tr_end_pt
                 sta += ls
                 theta_s = ls / (2.0 * r)
             else:
@@ -166,7 +115,6 @@ def build_alignment(pis, start=0):
 
             # 3. 원곡선
             arc_delta = delta_abs - (2.0 * theta_s)
-
             if arc_delta > 0:
                 arc_len = r * arc_delta
                 nx = -math.sin(cur_dir) if ccw else math.sin(cur_dir)
@@ -191,9 +139,9 @@ def build_alignment(pis, start=0):
                     'type': 'transition_out', 'p0': cur, 'r_start': r, 'r_end': float('inf'),
                     'A': A, 'ls': ls, 'ccw': ccw, 'sta': sta, 'len': ls, 'dir': cur_dir
                 })
-                tr_out_end = clothoid_exit_point(A, r, ls, ls, (cur['x'], cur['y']), cur_dir, ccw)
-                cur = {'x': tr_out_end['x'], 'y': tr_out_end['y']}
-                cur_dir = tr_out_end['dir']
+                tr_out_end_pt, cur_dir = _calc_clothoid_endpoint(A, ls, cur['x'], cur['y'], cur_dir, ccw, is_exit=True,
+                                                                 r=r)
+                cur = tr_out_end_pt
                 sta += ls
         else:
             target = {'x': pi['x'], 'y': pi['y']}
@@ -203,7 +151,43 @@ def build_alignment(pis, start=0):
                 sta += line_len
                 cur = target
 
-    return Alignment(elements, start, [], Q)
+    return Alignment(elements, start, errors, Q)
+
+
+def _calc_clothoid_endpoint(A, ls, x0, y0, start_dir, ccw, is_exit=False, r=0.0):
+    """완화곡선 끝점과 최종 방향각을 계산하는 고속 내부 함수"""
+    if A <= 1e-9 or ls <= 1e-9:
+        return {'x': x0 + ls * math.cos(start_dir), 'y': y0 + ls * math.sin(start_dir)}, start_dir
+
+    steps = max(10, int(ls / 0.5))
+    ds = ls / steps
+    cx, cy = x0, y0
+    curr_s = 0.0
+
+    for _ in range(steps):
+        s_mid = curr_s + ds / 2.0
+        if not is_exit:
+            cur_tau = (s_mid ** 2) / (2.0 * (A ** 2))
+        else:
+            cur_tau = (s_mid / r) - ((s_mid ** 2) / (2.0 * (A ** 2)))
+
+        if not ccw:
+            cur_tau = -cur_tau
+        d_angle = start_dir + cur_tau
+        cx += ds * math.cos(d_angle)
+        cy += ds * math.sin(d_angle)
+        curr_s += ds
+
+    if not is_exit:
+        final_tau = (ls ** 2) / (2.0 * (A ** 2))
+    else:
+        final_tau = (ls / r) - ((ls ** 2) / (2.0 * (A ** 2)))
+
+    if not ccw:
+        final_tau = -final_tau
+    final_dir = start_dir + final_tau
+
+    return {'x': cx, 'y': cy}, final_dir
 
 
 class Alignment:
@@ -241,10 +225,12 @@ class Alignment:
                 'dir': e['dir']
             }
         elif e['type'] == 'transition_in':
-            return clothoid_point(e['A'], s, (e['p0']['x'], e['p0']['y']), e['dir'], e['ccw'])
+            pt, d = _calc_clothoid_endpoint(e['A'], s, e['p0']['x'], e['p0']['y'], e['dir'], e['ccw'], is_exit=False)
+            return {'x': pt['x'], 'y': pt['y'], 'dir': d}
         elif e['type'] == 'transition_out':
-            return clothoid_exit_point(e['A'], e['r_start'], e['ls'], s, (e['p0']['x'], e['p0']['y']), e['dir'],
-                                       e['ccw'])
+            pt, d = _calc_clothoid_endpoint(e['A'], s, e['p0']['x'], e['p0']['y'], e['dir'], e['ccw'], is_exit=True,
+                                            r=e['r_start'])
+            return {'x': pt['x'], 'y': pt['y'], 'dir': d}
         elif e['type'] == 'arc':
             sw = (1 if e['ccw'] else -1) * s / e['r']
             a = e['a0'] + sw
@@ -256,28 +242,49 @@ class Alignment:
         return None
 
     def polyline(self, max_seg=1.0, max_turn=math.pi / 360):
+        """완화곡선 샘플링을 단일 패스로 최적화하여 렌더링 속도 대폭 향상"""
         out = []
         for e in self.elements:
             if not out:
                 out.append({'x': e['p0']['x'], 'y': e['p0']['y'], 'sta': e['sta']})
 
             e_type = e.get('type')
-
-            # 1. 직선 (Line) 처리
             if e_type == 'line':
                 p1 = e.get('p1', e['p0'])
                 out.append({'x': p1['x'], 'y': p1['y'], 'sta': e['sta'] + e['len']})
 
-            # 2. 완화곡선 (Transition In / Out) 처리 [추가됨]
-            elif e_type in ('transition_in', 'transition_out', 'transition'):
-                n = max(5, math.ceil(e['len'] / 0.5))  # 0.5미터 간격 정밀 샘플링
-                for k in range(1, n + 1):
-                    s = e['sta'] + (e['len'] * k) / n
-                    p = self.point_at(s)
-                    if p:
-                        out.append({'x': p['x'], 'y': p['y'], 'sta': s})
+            elif e_type in ('transition_in', 'transition_out'):
+                # 단일 루프로 0부터 ls까지 누적 전진하며 모든 점을 한 번에 생성 ($O(N)$ 최적화)
+                ls = e['len']
+                steps = max(10, int(ls / 0.5))
+                ds = ls / steps
+                cx, cy = e['p0']['x'], e['p0']['y']
+                start_dir = e['dir']
+                ccw = e['ccw']
+                A = e['A']
+                is_exit = (e_type == 'transition_out')
+                r = e.get('r_start', 0) if is_exit else 0.0
 
-            # 3. 원곡선 (Arc) 처리
+                curr_s = 0.0
+                for k in range(1, steps + 1):
+                    s_target = (ls * k) / steps
+                    sub_ds = s_target - curr_s
+
+                    s_mid = curr_s + sub_ds / 2.0
+                    if not is_exit:
+                        cur_tau = (s_mid ** 2) / (2.0 * (A ** 2))
+                    else:
+                        cur_tau = (s_mid / r) - ((s_mid ** 2) / (2.0 * (A ** 2)))
+
+                    if not ccw:
+                        cur_tau = -cur_tau
+                    d_angle = start_dir + cur_tau
+                    cx += sub_ds * math.cos(d_angle)
+                    cy += sub_ds * math.sin(d_angle)
+                    curr_s = s_target
+
+                    out.append({'x': cx, 'y': cy, 'sta': e['sta'] + curr_s})
+
             elif e_type == 'arc':
                 n = max(1, math.ceil(e['delta'] / max_turn),
                         math.ceil(e['len'] / max_seg) if max_seg != float('inf') else 1)
