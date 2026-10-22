@@ -1,6 +1,8 @@
 import math
 
 
+
+
 def ang(a, b, c):
     a1 = math.atan2(b['y'] - a['y'], b['x'] - a['x'])
     a2 = math.atan2(c['y'] - b['y'], c['x'] - b['x'])
@@ -152,3 +154,55 @@ def vertical_why(pvis_in):
         else:
             prev_end = v['sta'] + L / 2
     return out
+
+def validate_alignment_geometry(Q):
+    """
+    PI 목록을 받아 곡선 제원을 사전 계산하고
+    역방향 꺾임, 접선 길이 겹침, 완화곡선 범위 초과 등의 기하학적 오류를 검증합니다.
+    """
+    errors = []
+    n = len(Q)
+    curves = [None] * n
+
+    for i in range(1, n - 1):
+        pi = Q[i]
+        r = float(pi.get('r', 0) or 0)
+        ls = float(pi.get('ls', 0) or 0)
+
+        dir_in = math.atan2(pi['y'] - Q[i - 1]['y'], pi['x'] - Q[i - 1]['x'])
+        dir_out = math.atan2(Q[i + 1]['y'] - pi['y'], Q[i + 1]['x'] - pi['x'])
+        from alignment import norm_ang
+        d = norm_ang(dir_out - dir_in)
+        delta_abs = abs(d)
+
+        if r <= 0 or delta_abs < 1e-9:
+            curves[i] = {'r': 0, 'ls': 0, 'Ts': 0, 'd': d, 'delta': delta_abs}
+            continue
+
+        if abs(delta_abs - math.pi) < 1e-6:
+            errors.append(f"PI {i + 1}: 선형이 역방향으로 꺾입니다.")
+            curves[i] = {'r': 0, 'ls': 0, 'Ts': 0, 'd': d, 'delta': delta_abs}
+            continue
+
+        # 접선장(Ts) 사전 계산
+        p_shift = (ls ** 2) / (6.0 * r) if ls > 0 else 0.0
+        q_offset = (ls / 2.0) if ls > 0 else 0.0
+        Ts = (r + p_shift) * math.tan(delta_abs / 2.0) + q_offset
+
+        # 완화곡선이 원곡선 영역을 침범하는지 검증
+        theta_s = (ls / (2.0 * r)) if (r > 0 and ls > 0) else 0.0
+        if theta_s >= delta_abs / 2.0:
+            errors.append(f"PI {i + 1}: 완화곡선 길이(Ls)가 너무 길어 원곡선 영역을 초과합니다.")
+
+        curves[i] = {'r': r, 'ls': ls, 'Ts': Ts, 'd': d, 'delta': delta_abs}
+
+    # 인접 곡선 간 접선 길이 겹침 검증
+    for i in range(n - 1):
+        L = math.hypot(Q[i + 1]['x'] - Q[i]['x'], Q[i + 1]['y'] - Q[i]['y'])
+        Ts_prev = curves[i].get('Ts', 0) if i > 0 and curves[i] else 0
+        Ts_curr = curves[i + 1].get('Ts', 0) if i < n - 1 and curves[i + 1] else 0
+
+        if Ts_prev + Ts_curr > L + 1e-9:
+            errors.append(f"PI {i + 1}과 PI {i + 2} 사이의 곡선이 겹칩니다.")
+
+    return errors, curves

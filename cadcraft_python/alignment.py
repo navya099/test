@@ -1,5 +1,7 @@
 import math
 
+from solve_why import validate_alignment_geometry
+
 TAU = math.pi * 2
 
 
@@ -21,6 +23,9 @@ def build_alignment(pis, start=0):
 
     if len(Q) < 2:
         return Alignment([], start, ["최소 2개 이상의 유효한 PI가 필요합니다."], Q)
+
+    # 1 & 2단계: 유효성 검증 및 사전 제원 계산 분리 호출
+    errors, curves = validate_alignment_geometry(Q)
 
     n = len(Q)
     curves = [None] * n
