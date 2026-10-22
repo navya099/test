@@ -269,6 +269,10 @@ class TestMainWindow(QMainWindow):
             pi = self.alignment_pis[self.dragging_pi_index]
             pi['x'] = w_pos['x']
             pi['y'] = w_pos['y']
+            # [추가된 위치] PI가 드래그되면서 좌표가 바뀔 때 열려있는 속성창 실시간 갱신
+            if hasattr(self, '_props_dialog') and self._props_dialog and self._props_dialog.isVisible():
+                self._props_dialog.refresh_from_external()
+
             self.plan_view.update()
             return
 

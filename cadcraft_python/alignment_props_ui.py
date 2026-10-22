@@ -228,3 +228,10 @@ class AlignmentPropsDialog(QDialog):
                 self.curves_label.setText("No curve elements generated.")
         else:
             self.curves_label.setText("Alignment geometry is invalid (Check minimum radius or overlap).")
+
+    def refresh_from_external(self):
+        """캐드 캔버스 드래그 등으로 좌표가 외부에서 변경되었을 때 테이블 뷰만 갱신"""
+        # 사용자가 테이블 셀을 편집 중이 아닐 때만 갱신하여 입력 방해 방지
+        if not self.pi_table.hasFocus():
+            self.populate_pi_table()
+            self.update_curves_info()
