@@ -52,12 +52,12 @@ class TestMainWindow(QMainWindow):
         # 초기 화면 범위를 포인트 위치에 맞춤
         self.on_fit_clicked()
 
-        # 1. 테스트용 간이 선형(Alignment) 데이터 추가 (PI 목록: x, y, radius)
+        # 완화곡선과 원곡선이 정상적으로 안착하는 넉넉한 간격의 PI 데이터
         self.alignment_pis = [
-            {'x': 0.0, 'y': 0.0, 'r': 30.0},
-            {'x': 40.0, 'y': 60.0, 'r': 50.0},
-            {'x': 100.0, 'y': 40.0, 'r': 0.0},
-            {'x': 140.0, 'y': 100.0, 'r': 40.0}
+            {'x': 0.0, 'y': 0.0, 'r': 0.0, 'ls': 0.0},
+            {'x': 1000.0, 'y': 0.0, 'r': 300.0, 'ls': 80.0},  # 첫 번째 완화곡선 (Ls=80, R=300)
+            {'x': 1500.0, 'y': 1000.0, 'r': 400.0, 'ls': 100.0},  # 두 번째 완화곡선 (Ls=100, R=400)
+            {'x': 2500.0, 'y': 1000.0, 'r': 0.0, 'ls': 0.0}
         ]
 
         # 드래그 편집 상태 변수
@@ -195,6 +195,7 @@ class TestMainWindow(QMainWindow):
 
         painter.restore()
 
+        self.export_alignment_to_dxf()
     def custom_mouse_press(self, event):
         """마우스 클릭 시 PI 그립을 선택했는지 확인"""
         pos = event.position()
@@ -245,6 +246,43 @@ class TestMainWindow(QMainWindow):
         if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
             self.plan_view._is_panning = False
             self.plan_view.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def export_alignment_to_dxf(self, filepath="c:/temp/test_spiral_civilcraft.dxf"):
+        """현재 선형을 DXF 파일로 내보내기"""
+        import os
+        alignment = build_alignment(self.alignment_pis)
+        if not alignment.ok:
+            print(f"DXF 내보내기 실패: 선형 에러 발생 ({alignment.errors})")
+            return
+
+        poly_pts = alignment.polyline(max_seg=1.0)
+        if not poly_pts:
+            print("DXF 내보내기 실패: 샘플링 포인트가 없습니다.")
+            return
+
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+        # 표준 ASCII DXF 형식 (LWPOLYLINE 작성)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write("0\nSECTION\n2\nHEADER\n0\nENDSEC\n")
+            f.write("0\nSECTION\n2\nTABLES\n0\nENDSEC\n")
+            f.write("0\nSECTION\n2\nENTITIES\n")
+
+            # 도로 중심선 LWPOLYLINE 엔티티
+            f.write("0\nLWPOLYLINE\n")
+            f.write("8\nC-ROAD-CNTR\n")  # 레이어 이름
+            f.write(f"90\n{len(poly_pts)}\n")  # 정점 개수
+            f.write("70\n0\n")  # 열린 폴리라인 (Open)
+
+            for p in poly_pts:
+                f.write(f"10\n{p['x']}\n")
+                f.write(f"20\n{p['y']}\n")
+
+            f.write("0\nENDSEC\n0\nEOF\n")
+
+        print(f"DXF 파일 저장 성공: {filepath}")
+
+        
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = TestMainWindow()
