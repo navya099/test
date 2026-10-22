@@ -105,7 +105,7 @@ class AlignmentPropsDialog(QDialog):
 
         self.pi_table = QTableWidget()
         self.pi_table.setColumnCount(5)
-        self.pi_table.setHorizontalHeaderLabels(["#", "Easting", "Northing", "Radius (R)", ""])
+        self.pi_table.setHorizontalHeaderLabels(["#", "Easting", "Northing", "Radius (R)", "Clothoid (Ls)", ""])
         self.pi_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         self.populate_pi_table()
@@ -147,11 +147,17 @@ class AlignmentPropsDialog(QDialog):
                     r_item.setFlags(r_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.pi_table.setItem(i, 3, r_item)
 
+                # 4: Clothoid Length (Ls)
+                ls_item = QTableWidgetItem("—" if is_end else fixed(p.get('ls', 0.0), 2))
+                if is_end:
+                    ls_item.setFlags(ls_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.pi_table.setItem(i, 4, ls_item)
+
                 if len(pis) > 2:
                     btn_del = QPushButton("×")
                     btn_del.setFixedWidth(30)
                     btn_del.clicked.connect(lambda checked, idx=i: self.remove_pi(idx))
-                    self.pi_table.setCellWidget(i, 4, btn_del)
+                    self.pi_table.setCellWidget(i, 5, btn_del)
                 else:
                     self.pi_table.setItem(i, 4, QTableWidgetItem(""))
         finally:
@@ -174,7 +180,8 @@ class AlignmentPropsDialog(QDialog):
                 pis[row]['y'] = val
             elif col == 3 and 0 < row < len(pis) - 1:
                 pis[row]['r'] = max(0.0, val)
-
+            elif col == 4 and 0 < row < len(pis) - 1:
+                pis[row]['ls'] = max(0.0, val)  # 완화곡선 길이 실시간 반영
             self.update_curves_info()
             if self.on_change_callback:
                 self.on_change_callback()
