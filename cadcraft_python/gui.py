@@ -1,5 +1,9 @@
 # test_gui.py
+import math
 import sys
+
+from PyQt6.QtCore import Qt, QPointF, QRectF
+from PyQt6.QtGui import QPen, QColor, QBrush, QPainter
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout
 from project import Project
 from plan_view import PlanViewWidget
@@ -46,6 +50,24 @@ class TestMainWindow(QMainWindow):
         # 초기 화면 범위를 포인트 위치에 맞춤
         self.on_fit_clicked()
 
+        # 1. 테스트용 간이 선형(Alignment) 데이터 추가 (PI 목록: x, y, radius)
+        self.alignment_pis = [
+            {'x': 0.0, 'y': 0.0, 'r': 30.0},
+            {'x': 40.0, 'y': 60.0, 'r': 50.0},
+            {'x': 100.0, 'y': 40.0, 'r': 0.0},
+            {'x': 140.0, 'y': 100.0, 'r': 40.0}
+        ]
+
+        # 드래그 편집 상태 변수
+        self.dragging_pi_index = None
+
+        # 2. 평면 뷰어에 오버레이 렌더링 함수 등록
+        self.plan_view.draw_overlay_fn = self.draw_custom_overlay
+
+        # 3. 평면 뷰어의 마우스 이벤트 오버라이드 (그립 드래그용)
+        self.plan_view.mousePressEvent = self.custom_mouse_press
+        self.plan_view.mouseMoveEvent = self.custom_mouse_move
+        self.plan_view.mouseReleaseEvent = self.custom_mouse_release
     def get_scene(self, mm_per_unit):
         """Project 상태와 포인트 데이터를 받아 PlanView에 전달할 씬(Scene) 생성"""
         state = self.project.state
@@ -106,7 +128,88 @@ class TestMainWindow(QMainWindow):
         except Exception as e:
             print(f"[크래시 방지 예외 포착]: {e}")
 
+    def get_scene(self, mm_per_unit):
+        state = self.project.state
+        state['points'] = self.project.points
+        # 씬 생성 시 선형 데이터도 함께 전달 (scene.py가 처리할 수 있도록)
+        state['alignments'] = [{'pis': self.alignment_pis}]
+        return plan_scene(state, {'mmPerUnit': mm_per_unit})
 
+    def draw_custom_overlay(self, painter: QPainter, view):
+        """선형의 PI 점(그립 핸들)을 화면에 렌더링"""
+        painter.save()
+
+        # 각 PI 위치에 빨간색 그립 사각형 표시
+        for i, pi in enumerate(self.alignment_pis):
+            sp = view.to_screen(pi['x'], pi['y'])
+
+            # 마우스가 선택 중인 PI는 파란색, 나머지는 빨간색
+            is_selected = (i == self.dragging_pi_index)
+            color = QColor('#1e48c8') if is_selected else QColor('#b3122e')
+
+            painter.setPen(QPen(Qt.GlobalColor.white, 1.5))
+            painter.setBrush(QBrush(color))
+
+            # 8x8 픽셀 크기의 그립 사각형
+            rect = QRectF(sp.x() - 4, sp.y() - 4, 8, 8)
+            painter.drawRect(rect)
+
+            # PI 번호 텍스트 표시
+            painter.setPen(color)
+            painter.drawText(QPointF(sp.x() + 8, sp.y() - 4), f"PI{i + 1}")
+
+        painter.restore()
+
+    def custom_mouse_press(self, event):
+        """마우스 클릭 시 PI 그립을 선택했는지 확인"""
+        pos = event.position()
+        w_pos = self.plan_view.to_world(pos.x(), pos.y())
+
+        # 왼쪽 클릭일 때만 그립 선택 검사
+        if event.button() == Qt.MouseButton.LeftButton:
+            # 화면 픽셀 기준으로 약 10픽셀 이내에 있는 PI를 찾음
+            for i, pi in enumerate(self.alignment_pis):
+                sp = self.plan_view.to_screen(pi['x'], pi['y'])
+                dist = math.hypot(sp.x() - pos.x(), sp.y() - pos.y())
+                if dist <= 10.0:  # 10px 반경 내 클릭 시 선택
+                    self.dragging_pi_index = i
+                    return
+
+        # 기본 패닝(우클릭/휠클릭) 처리 위임
+        if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
+            self.plan_view._is_panning = True
+            self.plan_view._last_mouse_pos = pos
+            self.plan_view.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def custom_mouse_move(self, event):
+        """마우스 드래그 시 선택된 PI 좌표를 실시간으로 업데이트"""
+        pos = event.position()
+        w_pos = self.plan_view.to_world(pos.x(), pos.y())
+
+        # 1. PI를 드래그 중인 경우
+        if self.dragging_pi_index is not None:
+            pi = self.alignment_pis[self.dragging_pi_index]
+            pi['x'] = w_pos['x']
+            pi['y'] = w_pos['y']
+            self.plan_view.update()  # 화면 실시간 갱신!
+            return
+
+        # 2. 일반 패닝 중인 경우
+        if getattr(self.plan_view, '_is_panning', False):
+            dx = pos.x() - self.plan_view._last_mouse_pos.x()
+            dy = pos.y() - self.plan_view._last_mouse_pos.y()
+            self.plan_view.pan_by(dx, dy)
+            self.plan_view._last_mouse_pos = pos
+
+    def custom_mouse_release(self, event):
+        """마우스 버튼 뗄 때 드래그 종료"""
+        if event.button() == Qt.MouseButton.LeftButton and self.dragging_pi_index is not None:
+            self.dragging_pi_index = None
+            # 필요시 여기서 project.py의 undo 스택에 변경 사항 기록 가능!
+
+        if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
+            self.plan_view._is_panning = False
+            self.plan_view.setCursor(Qt.CursorShape.ArrowCursor)
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = TestMainWindow()
