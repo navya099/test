@@ -311,9 +311,21 @@ class Alignment:
 
     def key_stations(self):
         out = [{'sta': self.start, 'kind': 'Start'}]
-        for e in self.elements:
-            if e['type'] == 'arc':
-                out.append({'sta': e['sta'], 'kind': 'PC'})
-                out.append({'sta': e['sta'] + e['len'], 'kind': 'PT'})
+        for i, e in enumerate(self.elements):
+            e_type = e.get('type')
+            if e_type == 'transition_in':
+                out.append({'sta': e['sta'], 'kind': 'TS'})
+                out.append({'sta': e['sta'] + e['len'], 'kind': 'SC'})
+            elif e_type == 'transition_out':
+                out.append({'sta': e['sta'], 'kind': 'CS'})
+                out.append({'sta': e['sta'] + e['len'], 'kind': 'ST'})
+            elif e_type == 'arc':
+                # 완화곡선이 없는 순수 원곡선인 경우 PC, PT 부여
+                has_prev_trans = (i > 0 and self.elements[i - 1].get('type') == 'transition_in')
+                has_next_trans = (i < len(self.elements) - 1 and self.elements[i + 1].get('type') == 'transition_out')
+                if not has_prev_trans:
+                    out.append({'sta': e['sta'], 'kind': 'PC'})
+                if not has_next_trans:
+                    out.append({'sta': e['sta'] + e['len'], 'kind': 'PT'})
         out.append({'sta': self.end, 'kind': 'End'})
         return out
