@@ -149,19 +149,18 @@ class TestMainWindow(QMainWindow):
             print(f"[크래시 방지 예외 포착]: {e}")
 
     def draw_custom_overlay(self, painter: QPainter, view):
-        """선형 계산 결과(폴리라인)와 PI 점(그립 핸들)을 오버레이에 직접 렌더링"""
+        """선형 폴리라인, 스테이션 눈금(Ticks), 주요 제원 마커, PI 그립을 오버레이에 렌더링"""
         painter.save()
 
         # 1. alignment 엔진으로 선형 계산
         alignment = build_alignment(self.alignment_pis)
         if alignment.ok:
+            # A. 선형 폴리라인 렌더링
             poly_pts = alignment.polyline(max_seg=1.0)
             if len(poly_pts) >= 2:
-                # 도로 중심선 스타일 (파란색 실선)
                 painter.setPen(QPen(QColor('#1e48c8'), 2.5))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
 
-                # 월드 좌표를 스크린 좌표로 변환하여 선 그리기
                 from PyQt6.QtGui import QPainterPath
                 path = QPainterPath()
                 first_sp = view.to_screen(poly_pts[0]['x'], poly_pts[0]['y'])
@@ -172,8 +171,62 @@ class TestMainWindow(QMainWindow):
                     path.lineTo(sp.x(), sp.y())
 
                 painter.drawPath(path)
+
+            # B. 스테이션 틱(Ticks) 및 눈금 라벨 렌더링 (예: 20미터 간격)
+            tick_step = 20.0
+            ticks = alignment.ticks(step=tick_step)
+            for t in ticks:
+                sta = t['sta']
+                x, y, dir_val = t['x'], t['y'], t['dir']
+
+                # 선형 진행 방향의 수직 법선 벡터 (좌측 방향 기준)
+                nx = -math.sin(dir_val)
+                ny = math.cos(dir_val)
+                tick_len = 3.0  # 눈금 길이 (월드 단위, 미터)
+
+                p_inner = view.to_screen(x, y)
+                p_outer = view.to_screen(x + nx * tick_len, y + ny * tick_len)
+
+                # 눈금선 그리기
+                painter.setPen(QPen(QColor('#555555'), 1.0))
+                painter.drawLine(p_inner, p_outer)
+
+                # 100미터 단위(메이저 스테이션)마다 번호 텍스트 표시 (예: 0+100, 0+200)
+                if abs(sta % 100) < 1e-5:
+                    label_pt = view.to_screen(x + nx * (tick_len + 4.0), y + ny * (tick_len + 4.0))
+                    painter.setPen(QPen(QColor('#222222'), 1.0))
+
+                    # 스테이션 포맷팅 (예: 120 -> 0+120)
+                    km = int(sta // 1000)
+                    m = int(sta % 1000)
+                    sta_str = f"{km}+{m:03d}"
+
+                    painter.drawText(label_pt, sta_str)
+
+            # C. 주요 제원 포인트 (Start, PC, PT, End) 마커 렌더링
+            key_stas = alignment.key_stations()
+            for ks in key_stas:
+                sta = ks['sta']
+                kind = ks['kind']
+                p = alignment.point_at(sta)
+                if p:
+                    sp = view.to_screen(p['x'], p['y'])
+
+                    # 빨간색 원형 마커
+                    painter.setPen(QPen(QColor('#b3122e'), 1.5))
+                    painter.setBrush(QBrush(QColor('#ffffff')))
+                    painter.drawEllipse(sp, 3.5, 3.5)
+
+                    # 제원 라벨 표시
+                    km = int(sta // 1000)
+                    m = int(sta % 1000)
+                    sta_fmt = f"{km}+{m:03d}"
+
+                    painter.setPen(QPen(QColor('#b3122e'), 1.0))
+                    painter.drawText(QPointF(sp.x() + 6, sp.y() + 4), f"{kind} ({sta_fmt})")
+
         else:
-            # 에러가 있다면 콘솔에 출력
+            # 선형 에러 발생 시 콘솔에 출력
             # print(f"선형 에러: {alignment.errors}")
             pass
 
@@ -282,7 +335,7 @@ class TestMainWindow(QMainWindow):
 
         print(f"DXF 파일 저장 성공: {filepath}")
 
-        
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = TestMainWindow()
