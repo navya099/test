@@ -10,6 +10,7 @@ from alignment import build_alignment
 from project import Project
 from plan_view import PlanViewWidget
 from scene import plan_scene
+from staking_ui import StakingDialog
 
 
 class TestMainWindow(QMainWindow):
@@ -42,6 +43,15 @@ class TestMainWindow(QMainWindow):
         self.btn_add_point = QPushButton("임의 포인트 추가 (Undo 테스트용)")
         self.btn_add_point.clicked.connect(self.on_add_point_clicked)
         toolbar_layout.addWidget(self.btn_add_point)
+
+        # DXF 내보내기 버튼 추가
+        self.btn_export_dxf = QPushButton("DXF 내보내기")
+        self.btn_export_dxf.clicked.connect(lambda: self.export_alignment_to_dxf())
+        toolbar_layout.addWidget(self.btn_export_dxf)
+
+        self.btn_staking = QPushButton("측량 보고서 (Staking)")  # [추가됨]
+        self.btn_staking.clicked.connect(self.on_staking_clicked)
+        toolbar_layout.addWidget(self.btn_staking)
 
         layout.addLayout(toolbar_layout)
 
@@ -117,7 +127,6 @@ class TestMainWindow(QMainWindow):
         """버튼을 누를 때마다 새로운 포인트를 추가하고 화면 갱신"""
         import random
         try:
-            # 1. 기존 포인트 복사 후 새 포인트 생성
             current_pts = getattr(self.project, 'points', [])
             new_pts = [p.copy() for p in current_pts]
             idx = len(new_pts) + 1
@@ -131,20 +140,12 @@ class TestMainWindow(QMainWindow):
             }
             new_pts.append(new_point)
 
-            print(f"포인트 추가 시도: {new_point}")
-
-            # 2. Project 에디트 메서드 호출 (만약 이 메서드 내부 구현에 문제가 있다면 확인 필요)
             if hasattr(self.project, 'edit_points'):
                 self.project.edit_points("포인트 추가", lambda pts, s: new_pts)
             else:
-                # edit_points가 없다면 직접 할당
                 self.project.points = new_pts
 
-            # 3. 씬 재생성 및 화면 갱신 테스트
-            print("화면 갱신(update) 호출 중...")
             self.plan_view.update()
-            print("화면 갱신 완료!")
-
         except Exception as e:
             print(f"[크래시 방지 예외 포착]: {e}")
 
@@ -191,19 +192,18 @@ class TestMainWindow(QMainWindow):
                 painter.setPen(QPen(QColor('#555555'), 1.0))
                 painter.drawLine(p_inner, p_outer)
 
-                # 100미터 단위(메이저 스테이션)마다 번호 텍스트 표시 (예: 0+100, 0+200)
+                # 100미터 단위(메이저 스테이션)마다 번호 텍스트 표시
                 if abs(sta % 100) < 1e-5:
                     label_pt = view.to_screen(x + nx * (tick_len + 4.0), y + ny * (tick_len + 4.0))
                     painter.setPen(QPen(QColor('#222222'), 1.0))
 
-                    # 스테이션 포맷팅 (예: 120 -> 0+120)
                     km = int(sta // 1000)
                     m = int(sta % 1000)
                     sta_str = f"{km}+{m:03d}"
 
                     painter.drawText(label_pt, sta_str)
 
-            # C. 주요 제원 포인트 (Start, PC, PT, End) 마커 렌더링
+            # C. 주요 제원 포인트 (Start, TS, SC, CS, ST, End 등) 마커 렌더링
             key_stas = alignment.key_stations()
             for ks in key_stas:
                 sta = ks['sta']
@@ -212,23 +212,16 @@ class TestMainWindow(QMainWindow):
                 if p:
                     sp = view.to_screen(p['x'], p['y'])
 
-                    # 빨간색 원형 마커
                     painter.setPen(QPen(QColor('#b3122e'), 1.5))
                     painter.setBrush(QBrush(QColor('#ffffff')))
                     painter.drawEllipse(sp, 3.5, 3.5)
 
-                    # 제원 라벨 표시
                     km = int(sta // 1000)
                     m = int(sta % 1000)
                     sta_fmt = f"{km}+{m:03d}"
 
                     painter.setPen(QPen(QColor('#b3122e'), 1.0))
                     painter.drawText(QPointF(sp.x() + 6, sp.y() + 4), f"{kind} ({sta_fmt})")
-
-        else:
-            # 선형 에러 발생 시 콘솔에 출력
-            # print(f"선형 에러: {alignment.errors}")
-            pass
 
         # 2. 각 PI 위치에 빨간색/파란색 그립 사각형 표시
         for i, pi in enumerate(self.alignment_pis):
@@ -248,42 +241,32 @@ class TestMainWindow(QMainWindow):
 
         painter.restore()
 
-        self.export_alignment_to_dxf()
     def custom_mouse_press(self, event):
-        """마우스 클릭 시 PI 그립을 선택했는지 확인"""
         pos = event.position()
-        w_pos = self.plan_view.to_world(pos.x(), pos.y())
-
-        # 왼쪽 클릭일 때만 그립 선택 검사
         if event.button() == Qt.MouseButton.LeftButton:
-            # 화면 픽셀 기준으로 약 10픽셀 이내에 있는 PI를 찾음
             for i, pi in enumerate(self.alignment_pis):
                 sp = self.plan_view.to_screen(pi['x'], pi['y'])
                 dist = math.hypot(sp.x() - pos.x(), sp.y() - pos.y())
-                if dist <= 10.0:  # 10px 반경 내 클릭 시 선택
+                if dist <= 10.0:
                     self.dragging_pi_index = i
                     return
 
-        # 기본 패닝(우클릭/휠클릭) 처리 위임
         if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
             self.plan_view._is_panning = True
             self.plan_view._last_mouse_pos = pos
             self.plan_view.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def custom_mouse_move(self, event):
-        """마우스 드래그 시 선택된 PI 좌표를 실시간으로 업데이트"""
         pos = event.position()
         w_pos = self.plan_view.to_world(pos.x(), pos.y())
 
-        # 1. PI를 드래그 중인 경우
         if self.dragging_pi_index is not None:
             pi = self.alignment_pis[self.dragging_pi_index]
             pi['x'] = w_pos['x']
             pi['y'] = w_pos['y']
-            self.plan_view.update()  # 화면 실시간 갱신!
+            self.plan_view.update()
             return
 
-        # 2. 일반 패닝 중인 경우
         if getattr(self.plan_view, '_is_panning', False):
             dx = pos.x() - self.plan_view._last_mouse_pos.x()
             dy = pos.y() - self.plan_view._last_mouse_pos.y()
@@ -291,17 +274,15 @@ class TestMainWindow(QMainWindow):
             self.plan_view._last_mouse_pos = pos
 
     def custom_mouse_release(self, event):
-        """마우스 버튼 뗄 때 드래그 종료"""
         if event.button() == Qt.MouseButton.LeftButton and self.dragging_pi_index is not None:
             self.dragging_pi_index = None
-            # 필요시 여기서 project.py의 undo 스택에 변경 사항 기록 가능!
 
         if event.button() in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
             self.plan_view._is_panning = False
             self.plan_view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def export_alignment_to_dxf(self, filepath="c:/temp/test_spiral_civilcraft.dxf"):
-        """현재 선형을 DXF 파일로 내보내기"""
+        """현재 선형(폴리라인, 스테이션 틱, 제원 텍스트)을 모두 포함하여 DXF 파일로 내보내기"""
         import os
         alignment = build_alignment(self.alignment_pis)
         if not alignment.ok:
@@ -315,26 +296,99 @@ class TestMainWindow(QMainWindow):
 
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-        # 표준 ASCII DXF 형식 (LWPOLYLINE 작성)
         with open(filepath, 'w', encoding='utf-8') as f:
+            # 1. DXF 헤더 및 테이블 섹션
             f.write("0\nSECTION\n2\nHEADER\n0\nENDSEC\n")
             f.write("0\nSECTION\n2\nTABLES\n0\nENDSEC\n")
             f.write("0\nSECTION\n2\nENTITIES\n")
 
-            # 도로 중심선 LWPOLYLINE 엔티티
+            # 2. 도로 중심선 LWPOLYLINE 엔티티 추가
             f.write("0\nLWPOLYLINE\n")
-            f.write("8\nC-ROAD-CNTR\n")  # 레이어 이름
-            f.write(f"90\n{len(poly_pts)}\n")  # 정점 개수
-            f.write("70\n0\n")  # 열린 폴리라인 (Open)
-
+            f.write("8\nC-ROAD-CNTR\n")       # 레이어
+            f.write(f"90\n{len(poly_pts)}\n") # 정점 개수
+            f.write("70\n0\n")                # 열린 폴리라인
             for p in poly_pts:
                 f.write(f"10\n{p['x']}\n")
                 f.write(f"20\n{p['y']}\n")
 
+            # 3. 스테이션 틱(Tick) LINE 엔티티들 추가 (20m 간격)
+            tick_step = 20.0
+            ticks = alignment.ticks(step=tick_step)
+            for t in ticks:
+                sta = t['sta']
+                x, y, dir_val = t['x'], t['y'], t['dir']
+                nx = -math.sin(dir_val)
+                ny = math.cos(dir_val)
+                tick_len = 3.0
+
+                x_out = x + nx * tick_len
+                y_out = y + ny * tick_len
+
+                f.write("0\nLINE\n")
+                f.write("8\nC-ROAD-TICK\n")
+                f.write(f"10\n{x}\n")
+                f.write(f"20\n{y}\n")
+                f.write(f"30\n0.0\n")
+                f.write(f"11\n{x_out}\n")
+                f.write(f"21\n{y_out}\n")
+                f.write(f"31\n0.0\n")
+
+                # 100m 주기의 메이저 스테이션 텍스트 (TEXT 엔티티)
+                if abs(sta % 100) < 1e-5:
+                    tx = x + nx * (tick_len + 4.0)
+                    ty = y + ny * (tick_len + 4.0)
+                    km = int(sta // 1000)
+                    m = int(sta % 1000)
+                    sta_str = f"{km}+{m:03d}"
+
+                    f.write("0\nTEXT\n")
+                    f.write("8\nC-ROAD-TEXT\n")
+                    f.write(f"10\n{tx}\n")
+                    f.write(f"20\n{ty}\n")
+                    f.write(f"30\n0.0\n")
+                    f.write("40\n3.0\n")  # 텍스트 높이
+                    f.write(f"1\n{sta_str}\n")
+
+            # 4. 주요 제원 포인트 마커 및 텍스트 (TS, SC, CS, ST 등) 추가
+            key_stas = alignment.key_stations()
+            for ks in key_stas:
+                sta = ks['sta']
+                kind = ks['kind']
+                p = alignment.point_at(sta)
+                if p:
+                    km = int(sta // 1000)
+                    m = int(sta % 1000)
+                    sta_fmt = f"{km}+{m:03d}"
+                    label_text = f"{kind} ({sta_fmt})"
+
+                    f.write("0\nTEXT\n")
+                    f.write("8\nC-ROAD-KEY\n")
+                    f.write(f"10\n{p['x'] + 4.0}\n")
+                    f.write(f"20\n{p['y'] + 4.0}\n")
+                    f.write(f"30\n0.0\n")
+                    f.write("40\n3.5\n")
+                    f.write(f"1\n{label_text}\n")
+
             f.write("0\nENDSEC\n0\nEOF\n")
 
-        print(f"DXF 파일 저장 성공: {filepath}")
+        print(f"DXF 파일 저장 성공 (틱 및 텍스트 포함): {filepath}")
 
+    def on_staking_clicked(self):
+        """측량 말뚝박기(Staking) 보고서 다이얼로그 호출"""
+        # StakingDialog가 project.alignment(id)를 호출하므로,
+        # 프로젝트 객체에 현재 선형을 반환하는 메서드 동적 바인딩
+        if not hasattr(self.project, 'alignment'):
+            self.project.alignment = lambda alignment_id: build_alignment(self.alignment_pis)
+
+        # 단위 설정 ('m' 또는 'ft')
+        ctx = {
+            'project': self.project,
+            'units': 'm'  # 미터법 기준 (필요시 동적 변경 가능)
+        }
+
+        # StakingDialog 팝업 실행
+        dialog = StakingDialog(alignment_id=0, ctx=ctx, parent=self)
+        dialog.exec()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

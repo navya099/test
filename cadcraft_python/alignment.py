@@ -151,7 +151,7 @@ def build_alignment(pis, start=0):
                 sta += line_len
                 cur = target
 
-    return Alignment(elements, start, errors, Q)
+    return Alignment(elements, start, [], Q, name="Main Alignment")
 
 
 def _calc_clothoid_endpoint(A, ls, x0, y0, start_dir, ccw, is_exit=False, r=0.0):
@@ -191,13 +191,14 @@ def _calc_clothoid_endpoint(A, ls, x0, y0, start_dir, ccw, is_exit=False, r=0.0)
 
 
 class Alignment:
-    def __init__(self, elements, start, errors, pis=None):
+    def __init__(self, elements, start, errors, pis=None, name="Alignment"):
         self.elements = elements
         self.start = start
         self.errors = errors
         self.pis = pis if pis is not None else []
         self.length = sum(e['len'] for e in elements)
         self.end = start + self.length
+        self.name = name  # [추가됨]
 
     @property
     def ok(self):

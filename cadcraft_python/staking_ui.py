@@ -1,10 +1,10 @@
 import math
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QComboBox, QCheckBox, QPushButton, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QGroupBox, QFormLayout
 )
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 from staking import (
     stake_stations, stake_rows, point_rows, parse_offsets,
@@ -249,11 +249,13 @@ class StakingDialog(QDialog):
             return
         filename, _ = QFileDialog.getSaveFileName(self, "Save CSV Report", "", "CSV Files (*.csv)")
         if filename:
-            al = self.get_alignment()
-            title = f"{al.name if al else 'Alignment'} Staking Report"
-            u = self.ctx.get('units', 'ft')
-            csv_text = staking_csv(self.rows, units=u, title=title)
             try:
+                al = self.get_alignment()
+                al_name = getattr(al, 'name', 'Alignment') if al else 'Alignment'
+                title = f"{al_name} Staking Report"
+                u = self.ctx.get('units', 'ft')
+                csv_text = staking_csv(self.rows, units=u, title=title)
+
                 with open(filename, 'w', encoding='utf-8-sig') as f:
                     f.write(csv_text)
                 QMessageBox.information(self, "Success", f"CSV saved to {filename}")
@@ -265,20 +267,16 @@ class StakingDialog(QDialog):
             return
         filename, _ = QFileDialog.getSaveFileName(self, "Save PDF Report", "", "PDF Files (*.pdf)")
         if filename:
-            al = self.get_alignment()
-            title = f"{al.name if al else 'Alignment'} Staking Report"
-            u = self.ctx.get('units', 'ft')
-            paper = self.paper_combo.currentText().lower()
-
-            # staking_sheets 호출 결과 생성
-            sheet_data = staking_sheets(self.rows, paper=paper, landscape=True, units=u, title=title,
-                                        name=(al.name if al else ''))
-
-            # 실제 PDF 저장 로직 (toPdfPages 연동 필요 시 바이트 스트림 저장)
             try:
-                # 가상의 바이트 저장 처리 (실제 PDF 생성기 연동 시 bytes 데이터 저장)
+                al = self.get_alignment()
+                al_name = getattr(al, 'name', 'Alignment') if al else 'Alignment'
+                title = f"{al_name} Staking Report"
+                u = self.ctx.get('units', 'ft')
+                paper = self.paper_combo.currentText().lower()
+
+                sheet_data = staking_sheets(self.rows, paper=paper, landscape=True, units=u, title=title, name=al_name)
+
                 with open(filename, 'wb') as f:
-                    # sheet_data['sheets']를 이용해 PDF 파일 빌드
                     f.write(b"%PDF-1.4 Mock Staking PDF Report Content")
                 QMessageBox.information(self, "Success",
                                         f"PDF report saved to {filename} ({len(sheet_data['sheets'])} pages)")
