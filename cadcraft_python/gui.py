@@ -5,6 +5,8 @@ import sys
 from PyQt6.QtCore import Qt, QPointF, QRectF
 from PyQt6.QtGui import QPen, QColor, QBrush, QPainter
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout
+
+from alignment import build_alignment
 from project import Project
 from plan_view import PlanViewWidget
 from scene import plan_scene
@@ -68,15 +70,33 @@ class TestMainWindow(QMainWindow):
         self.plan_view.mousePressEvent = self.custom_mouse_press
         self.plan_view.mouseMoveEvent = self.custom_mouse_move
         self.plan_view.mouseReleaseEvent = self.custom_mouse_release
+
     def get_scene(self, mm_per_unit):
-        """Project 상태와 포인트 데이터를 받아 PlanView에 전달할 씬(Scene) 생성"""
         state = self.project.state
         state['points'] = self.project.points
-        return plan_scene(state, {'mmPerUnit': mm_per_unit})
 
-    def on_fit_clicked(items):
-        """포인트 위치를 기준으로 화면 배율과 중심 맞춤"""
-        pass  # 아래 실제 메서드로 구현됨
+        # 1. alignment.py 엔진으로 선형 객체 빌드
+        alignment = build_alignment(self.alignment_pis)
+
+        alignment_items = []
+        if alignment.ok:
+            # 2. polyline()을 호출하여 곡선/직선이 부드럽게 이어진 샘플링 좌표 획득 (예: 1미터 간격)
+            poly_pts = alignment.polyline(max_seg=1.0)
+            if poly_pts:
+                alignment_items.append({
+                    'kind': 'poly',
+                    'layer': 'C-ROAD-CNTR',  # 도로 중심선 레이어 토큰
+                    'pts': [{'x': p['x'], 'y': p['y']} for p in poly_pts],
+                    'closed': False,
+                    'dashed': False
+                })
+        else:
+            # 선형 에러가 있을 경우 콘솔에 출력
+            print(f"선형 에러 발생: {alignment.errors}")
+
+        # 3. 씬 아이템에 선형 병합
+        state['items'] = state.get('items', []) + alignment_items
+        return plan_scene(state, {'mmPerUnit': mm_per_unit})
 
     def on_fit_clicked(self):
         pts = self.project.points
@@ -128,35 +148,50 @@ class TestMainWindow(QMainWindow):
         except Exception as e:
             print(f"[크래시 방지 예외 포착]: {e}")
 
-    def get_scene(self, mm_per_unit):
-        state = self.project.state
-        state['points'] = self.project.points
-        # 씬 생성 시 선형 데이터도 함께 전달 (scene.py가 처리할 수 있도록)
-        state['alignments'] = [{'pis': self.alignment_pis}]
-        return plan_scene(state, {'mmPerUnit': mm_per_unit})
-
     def draw_custom_overlay(self, painter: QPainter, view):
-        """선형의 PI 점(그립 핸들)을 화면에 렌더링"""
+        """선형 계산 결과(폴리라인)와 PI 점(그립 핸들)을 오버레이에 직접 렌더링"""
         painter.save()
 
-        # 각 PI 위치에 빨간색 그립 사각형 표시
+        # 1. alignment 엔진으로 선형 계산
+        alignment = build_alignment(self.alignment_pis)
+        if alignment.ok:
+            poly_pts = alignment.polyline(max_seg=1.0)
+            if len(poly_pts) >= 2:
+                # 도로 중심선 스타일 (파란색 실선)
+                painter.setPen(QPen(QColor('#1e48c8'), 2.5))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+
+                # 월드 좌표를 스크린 좌표로 변환하여 선 그리기
+                from PyQt6.QtGui import QPainterPath
+                path = QPainterPath()
+                first_sp = view.to_screen(poly_pts[0]['x'], poly_pts[0]['y'])
+                path.moveTo(first_sp.x(), first_sp.y())
+
+                for p in poly_pts[1:]:
+                    sp = view.to_screen(p['x'], p['y'])
+                    path.lineTo(sp.x(), sp.y())
+
+                painter.drawPath(path)
+        else:
+            # 에러가 있다면 콘솔에 출력
+            # print(f"선형 에러: {alignment.errors}")
+            pass
+
+        # 2. 각 PI 위치에 빨간색/파란색 그립 사각형 표시
         for i, pi in enumerate(self.alignment_pis):
             sp = view.to_screen(pi['x'], pi['y'])
 
-            # 마우스가 선택 중인 PI는 파란색, 나머지는 빨간색
             is_selected = (i == self.dragging_pi_index)
             color = QColor('#1e48c8') if is_selected else QColor('#b3122e')
 
             painter.setPen(QPen(Qt.GlobalColor.white, 1.5))
             painter.setBrush(QBrush(color))
 
-            # 8x8 픽셀 크기의 그립 사각형
             rect = QRectF(sp.x() - 4, sp.y() - 4, 8, 8)
             painter.drawRect(rect)
 
-            # PI 번호 텍스트 표시
             painter.setPen(color)
-            painter.drawText(QPointF(sp.x() + 8, sp.y() - 4), f"PI{i + 1}")
+            painter.drawText(QPointF(sp.x() + 8, sp.y() - 4), f"PI{i + 1} (R={pi.get('r', 0)})")
 
         painter.restore()
 
