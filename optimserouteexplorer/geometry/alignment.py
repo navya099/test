@@ -7,6 +7,12 @@ from core.util import route_length, haversine
 
 @dataclass
 class Alignment:
+    """
+    노선 후보 표현체.
+
+    NOTE: 현재 미사용. 추후 GA 결과 표현을 dict → Alignment 로 통합 예정.
+          (core/generate_routes.py 레거시 파이프라인 제거로 현재 참조 없음)
+    """
     linestring: LineString = LineString()
     coords: list = field(default_factory=list)
     elevations: list = field(default_factory=list)
