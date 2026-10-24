@@ -48,20 +48,30 @@ class CurveAdjuster:
         logger.warning("곡선 조정 수렴 실패 (%d회)", max_iterations)
         return False
 
-    def _calculate_segments(self) -> list[CurveSegment]:
-        segments: list[CurveSegment] = []
-        tl_list: list[float] = []
-
+    def _calculate_segments(self):
+        segments = []
+        tl_list = []
         if not self.linestring or len(self.linestring.coords) < 3:
             return []
 
-        n = len(self.angles)
         coords = list(self.linestring.coords)
+        n = len(self.angles)
 
         for i in range(n):
-            ia = math.radians(self.angles[i])
-            cl = self.radius_list[i] * ia
-            tl = self.radius_list[i] * math.tan(ia / 2)
+            angle = self.angles[i]
+            radius = self.radius_list[i]
+
+            # NaN/유효하지 않은 각도/반경 스킵
+            if angle is None or math.isnan(angle) or angle <= 0:
+                logger.debug("곡선 %d 스킵: angle=%s", i, angle)
+                continue
+            if radius is None or math.isnan(radius) or radius <= 0:
+                logger.debug("곡선 %d 스킵: radius=%s", i, radius)
+                continue
+
+            ia = math.radians(angle)
+            cl = radius * ia
+            tl = radius * math.tan(ia / 2)
             tl_list.append(tl)
 
             bp_coord = Point(coords[i])
@@ -73,22 +83,34 @@ class CurveAdjuster:
             bp_ip_distance = calculate_distance(bp_coord, ip_coord)
 
             ip_sta = (
-                bp_ip_distance
-                if i == 0
-                else segments[i - 1].ec_sta + bp_ip_distance - tl_list[i - 1]
+                bp_ip_distance if not segments
+                else segments[-1].ec_sta + bp_ip_distance - tl_list[-2] if len(tl_list) >= 2 else bp_ip_distance
             )
 
-            bc_coord = Point(calculate_destination_coordinates(
-                ip_coord, bearing=bp_ip_bearing, distance=-tl
-            ))
-            ec_coord = Point(calculate_destination_coordinates(
-                ip_coord, bearing=ip_ep_bearing, distance=tl
-            ))
+            try:
+                bc_coord = Point(calculate_destination_coordinates(
+                    ip_coord, bearing=bp_ip_bearing, distance=-tl
+                ))
+                ec_coord = Point(calculate_destination_coordinates(
+                    ip_coord, bearing=ip_ep_bearing, distance=tl
+                ))
+            except Exception as e:
+                logger.warning("곡선 %d BC/EC 계산 실패: %s", i, e)
+                continue
+
+            if bc_coord.is_empty or ec_coord.is_empty:
+                logger.warning("곡선 %d BC/EC 빈 좌표", i)
+                continue
+
             direction = find_curve_direction(bp_coord, ip_coord, ep_coord)
 
-            center_coord = Point(self.calculate_curve_center(
-                bc_coord, ec_coord, self.radius_list[i], direction
-            ))
+            try:
+                center_coord = Point(self.calculate_curve_center(
+                    bc_coord, ec_coord, radius, direction
+                ))
+            except ValueError as e:
+                logger.warning("곡선 %d 중심 계산 실패: %s", i, e)
+                continue
 
             segments.append(CurveSegment(
                 bc_coord=bc_coord,
@@ -97,9 +119,7 @@ class CurveAdjuster:
                 direction=direction,
                 bc_sta=ip_sta - tl,
                 ec_sta=ip_sta - tl + cl,
-                cl=cl,
-                tl=tl,
-                radius=self.radius_list[i],
+                cl=cl, tl=tl, radius=radius,
             ))
 
         return segments
