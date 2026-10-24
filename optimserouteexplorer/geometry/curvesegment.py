@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from shapely.geometry import Point
 
-from curvedirection import CurveDirection
+from xref.utils.curvedirection import CurveDirection
 
 
 @dataclass

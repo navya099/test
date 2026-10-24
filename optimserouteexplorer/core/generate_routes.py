@@ -3,7 +3,7 @@ from core.plan_creator import PlanCreator
 from core.profilecreator import ProfileCreator
 from geometry.alignment import Alignment
 from concurrent.futures import ProcessPoolExecutor
-from srtm30 import SrtmDEM30
+from xref.srtm30 import SrtmDEM30
 
 class GenerateRoutes:
     """

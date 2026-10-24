@@ -5,7 +5,7 @@ from tkinter import ttk
 from matplotlib import pyplot as plt
 import numpy as np
 
-from coordinate_utils import convert_coordinates
+from xref.utils.coordinate_utils import convert_coordinates
 from local.localentry import run_main_process
 from tkinter import messagebox
 

@@ -2,7 +2,7 @@ from shapely.geometry import Point, LineString
 import random
 import math
 
-from math_utils import calculate_bearing
+from xref.utils.math_utils import calculate_bearing
 
 
 class RandomLineStringCreator:

@@ -1,9 +1,6 @@
-# ===== DEM 표고 샘플러 =====
-import pyproj
 import random
-from srtm30 import SrtmDEM30
 import math
-import numpy as np
+
 
 # ===== 유틸 =====
 def haversine(a, b):

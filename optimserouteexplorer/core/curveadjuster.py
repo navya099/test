@@ -1,10 +1,10 @@
-from curvedirection import CurveDirection
+from xref.utils.curvedirection import CurveDirection
 from geometry.curvesegment import CurveSegment
 import math
 from core.util import is_approximately_equal
 from shapely.geometry import Point
 
-from math_utils import calculate_bearing, calculate_distance, calculate_destination_coordinates, find_curve_direction
+from xref.utils.math_utils import calculate_bearing, calculate_distance, calculate_destination_coordinates, find_curve_direction
 
 
 class CurveAdjuster:

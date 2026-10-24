@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from coordinate_utils import convert_coordinates
+from xref.utils.coordinate_utils import convert_coordinates
 from core.curveadjuster import CurveAdjuster
 from core.linestringprocessor import LineStringProcessor
 from core.randomlinestringcreator import RandomLineStringCreator

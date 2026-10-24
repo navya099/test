@@ -1,8 +1,8 @@
 import numpy as np
 
-from Structure.bridge import Bridge
-from Structure.structurecollection import StructureCollection
-from Structure.tunnel import Tunnel
+from xref.Structure.bridge import Bridge
+from xref.Structure.structurecollection import StructureCollection
+from xref.Structure.tunnel import Tunnel
 
 
 class StructureDetector:

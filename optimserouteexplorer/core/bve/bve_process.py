@@ -1,4 +1,4 @@
-from Structure.structurecollection import StructureCollection
+from xref.Structure.structurecollection import StructureCollection
 import numpy as np
 import os
 from core.bve.base_text import create_base_txt

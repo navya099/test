@@ -1,9 +1,8 @@
 import numpy as np
 import math
 from core.construction_cost_calculator import ConstructionCostCalculator
-from core.structure_detector import StructureDetector
 from core.structure_generator import StructureGenerator
-from math_utils import calculate_distance
+
 
 
 class Evaluator:
