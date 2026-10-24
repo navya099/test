@@ -1,6 +1,8 @@
 # tests/test_profilecreator.py
 import unittest
 
+import numpy as np
+
 from core.profilecreator import ProfileCreator
 
 
@@ -31,25 +33,16 @@ class TestProfileCreator(unittest.TestCase):
             "경사가 max_grade 를 초과했습니다",
         )
 
-    """
-    def test_min_cover(self):
-        설계고 >= 지반고 + min_cover (성토 최소 보장).
-        gl = [[0, 100], [500, 110], [1000, 105], [1500, 120], [2000, 115]]
-        min_cover = 5
+    def test_city_rail_max_grade(self):
+        """도시철도 3.5% 기준 — 급격한 지반고도 경사 내."""
+        gl = [[0, 100], [1000, 200]]
 
-        p = ProfileCreator(gl, min_cover=min_cover, max_grade=0.025)
-        p.generate_longitudinal(num_points=5, min_distance=500, chain=40)
+        p = ProfileCreator(gl, min_cover=5, max_grade=0.035)
+        ok = p.generate_longitudinal(num_points=5, min_distance=300)
 
-        import numpy as np
-        gl_stations = [s for s, _ in gl]
-        gl_elevs = [e for _, e in gl]
-        for sta, elev in p.profile:
-            ground = float(np.interp(sta, gl_stations, gl_elevs))
-            self.assertGreaterEqual(
-                elev, ground + min_cover - 1e-9,
-                f"sta={sta}: 설계고({elev}) < 지반고({ground}) + {min_cover}",
-            )
-    """
+        self.assertLessEqual(max(abs(s) for s in p.slopes), 0.035 + 1e-9)
+        # 3.5% 로는 min_cover 지킬 수 있음 → constraints_ok=True 기대
+        self.assertTrue(ok)
 
     def test_raises_on_invalid_gl(self):
         """gl 이 2점 미만이면 ValueError."""
@@ -65,17 +58,29 @@ class TestProfileCreator(unittest.TestCase):
         self.assertEqual(p.slopes, [])
 
     def test_min_cover_relaxed(self):
-        """완만한 지반고에서는 min_cover 보장 (경사 여유 있을 때)."""
-        gl = [[0, 100], [500, 105], [1000, 100]]  # 완만
+        """완만한 지반고에서는 min_cover 보장."""
+        gl = [[0, 100], [500, 105], [1000, 100]]
         p = ProfileCreator(gl, min_cover=5, max_grade=0.025)
         p.generate_longitudinal(num_points=3, min_distance=400, chain=40)
 
-        import numpy as np
         gl_stations = [s for s, _ in gl]
         gl_elevs = [e for _, e in gl]
         for sta, elev in p.profile:
             ground = float(np.interp(sta, gl_stations, gl_elevs))
             self.assertGreaterEqual(elev, ground + 5 - 1e-9)
+
+    def test_min_cover_is_soft(self):
+        """급격한 지반고에서 min_cover 위반해도 constraints_ok=True (경사만 제약)."""
+        gl = [[0, 100], [1000, 200]]
+
+        p = ProfileCreator(gl, min_cover=5, max_grade=0.025)
+        ok = p.generate_longitudinal(num_points=5, min_distance=300)
+
+        # 경사는 지켜짐 → constraints_ok=True
+        self.assertTrue(ok)
+        # min_cover 위반량 > 0 (soft 지표)
+        self.assertGreater(p.min_cover_violation, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

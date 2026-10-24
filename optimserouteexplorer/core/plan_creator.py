@@ -69,30 +69,32 @@ class PlanCreator:
         """
         return [adjust_radius_by_angle(angle, min_radius, max_radius) for angle in angles]
 
-    def reconstruct_full_plan(self, ip_linestring, angles, radius_list, chain):
-        """
-        IP 좌표 + 각도 + 반경 → 전체 LineString 생성 (곡선 포함)
-        Returns:
-            dict: linestring, tmcoords, wgs_coords, station_list
-        """
-        lsp = LineStringProcessor(ip_linestring)
-        curves = []
-        # 곡선 보정
-        ca = CurveAdjuster(ip_linestring, angles, radius_list)
-        ca.main_loop()
-        curves = ca.segments
+    # core/plan_creator.py reconstruct_full_plan (수정)
+    # core/plan_creator.py reconstruct_full_plan (이 메서드만 수정)
+    def reconstruct_full_plan(self, ip_linestring, angles, radius_list, chain,
+                              min_arc_to_arc_distance: float = 100.0):
+        from core.curveadjuster import CurveAdjuster
+        from shapely import LineString
 
+        lsp = LineStringProcessor(ip_linestring)
+        ca = CurveAdjuster(ip_linestring, angles, radius_list)
+        converged = ca.main_loop(min_arc_to_arc_distance=min_arc_to_arc_distance)
+
+        final_radius_list = list(ca.radius_list)
+
+        curves = ca.segments
         start_points = [c.bc_coord for c in curves]
         end_points = [c.ec_coord for c in curves]
         center_points = [c.center_coord for c in curves]
         direction_list = [c.direction for c in curves]
         bc_stations = [c.bc_sta for c in curves]
         ec_stations = [c.ec_sta for c in curves]
+
         lsp.create_joined_line_and_arc_linestirng(
             start_points=start_points,
             end_points=end_points,
             center_points=center_points,
-            direction_list=direction_list
+            direction_list=direction_list,
         )
         lsp.resample_linestring(chain)
         linestring = lsp.linestring
@@ -108,5 +110,6 @@ class PlanCreator:
             "bc_stations": bc_stations,
             "ec_stations": ec_stations,
             "segments": curves,
-            "radius_list": radius_list,
+            "radius_list": final_radius_list,
+            "converged": converged,
         }

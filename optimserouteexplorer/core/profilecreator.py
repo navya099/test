@@ -1,93 +1,58 @@
 # core/profilecreator.py
-"""
-종단(설계고) 생성.
-
-설계 원칙:
-- 결정적: 같은 (gl, 파라미터) → 같은 profile
-- 지반고 스무딩은 '상향만' (min_cover 보장 유지)
-- 경사(max_grade) 우선, min_cover 는 가능한 한 보장
-- 두 제약이 상충하면 constraints_ok=False 반환 (호출자가 후보 폐기/페널티)
-- slopes 는 비율 단위 (evaluate.max_grade 와 정합)
-"""
 import numpy as np
 
 
 class ProfileCreator:
-    """지반고(gl)로부터 설계고(profile)와 경사(slopes)를 생성."""
-
-    def __init__(self, gl, *, min_cover: float = 5.0, max_grade: float = 0.025):
+    def __init__(self, gl, *, min_cover: float = 5.0, max_grade: float = 0.035):
         if not gl or len(gl) < 2:
             raise ValueError("gl requires at least 2 points")
-
         self.gl = gl
         self.min_cover = min_cover
         self.max_grade = max_grade
-
         self.profile = None
         self.els = []
-        self.constraints_ok = True   # 경사/성토 동시 만족 여부
+        self.constraints_ok = True
+        self.min_cover_violation = 0.0
 
-    # ------------------------------------------------------------------
     def generate_longitudinal(self, num_points=100, min_distance=600, chain=40) -> bool:
-        """Returns: constraints_ok (False 면 후보 폐기/페널티 권장)."""
         self.generate_random_profile(num_points, min_distance, chain)
         self.constraints_ok = self.check_and_adjust_elevation()
         self.generate_station_elv()
+        self.min_cover_violation = self._compute_min_cover_violation()
         return self.constraints_ok
 
-    # ------------------------------------------------------------------
     def generate_random_profile(self, num_points, min_distance, chain=40):
-        """결정적 VIP 배치. 스무딩은 상향만."""
         gl_stations = np.array([s for s, _ in self.gl], dtype=float)
         gl_elevations = np.array([e for _, e in self.gl], dtype=float)
-
         start_station = float(gl_stations[0])
         end_station = float(gl_stations[-1])
         total_length = end_station - start_station
-
         if total_length <= 0:
             self.profile = [[start_station, float(gl_elevations[0]) + self.min_cover]]
             return
-
         n_intervals = max(1, min(num_points - 1, int(total_length // min_distance)))
         interval = total_length / n_intervals
         vip_stations = [start_station + k * interval for k in range(n_intervals + 1)]
-
         smoothed = self._smooth(gl_elevations, window=3)
         smoothed = np.maximum(smoothed, gl_elevations)   # 상향만
-
         vip_elevations = np.interp(vip_stations, gl_stations, smoothed) + self.min_cover
-
         self.profile = [[float(s), float(e)] for s, e in zip(vip_stations, vip_elevations)]
 
-    # ------------------------------------------------------------------
     def check_and_adjust_elevation(self) -> bool:
-        """
-        min_cover → 경사 클램프 순서.
-        경사(max_grade)는 반드시 만족, min_cover 는 가능한 한 보장.
-        상충 시 constraints_ok=False (호출자가 후보 폐기/페널티).
-
-        Returns:
-            constraints_ok: 두 제약 동시 만족 여부
-        """
         if not self.profile or len(self.profile) < 2:
             return True
-
         gl_stations = np.array([s for s, _ in self.gl], dtype=float)
         gl_elevs = np.array([e for _, e in self.gl], dtype=float)
         tol = 1e-6
-
-        # 1) min_cover 보장 (지반고 위로 올림)
+        # 1) min_cover 가능한 한
         for i in range(len(self.profile)):
             s, e = self.profile[i]
             ground = float(np.interp(s, gl_stations, gl_elevs))
             self.profile[i][1] = max(e, ground + self.min_cover)
-
-        # 2) 경사 클램프 (경사는 반드시 만족)
+        # 2) 경사 클램프 (경계 여유)
         self._clamp_grade()
-
-        # 3) 최종 검증
-        return self._constraints_satisfied(gl_stations, gl_elevs, tol)
+        # 3) 경사만 검증
+        return self._grade_satisfied(tol)
 
     def _clamp_grade(self):
         adjusted = [list(self.profile[0])]
@@ -98,7 +63,7 @@ class ProfileCreator:
             if ds <= 0:
                 adjusted.append([s_cur, e_prev])
                 continue
-            max_dh = self.max_grade * ds
+            max_dh = self.max_grade * ds * (1.0 - 1e-6)   # 경계 여유
             dh = e_cur - e_prev
             if dh > max_dh:
                 e_cur = e_prev + max_dh
@@ -107,20 +72,26 @@ class ProfileCreator:
             adjusted.append([s_cur, e_cur])
         self.profile = adjusted
 
-    def _constraints_satisfied(self, gl_stations, gl_elevs, tol) -> bool:
-        for s, e in self.profile:
-            ground = float(np.interp(s, gl_stations, gl_elevs))
-            if e < ground + self.min_cover - tol:
-                return False
+    def _grade_satisfied(self, tol: float = 1e-6) -> bool:
         for i in range(1, len(self.profile)):
-            s0, h0 = self.profile[i-1]
+            s0, h0 = self.profile[i - 1]
             s1, h1 = self.profile[i]
             ds = s1 - s0
             if ds > 0 and abs((h1 - h0) / ds) > self.max_grade + tol:
                 return False
         return True
 
-    # ------------------------------------------------------------------
+    def _compute_min_cover_violation(self) -> float:
+        if not self.profile:
+            return 0.0
+        gl_stations = np.array([s for s, _ in self.gl], dtype=float)
+        gl_elevs = np.array([e for _, e in self.gl], dtype=float)
+        total = 0.0
+        for s, e in self.profile:
+            ground = float(np.interp(s, gl_stations, gl_elevs))
+            total += max(0.0, ground + self.min_cover - e)
+        return float(total)
+
     def generate_station_elv(self):
         fl_stations = [s for s, _ in self.profile]
         fl_elevations = [e for _, e in self.profile]
@@ -135,7 +106,7 @@ class ProfileCreator:
             return []
         slopes = []
         for i in range(1, len(self.profile)):
-            s0, h0 = self.profile[i-1]
+            s0, h0 = self.profile[i - 1]
             s1, h1 = self.profile[i]
             ds = s1 - s0
             slopes.append((h1 - h0) / ds if ds != 0 else 0.0)
