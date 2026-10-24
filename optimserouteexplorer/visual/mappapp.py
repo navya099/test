@@ -1,17 +1,34 @@
+# visual/mappapp.py (상단)
+import logging
+import threading
+import time
+from queue import Queue
+
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+import numpy as np
+from matplotlib import pyplot as plt
+import matplotlib.font_manager as fm
 from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import tkinter as tk
-from tkinter import ttk
-from matplotlib import pyplot as plt
-import numpy as np
+import contextily as ctx
 
 from xref.utils.coordinate_utils import convert_coordinates
 from local.localentry import run_main_process
-from tkinter import messagebox
 
-import contextily as ctx
-plt.rcParams['font.family'] = 'Malgun Gothic'
-plt.rcParams['axes.unicode_minus'] = False
+logger = logging.getLogger(__name__)
+
+
+def _setup_korean_font():
+    for name in ("Malgun Gothic", "AppleGothic", "NanumGothic", "Noto Sans CJK KR"):
+        if any(f.name == name for f in fm.fontManager.ttflist):
+            plt.rcParams["font.family"] = name
+            break
+    plt.rcParams["axes.unicode_minus"] = False
+
+
+_setup_korean_font()
 
 class MapVisualizer(tk.Tk):
     def __init__(self):
@@ -40,7 +57,9 @@ class MapVisualizer(tk.Tk):
 
         control = ttk.Frame(self)
         control.pack(fill=tk.X, pady=5)
-        ttk.Button(control, text="실행", command=self.run).pack(side=tk.LEFT, padx=5)
+
+        self._run_button = ttk.Button(control, text="실행", command=self.run)
+        self._run_button.pack(side=tk.LEFT, padx=5)
 
         #초기 포인트 지정
         self.start = 14135232.111179,4518422.053022 #서울
@@ -56,18 +75,48 @@ class MapVisualizer(tk.Tk):
         self.update_plot("초기화")
 
     def run(self):
-        if self.start and self.end:
-            start_lonlat = convert_coordinates(self.start, 3857, 4326)
-            end_lonlat = convert_coordinates(self.end, 3857, 4326)
-
-            start = (start_lonlat[1], start_lonlat[0])
-            end = (end_lonlat[1], end_lonlat[0])
-
-            top10 = run_main_process(start, end,
-                             n_candidates=30, n_generations=50, top_n=10,chain=25)
-            messagebox.showinfo('정보', '모든 작업이 성공적으로 완료됐습니다.')
-        else:
+        if not (self.start and self.end):
             messagebox.showwarning("경고", "시작점과 끝점을 먼저 선택하세요!")
+            return
+
+        start_lonlat = convert_coordinates(self.start, 3857, 4326)
+        end_lonlat = convert_coordinates(self.end, 3857, 4326)
+        start = (start_lonlat[1], start_lonlat[0])
+        end = (end_lonlat[1], end_lonlat[0])
+
+        self._set_busy(True)
+        self._result_queue = Queue()
+
+        def worker():
+            try:
+                top = run_main_process(
+                    start, end,
+                    n_candidates=30, n_generations=50, top_n=10, chain=25,
+                )
+                self._result_queue.put(("ok", top))
+            except Exception as e:
+                logger.exception("run_main_process 실패")
+                self._result_queue.put(("err", e))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.after(100, self._poll_result)
+
+    def _poll_result(self):
+        try:
+            status, payload = self._result_queue.get_nowait()
+        except Exception:
+            self.after(100, self._poll_result)
+            return
+
+        self._set_busy(False)
+        if status == "ok":
+            messagebox.showinfo("정보", "모든 작업이 성공적으로 완료됐습니다.")
+        else:
+            messagebox.showerror("실행 실패", str(payload))
+
+    def _set_busy(self, busy: bool):
+        if hasattr(self, "_run_button"):
+            self._run_button.config(state=tk.DISABLED if busy else tk.NORMAL)
 
     def on_pick(self, event):
         # 시작점인지 확인
@@ -85,8 +134,13 @@ class MapVisualizer(tk.Tk):
             return
 
     def on_drag(self, event):
-        if self.dragging_index is not None:
-            self._drag_pi(event)
+        if self.dragging_index is None:
+            return
+        now = time.monotonic()
+        if now - getattr(self, "_last_drag", 0) < 0.03:  # 30ms
+            return
+        self._last_drag = now
+        self._drag_pi(event)
 
     def _drag_pi(self, event):
         """PI 드래그 중 (지도 갱신 생략)"""
@@ -146,43 +200,37 @@ class MapVisualizer(tk.Tk):
 
     def update_plot(self, title="SegmentCollection",
                     force_xlim=None, force_ylim=None, zoom=None):
-        """전체 다시 그림 — 외부에서 force_xlim/ylim/zoom 전달 가능"""
-        self.fig.clf()
-        self.ax = self.fig.add_subplot(111)
+        """전체 다시 그림 — 지도 로딩은 _draw_map_basemap 한 번만."""
+        self.ax.clear()
         self.ax.set_title(title)
         self._draw_segments()
-        self._draw_map_basemap(zoom=zoom,force_xlim=force_xlim,force_ylim=force_ylim)
-        self.update_map_zoom()
+        self._draw_map_basemap(zoom=zoom, force_xlim=force_xlim, force_ylim=force_ylim)
+        # update_map_zoom() 호출 제거 (중복)
         self.canvas.draw_idle()
 
     def _draw_map_basemap(self, zoom=None, force_xlim=None, force_ylim=None):
-        """지도 배경 추가 — force_xlim/ylim 이 주어지면 그걸 우선 사용"""
-        # default extent (데이터 기반)
-        if self.start and self.end:
-            xs = [self.start[0], self.end[0]]
-            ys = [self.start[1], self.end[1]]
+        if not (self.start and self.end):
+            logger.warning("start/end 미설정 — 베이스맵 생략")
+            return
+
+        xs = [self.start[0], self.end[0]]
+        ys = [self.start[1], self.end[1]]
         margin_x = (max(xs) - min(xs)) * 0.15 or 500
         margin_y = (max(ys) - min(ys)) * 0.15 or 500
-        default_xlim = (min(xs) - margin_x, max(xs) + margin_x)
-        default_ylim = (min(ys) - margin_y, max(ys) + margin_y)
 
-        # force 가 있으면 우선 사용, 없으면 기본 extent 사용
         if force_xlim is not None and force_ylim is not None:
             self.ax.set_xlim(force_xlim)
             self.ax.set_ylim(force_ylim)
         else:
-            # 최초 표시나 강제 재계산 시 기본 영역 적용
-            self.ax.set_xlim(default_xlim)
-            self.ax.set_ylim(default_ylim)
-        # === zoom 결정: 호출자가 줌 전달하면 사용, 아니면 데이터 기반 계산 ===
-        self.ax.set_aspect('equal', adjustable='datalim')
+            self.ax.set_xlim(min(xs) - margin_x, max(xs) + margin_x)
+            self.ax.set_ylim(min(ys) - margin_y, max(ys) + margin_y)
+
+        self.ax.set_aspect("equal", adjustable="datalim")
 
         if zoom is None:
             dx = self.ax.get_xlim()[1] - self.ax.get_xlim()[0]
             dy = self.ax.get_ylim()[1] - self.ax.get_ylim()[0]
-            max_dim = max(dx, dy)
-            zoom = int(18 - np.log2(max_dim / 500))
-            zoom = int(np.clip(zoom, 5, 18))
+            zoom = int(np.clip(18 - np.log2(max(dx, dy) / 500), 5, 18))
         else:
             zoom = int(np.clip(zoom, 5, 18))
 
@@ -191,10 +239,10 @@ class MapVisualizer(tk.Tk):
                 self.ax,
                 crs="EPSG:3857",
                 source=ctx.providers.OpenStreetMap.Mapnik,
-                zoom=zoom
+                zoom=zoom,
             )
         except Exception as e:
-            print(f"[지도 로드 실패]: {e}, zoom={zoom}")
+            logger.warning("베이스맵 로드 실패: %s (zoom=%s)", e, zoom)
 
     def save_lim(self):
         # 현재 확대/이동 상태 저장
@@ -220,37 +268,25 @@ class MapVisualizer(tk.Tk):
         self.ax.grid(False)
 
     def update_map_zoom(self):
-        """현재 뷰 범위 기반으로 지도 타일만 다시 로드"""
+        """현재 뷰 범위 기반으로 지도 타일만 다시 로드."""
         try:
             xlim = self.ax.get_xlim()
             ylim = self.ax.get_ylim()
             dx = xlim[1] - xlim[0]
             dy = ylim[1] - ylim[0]
-            max_dim = max(dx, dy)
+            zoom = int(np.clip(18 - np.log2(max(dx, dy) / 500), 5, 18))
 
-            import numpy as np
-            zoom = int(18 - np.log2(max_dim / 500))
-            zoom = int(np.clip(zoom, 5, 18))
-
-            # 현재 지도 타일만 다시 추가 (Axes는 그대로 유지)
-            # 기존 타일 제거
             for im in list(self.ax.images):
                 im.remove()
 
-            # 새 타일 불러오기
             ctx.add_basemap(
-                self.ax,
-                crs="EPSG:3857",
-                source=ctx.providers.OpenStreetMap.Mapnik,
-                zoom=zoom
+                self.ax, crs="EPSG:3857",
+                source=ctx.providers.OpenStreetMap.Mapnik, zoom=zoom,
             )
-
-            # 기존 확대/이동 상태 그대로 복원
             self.ax.set_xlim(xlim)
             self.ax.set_ylim(ylim)
             self.canvas.draw_idle()
-
-            print(f"[지도 갱신 완료] zoom={zoom}")
-
+            logger.debug("지도 갱신 완료 zoom=%s", zoom)
         except Exception as e:
+            logger.exception("지도 갱신 실패")
             messagebox.showerror("지도 갱신 실패", str(e))
