@@ -1,108 +1,153 @@
+# core/profilecreator.py
+"""
+종단(설계고) 생성.
+
+설계 원칙:
+- 결정적: 같은 (gl, 파라미터) → 같은 profile
+- 지반고 스무딩은 '상향만' (min_cover 보장 유지)
+- 경사(max_grade) 우선, min_cover 는 가능한 한 보장
+- 두 제약이 상충하면 constraints_ok=False 반환 (호출자가 후보 폐기/페널티)
+- slopes 는 비율 단위 (evaluate.max_grade 와 정합)
+"""
 import numpy as np
-import math
-import random
+
 
 class ProfileCreator:
-    def __init__(self, gl):
-        self.profile = None
-        self.fls = []
+    """지반고(gl)로부터 설계고(profile)와 경사(slopes)를 생성."""
+
+    def __init__(self, gl, *, min_cover: float = 5.0, max_grade: float = 0.025):
+        if not gl or len(gl) < 2:
+            raise ValueError("gl requires at least 2 points")
+
         self.gl = gl
+        self.min_cover = min_cover
+        self.max_grade = max_grade
+
+        self.profile = None
         self.els = []
+        self.constraints_ok = True   # 경사/성토 동시 만족 여부
 
-    def generate_longitudinal(self, num_points=100, min_distance=600, chain=40):
+    # ------------------------------------------------------------------
+    def generate_longitudinal(self, num_points=100, min_distance=600, chain=40) -> bool:
+        """Returns: constraints_ok (False 면 후보 폐기/페널티 권장)."""
         self.generate_random_profile(num_points, min_distance, chain)
-        self.check_and_adjust_elevation()
+        self.constraints_ok = self.check_and_adjust_elevation()
         self.generate_station_elv()
+        return self.constraints_ok
 
+    # ------------------------------------------------------------------
+    def generate_random_profile(self, num_points, min_distance, chain=40):
+        """결정적 VIP 배치. 스무딩은 상향만."""
+        gl_stations = np.array([s for s, _ in self.gl], dtype=float)
+        gl_elevations = np.array([e for _, e in self.gl], dtype=float)
 
-    def generate_station_elv(self):
+        start_station = float(gl_stations[0])
+        end_station = float(gl_stations[-1])
+        total_length = end_station - start_station
+
+        if total_length <= 0:
+            self.profile = [[start_station, float(gl_elevations[0]) + self.min_cover]]
+            return
+
+        n_intervals = max(1, min(num_points - 1, int(total_length // min_distance)))
+        interval = total_length / n_intervals
+        vip_stations = [start_station + k * interval for k in range(n_intervals + 1)]
+
+        smoothed = self._smooth(gl_elevations, window=3)
+        smoothed = np.maximum(smoothed, gl_elevations)   # 상향만
+
+        vip_elevations = np.interp(vip_stations, gl_stations, smoothed) + self.min_cover
+
+        self.profile = [[float(s), float(e)] for s, e in zip(vip_stations, vip_elevations)]
+
+    # ------------------------------------------------------------------
+    def check_and_adjust_elevation(self) -> bool:
         """
-        계획고 지점(points) 사이를 spline 지반고를 따라 샘플링하여 선형 보간
-        Args:
-            fl: 계획고 주요지점 (예: [[0,110],[500,120],...])
-            gl: 지반고 (예: [[0,100],[100,102],[200,103],...])
+        min_cover → 경사 클램프 순서.
+        경사(max_grade)는 반드시 만족, min_cover 는 가능한 한 보장.
+        상충 시 constraints_ok=False (호출자가 후보 폐기/페널티).
+
         Returns:
-            station_elv: [[station, elevation], ...]
-        """
-        fl_stations = [s for s, _ in self.profile]
-        fl_elevations = [e for _, e in self.profile]
-
-        station_elv = []
-        for sta, elev in self.gl:
-
-            current_fl = np.interp(sta, fl_stations, fl_elevations)
-            station_elv.append([sta, current_fl])
-
-        self.els = [current_fl for sta , current_fl in station_elv]
-
-    def generate_random_profile(self, num_points, min_distance,chain=40):
-        """
-        spline 기반 경로에서도 사용 가능하도록
-        station 값이 정확히 일치하지 않아도 선형보간으로 지반고를 추정합니다.
-        """
-        # gl을 분리
-        gl_stations = [s for s, _ in self.gl]
-        gl_elevations = [e for _, e in self.gl]
-
-        # 초기 설정
-        start_station, start_elevation = self.gl[0]
-        end_station, end_elevation = self.gl[-1]
-        points = [[start_station, start_elevation + 10]]
-
-        current_station = start_station
-        current_elevation = start_elevation + 10
-
-        for i in range(num_points - 1):
-
-
-            distance_to_next = chain * math.ceil(random.uniform(min_distance, min_distance * 2) / chain)
-
-            if current_station + distance_to_next >= end_station:
-                break
-
-            next_station = current_station + distance_to_next
-
-            # 🔹 지반고를 선형보간으로 추정
-            next_elevation = np.interp(next_station, gl_stations, gl_elevations) + 10
-
-            current_station = next_station
-            current_elevation = next_elevation
-            points.append([current_station, current_elevation])
-
-        points.append([end_station, end_elevation + 10])
-        self.profile = points
-
-    def check_and_adjust_elevation(self):
-        adjusted_profile = []
-        for i, (station, elevation) in enumerate(self.profile):
-            rand_el = random.uniform(0, 20)
-
-            if i > 0:
-                prev_station, prev_elevation = adjusted_profile[-1]
-                if abs(elevation - prev_elevation) > 20:
-                    elevation = prev_elevation + (rand_el if elevation > prev_elevation else -rand_el)
-            adjusted_profile.append([station, elevation])
-
-        self.profile = adjusted_profile
-
-    # ✅ 추가: slopes property
-    @property
-    def slopes(self) -> list[float]:
-        """
-        인접 지점 간의 경사(‰) 리스트를 반환합니다.
-        slope = Δh / Δx * 1000
+            constraints_ok: 두 제약 동시 만족 여부
         """
         if not self.profile or len(self.profile) < 2:
-            return []
+            return True
 
+        gl_stations = np.array([s for s, _ in self.gl], dtype=float)
+        gl_elevs = np.array([e for _, e in self.gl], dtype=float)
+        tol = 1e-6
+
+        # 1) min_cover 보장 (지반고 위로 올림)
+        for i in range(len(self.profile)):
+            s, e = self.profile[i]
+            ground = float(np.interp(s, gl_stations, gl_elevs))
+            self.profile[i][1] = max(e, ground + self.min_cover)
+
+        # 2) 경사 클램프 (경사는 반드시 만족)
+        self._clamp_grade()
+
+        # 3) 최종 검증
+        return self._constraints_satisfied(gl_stations, gl_elevs, tol)
+
+    def _clamp_grade(self):
+        adjusted = [list(self.profile[0])]
+        for i in range(1, len(self.profile)):
+            s_prev, e_prev = adjusted[-1]
+            s_cur, e_cur = self.profile[i]
+            ds = s_cur - s_prev
+            if ds <= 0:
+                adjusted.append([s_cur, e_prev])
+                continue
+            max_dh = self.max_grade * ds
+            dh = e_cur - e_prev
+            if dh > max_dh:
+                e_cur = e_prev + max_dh
+            elif dh < -max_dh:
+                e_cur = e_prev - max_dh
+            adjusted.append([s_cur, e_cur])
+        self.profile = adjusted
+
+    def _constraints_satisfied(self, gl_stations, gl_elevs, tol) -> bool:
+        for s, e in self.profile:
+            ground = float(np.interp(s, gl_stations, gl_elevs))
+            if e < ground + self.min_cover - tol:
+                return False
+        for i in range(1, len(self.profile)):
+            s0, h0 = self.profile[i-1]
+            s1, h1 = self.profile[i]
+            ds = s1 - s0
+            if ds > 0 and abs((h1 - h0) / ds) > self.max_grade + tol:
+                return False
+        return True
+
+    # ------------------------------------------------------------------
+    def generate_station_elv(self):
+        fl_stations = [s for s, _ in self.profile]
+        fl_elevations = [e for _, e in self.profile]
+        self.els = [
+            float(np.interp(sta, fl_stations, fl_elevations))
+            for sta, _ in self.gl
+        ]
+
+    @property
+    def slopes(self) -> list[float]:
+        if not self.profile or len(self.profile) < 2:
+            return []
         slopes = []
         for i in range(1, len(self.profile)):
-            s0, h0 = self.profile[i - 1]
+            s0, h0 = self.profile[i-1]
             s1, h1 = self.profile[i]
-            delta_s = s1 - s0
-            delta_h = h1 - h0
-            if delta_s != 0:
-                slopes.append(delta_h / delta_s)  # 단위: ‰
-            else:
-                slopes.append(0.0)
+            ds = s1 - s0
+            slopes.append((h1 - h0) / ds if ds != 0 else 0.0)
         return slopes
+
+    @staticmethod
+    def _smooth(arr: np.ndarray, window: int = 3) -> np.ndarray:
+        if len(arr) < window or window < 2:
+            return arr
+        kernel = np.ones(window) / window
+        smoothed = np.convolve(arr, kernel, mode="same")
+        half = window // 2
+        smoothed[:half] = arr[:half]
+        smoothed[-half:] = arr[-half:]
+        return smoothed
