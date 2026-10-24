@@ -43,7 +43,7 @@ class GenerateRoutes:
         max_vip = max(1, int(gl[-1][0] / min_distance))
 
         pc = ProfileCreator(gl)
-        pc.generate_longitudinal(
+        constraints_ok = pc.generate_longitudinal(
             num_points=max_vip, min_distance=min_distance, chain=chain
         )
 
@@ -53,4 +53,5 @@ class GenerateRoutes:
             "fg_profile": pc.profile,
             "slopes": pc.slopes,
             "eg_profile": pc.gl,
+            "constraints_ok": constraints_ok,  # ← 추가
         }
