@@ -212,6 +212,8 @@ def pdf_page_to_dxf(
   for block in text_dict.get("blocks", []):
     if block.get("type") == 0:
       for line in block.get("lines", []):
+        dir_vec = line.get("dir", (1, 0))
+        cos_val, sin_val = dir_vec[0], dir_vec[1]
         for span in line.get("spans", []):
           text_str = span.get("text", "").strip()
           if not text_str:
@@ -224,12 +226,16 @@ def pdf_page_to_dxf(
             tx = oy * scale
             ty = ox * scale
             dir_vec = span.get("dir", (1, 0))
-            angle_deg = np.degrees(np.arctan2(-dir_vec[1], dir_vec[0]))
+            angle_deg = np.degrees(np.arctan2(cos_val, -sin_val))
           else:
             tx = ox * scale
             ty = -oy * scale
             dir_vec = span.get("dir", (1, 0))
-            angle_deg = np.degrees(np.arctan2(dir_vec[1], dir_vec[0]))
+            angle_deg = np.degrees(np.arctan2(-sin_val, cos_val))
+
+          # 음수 각도가 나올 경우 CAD 표준에 맞춰 0~360도 범위로 보정
+          if angle_deg < 0:
+            angle_deg += 360
 
           font_size = span.get("size", 10) * scale
 
