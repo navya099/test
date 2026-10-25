@@ -1,13 +1,12 @@
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from tkinter.filedialog import askdirectory, askopenfilename, asksaveasfilename
-from tkinter.messagebox import askquestion
+from tkinter.filedialog import askdirectory, askopenfilename
 from tkinter.simpledialog import askinteger
 import tkinter as tk
 from tkinter import messagebox
-
 import ezdxf
 import fitz  # PyMuPDF
+import math
+from ezdxf import transform
 import numpy as np
 
 
@@ -108,7 +107,8 @@ def pdf_page_to_dxf(
   scale = layout_info["scale"]
   doc_dxf = ezdxf.new(dxfversion="AC1032")
   msp = doc_dxf.modelspace()
-
+  page_rotation = page.rotation  # 예: 270, 90, 0 등
+  print(f'정보: 현재 페이지의 회전 각도는 {page_rotation}도 입니다.')
   entity_count = 0
 
   # 1. 벡터 그래픽 (선, 사각형, 해치/솔리드) 추출 및 컬러/레이어 반영
@@ -252,6 +252,7 @@ def pdf_page_to_dxf(
           if swap_xy:
             tx = oy * scale
             ty = ox * scale
+
             angle_deg = np.degrees(np.arctan2(cos_val, -sin_val))
           else:
             tx = ox * scale
@@ -282,6 +283,13 @@ def pdf_page_to_dxf(
 
           entity_count += 1
 
+  #회전각에 따라 변환 수행:
+  if page_rotation != 0:
+
+
+     offset_angle_deg = (360 - page_rotation) % 360
+     offset_angle_rad = math.radians(offset_angle_deg)
+     transform.z_rotate(msp, offset_angle_rad)
   doc_dxf.saveas(output_path)
   doc.close()
 
