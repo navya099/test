@@ -1,6 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from tkinter.filedialog import askdirectory, askopenfilename, asksaveasfilename
+from tkinter.filedialog import askdirectory, askopenfilename
 from tkinter.messagebox import askquestion
 from tkinter.simpledialog import askinteger
 import tkinter as tk
@@ -74,7 +74,6 @@ def pdf_page_to_dxf(
   page_num = layout_info["page_num"]
   output_path = output_dir / f"page_{page_num+1:04d}.dxf"
 
-  # [수정완료] exists() 메서드 정상 호출
   if output_path.exists() and skipmode:
     return True  # 스킵됨
 
@@ -84,7 +83,9 @@ def pdf_page_to_dxf(
   doc_dxf = ezdxf.new(dxfversion="AC1032")
   msp = doc_dxf.modelspace()
 
-  line_count = 0
+  entity_count = 0
+
+  # 1. 벡터 선(Line) 및 사각형(Rectangle) 추출
   for path in page.get_drawings():
     for item in path.get("items", []):
       cmd = item[0]
@@ -93,7 +94,7 @@ def pdf_page_to_dxf(
         x1, y1 = p1.x * scale, p1.y * scale
         x2, y2 = p2.x * scale, p2.y * scale
         msp.add_line((y2, x2), (y1, x1))
-        line_count += 1
+        entity_count += 1
 
       elif cmd == "re":
         rect = item[1]
@@ -105,7 +106,43 @@ def pdf_page_to_dxf(
             (rect.y0 * scale, rect.x0 * scale),
         ]
         msp.add_lwpolyline(pts)
-        line_count += 1
+        entity_count += 1
+
+  # 2. 텍스트(Text) 추출 파서 구현
+  text_dict = page.get_text("dict")
+  for block in text_dict.get("blocks", []):
+    if block.get("type") == 0:  # 텍스트 블록
+      for line in block.get("lines", []):
+        for span in line.get("spans", []):
+          text_str = span.get("text", "").strip()
+          if not text_str:
+            continue
+
+          # 텍스트 기준점 (origin: x, y)
+          origin = span.get("origin", (0, 0))
+          ox, oy = origin[0], origin[1]
+
+          # 선과 동일한 X/Y 스왑 및 스케일 적용
+          tx = oy * scale
+          ty = ox * scale
+
+          # 폰트 크기 스케일링
+          font_size = span.get("size", 10) * scale
+
+          # 회전 각도 계산 (dir 벡터 활용)
+          dir_vec = span.get("dir", (1, 0))
+          angle_deg = np.degrees(np.arctan2(-dir_vec[1], dir_vec[0]))
+
+          # DXF에 텍스트 엔티티 추가
+          msp.add_text(
+              text_str,
+              dxfattribs={
+                  "height": font_size,
+                  "insert": (tx, ty),
+                  "rotation": angle_deg,
+              },
+          )
+          entity_count += 1
 
   doc_dxf.saveas(output_path)
   doc.close()
@@ -127,7 +164,7 @@ def batch_convert_pdf(
   run_layouts = layouts[start_page:end_page]
   total_pages = len(run_layouts)
 
-  print(f"총 {total_pages}페이지 대용량 안심 변환 작업 시작...")
+  print(f"총 {total_pages}페이지 대용량 안심 변환 작업 시작 (텍스트 파싱 포함)...")
 
   completed = 0
   skipped = 0
@@ -156,11 +193,9 @@ def batch_convert_pdf(
 
 
 if __name__ == "__main__":
-  # Tkinter 기본 빈 창 숨기기
   root = tk.Tk()
   root.withdraw()
 
-  # 1. 파일 및 폴더 선택 대화상자
   pdf_file = askopenfilename(
       title="변환할 PDF 도면 파일 선택",
       filetypes=[("PDF 파일", "*.pdf"), ("모든 파일", "*.*")],
@@ -176,7 +211,6 @@ if __name__ == "__main__":
 
   total_page = get_total_page_count(pdf_file)
 
-  # 2. 시작 페이지 입력
   start_input = askinteger(
       "시작 페이지",
       f"시작할 페이지 번호를 입력하세요 (전체 {total_page}페이지):",
@@ -185,9 +219,8 @@ if __name__ == "__main__":
   if start_input is None:
     print("작업이 취소되었습니다.")
     exit()
-  start_page = start_input - 1  # 내부 인덱스(0부터 시작)로 변환
+  start_page = start_input - 1
 
-  # 3. 끝 페이지 입력
   max_page = askinteger(
       "끝 페이지",
       f"변환할 마지막 페이지 번호를 입력하세요 (전체 {total_page}페이지):",
@@ -197,7 +230,6 @@ if __name__ == "__main__":
     print("작업이 취소되었습니다.")
     exit()
 
-  # 4. 스킵 모드 여부 확인
   skipmode = messagebox.askyesno(
       "스킵 모드 확인",
       "이미 변환된 DXF 파일이 있다면 건너뛸까요? (예: 스킵 / 아니오: 덮어쓰기)",
@@ -209,7 +241,6 @@ if __name__ == "__main__":
   print(f"- 범위: {start_input}페이지 ~ {max_page}페이지")
   print(f"- 기존 파일 스킵 여부: {skipmode}\n")
 
-  # 5. 대량 변환 배치 함수 호출
   batch_convert_pdf(
       pdf_path=pdf_file,
       output_dir_str=out_folder,
