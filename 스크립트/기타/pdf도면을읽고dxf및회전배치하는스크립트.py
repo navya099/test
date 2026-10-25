@@ -202,50 +202,76 @@ def pdf_page_to_dxf(
         entity_count += 1
       except Exception:
         pass
+  # 기본 레이어 설정 (레이어가 없는 예외적인 텍스트 대비)
+  default_text_layer = "PDF_Text"
+  if default_text_layer not in doc_dxf.layers:
+    doc_dxf.layers.new(default_text_layer)
 
-  # 2. 텍스트(Text) 추출 파서 및 컬러/레이어 반영
-  text_layer = "PDF_Text"
-  if text_layer not in doc_dxf.layers:
-    doc_dxf.layers.new(text_layer)
+  # 1. 페이지 내 모든 그리기 요소의 bbox 로그 및 레이어 맵 추출
+  # 요소를 순서대로 돌며 텍스트 컴포넌트의 좌표에 맞는 레이어 이름을 찾기 위한 준비입니다.
+  bbox_layers = []
+  try:
+    # layers=True 옵션을 주면 (type, rect, layer_name) 형태로 반환됩니다.
+    for item in page.get_bboxlog(layers=True):
+      if "text" in item[0] and item[2] is not None:
+        bbox_layers.append({"rect": fitz.Rect(item[1]), "layer": item[2]})
+  except Exception:
+    pass
+  # 2. 텍스트(Text) 추출 파서 실행
+  text_dict = page.get_text("dict")  # 별도의 flags 없이 기본 추출
 
-  text_dict = page.get_text("dict")
   for block in text_dict.get("blocks", []):
     if block.get("type") == 0:
       for line in block.get("lines", []):
         dir_vec = line.get("dir", (1, 0))
         cos_val, sin_val = dir_vec[0], dir_vec[1]
+
         for span in line.get("spans", []):
           text_str = span.get("text", "").strip()
           if not text_str:
             continue
 
+          # ⚠️ 핵심: span의 사각형(bbox) 정보로 수집된 캐드 레이어 이름 찾기
+          span_rect = fitz.Rect(span.get("bbox"))
+          target_layer = default_text_layer
+
+          # 가장 겹침 면적이 크거나 일치하는 레이어 찾기
+          for bl in bbox_layers:
+            if span_rect.intersects(bl["rect"]):
+              target_layer = bl["layer"].strip()
+              break
+
+          # DXF 도면에 해당 레이어가 없다면 자동으로 신규 생성
+          if target_layer not in doc_dxf.layers:
+            doc_dxf.layers.new(target_layer)
+
+          # --- 좌표 및 각도 계산 부분 ---
           origin = span.get("origin", (0, 0))
           ox, oy = origin[0], origin[1]
 
           if swap_xy:
             tx = oy * scale
             ty = ox * scale
-            dir_vec = span.get("dir", (1, 0))
             angle_deg = np.degrees(np.arctan2(cos_val, -sin_val))
           else:
             tx = ox * scale
             ty = -oy * scale
-            dir_vec = span.get("dir", (1, 0))
             angle_deg = np.degrees(np.arctan2(-sin_val, cos_val))
 
-          # 음수 각도가 나올 경우 CAD 표준에 맞춰 0~360도 범위로 보정
           if angle_deg < 0:
             angle_deg += 360
 
           font_size = span.get("size", 10) * scale
 
+          # TEXT 엔티티 생성 및 레이어 배정
           text_entity = msp.add_text(
-              text_str,
-              dxfattribs={
-                  "height": font_size,
-                  "insert": (tx, ty),
-                  "rotation": angle_deg,
-              },
+            text_str,
+            dxfattribs={
+              "height": font_size,
+              "insert": (tx, ty),
+              "rotation": angle_deg,
+              "layer": target_layer,
+            },
           )
 
           # 텍스트 컬러 지정
@@ -254,7 +280,6 @@ def pdf_page_to_dxf(
           if text_rgb:
             text_entity.rgb = text_rgb
 
-          text_entity.dxf.layer = text_layer
           entity_count += 1
 
   doc_dxf.saveas(output_path)
