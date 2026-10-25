@@ -6,7 +6,6 @@ from tkinter import messagebox
 import ezdxf
 import fitz  # PyMuPDF
 import math
-from ezdxf import transform
 import numpy as np
 
 
@@ -58,6 +57,7 @@ def prescan_pdf_layouts(pdf_path):
         "height_mm": h_mm,
         "type": paper_type,
         "scale": scale_multiplier,
+        "rotation": page.rotation,  # 회전 각도 자동 감지 저장
     })
 
   doc.close()
@@ -89,14 +89,26 @@ def get_rgb_from_int(color_int):
     return None
 
 
+def transform_point(x, y, rotation, scale):
+  """0도 및 270도 회전 도면 자동 맞춤형 양수 좌표계 맵퍼"""
+  if rotation == 270:
+    tx = y * scale
+    ty = x * scale
+    return tx, ty
+  else:
+    tx = x * scale
+    ty = -y * scale
+    return tx, ty
+
+
 def pdf_page_to_dxf(
     pdf_path: str,
     layout_info: dict,
     output_dir: Path,
     skipmode=False,
-    swap_xy=True,
 ) -> bool:
   page_num = layout_info["page_num"]
+  page_rotation = layout_info["rotation"]
   output_path = output_dir / f"page_{page_num+1:04d}.dxf"
 
   if output_path.exists() and skipmode:
@@ -107,8 +119,7 @@ def pdf_page_to_dxf(
   scale = layout_info["scale"]
   doc_dxf = ezdxf.new(dxfversion="AC1032")
   msp = doc_dxf.modelspace()
-  page_rotation = page.rotation  # 예: 270, 90, 0 등
-  print(f'정보: 현재 페이지의 회전 각도는 {page_rotation}도 입니다.')
+
   entity_count = 0
 
   # 1. 벡터 그래픽 (선, 사각형, 해치/솔리드) 추출 및 컬러/레이어 반영
@@ -117,7 +128,6 @@ def pdf_page_to_dxf(
     fill_color = path.get("fill")
     has_fill = fill_color is not None
 
-    # 레이어 이름 추출 (없으면 기본값 지정)
     layer_name = path.get("layer")
     if not layer_name or not isinstance(layer_name, str):
       layer_name = "PDF_Vector"
@@ -130,22 +140,14 @@ def pdf_page_to_dxf(
       cmd = item[0]
       if cmd == "l":
         p1, p2 = item[1], item[2]
-        if swap_xy:
-          x1, y1 = p1.y * scale, p1.x * scale
-          x2, y2 = p2.y * scale, p2.x * scale
-          line = msp.add_line((y2, x2), (y1, x1))
-          if has_fill:
-            path_pts.append((y1, x1))
-            path_pts.append((y2, x2))
-        else:
-          x1, y1 = p1.x * scale, -p1.y * scale
-          x2, y2 = p2.x * scale, -p2.y * scale
-          line = msp.add_line((x1, y1), (x2, y2))
-          if has_fill:
-            path_pts.append((x1, y1))
-            path_pts.append((x2, y2))
+        x1, y1 = transform_point(p1.x, p1.y, page_rotation, scale)
+        x2, y2 = transform_point(p2.x, p2.y, page_rotation, scale)
 
-        # 컬러 및 레이어 지정
+        line = msp.add_line((x1, y1), (x2, y2))
+        if has_fill:
+          path_pts.append((x1, y1))
+          path_pts.append((x2, y2))
+
         rgb_val = get_rgb_from_float_tuple(stroke_color)
         if rgb_val:
           line.rgb = rgb_val
@@ -153,29 +155,19 @@ def pdf_page_to_dxf(
         entity_count += 1
 
       elif cmd == "re":
-        rect = item[1]
-        if swap_xy:
-          pts = [
-              (rect.y0 * scale, rect.x0 * scale),
-              (rect.y0 * scale, rect.x1 * scale),
-              (rect.y1 * scale, rect.x1 * scale),
-              (rect.y1 * scale, rect.x0 * scale),
-              (rect.y0 * scale, rect.x0 * scale),
-          ]
-          poly = msp.add_lwpolyline(pts)
-          if has_fill:
-            path_pts.extend(pts[:-1])
-        else:
-          pts = [
-              (rect.x0 * scale, -rect.y0 * scale),
-              (rect.x1 * scale, -rect.y0 * scale),
-              (rect.x1 * scale, -rect.y1 * scale),
-              (rect.x0 * scale, -rect.y1 * scale),
-              (rect.x0 * scale, -rect.y0 * scale),
-          ]
-          poly = msp.add_lwpolyline(pts)
-          if has_fill:
-            path_pts.extend(pts[:-1])
+        r = item[1]
+        corners = [
+            (r.x0, r.y0),
+            (r.x1, r.y0),
+            (r.x1, r.y1),
+            (r.x0, r.y1),
+            (r.x0, r.y0),
+        ]
+        pts = [transform_point(pt[0], pt[1], page_rotation, scale) for pt in corners]
+        poly = msp.add_lwpolyline(pts)
+
+        if has_fill:
+          path_pts.extend(pts[:-1])
 
         rgb_val = get_rgb_from_float_tuple(stroke_color)
         if rgb_val:
@@ -202,23 +194,23 @@ def pdf_page_to_dxf(
         entity_count += 1
       except Exception:
         pass
+
   # 기본 레이어 설정 (레이어가 없는 예외적인 텍스트 대비)
   default_text_layer = "PDF_Text"
   if default_text_layer not in doc_dxf.layers:
     doc_dxf.layers.new(default_text_layer)
 
-  # 1. 페이지 내 모든 그리기 요소의 bbox 로그 및 레이어 맵 추출
-  # 요소를 순서대로 돌며 텍스트 컴포넌트의 좌표에 맞는 레이어 이름을 찾기 위한 준비입니다.
+  # 2. 페이지 내 모든 그리기 요소의 bbox 로그 및 레이어 맵 추출
   bbox_layers = []
   try:
-    # layers=True 옵션을 주면 (type, rect, layer_name) 형태로 반환됩니다.
     for item in page.get_bboxlog(layers=True):
       if "text" in item[0] and item[2] is not None:
         bbox_layers.append({"rect": fitz.Rect(item[1]), "layer": item[2]})
   except Exception:
     pass
-  # 2. 텍스트(Text) 추출 파서 실행
-  text_dict = page.get_text("dict")  # 별도의 flags 없이 기본 추출
+
+  # 3. 텍스트(Text) 추출 파서 실행
+  text_dict = page.get_text("dict")
 
   for block in text_dict.get("blocks", []):
     if block.get("type") == 0:
@@ -231,32 +223,23 @@ def pdf_page_to_dxf(
           if not text_str:
             continue
 
-          # ⚠️ 핵심: span의 사각형(bbox) 정보로 수집된 캐드 레이어 이름 찾기
           span_rect = fitz.Rect(span.get("bbox"))
           target_layer = default_text_layer
 
-          # 가장 겹침 면적이 크거나 일치하는 레이어 찾기
           for bl in bbox_layers:
             if span_rect.intersects(bl["rect"]):
               target_layer = bl["layer"].strip()
               break
 
-          # DXF 도면에 해당 레이어가 없다면 자동으로 신규 생성
           if target_layer not in doc_dxf.layers:
             doc_dxf.layers.new(target_layer)
 
-          # --- 좌표 및 각도 계산 부분 ---
           origin = span.get("origin", (0, 0))
-          ox, oy = origin[0], origin[1]
+          tx, ty = transform_point(origin[0], origin[1], page_rotation, scale)
 
-          if swap_xy:
-            tx = oy * scale
-            ty = ox * scale
-
-            angle_deg = np.degrees(np.arctan2(cos_val, -sin_val))
+          if page_rotation == 270:
+            angle_deg = np.degrees(np.arctan2(dir_vec[0], dir_vec[1]))
           else:
-            tx = ox * scale
-            ty = -oy * scale
             angle_deg = np.degrees(np.arctan2(-sin_val, cos_val))
 
           if angle_deg < 0:
@@ -264,18 +247,16 @@ def pdf_page_to_dxf(
 
           font_size = span.get("size", 10) * scale
 
-          # TEXT 엔티티 생성 및 레이어 배정
           text_entity = msp.add_text(
-            text_str,
-            dxfattribs={
-              "height": font_size,
-              "insert": (tx, ty),
-              "rotation": angle_deg,
-              "layer": target_layer,
-            },
+              text_str,
+              dxfattribs={
+                  "height": font_size,
+                  "insert": (tx, ty),
+                  "rotation": angle_deg,
+                  "layer": target_layer,
+              },
           )
 
-          # 텍스트 컬러 지정
           text_color = span.get("color")
           text_rgb = get_rgb_from_int(text_color)
           if text_rgb:
@@ -283,13 +264,7 @@ def pdf_page_to_dxf(
 
           entity_count += 1
 
-  #회전각에 따라 변환 수행:
-  if page_rotation != 0:
-
-
-     offset_angle_deg = (360 - page_rotation) % 360
-     offset_angle_rad = math.radians(offset_angle_deg)
-     transform.z_rotate(msp, offset_angle_rad)
+  # 파일 저장
   doc_dxf.saveas(output_path)
   doc.close()
 
@@ -302,7 +277,6 @@ def batch_convert_pdf(
     end_page: int = 8,
     start_page: int = 0,
     skipmode=False,
-    swap_xy=True,
 ):
   output_dir = Path(output_dir_str)
   output_dir.mkdir(parents=True, exist_ok=True)
@@ -311,20 +285,14 @@ def batch_convert_pdf(
   run_layouts = layouts[start_page:end_page]
   total_pages = len(run_layouts)
 
-  print(
-      f"총 {total_pages}페이지 대용량 안심 변환 작업 시작 (컬러/레이어 보존"
-      f" 포함)..."
-  )
+  print(f"총 {total_pages}페이지 대용량 자동 변환 작업 시작 (0도/270도 자동 판별 및 컬러/레이어 보존)...")
 
   completed = 0
   skipped = 0
   for layout in run_layouts:
     page_idx = layout["page_num"]
     try:
-      print(f"페이지 {page_idx + 1} 추출 중...")
-      was_skipped = pdf_page_to_dxf(
-          pdf_path, layout, output_dir, skipmode, swap_xy
-      )
+      was_skipped = pdf_page_to_dxf(pdf_path, layout, output_dir, skipmode)
       if was_skipped:
         skipped += 1
       else:
@@ -332,8 +300,8 @@ def batch_convert_pdf(
 
       if (page_idx + 1 - start_page) % 20 == 0 or (page_idx + 1) == end_page:
         print(
-            f"진행 상황: 처리 완료 [용지 규격: {layout['type']}] (신규:"
-            f" {completed}, 스킵: {skipped})"
+            f"진행 상황: 처리 완료 [용지 규격: {layout['type']} | 회전: {layout['rotation']}°] "
+            f"(신규: {completed}, 스킵: {skipped})"
         )
     except Exception as e:
       print(
@@ -382,12 +350,6 @@ if __name__ == "__main__":
     print("작업이 취소되었습니다.")
     exit()
 
-  swap_xy = messagebox.askyesno(
-      "좌표계 옵션 (XY 스왑)",
-      "도면의 XY 축을 스왑(교환)하시겠습니까?\n\n(예: 스왑 적용 / 아니오:"
-      " 원본축 유지)",
-  )
-
   skipmode = messagebox.askyesno(
       "스킵 모드 확인",
       "이미 변환된 DXF 파일이 있다면 건너뛸까요? (예: 스킵 / 아니오: 덮어쓰기)",
@@ -397,8 +359,8 @@ if __name__ == "__main__":
   print(f"- 파일 경로: {pdf_file}")
   print(f"- 저장 폴더: {out_folder}")
   print(f"- 범위: {start_input}페이지 ~ {max_page}페이지")
-  print(f"- XY 스왑 적용 여부: {swap_xy}")
-  print(f"- 기존 파일 스킵 여부: {skipmode}\n")
+  print(f"- 기존 파일 스킵 여부: {skipmode}")
+  print(f"- [자동화] 0도/270도 페이지별 회전 자동 대응 & 컬러/레이어 보존 활성화됨\n")
 
   batch_convert_pdf(
       pdf_path=pdf_file,
@@ -406,5 +368,4 @@ if __name__ == "__main__":
       start_page=start_page,
       end_page=max_page,
       skipmode=skipmode,
-      swap_xy=swap_xy,
   )
