@@ -1,8 +1,15 @@
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-import fitz  # PyMuPDF
+from tkinter.filedialog import askdirectory, askopenfilename, asksaveasfilename
+from tkinter.messagebox import askquestion
+from tkinter.simpledialog import askinteger
+import tkinter as tk
+from tkinter import messagebox
+
 import ezdxf
+import fitz  # PyMuPDF
 import numpy as np
+
 
 def get_page_dimensions_mm(page):
   """PDF 페이지의 실제 크기를 mm 단위로 정확하게 추출"""
@@ -24,24 +31,21 @@ def classify_paper_size(w, h):
   else:
     return f"Custom ({max_len:.1f}x{min_len:.1f}mm)"
 
-def define_scale_factor(paprer_size: str):
-    if paprer_size == 'A0':
-        scale_multiplier = 1 * 0.352778
-    elif paprer_size == 'A1':
-        scale_multiplier = 1 * 0.352778
-    elif paprer_size == 'A2':
-        scale_multiplier = 1 * 0.352778
-    elif paprer_size == 'A3':
-        scale_multiplier = 1 * 0.352778
-    elif paprer_size == 'A4':
-        scale_multiplier = 1 * 0.352778
-    else:
-        scale_multiplier = 1 * 0.352778
-    return scale_multiplier
+
+def define_scale_factor(paper_size: str):
+  # 포인트(pt) 단위를 실제 mm 단위로 환산하는 배율 적용
+  return 25.4 / 72.0
+
+
+def get_total_page_count(pdf_path):
+  doc = fitz.open(pdf_path)
+  total_page_count = len(doc)
+  doc.close()
+  return total_page_count
 
 
 def prescan_pdf_layouts(pdf_path):
-  """전체 페이지 스캔 및 누적 X 오프셋 계산"""
+  """전체 페이지 스캔 및 규격 확인"""
   doc = fitz.open(pdf_path)
   layouts = []
 
@@ -60,94 +64,156 @@ def prescan_pdf_layouts(pdf_path):
     })
 
   doc.close()
-  print(
-      f"스캔 완료: 총 {len(layouts)}페이지 (혼합 규격 오프셋 계산 완료)"
-  )
+  print(f"스캔 완료: 총 {len(layouts)}페이지 규격 분석 완료")
   return layouts
 
-def pdf_page_to_dxf(pdf_path: str, layout_info: dict, output_dir: Path, skipmode=False) -> bool:
+
+def pdf_page_to_dxf(
+    pdf_path: str, layout_info: dict, output_dir: Path, skipmode=False
+) -> bool:
+  page_num = layout_info["page_num"]
+  output_path = output_dir / f"page_{page_num+1:04d}.dxf"
+
+  # [수정완료] exists() 메서드 정상 호출
+  if output_path.exists() and skipmode:
+    return True  # 스킵됨
+
+  doc = fitz.open(pdf_path)
+  page = doc[page_num]
+  scale = layout_info["scale"]
+  doc_dxf = ezdxf.new(dxfversion="AC1032")
+  msp = doc_dxf.modelspace()
+
+  line_count = 0
+  for path in page.get_drawings():
+    for item in path.get("items", []):
+      cmd = item[0]
+      if cmd == "l":
+        p1, p2 = item[1], item[2]
+        x1, y1 = p1.x * scale, p1.y * scale
+        x2, y2 = p2.x * scale, p2.y * scale
+        msp.add_line((y2, x2), (y1, x1))
+        line_count += 1
+
+      elif cmd == "re":
+        rect = item[1]
+        pts = [
+            (rect.y0 * scale, rect.x0 * scale),
+            (rect.y0 * scale, rect.x1 * scale),
+            (rect.y1 * scale, rect.x1 * scale),
+            (rect.y1 * scale, rect.x0 * scale),
+            (rect.y0 * scale, rect.x0 * scale),
+        ]
+        msp.add_lwpolyline(pts)
+        line_count += 1
+
+  doc_dxf.saveas(output_path)
+  doc.close()
+
+  return False  # 새로 생성됨
 
 
-    page_num = layout_info["page_num"]
-    output_path = output_dir / f"page_{page_num+1:04d}.dxf"
-
-    if output_path.exists and skipmode:
-        return True
-
-    doc = fitz.open(pdf_path)
-    page = doc[page_num]
-    scale = layout_info["scale"]
-    doc_dxf = ezdxf.new(dxfversion="AC1032")
-    msp = doc_dxf.modelspace()
-
-    line_count = 0
-    for path in page.get_drawings():
-        for item in path.get("items", []):
-            cmd = item[0]
-            if cmd == 'l':
-                p1, p2 = item[1], item[2]
-                x1, y1 = p1.x * scale , p1.y * scale
-                x2, y2 = p2.x * scale , p2.y * scale
-                msp.add_line((y2, x2), (y1, x1))
-                line_count += 1
-
-            elif cmd == "re":
-                rect = item[1]
-                pts = [
-                    (rect.y0 * scale, rect.x0 * scale),
-                    (rect.y0 * scale, rect.x1 * scale),
-                    (rect.y1 * scale, rect.x1 * scale),
-                    (rect.y1 * scale, rect.x0 * scale),
-                    (rect.y0 * scale, rect.x0 * scale),
-                ]
-                msp.add_lwpolyline(pts)
-                line_count += 1
-
-    doc_dxf.saveas(output_path)
-    doc.close()
-
-    return False
-
-
-def batch_convert_pdf(pdf_path: str, output_dir_str: str, end_page: int = 8, start_page: int=0, skipmode=False):
-  output_dir = Path(output_dir_str, )
+def batch_convert_pdf(
+    pdf_path: str,
+    output_dir_str: str,
+    end_page: int = 8,
+    start_page: int = 0,
+    skipmode=False,
+):
+  output_dir = Path(output_dir_str)
   output_dir.mkdir(parents=True, exist_ok=True)
 
   layouts = prescan_pdf_layouts(pdf_path)
   run_layouts = layouts[start_page:end_page]
   total_pages = len(run_layouts)
 
-  print(f"총 {total_pages}페이지 대용량 안심 변환 작업 시작)...")
+  print(f"총 {total_pages}페이지 대용량 안심 변환 작업 시작...")
 
   completed = 0
   skipped = 0
   for layout in run_layouts:
     page_idx = layout["page_num"]
     try:
-      print(f"페이지{page_idx} 추출중...")
-      was_skipped = pdf_page_to_dxf(
-          pdf_path, layout, output_dir, skipmode
-      )
+      print(f"페이지 {page_idx + 1} 추출 중...")
+      was_skipped = pdf_page_to_dxf(pdf_path, layout, output_dir, skipmode)
       if was_skipped:
         skipped += 1
       else:
         completed += 1
 
-      if (page_idx + 1) % 20 == 0 or (page_idx + 1) == total_pages:
+      if (page_idx + 1 - start_page) % 20 == 0 or (page_idx + 1) == end_page:
         print(
-            f"진행 상황: {page_idx + 1}/{total_pages} 페이지 완료 [용지 규격:"
-            f" {layout['type']}] (신규: {completed}, 스킵: {skipped})"
+            f"진행 상황: 처리 완료 [용지 규격: {layout['type']}] (신규:"
+            f" {completed}, 스킵: {skipped})"
         )
     except Exception as e:
       print(
-          f"[오류 발생] 페이지 {page_idx + 1} ({layout['type']}) 변환 중 예외 발생:"
-          f" {e} -> 건너뜁니다."
+          f"[오류 발생] 페이지 {page_idx + 1} ({layout['type']}) 변환 중 예외"
+          f" 발생: {e} -> 건너뜁니다."
       )
 
   print("모든 변환 작업이 완벽하게 완료되었습니다.")
 
 
 if __name__ == "__main__":
-  pdf_file = "C:/Temp/09. 실시설계도면.pdf"
-  out_folder = "C:/Temp/dxf_output"
-  batch_convert_pdf(pdf_file, output_dir_str=out_folder, start_page=19, end_page=36, skipmode=False)
+  # Tkinter 기본 빈 창 숨기기
+  root = tk.Tk()
+  root.withdraw()
+
+  # 1. 파일 및 폴더 선택 대화상자
+  pdf_file = askopenfilename(
+      title="변환할 PDF 도면 파일 선택",
+      filetypes=[("PDF 파일", "*.pdf"), ("모든 파일", "*.*")],
+  )
+  if not pdf_file:
+    print("PDF 파일 선택이 취소되었습니다.")
+    exit()
+
+  out_folder = askdirectory(title="DXF 저장 폴더 선택")
+  if not out_folder:
+    print("저장 폴더 선택이 취소되었습니다.")
+    exit()
+
+  total_page = get_total_page_count(pdf_file)
+
+  # 2. 시작 페이지 입력
+  start_input = askinteger(
+      "시작 페이지",
+      f"시작할 페이지 번호를 입력하세요 (전체 {total_page}페이지):",
+      initialvalue=1,
+  )
+  if start_input is None:
+    print("작업이 취소되었습니다.")
+    exit()
+  start_page = start_input - 1  # 내부 인덱스(0부터 시작)로 변환
+
+  # 3. 끝 페이지 입력
+  max_page = askinteger(
+      "끝 페이지",
+      f"변환할 마지막 페이지 번호를 입력하세요 (전체 {total_page}페이지):",
+      initialvalue=total_page,
+  )
+  if max_page is None:
+    print("작업이 취소되었습니다.")
+    exit()
+
+  # 4. 스킵 모드 여부 확인
+  skipmode = messagebox.askyesno(
+      "스킵 모드 확인",
+      "이미 변환된 DXF 파일이 있다면 건너뛸까요? (예: 스킵 / 아니오: 덮어쓰기)",
+  )
+
+  print(f"\n[선택된 설정]")
+  print(f"- 파일 경로: {pdf_file}")
+  print(f"- 저장 폴더: {out_folder}")
+  print(f"- 범위: {start_input}페이지 ~ {max_page}페이지")
+  print(f"- 기존 파일 스킵 여부: {skipmode}\n")
+
+  # 5. 대량 변환 배치 함수 호출
+  batch_convert_pdf(
+      pdf_path=pdf_file,
+      output_dir_str=out_folder,
+      start_page=start_page,
+      end_page=max_page,
+      skipmode=skipmode,
+  )
