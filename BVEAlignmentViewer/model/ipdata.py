@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 
-from curvedirection import CurveDirection
-from curvetype import CurveType
+from utils.curvedirection import CurveDirection
+from utils.curvetype import CurveType
 from model.segment import CurveSegment, SpiralSegment
-from vector2 import Vector2
+from utils.vector2 import Vector2
 
 @dataclass
 class BasePoint:

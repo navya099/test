@@ -1,4 +1,4 @@
-from math_utils import degrees_to_dms
+from utils.math_utils import degrees_to_dms
 from model.ipdata import IPdata
 import math
 

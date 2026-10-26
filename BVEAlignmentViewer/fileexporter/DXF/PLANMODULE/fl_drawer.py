@@ -1,6 +1,6 @@
-from curvedirection import CurveDirection
-from curvetype import CurveType
-from math_utils import angle_from_center, calculate_bulge, calculate_curve_center
+from utils.curvedirection import CurveDirection
+from utils.curvetype import CurveType
+from utils.math_utils import angle_from_center, calculate_bulge, calculate_curve_center
 from model.bveroutedata import BVERouteData
 from model.ipdata import IPdata
 from model.segment import CurveSegment, SpiralSegment

@@ -1,5 +1,5 @@
 from model.bveroutedata import BVERouteData
-from vector2 import Vector2
+from utils.vector2 import Vector2
 
 class RouteProcessor:
     """

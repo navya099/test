@@ -1,11 +1,11 @@
-from curvedirection import CurveDirection
-from curvetype import CurveType
+from utils.curvedirection import CurveDirection
+from utils.curvetype import CurveType
 from model.bveroutedata import BVERouteData
 from model.ipdata import IPdata
 from model.segment import SpiralSegment
-from utils import format_distance
-from vector2 import Vector2
-from vector3 import to2d
+from utils.utils import format_distance
+from utils.vector2 import Vector2
+from utils.vector3 import to2d
 import math
 
 class CurveDrawer:

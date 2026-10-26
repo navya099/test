@@ -8,7 +8,7 @@ from fileexporter.DXF.PLANMODULE.station_drawer import StationDrawer
 from fileexporter.DXF.PLANMODULE.texts_drawer import TextsDrawer
 from model.bveroutedata import BVERouteData
 from model.ipdata import IPdata
-from utils import try_parse_int
+from utils.utils import try_parse_int
 
 class DXFPlanExporter:
     def __init__(self, doc, msp):

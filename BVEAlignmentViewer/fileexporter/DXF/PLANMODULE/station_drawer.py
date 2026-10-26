@@ -1,7 +1,7 @@
 from model.bveroutedata import BVERouteData
 import math
 
-from utils import format_distance
+from utils.utils import format_distance
 
 
 class StationDrawer:

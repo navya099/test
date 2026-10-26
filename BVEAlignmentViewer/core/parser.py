@@ -1,7 +1,5 @@
-# BVEParser 루트 경로를 sys.path에 추가
-import sys
-from tkinter import messagebox
 
+from tkinter import messagebox
 
 from RouteLoader import RouteLoader
 

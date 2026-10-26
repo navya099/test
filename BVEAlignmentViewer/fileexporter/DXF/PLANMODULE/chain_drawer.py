@@ -1,6 +1,6 @@
-from math_utils import calculate_coordinates
+from utils.math_utils import calculate_destination_coordinates
 from model.bveroutedata import BVERouteData
-from vector3 import to2d
+from utils.vector3 import to2d
 import math
 
 class ChainDrawer:
@@ -13,7 +13,7 @@ class ChainDrawer:
             angle = to2d(bvedata.directions[i]).todegree() #선형진행각도
             normalize_angle = angle + 90 #선형에 수직인 각도
 
-            offset_coord = calculate_coordinates(coord.x, coord.y, math.radians(normalize_angle), 2)
+            offset_coord = calculate_destination_coordinates(coord.x, coord.y, math.radians(normalize_angle), 2)
             kmtext = f"{int(sta // 1000)}km"  # 몫만 사용
             mtext = f"{int(sta % 1000):03d}"  # 3자리로 맞춤
             #chian 선

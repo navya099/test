@@ -1,11 +1,11 @@
 from core.alignment.alginmentcalculator import AlignmentCalculator
-from curvedirection import CurveDirection
-from curvetype import CurveType
+from utils.curvedirection import CurveDirection
+from utils.curvetype import CurveType
 from model.bveroutedata import BVERouteData
 from model.bvetrack import Curve
 from model.ipdata import EndPoint, IPdata
 from model.segment import CurveSegment, SpiralSegment
-from vector3 import to2d
+from utils.vector3 import to2d
 import math
 
 class AlignmentProcessor:

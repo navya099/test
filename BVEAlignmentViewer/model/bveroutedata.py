@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
-from math_utils import get_block_index
+from utils.math_utils import get_block_index
 from model.bvetrack import Curve, Pitch, Station
-from vector3 import Vector3
+from utils.vector3 import Vector3
 
 
 @dataclass

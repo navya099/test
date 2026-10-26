@@ -1,10 +1,10 @@
 import math
-from math_utils import calculate_bearing, calculate_coordinates,calculate_distance
+from utils.math_utils import calculate_bearing, calculate_destination_coordinates,calculate_distance
 from model.bveroutedata import BVERouteData
 from model.bvetrack import Curve
-from curvetype import CurveType
-from vector2 import Vector2
-from curvedirection import CurveDirection
+from utils.curvetype import CurveType
+from utils.vector2 import Vector2
+from utils.curvedirection import CurveDirection
 
 class AlignmentCalculator:
     """
@@ -215,7 +215,7 @@ class AlignmentCalculator:
         else:
             azimuth_o_station = azimuth_o_bc + ia
         #5 station의 좌표
-        stationxy = calculate_coordinates(center.x, center.y, azimuth_o_station, r)
+        stationxy = calculate_destination_coordinates(center.x, center.y, azimuth_o_station, r)
         #6 stationxy 좌표에서 접선의 방위각
         azimuth_tangent = azimuth_o_station - (math.pi / 2) if direction == CurveDirection.RIGHT else azimuth_o_station + (math.pi / 2)
         #7. Curve객체 생성
