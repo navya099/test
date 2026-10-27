@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+autocadforpython.egg-info/PKG-INFO
+autocadforpython.egg-info/SOURCES.txt
+autocadforpython.egg-info/dependency_links.txt
+autocadforpython.egg-info/requires.txt
+autocadforpython.egg-info/top_level.txt
+myautocad/__init__.py
+myautocad/arc.py
+myautocad/bulgesegment.py
+myautocad/geometry.py
+myautocad/line.py
+myautocad/line3d.py
+myautocad/point2d.py
+myautocad/point3d.py
+myautocad/polyline.py
+tests/test_all.py

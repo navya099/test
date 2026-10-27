@@ -13,5 +13,5 @@ AutoCAD는 파이썬 기반의 CAD 유틸리티 패키지로, 2D/3D 선, 점, �
 ## Installation
 로컬 개발 환경에서 설치하려면:
 
-```bash
+
 pip install -e .
