@@ -33,6 +33,11 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from shapely.geometry import LineString, Point
 
+from tangent_calculator import (
+    TangentFields,
+    create_tangent_calculator,
+)
+
 # ============================================================
 # 로깅 설정
 # ============================================================
@@ -779,6 +784,9 @@ def _build_station_group(
     """한 IP에 대한 측점 리스트 생성"""
     rows: list[StationRow] = []
 
+    # ✅ 계산기 인스턴스 생성 (측점 루프 밖에서 1회)
+    tangent_calc = create_tangent_calculator(curve)
+
     if curve.curve_type == "simplecurve":
         bc_sta, ec_sta = curve.bc_sta, curve.ec_sta
         end_sta = _compute_end_sta(curve, ec_sta, ec_xy=curve.ec_xy,
@@ -837,8 +845,8 @@ def _build_station_group(
             curve.center_xy[0], curve.center_xy[1],
             (curve.ec_xy or curve.ps_xy)[0], (curve.ec_xy or curve.ps_xy)[1],
         )
-
-        ta, azimuth, q, t, chord = _compute_tangent_fields(curve, sta, offset)
+        fields = tangent_calc.compute(sta, offset)
+        ta, azimuth, q, t, chord = fields.ta, fields.azimuth, fields.q, fields.t, fields.chord
 
         rows.append(StationRow(
             label=label, sta=sta, station_offset=offset, coord=coord,
@@ -857,67 +865,6 @@ def _compute_end_sta(curve: CurveParams, base_sta: float, ec_xy, ep_xy, is_last_
     return base_sta + calculate_distance(end_xy[0], end_xy[1], ep_xy[0], ep_xy[1])
 
 
-def _compute_tangent_fields(
-    curve: CurveParams, sta: float, offset: float
-) -> tuple[float, float, float, float, float]:
-    """(Ta, Azimuth, Q, T, 사거리) 계산"""
-    sc = curve.curve_type == "simplecurve"
-    bc_sta = curve.bc_sta if sc else None
-    ec_sta = curve.ec_sta if sc else None
-    pc_sta = None if sc else curve.pc_sta
-    cp_sta = None if sc else curve.cp_sta
-    sp_sta = None if sc else curve.sp_sta
-    ps_sta = None if sc else curve.ps_sta
-
-    theta_deg = math.degrees(curve.theta_pc)
-    direction = 1 if curve.direction == "RIGHT CURVE" else -1
-
-    if sc:
-        if bc_sta < sta <= ec_sta:
-            q = (180 / (2 * math.pi)) * (offset / curve.radius)
-            t = theta_deg
-            azimuth = curve.h1 + theta_deg + q if direction == 1 else curve.h1 - theta_deg - q
-            ta = curve.h1 + theta_deg + 2 * q if direction == 1 else curve.h1 - theta_deg - 2 * q
-            chord = 2 * curve.radius * math.sin(
-                ((offset / curve.cl) * math.radians(curve.ia_degree)) / 2 * math.pi / 180
-            )
-        elif sta <= bc_sta:
-            ta, q, t, azimuth, chord = curve.h1, 0, 0, 0, 0.0
-        else:
-            ta, q, t, azimuth, chord = curve.h2, 0, 0, 0, 0.0
-    else:
-        if pc_sta <= sta <= cp_sta:
-            q = (180 / (2 * math.pi)) * (offset / curve.radius)
-            t = theta_deg
-            azimuth = curve.h1 + theta_deg + q if direction == 1 else curve.h1 - theta_deg - q
-            ta = curve.h1 + theta_deg + 2 * q if direction == 1 else curve.h1 - theta_deg - 2 * q
-            chord = 2 * curve.radius * math.sin(
-                ((offset / curve.params[11]) * math.radians(math.degrees(curve.params[14]))) / 2 * math.pi / 180
-            )
-        elif sp_sta < sta < pc_sta:
-            shiftx = cal_spiral_shiftx(
-                sta, sp_sta, pc_sta, cp_sta, ps_sta, offset, curve.params[2], curve.params[3]
-            )
-            q = math.atan(shiftx ** 2 / (6 * curve.radius * curve.params[0]))
-            t = (180 * shiftx ** 2) / (6 * math.pi * curve.radius * curve.params[3]) * 3
-            azimuth = curve.h1 + math.degrees(q) if direction == 1 else curve.h1 - math.degrees(q)
-            ta = curve.h1 + t if direction == 1 else curve.h1 - t
-            chord = math.sqrt(shiftx ** 2 + 0)
-        elif cp_sta < sta < ps_sta:
-            shiftx = cal_spiral_shiftx(
-                sta, sp_sta, pc_sta, cp_sta, ps_sta, offset, curve.params[2], curve.params[3]
-            )
-            q = math.atan(shiftx ** 2 / (6 * curve.radius * curve.params[0]))
-            t = (180 * shiftx ** 2) / (6 * math.pi * curve.radius * curve.params[3]) * 3
-            azimuth = curve.h2 - math.degrees(q) if direction == 1 else curve.h2 + math.degrees(q)
-            ta = curve.h2 - t if direction == 1 else curve.h2 + t
-            chord = math.sqrt(shiftx ** 2 + 0)
-        elif sta <= sp_sta:
-            ta, q, t, azimuth, chord = curve.h1, 0, 0, 0, 0.0
-        else:
-            ta, q, t, azimuth, chord = curve.h2, 0, 0, 0, 0.0
-
-    return ta, azimuth, q, t, chord
 
 
 # ============================================================
