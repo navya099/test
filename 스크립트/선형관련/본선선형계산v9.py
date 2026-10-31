@@ -1,2301 +1,1575 @@
-from tkinter import filedialog, messagebox
-import tkinter as tk
+"""
+본선 선형 계산 v10 (리팩토링)
+================================
+- 원본: 본선선형계산v9.py
+- 주요 개선:
+  1. P0 버그 수정 (coord NameError, unit 전역참조, get_station_coordinates 반환 누락, pop(0) 원본변형)
+  2. 전역 변수 제거 → AppContext 클래스 캡슐화
+  3. CurveParams dataclass 도입 (매직 인덱스 제거)
+  4. 하드코딩 경로 → pathlib + 설정 상수
+  5. 예외 처리 세분화, 로깅 도입
+  6. 중복 함수 제거 (calculate_distance, format_distance)
+  7. 매직 넘버 상수화
+"""
+
+from __future__ import annotations
+
 import csv
-from shapely.geometry import LineString, Point
+import logging
 import math
-import pandas as pd
-from openpyxl import Workbook, load_workbook
+import tempfile
 import time
-import ezdxf
-import numpy as np
-import matplotlib.pyplot as plt
+from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
-def create_dxf(coordinates, linestring, data1, data2, filename='test.dxf', scale=1000):
-    doc = ezdxf.new()
-    msp = doc.modelspace()
+import ezdxf
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd  # noqa: F401 (향후 확장용, 미사용 시 제거)
+import tkinter as tk
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from shapely.geometry import LineString, Point
 
-    scale = scale / 1000 #1단위로 변환
-    
-    #data1 = 선형계산데이터
-    #data2 = 좌표데이터
-
-    
-    # 각 튜플의 요소들을 뒤집기(토목좌표를 수학좌표로 변환)
-    coordinates_math = [(y, x) for x, y in coordinates]
-    linestring_math = [(y, x) for x, y in linestring.coords]
-    
-    # Create a polyline entity
-    ippolyline = msp.add_lwpolyline(linestring_math)#ip라인
-    polyline = msp.add_lwpolyline(coordinates_math)#선형
-    
-    
-    # Set the color of the polyline to red (color index 1)
-    '''#ACI인덱스
-    0: BYBLOCK
-    1: Red
-    2: Yellow
-    3: Green
-    4: Cyan
-    5: Blue
-    6: Magenta
-    7: White
-    8: Gray
-    9: BYLAYER
-    '''
-    
-    # Set polyline properties if needed
-    polyline.dxf.layer = 'FL'
-    ippolyline.dxf.layer = 'IP라인'
-    
-    # Set the color of the polyline to red
-    
-    polyline.dxf.color = 1
-    ippolyline.dxf.color = 9
-
-    #폴리선굵기
-    polyline.dxf.const_width  = scale
-    
-    text_color_index = 7
-    text_height = 3 * scale
-
-    #IP좌표테이블
-    '''구성
-    IPNO.1
-    IA = 7D 9' 10"
-    R= 600
-    TL =145.15
-    CL = 145.24
-    X = 24236.26
-    Y=2515235
-    
-    '''
-    dimention = 2
-    coord_precision = 4
-    km_precision = 2
-    
-    for i, entry in enumerate(data1):
-        IP_number = f'IP  NO. {entry[0]}'
-        IA = f'IA = {degrees_to_dms2(entry[6])}'
-        R= f'R = {entry[8]:.{dimention}f}' # R
-        if entry[2] == 'simplecurve':  # Simple curve case
-            TL = f'TL = {entry[14][0]:.{dimention}f}' #TL
-            CL = f'CL = {entry[14][1]:.{dimention}f}' #CL
-        else:
-            TL = f'TL = {entry[14][10]:.{dimention}f}' #TL
-            CL = f'CL = {entry[14][12]:.{dimention}f}' #CL
-
-        X = entry[1][0]
-        Y = entry[1][1]
-        
-        X_TEXT= f'X = {entry[1][0]:.{coord_precision}f}'
-        Y_TEXT = f'Y = {entry[1][1]:.{coord_precision}f}'
-
-        '''
-        #텍스트 좌표
-        # Text coordinates
-        text_offsets = [0, -10, -20, -30, -40, -50, -60]
-        text_labels = [IP_number, IA, R, TL, CL, X_TEXT, Y_TEXT]
-
-        for offset, label in zip(text_offsets, text_labels):
-            coord = (Y, X + offset)
-            msp.add_text(label, dxfattribs={'insert': coord, 'height': text_height, 'color': text_color_index, 'layer': 'table'})
-        '''
-
-        # Create block definition with the text elements
-        block_name = f"IP_Block_{i}"
-        block = doc.blocks.new(name=block_name)
-        
-        text_labels = [IP_number, IA, R, TL, CL, X_TEXT, Y_TEXT]
-        text_offsets = [0 * scale, -10 * scale, -20 * scale, -30 * scale, -40 * scale, -50 * scale, -60 * scale]
-        
-        for offset, label in zip(text_offsets, text_labels):
-            coord = (entry[1][1], entry[1][0] + offset)
-            block.add_text(label, dxfattribs={
-                'insert': coord, 
-                'height': text_height, 
-                'color': text_color_index,
-                'layer': 'IP제원표'
-            })
-        
-        # Insert block into the model space at IP location
-        msp.add_blockref(block_name, insert=(0, 0))
-        
-        #선형제원문자
-        # Write the relevant station data for the current entry
-        if i < len(data2):  # Ensure you do not exceed data2 bounds
-            station_group = data2[i]  # Get the corresponding station group for the current entry
-            for station_data in station_group:
-                if i != 0:
-                    station_data.pop(0)
-                
-                
-                for row in station_data:  # Iterate through the innermost list
-                    
-                    lable, sta, station_offset, coord, shiftx, shifty , Ta, sageoriS , Q, T, Azimuth = row
-
-                    #토목좌표를 수학좌표로 변환
-                    x, y = coord
-                    coord_math = (y ,x)
-
-                    #접선방위각을 수학각도로 변환
-                    Ta_math = (450 - Ta) % 360
-                    
-                    #km문자
-                    if sta % 1000 == 0 or sta == 0:#1000의 배수인경우(0포함)
-                        #원그리기
-                        msp.add_circle(coord_math, radius = 2 * scale, dxfattribs={'layer': 'km심볼', 'color': 1})
-                        #원그리기
-                        msp.add_circle(coord_math, radius = 1.5 * scale, dxfattribs={'layer': '200심볼', 'color' : 1})
-                        
-                        #문자
-                        kmtext = f'{sta // 1000}km'
-                        msp.add_text(kmtext, dxfattribs={'layer': 'km문자', 'insert': coord_math, 'height': text_height, 'color': 1, 'rotation': Ta_math})
-
-                        #선그리기
-                        #시작점과 끝점 계산
-                        start_point = calculate_destination_coordinates(y, x, Ta_math + 90, 1.5 * scale)
-                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, -1.5 * scale)
-                        msp.add_line(start_point, end_point, dxfattribs={'layer': '보조측점', 'color': 1})#중심점,길이
-                        
-                    #200문자
-                    elif sta % 200 == 0:#200의 배수인경우(0포함)
-                        #원그리기
-                        msp.add_circle(coord_math, radius = 1.5 * scale, dxfattribs={'layer': '200심볼', 'color' : 1})
-                        #200 텍스트
-                        text200 = str(sta % 1000)
-                        msp.add_text(text200, dxfattribs={'layer': '200문자', 'insert': coord_math, 'height': text_height, 'color': 1, 'rotation': Ta_math})
-
-                        #선그리기
-                        #시작점과 끝점 계산
-                        start_point = calculate_destination_coordinates(y, x, Ta_math + 90, 1.5 * scale)
-                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, -1.5 * scale)
-                        msp.add_line(start_point, end_point, dxfattribs={'layer': '보조측점', 'color': 1})#중심점,길이
-                        
-                    #보조측점선
-                    elif sta % unit == 0:
-                        
-                        #선그리기
-                        #시작점과 끝점 계산
-                        start_point = calculate_destination_coordinates(y, x, Ta_math + 90, 1.5 * scale)
-                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, -1.5 * scale)
-                        msp.add_line(start_point, end_point, dxfattribs={'layer': '보조측점', 'color': 1})#중심점,길이
+# ============================================================
+# 로깅 설정
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
-                        
-                    #완화곡선인출선
-                    else:
-                        
-                        #시작점과 끝점 계산
-                        start_point = coord_math
-                        end_point = calculate_destination_coordinates(y, x, Ta_math + 90, 50 * scale) if entry[3] == 'LEFT CURVE' else calculate_destination_coordinates(y, x, Ta_math - 90, 50 * scale)
-                        msp.add_line(start_point, end_point, dxfattribs={'layer': '곡선인출선', 'color': 1})#중심점,길이
+# ============================================================
+# 상수 정의
+# ============================================================
+class Config:
+    """프로그램 전역 상수"""
 
-                        #제원문자
-                        text_rotation = Ta_math - 90
-                        reverse_rotaion = Ta_math + 90 + 180 if entry[3] == 'LEFT CURVE' else Ta_math - 90 + 180
-                        
-                        if sta / 1000 < 10:
-                            text_position = calculate_destination_coordinates(y, x, reverse_rotaion, -20 * scale)
-                        elif sta / 1000 < 100:
-                            text_position = calculate_destination_coordinates(y, x, reverse_rotaion, -16 * scale)
-                        else:
-                            text_position = calculate_destination_coordinates(y, x, reverse_rotaion, -12 * scale)
-                            
-                        if entry[3] == 'LEFT CURVE':
-                            msp.add_text(lable + '=' + str(format_distance(sta, decimal_places=km_precision)), dxfattribs={'layer': '곡선제원문자', 'insert': end_point, 'height': text_height, 'color': 1, 'rotation': text_rotation})
-                        else:
-                            msp.add_text(lable + '=' + str(format_distance(sta, decimal_places=km_precision)), dxfattribs={'layer': '곡선제원문자', 'insert': text_position, 'height': text_height, 'color': 1, 'rotation': text_rotation})
+    # 파일 경로 (사용자 환경에 맞게 변경 가능)
+    OUTPUT_DIR = Path(tempfile.gettempdir()) / "railway_alignment"
+    DXF_FILENAME = "본선평면선형.dxf"
+    REPORT_FILENAME = "alignmentreport.xlsx"
+    CIVIL3D_FILENAME = "AlignmentExample.xlsx"
+    TOTAL_COORD_FILENAME = "total_coord.txt"
+    INCREMENTAL_REPORT_FILENAME = "Incremental_Station_Report"
 
-                     #정거장중심
-                     #todo
-    #IP좌표 선
-    for i in range(len(linestring_math)-2):
+    # 기본값
+    DEFAULT_UNIT = 20
+    DEFAULT_START_STA = 0.0
+    DEFAULT_DESIGN_SPEED = 250
+    DEFAULT_SCALE = 1000
+    DEFAULT_MAX_V = 250
 
-        x1, y1  = linestring_math[i]
-        x2, y2 = linestring_math[i+1]
-        x3 , y3 = linestring_math[i+2]
-        
-        #v1 계산
-        v1 = calculate_bearing(x1, y1, x2, y2)
-        v2 = calculate_bearing(x2, y2, x3, y3)
-        
-        #v1 시작점 계산
-        start_point1 = calculate_destination_coordinates(x2 ,y2 , v1 +180, 7 * scale)
-        end_point1 = calculate_destination_coordinates(x2 ,y2,  v1, 3 * scale)
+    # 계산 상수
+    CANT_COEFFICIENT = 11.8       # 캔트 계산 계수
+    M_FALLBACK_COEFFICIENT = 7.31  # M값 폴백 계수
+    M_ROUNDING = 50
+    V_ROUNDING = 10
+    Z_ROUNDING = 10
+    COORD_PRECISION = 4
+    KM_PRECISION = 2
+    DIMENSION_PRECISION = 3
 
-        msp.add_line(start_point1, end_point1, dxfattribs={'layer': 'IP교점선', 'color': 1})#중심점,길이
-        
-        #v2 시작점 계산
-        start_point2 = (x2, y2)
-        end_point2 = calculate_destination_coordinates(x2 ,y2 ,  v2, 7* scale)
-        msp.add_line(start_point2, end_point2, dxfattribs={'layer': 'IP교점선', 'color': 1})#중심점,길이
+    # 파일 저장 재시도
+    SAVE_MAX_RETRIES = 100
+    SAVE_RETRY_DELAY = 1
 
-        #문자
-        msp.add_text(f'IP NO.{i+1}' , dxfattribs={
-            'layer': 'IP문자',
-            'insert': start_point2,
-            'height': text_height,
-            'color': 1,
-            'rotation': 0
-            })
+    # DXF 색상
+    COLOR_RED = 1
+    COLOR_WHITE = 7
+    COLOR_BYLAYER = 9
 
-        
-    # Save the DXF document to a file
-    dxf_save_with_retry(doc, filename, max_retries=100, delay=1)
-    
+    @classmethod
+    def ensure_output_dir(cls) -> Path:
+        cls.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        return cls.OUTPUT_DIR
 
-def dxf_save_with_retry(doc, filename, max_retries=100, delay=1):
-    # Try saving the file, retrying if there's a PermissionError
-    for attempt in range(max_retries):
-        try:
-            doc.saveas("C:/temp/" + filename)
-            print(f"File saved successfully: {filename}")
-            break
-        except PermissionError:
-            print(f"Attempt {attempt + 1}: Permission denied while saving {filename}. Retrying in {delay} seconds...")
-            time.sleep(delay)
-    else:
-        print(f"Failed to save the file after {max_retries} attempts.")
 
-            
-def save_with_retry(workbook, filename, max_retries=100, delay=1):
-    # Try saving the file, retrying if there's a PermissionError
-    for attempt in range(max_retries):
-        try:
-            workbook.save(filename)
-            print(f"File saved successfully: {filename}")
-            break
-        except PermissionError:
-            print(f"Attempt {attempt + 1}: Permission denied while saving {filename}. Retrying in {delay} seconds...")
-            time.sleep(delay)
-    else:
-        print(f"Failed to save the file after {max_retries} attempts.")
-        
-def pasing_ip(lines):
-    alignment = []
-    for line in lines:
-        try:
-            IP_X_Coordinate = float(line[1])
-            IP_Y_Coordinate = float(line[0])
-            Radius = float(line[2])
-            
-        except IndexError:
-            Radius = 0
-        
-        alignment.append([IP_X_Coordinate, IP_Y_Coordinate, Radius])
-        
-    return alignment
+# 설계속도별 M값 테이블
+M_VALUE_TABLE: dict[int, float] = {
+    70: 600,
+    120: 900,
+    150: 1100,
+    200: 1450,
+    250: 1850,
+    300: 2200,
+    350: 2550,
+    400: 2950,
+}
 
-def create_Linestring(alignment):
-    coords = [(point[0], point[1]) for point in alignment]
-    return LineString(coords)
 
-def read_file():
-    file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("txt files", "*.txt"), ("All files", "*.*")])
-    print('현재파일:', file_path)
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            lines = list(reader)
-    except UnicodeDecodeError:
-        print('현재파일은 utf-8인코딩이 아닙니다. euc-kr로 시도합니다.')
-        try:
-            with open(file_path, 'r', encoding='euc-kr') as file:
-                reader = csv.reader(file)
-                lines = list(reader)
-        except UnicodeDecodeError:
-            print('현재파일은 euc-kr인코딩이 아닙니다. 파일을 읽을 수 없습니다.')
-            return []
-    return lines
+# ============================================================
+# 데이터 클래스
+# ============================================================
+@dataclass
+class CurveParams:
+    """IP별 선형 계산 결과 (매직 인덱스 제거)"""
 
-def calculate_angles_and_plot(line_string):
+    ip_no: int
+    ip_xy: tuple[float, float]
+    curve_type: str                     # 'simplecurve' | 'cubic'
+    direction: str                      # 'LEFT CURVE' | 'RIGHT CURVE'
+    h1: float                           # 방위각 1
+    h2: float                           # 방위각 2
+    ia_degree: float                    # 교각 (도)
+    center_xy: tuple[float, float]
+    radius: float
+    ip_distance1: float
+    ip_distance2: float
+    m: float
+    z: float
+    v: float
+    params: list                        # simplecurve_parameter 또는 cubic_parameter
+    o_pc_bearing: float
+    sp_pc_bearing: float
+    theta_pc: float
+    ip_sta: float
+
+    # 측점 (curve_type에 따라 다름)
+    sp_sta: Optional[float] = None
+    pc_sta: Optional[float] = None
+    cp_sta: Optional[float] = None
+    ps_sta: Optional[float] = None
+    bc_sta: Optional[float] = None
+    ec_sta: Optional[float] = None
+
+    # 좌표
+    sp_xy: Optional[tuple[float, float]] = None
+    pc_xy: Optional[tuple[float, float]] = None
+    cp_xy: Optional[tuple[float, float]] = None
+    ps_xy: Optional[tuple[float, float]] = None
+    bc_xy: Optional[tuple[float, float]] = None
+    ec_xy: Optional[tuple[float, float]] = None
+
+    # 편의 프로퍼티
+    @property
+    def tl(self) -> float:
+        if self.curve_type == "simplecurve":
+            return self.params[0]
+        return self.params[10]
+
+    @property
+    def cl(self) -> float:
+        if self.curve_type == "simplecurve":
+            return self.params[1]
+        return self.params[12]
+
+    @property
+    def spiral_length(self) -> float:
+        """완화곡선 길이 L (단곡선이면 0)"""
+        return 0.0 if self.curve_type == "simplecurve" else self.params[3]
+
+
+@dataclass
+class StationRow:
+    """측점 1개 행 데이터"""
+
+    label: str
+    sta: float
+    station_offset: float
+    coord: tuple[float, float]
+    shiftx: float
+    shifty: float
+    ta: float                # 접선방위각
+    chord_length: float      # 사거리
+    q: float                 # 편기각
+    t: float                 # 접선각
+    azimuth: float           # 방위각
+
+
+@dataclass
+class AppContext:
+    """main_gui 전역 상태 캡슐화"""
+
+    linestring: Optional[LineString] = None
+    curves: list[CurveParams] = field(default_factory=list)
+    station_groups: list[list[list[StationRow]]] = field(default_factory=list)
+    polycurve: list[tuple[float, float]] = field(default_factory=list)
+
+
+# ============================================================
+# 기하 계산 유틸
+# ============================================================
+def calculate_bearing(x1: float, y1: float, x2: float, y2: float) -> float:
+    """방위각 (수학각, -180~180)"""
+    return math.degrees(math.atan2(y2 - y1, x2 - x1))
+
+
+def calculate_bearing_n(x1: float, y1: float, x2: float, y2: float) -> float:
+    """방위각 (북 기준 0~360)"""
+    bearing = calculate_bearing(x1, y1, x2, y2)
+    return bearing + 360 if bearing <= 0 else bearing
+
+
+def calculate_distance(x1: float, y1: float, x2: float, y2: float) -> float:
+    return math.hypot(x2 - x1, y2 - y1)
+
+
+def calculate_destination_coordinates(
+    x1: float, y1: float, bearing: float, distance: float
+) -> tuple[float, float]:
+    angle = math.radians(bearing)
+    return x1 + distance * math.cos(angle), y1 + distance * math.sin(angle)
+
+
+def calculate_inner_angle(v1: tuple, v2: tuple) -> float:
+    a1 = math.atan2(v1[1], v1[0])
+    a2 = math.atan2(v2[1], v2[0])
+    diff = abs(a2 - a1)
+    if diff > math.pi:
+        diff = 2 * math.pi - diff
+    return math.degrees(diff)
+
+
+def calculate_angles(line_string: LineString) -> list[float]:
     angles = []
-    for i in range(1, len(line_string.coords) - 1):
-        prev_vector = (line_string.coords[i][0] - line_string.coords[i - 1][0],
-                       line_string.coords[i][1] - line_string.coords[i - 1][1])
-        current_vector = (line_string.coords[i + 1][0] - line_string.coords[i][0],
-                          line_string.coords[i + 1][1] - line_string.coords[i][1])
-        angle_diff = calculate_inner_angle(prev_vector, current_vector)
-        angles.append(angle_diff)
+    coords = line_string.coords
+    for i in range(1, len(coords) - 1):
+        v1 = (coords[i][0] - coords[i - 1][0], coords[i][1] - coords[i - 1][1])
+        v2 = (coords[i + 1][0] - coords[i][0], coords[i + 1][1] - coords[i][1])
+        angles.append(calculate_inner_angle(v1, v2))
     return angles
 
-def calculate_inner_angle(v1, v2):
-    angle1 = math.atan2(v1[1], v1[0])
-    angle2 = math.atan2(v2[1], v2[0])
-    angle_diff = abs(angle2 - angle1)
-    if angle_diff > math.pi:
-        angle_diff = 2 * math.pi - angle_diff
-    return math.degrees(angle_diff)
 
-def calculate_bearing(x1, y1, x2, y2):
-    dx = x2 - x1
-    dy = y2 - y1
-    bearing = math.degrees(math.atan2(dy, dx))
-    return bearing
-
-def calculate_bearingN(x1, y1, x2, y2):
-    # 방위각 계산함수
-    dx = x2 - x1
-    dy = y2 - y1
-    bearing = math.degrees(math.atan2(dy, dx))
-    if bearing <=0:
-        bearing += 360
-    return bearing
-
-def calculate_distance(x1, y1, x2, y2):
-    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
-def calculate_destination_coordinates(x1, y1, bearing, distance):
-    angle = math.radians(bearing)
-    x2 = x1 + distance * math.cos(angle)
-    y2 = y1 + distance * math.sin(angle)
-    return x2, y2
-
-def find_direction(d10, v10, v11):
-    if d10 == 0:
+def find_direction(radius: float, h1: float, h2: float) -> int:
+    if radius == 0:
         return 0
-    elif math.sin(math.radians(v11 - v10)) >= 0:
-        return 1
-    else:
-        return -1
-    
-def calculate_V(Cm, Cd, R, maxV):
-    V = int(math.sqrt((Cm +  Cd) * R / 11.8))  # 정수로 변환
-    return min(V, maxV)  # V가 maxV를 초과하지 않도록 제한
-
-#최대 설정캔트와 최대 부족캔트
-def get_cant_limits(V, track_type):
-    """
-    설계속도(V)와 도상 유형(track_type)에 따른 최대 설정캔트와 최대 부족캔트를 반환하는 함수.
-    
-    track_type: '자갈도상' 또는 '콘크리트도상'
-    """
-    if track_type == "자갈도상":
-        if 350 < V <= 400:
-            return 180, 130#이 설계속도에서는 콘크리트도상 적용
-        elif 250 < V <= 350:
-            return 160, 80
-        elif V <= 250:
-            return 160, 100
-    elif track_type == "콘크리트도상":
-        if 350 < V <= 400:
-            return 180, 130
-        elif 250 < V <= 350:
-            return 180, 130
-        elif V <= 250:
-            return 180, 130
-    else:
-        return "Invalid track type"
-
-#M,Z,V계산
-def cal_parameter(radius_list, maxV=250, track_type='자갈도상'):
-    parameters = []
-    for i in range(len(radius_list)):
-        try:
-            
-            
-            Cm, Cd = get_cant_limits(maxV, track_type)#최대 설정캔트와 최대 부족캔트
-            
-            R = radius_list[i]
-            
-            
-            V = int(calculate_V(Cm, Cd, R, maxV))
-            
-            # 10의 배수로 조정
-            V = round(V / 10) * 10
-            
-            m_values = {
-            70: 600,
-            120: 900,
-            150: 1100,
-            200: 1450,
-            250: 1850,
-            300: 2200,
-            350: 2550,
-            400: 2950
-            }
-
-            M = int(m_values.get(V, 7.31 * V))
-            # 50의 배수로 조정
-            M = round(M / 50) * 50
-            
-            Z = 11.8 * V ** 2 / R
-            
-            if Z >= Cm:
-                Z = Cm
-
-            # 10의 배수로 조정
-            Z = round(Z / 10) * 10
-            
-            parameters.append([M,Z,V])
-        except ValueError:
-            print("잘못된 입력입니다. 숫자를 입력해주세요.")
-            
-    return parameters
-
-def degrees_to_dms(degrees):
-    """
-    Converts decimal degrees to degrees, minutes, seconds.
-    
-    Args:
-    degrees (float): Decimal degrees value.
-    
-    Returns:
-    tuple: Degrees, minutes, seconds.
-    """
-    if degrees < 0:
-        degrees = degrees * -1
-        
-    deg = int(degrees)
-    minutes = int((degrees - deg) * 60)
-    seconds = (degrees - deg - minutes / 60) * 3600
-
-    
-    return f"{deg}도  {minutes}분  {seconds:.2f}초"
-
-def degrees_to_dms2(degrees):
-    """
-    Converts decimal degrees to degrees, minutes, seconds.
-    
-    Args:
-    degrees (float): Decimal degrees value.
-    
-    Returns:
-    tuple: Degrees, minutes, seconds.
-    """
-    if degrees < 0:
-        degrees = degrees * -1
-        
-    deg = int(degrees)
-    minutes = int((degrees - deg) * 60)
-    seconds = (degrees - deg - minutes / 60) * 3600
-
-    
-    return f"{deg}° {minutes}' {seconds:.2f}\""
-
-#SP>PC 방위각
-def calculate_SP_PC_bearing(W13, V10, X10):
-    if W13 < 0:
-        result = V10 - X10
-        if result < 0:
-            result += 360
-    else:
-        result = V10 + X10
-        if result > 360:
-            result -= 360
-
-    return result
-
-#CP좌표계산
-def calculate_CP_XY(K21, N21, W13, W18, P10, V11):
-    part1 = W13 * math.cos(math.radians(W18 + 90))  # (W18 + 90) * PI() / 180
-    part2 = W13 * math.cos(math.radians(W18 - 90 + (180 * P10) / (math.pi * W13)))  # (W18 - 90 + (180 * P10 / PI() / W13)) * PI() / 180
-    part3 = W13 * math.sin(math.radians(W18 + 90))
-    part4 = W13 * math.sin(math.radians(W18 - 90 + (180 * P10) / (math.pi * W13)))  # (W18 - 90 + (180 * P10 / PI() / W13)) * PI() / 180
-    
-    result1 = K21 + part1 + part2
-    result2 = N21 + part3 + part4
-    
-    return (result1, result2)
-
-
-#O>PC방위각
-def calculate_O_PC_bearing(V10, X10, W13):
-    '''args
-    W13 = W13
-    V10 = 방위각1
-    X10 = THITA
-    '''
-    X10 = math.degrees(X10)
-    
-    if W13 > 0:
-        if V10 + X10 - 90 < 0:
-            return V10 + X10 - 90 + 360
-        else:
-            return V10 + X10 - 90
-    else:
-        if V10 - X10 + 90 > 360:
-            return V10 - X10 + 90 - 360
-        else:
-            return V10 - X10 + 90
-
-#PC점의 접선각
-def calculate_theta_pc(m, z, Rc):
-    """Calculate the PC point's tangent angle in radians."""
-    x1 = m * (z * 0.001) #X1
-    theta_pc = math.atan(x1 / (2 * Rc))
-    return theta_pc
-
-#3차포물선 제원계산
-def calculate_cubic_parabola_parameter(m, z, direction, theta_pc, Rc, IA_rad):
-    """Calculate various lengths used in the spiral calculation."""
-    x1 = m * (z * 0.001) #X1
-    x2 = x1 - (Rc * math.sin(theta_pc))#x2
-    W13 = Rc * direction#-R
-    L = x1 * (1 + (math.tan(theta_pc) ** 2) / 10)#완화곡선 길이
-    Y = (x1 ** 2) / (6 * Rc)#Y1
-    W15  = (x1 ** 2) / (6 * W13)#W-Y
-    F = Y - Rc * (1 - math.cos(theta_pc))#이정량 F
-    S = 1 / math.cos(IA_rad / 2) * F #S
-    K = F * math.tan(IA_rad / 2) #수평좌표차K
-    W = (Rc + F) * math.tan(IA_rad / 2)#W
-    TL = x2 + W #TL
-    Lc = Rc * (IA_rad - 2 * theta_pc) #원곡선 길이
-    CL = Lc + 2 * L #전체곡선길이
-    SL = Rc * (1 / (math.cos(IA_rad / 2)) - 1) + S
-    RIA = IA_rad - (2 * theta_pc)#원곡선교각
-    C = math.atan(Y / x1)#C
-    XB = math.pi/2 - theta_pc#XB
-    B = math.pi/2 - C - XB
-    parameter = [x1, x2, W13, L, Y, W15, F, S, K, W, TL, Lc, CL, SL, RIA , C, B]
-    
-    return parameter
-
-def calculate_simplecurve_parameter(direction, Rc, IA_rad):
-    TL = Rc * math.tan(IA_rad/2)
-    CL = Rc * IA_rad
-    SL = Rc * (1 / (math.cos(IA_rad / 2)) - 1)
-    S = Rc * (1 - math.cos(IA_rad / 2))
-    W13 = Rc * direction
-    parameter = [TL,CL,SL,S, W13]
-    return parameter
-
-#완화곡선 시종점 좌표계산함수
-def calculate_spiral_coordinates(BP_XY, IP_XY, EP_XY, h1, h2, TL, x1, Y, SP_PC_bearing, Rc, Lc, W13):
-    """Calculate the coordinates of SP, PC, CP, and PS."""
-    SP_XY = (
-        math.cos(math.radians(h1 + 180)) * TL + IP_XY[0],
-        math.sin(math.radians(h1 + 180)) * TL + IP_XY[1]
-    )
-    PC_XY = (
-        SP_XY[0] + x1 * math.cos(math.radians(h1)) + Y * math.cos(math.radians(h1 + 90)),
-        SP_XY[1] + x1 * math.sin(math.radians(h1)) + Y * math.sin(math.radians(h1 + 90))
-    )
-    CP_XY = calculate_CP_XY(PC_XY[0], PC_XY[1], W13, SP_PC_bearing, Lc, h2)
-    PS_XY = (
-        math.cos(math.radians(h2)) * TL + IP_XY[0],
-        math.sin(math.radians(h2)) * TL + IP_XY[1]
-    )
-    return SP_XY, PC_XY, CP_XY, PS_XY
-
-def dictionary_cubicparabola(v):
-    '''
-    완화곡선을 삽입하지 않는 최소곡선반경
-    '''
-    not_spiral_min_radius_dic = {
-        250: 24000,
-        200: 12000,
-        150: 5000,
-        120: 2500,
-        70: 600
-    }
-
-    cdlim_dic = {
-        400: 20,
-        350: 25,
-        300: 27,
-        250: 32,
-        200: 40,
-        150: 57,
-        120: 69,
-        100: 83,
-        70: 100
-    }
-
-    # cdlim_dic에서 이미 존재하는 값일 경우 그대로 반환
-    if v in cdlim_dic:
-        cdlim = cdlim_dic[v]
-    else:
-        # 값이 사전에 없을 경우 선형 보간 수행
-        sorted_keys = sorted(cdlim_dic.keys())
-
-        # 입력값이 범위 밖에 있을 경우 예외 처리
-        if v < sorted_keys[0] or v > sorted_keys[-1]:
-            raise ValueError(f"입력 속도 {v}는 지원되는 범위 밖에 있습니다. {sorted_keys[0]}에서 {sorted_keys[-1]} 사이의 값을 입력하세요.")
-
-        # 선형 보간을 위한 인접한 두 값 찾기
-        for i in range(len(sorted_keys) - 1):
-            if sorted_keys[i] <= v <= sorted_keys[i + 1]:
-                # 두 지점 사이의 보간
-                x1, y1 = sorted_keys[i], cdlim_dic[sorted_keys[i]]
-                x2, y2 = sorted_keys[i + 1], cdlim_dic[sorted_keys[i + 1]]
-                
-                # 선형 보간 공식 사용
-                cdlim = y1 + (v - x1) * (y2 - y1) / (x2 - x1)
-                break
-
-    # not_spiral_min_radius_dic에서 값 찾기
-    if v in not_spiral_min_radius_dic:
-        not_spiral_min_radius = not_spiral_min_radius_dic[v]
-    else:
-        # 해당 값이 없으면 공식으로 계산
-        not_spiral_min_radius = 11.8 * (v**2 / cdlim)
-
-    return not_spiral_min_radius
-
-
-#메인계산함수
-def calculate_curve(linestring, Radius_list, angles, parameters, unit=20, start_STA=0):
-
-    final_result = []
-    
-    O_XY_list = []
-    cubic_parabola_XY_list = []
-    cubic_parabola_STA_list = []
-
-    simplecurve_XY_list = []
-    simplecurve_STA_list = []
-    
-    TL_LIST = []
-    IP_STA_list = []
-    
-    direction_list = []
-    prebearing_list = []
-    nextbearing_list = []
-    
-    BP_STA = start_STA
-    BP_STA_LIST = [0]
-
-    station_coordlist = []
-
-    END_STA_list = []
-    END_XY_list =[]
-
-    alignment_report_variable_list = []
-
-    polycurve = []
-    for i in range(len(linestring.coords)-2):
-        IA_rad = math.radians(angles[i])
-        IA_DEGREE = angles[i]
-        
-        #토목좌표
-        BP_XY = (linestring.coords[i][0], linestring.coords[i][1])
-        IP_XY = (linestring.coords[i + 1][0], linestring.coords[i + 1][1])
-        EP_XY = (linestring.coords[i + 2][0], linestring.coords[i + 2][1])
-
-        h1 = calculate_bearingN(BP_XY[0], BP_XY[1], IP_XY[0], IP_XY[1])#방위각1(도)
-        h2 = calculate_bearingN(IP_XY[0], IP_XY[1], EP_XY[0], EP_XY[1])#방위각2(도)
-
-        IP_distnace1 = calculate_distance(BP_XY[0], BP_XY[1], IP_XY[0], IP_XY[1]) #ip연장1
-        IP_distnace2 = calculate_distance(IP_XY[0], IP_XY[1], EP_XY[0], EP_XY[1]) #연장2
-
-        
-        
-        Rc = Radius_list[i]
-        m, z, v = parameters[i]
-        
-        not_spiral_min_radius = dictionary_cubicparabola(v)#완화곡선을 삽입하지 않는 최소곡선반경
-
-        if Rc >= not_spiral_min_radius:
-            curvetype = 'simplecurve'#단곡선
-        else:
-            curvetype = 'cubic'#3차포물선
-        
-        direction = find_direction(Rc, h1, h2)
-
-        if direction == 1:
-            curvedirection = 'RIGHT CURVE'
-        else:
-            curvedirection = 'LEFT CURVE'
-
-        #마지막 IP변수
-        is_last_ip = (i == len(linestring.coords) - 3 if len(linestring.coords) > 3 else i == len(linestring.coords) - 2)
-        
-        if curvetype == 'simplecurve':#단곡선
-            theta_pc = 0
-            #O>PC 방위각(도)
-            
-            simplecurve_parameter = calculate_simplecurve_parameter(direction, Rc, IA_rad)
-            TL, CL, SL, S, W13 = simplecurve_parameter# 파라매터
-
-            O_PC_bearing = calculate_O_PC_bearing(h1, theta_pc, W13)
-            SP_PC_bearing = h1#SP>PC방위각(도)
-            simplecurve_coord = calculate_simplecurve_coordinates(h1, h2, TL, IP_XY)#BC,EC좌표반환함수
-            BC_XY , EC_XY = simplecurve_coord#BC,EC좌표
-            
-            CURVE_CENTER = (math.cos(math.radians(O_PC_bearing + 180)) * Rc + BC_XY[0],
-                            math.sin(math.radians(O_PC_bearing + 180)) * Rc + BC_XY[1])#CURVE CENTER
-
-            simplecurve_XY_list.append([BC_XY, EC_XY])
-
-            END_XY_list.append(EC_XY)
-            
-            if i == 0:
-                simplecurve_STA_list.append([0, 0])#인덱스 오류 방지로 0 할당
-                # 첫 번째 값을 덮어쓰기
-                IP_STA = BP_STA + IP_distnace1
-                BC_STA = IP_STA - TL
-                EC_STA = BC_STA + CL
-
-                simplecurve_STA_list[0] = [BC_STA, EC_STA]  # 첫 번째 값 덮어쓰기
-
-                END_STA_list.append(EC_STA)
-            else:
-                BP_STA = END_STA_list[i-1]  # 이전 PS_STA 값
-                IP_STA = BP_STA + IP_distnace1 - TL_LIST[i - 1]
-
-                BC_STA = IP_STA - TL
-                EC_STA = BC_STA + CL
-
-                simplecurve_STA_list.append([BC_STA, EC_STA])
-                
-                END_STA_list.append(EC_STA)
-                if is_last_ip:#마지막IP
-                    EC_EP_distance = calculate_distance(EC_XY[0], EC_XY[1], EP_XY[0], EP_XY[1]) #EC와 EP거리
-                    EP_STA = EC_STA + EC_EP_distance
-        else:#3차포물선
-            theta_pc = calculate_theta_pc(m, z, Rc)#pc점의 접선각 라디안
-            
-            
-            cubic_parameter = calculate_cubic_parabola_parameter(m, z, direction, theta_pc, Rc, IA_rad)#파라매터
-        
-            x1, x2, W13, L, Y, W15, F, S, K, W, TL, Lc, CL, SL, RIA, C, B = cubic_parameter
-
-            O_PC_bearing = calculate_O_PC_bearing(h1, theta_pc, W13)#O>PC 방위각(도)
-            
-            SP_PC_bearing = calculate_SP_PC_bearing(W13, h1, math.degrees(theta_pc))#SP>PC방위각(도)
-
-            SP_XY, PC_XY, CP_XY, PS_XY = calculate_spiral_coordinates(BP_XY, IP_XY, EP_XY, h1, h2, TL, x1, W15, SP_PC_bearing, Rc, Lc, W13)
-
-            CURVE_CENTER = (math.cos(math.radians(O_PC_bearing + 180)) * Rc + PC_XY[0],
-                            math.sin(math.radians(O_PC_bearing + 180)) * Rc + PC_XY[1])#CURVE CENTER
-            
-            cubic_parabola_XY_list.append([SP_XY,PC_XY,CP_XY,PS_XY])
-
-            END_XY_list.append(PS_XY)
-            
-            if i == 0:
-                cubic_parabola_STA_list.append([0, 0, 0, 0])#인덱스 오류 방지로 0 할당
-                # 첫 번째 값을 덮어쓰기
-                IP_STA = BP_STA + IP_distnace1
-                SP_STA = IP_STA - TL
-                PC_STA = SP_STA + L
-                CP_STA = PC_STA + Lc
-                PS_STA = CP_STA + L
-
-                cubic_parabola_STA_list[0] = [SP_STA, PC_STA, CP_STA, PS_STA]  # 첫 번째 값 덮어쓰기
-
-                END_STA_list.append(PS_STA)
-                
-            else:
-                # 두 번째 이상의 경우 새로운 값을 append
-                BP_STA = END_STA_list[i-1]  # 이전 PS_STA 값
-                IP_STA = BP_STA + IP_distnace1 - TL_LIST[i - 1]
-
-                SP_STA = IP_STA - TL
-                PC_STA = SP_STA + L
-                CP_STA = PC_STA + Lc
-                PS_STA = CP_STA + L
-
-                cubic_parabola_STA_list.append([SP_STA, PC_STA, CP_STA, PS_STA])
-                
-                END_STA_list.append(PS_STA)
-
-                if is_last_ip:#마지막IP
-                    EC_EP_distance = calculate_distance(PS_XY[0], PS_XY[1], EP_XY[0], EP_XY[1]) #EC와 EP거리
-                    EP_STA = PS_STA + EC_EP_distance
-
-            #경고추가
-            if BP_STA>SP_STA:
-                print(f'경고! 곡선겹침 IP{i+1}: BP={format_distance(BP_STA)}, SP={format_distance(SP_STA)}')
-                
-        TL_LIST.append(TL)
-        
-        
-            
-        
-            
-        ###좌표 계산로직###
-        # unit 간격으로 PS_STA까지 스테이션 리스트 생성
-        
-        #리스트 초기화
-        station_coordlist = []
-        
-        # Ensure BP_STA and PS_STA are integers
-
-        
-        
-        if curvetype == 'simplecurve':#단곡선
-            BP_STA_int = int(round(BP_STA))
-            EC_STA_int = int(round(EC_STA))
-
-
-            # unit 간격으로 PS_STA까지 스테이션 리스트 생성
-            if is_last_ip: #마지막IP
-                EP_STA_int = int(round(EP_STA))
-                station_list = generate_integers(BP_STA_int, EP_STA_int, unit)
-            else:
-                station_list = generate_integers(BP_STA_int, EC_STA_int, unit)
-                
-            #BC와 EC측점 추가
-            station_list.extend([BP_STA, BC_STA, EC_STA])
-
-            #리스트 정렬
-            station_list.sort()
-
-            # 스테이션 리스트에 있는 각 sta에 대해 좌표 계산
-            for j, sta in enumerate(station_list):
-                if j ==0:
-                    lable = 'BP'
-                    StationOffset = 0
-                else:
-                    if is_last_ip:#마지막 IP
-                        lable = get_station_label(curvetype, sta, BC_STA, BC_STA, EC_STA, EC_STA, EP_STA)  # 제원문자
-                    else:
-                        lable = get_station_label(curvetype, sta, BC_STA, BC_STA, EC_STA, EC_STA, EC_STA)#제원문자
-
-                    StationOffset = calculate_station_offset(sta, BC_STA, BC_STA, EC_STA, EC_STA, BP_STA)#측거
-                #print(StationOffset)
-                shiftx =  0
-                #print(shiftx)
-                shifty =  0
-                #print(shifty)
-                if i ==0:
-                    PBP_XY = BP_XY
-                else:
-                    PBP_XY = END_XY_list[i-1]
-                coord = calculate_coordinates(sta,
-                                              BC_STA, BC_STA, EC_STA, EC_STA,
-                                              h1, h2, SP_PC_bearing,
-                                              StationOffset, W13,
-                                              shiftx, shifty,
-                                              PBP_XY[0], PBP_XY[1],
-                                              BC_XY[0], BC_XY[1],
-                                              CURVE_CENTER[0], CURVE_CENTER[1],
-                                              EC_XY[0], EC_XY[1])
-                # 각 sta에 대한 좌표를 추가
-
-                
-                if BC_STA < sta <= EC_STA:#단곡선구간
-                    #사거리S
-                    sageoriS = 2 * Rc * math.sin((((StationOffset / CL) * IA_rad) / 2) * math.pi / 180)
-                    
-                    #편기각 Q                   
-                    Q = (180 / (2 * math.pi)) * (StationOffset / Rc)#도
-
-                    #접선각 T
-                    T = math.degrees(theta_pc) #도
-                    
-                    # 방위각 A(도) (Azimuth in degrees)
-                    Azimuth = h1 + math.degrees(theta_pc) + Q if direction == 1 else h1 - math.degrees(
-                        theta_pc) - Q
-
-
-                    # 접선방위각 Ta (Tangent Azimuth in degrees)
-                    Ta = h1 + math.degrees(theta_pc) + 2 * Q if direction == 1 else h1 - math.degrees(
-                        theta_pc) - 2 * Q
-
-                elif sta <= BC_STA:#BP - SP
-                    sageoriS = 0
-                    Ta = h1
-                    Q =0
-                    T = 0
-                    Azimuth = 0
-                    
-                elif EC_STA <= sta: #PS>EP
-                    sageoriS = 0
-                    Ta = h2
-                    Q =0
-                    T = 0
-                    Azimuth = 0
-                    
-                station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty, Ta, sageoriS , Q, T, Azimuth])
-                
-                polycurve.append(coord)
-        else:#3차포물선
-            BP_STA_int = int(round(BP_STA))
-            PS_STA_int = int(round(PS_STA))
-
-
-            # unit 간격으로 PS_STA까지 스테이션 리스트 생성
-            if is_last_ip: #마지막IP
-                
-                EP_STA_int = int(round(EP_STA))
-                station_list = generate_integers(BP_STA_int, EP_STA_int, unit)
-            else:
-
-                station_list = generate_integers(BP_STA_int, PS_STA_int, unit)
-            
-            #BP, SP,PC,CP ,PS점 추가
-            if BP_STA % unit == 0:#배수인경우 BP_STA 추가안함
-                station_list.extend([SP_STA, PC_STA, CP_STA, PS_STA])
-            else:
-                station_list.extend([BP_STA, SP_STA, PC_STA, CP_STA, PS_STA])
-            
-            if is_last_ip: #마지막IP
-                station_list.append(EP_STA)
-            
-            #리스트 정렬
-            station_list.sort()
-
-            # 스테이션 리스트에 있는 각 sta에 대해 좌표 계산
-            for j, sta in enumerate(station_list):
-                if j == 0:
-                    lable = 'BP'
-                    StationOffset = 0
-                else:
-                    end_sta = EP_STA if is_last_ip else PS_STA
-                    lable = get_station_label(curvetype, sta, SP_STA, PC_STA, CP_STA, PS_STA, end_sta)  # 제원문자
-
-                    StationOffset = calculate_station_offset(sta, SP_STA, PC_STA, CP_STA, PS_STA, BP_STA)#측거
-
-                #이정량X
-                shiftx =  cal_spiral_shiftx(sta, SP_STA, PC_STA, CP_STA, PS_STA, StationOffset, W13, L)
-                #이정량Y
-                shifty =  cal_spiral_shifty(sta, SP_STA, PC_STA, CP_STA, PS_STA, shiftx, W13, x1)
-
-                #사거리 S ageori
-                sageoriS = math.sqrt(shiftx**2 + shifty**2)
-                
-                
-                if PC_STA <= sta <= CP_STA:#단곡선구간
-                    
-                    #사거리S
-                    sageoriS = 2 * Rc * math.sin((((StationOffset / Lc) * RIA) / 2) * math.pi / 180)
-                    
-                    #편기각 Q                   
-                    Q = (180 / (2 * math.pi)) * (StationOffset / Rc)#도
-
-                    #접선각 T
-                    T = math.degrees(theta_pc) #도
-                    
-                    # 방위각 A(도) (Azimuth in degrees)
-                    Azimuth = h1 + math.degrees(theta_pc) + Q if direction == 1 else h1 - math.degrees(
-                        theta_pc) - Q
-
-
-                    # 접선방위각 Ta (Tangent Azimuth in degrees)
-                    Ta = h1 + math.degrees(theta_pc) + 2 * Q if direction == 1 else h1 - math.degrees(
-                        theta_pc) - 2 * Q
-
-                    
-                    
-                elif SP_STA < sta < PC_STA:#SP>PC
-                    #편기각 Q
-                    Q = math.atan(shiftx**2 / (6 * Rc * x1)) #type 라디안
-                    
-                    #접선각 Tangent
-                    T = (180*shiftx**2) / (6 * math.pi * Rc * L)*3 #type 도
-                
-                    #방위각 Azimuth
-                
-                    Azimuth = h1 + math.degrees(Q) if direction == 1 else h1 - math.degrees(Q)#도
-                
-                    #접선방위각 Ta
-                    Ta = h1 + T if direction == 1 else h1 - T
-                    
-                elif CP_STA < sta < PS_STA:#CP>PS
-                    
-                    #편기각 Q
-                    Q = math.atan(shiftx**2 / (6 * Rc * x1))#type 라디안
-                    
-                    #접선각 Tangent
-                    T = (180*shiftx**2) / (6 * math.pi * Rc * L)*3 #type 도
-                
-                    #방위각 Azimuth
-                
-                    Azimuth = h2 - math.degrees(Q) if direction == 1 else h2 + math.degrees(Q)#도
-                
-                    #접선방위각 Ta
-                    Ta = h2 - T if direction == 1 else h2 + T
-                    
-                elif sta <= SP_STA:#BP - SP
-                    sageoriS = 0
-                    Ta = h1
-                    Q =0
-                    T = 0
-                    Azimuth = 0
-                    
-                elif PS_STA <= sta: #PS>EP
-                    sageoriS = 0
-                    Ta = h2
-                    Q =0
-                    T = 0
-                    Azimuth = 0
-                        
-                if i ==0:
-                    PBP_XY = BP_XY
-                else:
-                    PBP_XY = END_XY_list[i-1]
-                coord = calculate_coordinates(sta,
-                                              SP_STA, PC_STA, CP_STA, PS_STA,
-                                              h1, h2, SP_PC_bearing,
-                                              StationOffset, W13,
-                                              shiftx, shifty,
-                                              PBP_XY[0], PBP_XY[1],
-                                              SP_XY[0], SP_XY[1],
-                                              CURVE_CENTER[0], CURVE_CENTER[1],
-                                              PS_XY[0], PS_XY[1])
-
-                # 각 sta에 대한 좌표를 추가
-                # Create a list for the current station's data
-                station_coordlist.append([lable, sta, StationOffset, coord, shiftx, shifty, Ta, sageoriS , Q, T, Azimuth])
-                polycurve.append(coord)
-        final_result.append([station_coordlist])
-
-        
-        ######선형계산서 리스트 저장#######
-        if curvetype == 'simplecurve':#단곡선
-            
-            alignment_report_variable_list.append(
-                [
-                    i+1,
-                    IP_XY,
-                    curvetype,
-                    curvedirection,
-                    h1, h2,
-                    IA_DEGREE,
-                    CURVE_CENTER,
-                    Rc,
-                    IP_distnace1, IP_distnace2,
-                    m, z, v,
-                    simplecurve_parameter,
-                    O_PC_bearing,
-                    SP_PC_bearing,
-                    theta_pc,
-                    IP_STA,
-                    BC_STA, EC_STA,  # Corrected typo here
-                    BC_XY, EC_XY
-                ]
-            )
-        else:#3차포물선
-            alignment_report_variable_list.append(
-                [
-                    i+1,
-                    IP_XY,
-                    curvetype,
-                    curvedirection,
-                    h1, h2,
-                    IA_DEGREE,
-                    CURVE_CENTER,
-                    Rc,
-                    IP_distnace1, IP_distnace2,
-                    m, z, v,
-                    cubic_parameter,
-                    O_PC_bearing,
-                    SP_PC_bearing,
-                    theta_pc,
-                    IP_STA,
-                    SP_STA, PC_STA, CP_STA, PS_STA,# Corrected typo here
-                    SP_XY, PC_XY ,CP_XY, PS_XY
-                ]
-            )
-            
-                                            
-    return final_result, alignment_report_variable_list ,polycurve
-
-def calculate_simplecurve_coordinates(V10, V11, D12, IP):
-    '''
-    Args:
-    v10 = 방위각1
-    V11 = 방위각2
-    d12 = TL
-    F5 =IPX
-    L5 = IPY
-    
-    '''
-    F5 = IP[0]
-    L5 = IP[1]
-    #COS((V10+180)*PI()/180)*D12+F5)
-    BC_XY = (math.cos((V10 + 180) * math.pi/180) * D12 + F5,
-             math.sin((V10 + 180) * math.pi/180) * D12 + L5)
-    EC_XY = (math.cos((V11) * math.pi/180) * D12 + F5,
-             math.sin((V11) * math.pi/180) * D12 + L5)
-
-    coords = [BC_XY, EC_XY]
-    return coords
-#이정량 x,y                
-def cal_spiral_shiftx(B27, H20, H21, H22, H23, D27, W13, D13, epsilon=1e-9):
-    '''
-    Args:
-    B27 = 측점
-    H20, H21, H22, H23 = 특정 스테이션 값
-    D27 = 측거
-    W13 = -곡선반경
-    D13 = 캔트
-    epsilon = tolerance for floating-point comparison
-
-    Returns:
-    A calculated value based on the conditions in the Excel formula.
-    '''
-
-    if H20 >= B27:
-        return 0
-    elif H21 > B27:
-        return D27 - (D27 ** 5 / (40 * W13 ** 2 * D13 ** 2))
-    elif H22 >= B27:
-        return 0
-    elif H23 >= B27:
-        return D27 - (D27 ** 5 / (40 * W13 ** 2 * D13 ** 2))
-    else:
-        return 0
-
-#이정량Y
-def cal_spiral_shifty(B27, H20, H21, H22, H23, V27, W13, P11, epsilon=1e-9):
-    '''
-    Args:
-    B27 = 측점
-    H20, H21, H22, H23 = 특정 스테이션 값
-    V27 = 이정량x
-    W13 = -곡선반경
-    P11 = x1
-    epsilon = tolerance for floating-point comparison
-
-    Returns:
-    A calculated value based on the conditions in the Excel formula.
-    '''
-
-    if H20 >= B27:
-        return 0
-    elif H21 > B27:
-        return V27 ** 3 / (6 * W13 * P11)
-    elif H22 >= B27:
-        return 0
-    elif H23 >= B27:
-        return V27 ** 3 / (6 * W13 * P11)
-    else:
-        return 0
-
-
-def get_station_label(curve_type, station, SP_STA, PC_STA, CP_STA, PS_STA, EP_STA, epsilon=1e-9):
-    """
-    Args:
-    curve_type (str): 곡선타입 ('simplecurve', 'cubic')
-    station (float): 측점
-    SP_STA, PC_STA, CP_STA, PS_STA, EP_STA (float): 각각 SP, PC, CP, PS, EP 좌표
-    epsilon (float): 부동소수점 비교를 위한 허용 오차
-
-    Returns:
-    str: 해당 측점의 레이블 ('BC', 'SP', 'PC', 'CP', 'PS', 'EC', 'EP') or 빈 문자열 ("")
-    """
-    if abs(station - SP_STA) < epsilon:
-        return 'BC' if curve_type == 'simplecurve' else 'SP'
-    elif abs(station - PC_STA) < epsilon:
-        return 'BC' if curve_type == 'simplecurve' else 'PC'
-    elif abs(station - CP_STA) < epsilon:
-        return 'EC' if curve_type == 'simplecurve' else 'CP'
-    elif abs(station - PS_STA) < epsilon:
-        return 'EC' if curve_type == 'simplecurve' else 'PS'
-    elif abs(station - EP_STA) < epsilon:
-        return "EP"
-    else:
-        return ""
-
-
-#측거
-
-
-def calculate_station_offset(B28, H20, H21, H22, H23, X13):
-    '''
-    Args:
-    B28 = 측점 (Station point)
-    H20, H21, H22, H23 = 스테이션 값 (Station values)
-    X13 = BP STA (Base point)
-    epsilon = tolerance for floating-point comparison
-
-    Returns:
-    A calculated offset value.
-    '''
-    #인트로 변환
-    B28_int = int(B28)
-    H20_int = int(H20)
-    H21_int = int(H21)
-    H22_int = int(H22)
-    H23_int = int(H23)
-    X13_int = int(X13)
-
-    if B28_int == "":
-        return ""
-    elif B28_int <= H20_int:
-        return B28 - X13
-    elif B28_int < H21_int:
-        return B28 - H20
-    elif B28_int <= H22_int:
-        return B28 - H21
-    elif B28_int <= H23_int:
-        return H23 - B28
-    else:
-        return B28 - H23
-
-
-#선형 좌표계산함수
-def calculate_coordinates(B27, H20, H21, H22, H23, V10, V11, W18, D27, W13, V27, W27, X14, X15, K20, N20, J9, N9, K23, N23):
-    '''
-    args
-    B27 = 측점
-    H20, H21, H22, H23 = 완화곡선 측점
-    V10, V11 = 방위각 1,2
-    W18 = sp, pc 방위각
-    D27 = 측거
-    W13 = -곡선반경
-    
-    V27 = 이정량 x
-    W27 = 이정량 y
-    X14, X15 = BP X, BP Y
-    K20, K23 = SP[X], PS[X]
-    J9, N9 = CENTER X, CENTER Y
-    N20, N23 = SP[Y], PS[Y]
-    '''
-
-    #부동소수점 문제처리를 위해 int로 변경
-    B27 = int(B27)#STA
-    H20 = int(H20)#SP
-    H21 = int(H21)#PC
-    H22 = int(H22)#CP
-    H23 = int(H23)#PS
-    
-    if B27 == "":
-        return (0,0)
-
-    # X coordinate calculation
-    if B27 <= H20:#BP_SP
-        X_result = math.cos(math.radians(V10)) * D27 + X14
-    elif B27 < H21:#SP-PC
-        X_result = (math.cos(math.radians(V10 + 90)) * W27 +
-                    math.cos(math.radians(V10)) * V27 +
-                    K20)
-    elif B27 <= H22:#PC-CP
-        X_result = (math.cos(math.radians(W18 - 90 + (180 * D27) / math.pi / W13)) * W13 +
-                    J9)
-    elif B27 <= H23:#CP-PS
-        X_result = (math.cos(math.radians(V11 + 90)) * W27 +
-                    math.cos(math.radians(V11 + 180)) * V27 +
-                    K23)
-    else:#PS-EP
-        X_result = (math.cos(math.radians(V11)) * D27 + K23)
-
-    # Y coordinate calculation
-    if B27 <= H20:
-        Y_result = math.sin(math.radians(V10)) * D27 + X15
-    elif B27 < H21:
-        Y_result = (math.sin(math.radians(V10 + 90)) * W27 +
-                    math.sin(math.radians(V10)) * V27 +
-                    N20)
-    elif B27 <= H22:
-        Y_result = (math.sin(math.radians(W18 - 90 + (180 * D27) / math.pi / W13)) * W13 +
-                    N9)
-    elif B27 <= H23:
-        Y_result = (math.sin(math.radians(V11 + 90)) * W27 +
-                    math.sin(math.radians(V11 + 180)) * V27 +
-                    N23)
-    else:
-        Y_result = math.sin(math.radians(V11)) * D27 + N23
-
-    return (X_result, Y_result)
-
-def generate_integers(start, end, inc):
-    # Round the start to the nearest increment
-    start_rounded = (start + inc - 1) // inc * inc
-    # Round the end to the nearest increment
-    end_rounded = end // inc * inc
-    
-    return list(range(start_rounded, end_rounded + inc, inc))
-
-    
-def calculate_distance(x1, y1, x2, y2):
-    # 거리계산함수
-    distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-    distance_x = abs(x2 - x1)
-    distance_y = abs(y2 - y1)
-    return distance
-
-
-
-def write_data(data):
-    """
-    Writes the given data to a CSV file in the specified format:
-    type, sta, stationoffset, coordx, coordy, shiftx, shifty
-
-    Args:
-    - data (list of lists): The data to be written to the file. Each inner list represents a station's data.
-    """
-    file_path = 'C:/temp/data.csv'
-    
-    try:
-        with open(file_path, 'w', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            
-            # Write the header
-            writer.writerow(['구분', '측점', '곡선거리', 'X', 'Y', '이정량x', '이정량y'])
-            
-            # Flatten the final_result and write data
-            for station_group in data:
-                for station_data in station_group:
-                    for row in station_data:  # Iterate through the innermost list
-                        if len(row) == 6:
-                            lable, sta, station_offset, coord, shiftx, shifty = row
-                            coordx, coordy = coord  # Unpack the coord tuple
-                            
-                            # Write the data into the CSV file
-                            writer.writerow([lable, sta, station_offset, coordx, coordy, shiftx, shifty])
-                        else:
-                            print(f"Unexpected data format: {row}")
-        
-        print(f'Data successfully written to {file_path}')
-    except Exception as e:
-        print(f'An error occurred while writing to the file: {e}')
-
-def write_report(data, data2):
-    """
-    Saves the alignment report to an Excel file, writing data into specific sheets using openpyxl.
-    
-    Parameters:
-    data (list): The list of report variables for each curve.
-    """
-
-    #환경변수 설정
-    km_precision = 2 #측점 자릿수
-    coord_precision = 4 #좌표 자릿수
-    dimention = 3#기타 숫자 자릿수
-    filename = 'c:/temp/alignmentreport.xlsx'
-
-    # Create a new workbook or load an existing one
-    # Create a new workbook, overwriting any existing file
-    workbook = Workbook()
-    
-    for i, entry in enumerate(data):
-        # Create a new sheet or access the existing one dynamically based on i (IP1, IP2, ...)
-        sheetname = f'IP{entry[0]}' # Dynamic sheet name like IP1, IP2, etc.
-
-        # Check if the sheet already exists, if not create a new one
-        if sheetname in workbook.sheetnames:
-            sheet = workbook[sheetname]
-        else:
-            sheet = workbook.create_sheet(title=sheetname)
-
-        if entry[2] == 'simplecurve':  # Simple curve case
-            
-            sheet['A3'] = f"'===================〈 IP  NO. {entry[0]} >==================="#IPNO
-            sheet['A4'] = f'I P [ X ] = {entry[1][0]:.{coord_precision}f}' # Write IP_X to cell F5
-            sheet['D4'] = f'I P [ Y ] = {entry[1][1]:.{coord_precision}f}' # Write IP_Y to cell L5
-            sheet['G6'] = '단곡선' #curvetype
-            sheet['E6'] = f'({entry[3]})' #curvedirection
-            sheet['A5'] = f"방위각 1 = {degrees_to_dms(entry[4])}" #방위각1
-            sheet['E5'] = f"방위각 2 = {degrees_to_dms(entry[5])}" #방위각2
-            sheet['A6'] = f'교각(IA) = {degrees_to_dms(entry[6])}'  #교각
-            sheet['A7'] = 'CURVE CENTER'
-            sheet['C7'] = f'X = {entry[7][0]:.{coord_precision}f}' # CENTER X
-            sheet['F7'] = f'Y = {entry[7][1]:.{coord_precision}f}' # CENTER X
-            sheet['A8'] = f'R = {entry[8]:.{dimention}f}' # R
-            sheet['C8'] = f'IP 연장1 = {entry[9]:.{dimention}f}' #ip연장1
-            
-            sheet['A9'] = 'M = 0' #M
-            sheet['C9'] = f'V = {entry[13]:.{dimention}f}' #V
-            sheet['F9'] = f'Z = {entry[12] * 0.001:.{dimention}f}' #Z
-            sheet['A10'] = f'TL = {entry[14][0]:.{dimention}f}' #TL
-            sheet['C10'] = f'CL = {entry[14][1]:.{dimention}f}' #CL
-            sheet['F10'] = f'SL = {entry[14][2]:.{dimention}f}' #SL
-            sheet['A11'] = f'IP 정측점 = {format_distance(entry[18], decimal_places=km_precision)}' #IP정측점
-            sheet['B12'] = f'BC = {format_distance(entry[19], decimal_places=km_precision)}' #BC측점
-            sheet['B13'] = f'EC = {format_distance(entry[20], decimal_places=km_precision)}' #EC측점
-            sheet['D12'] = f'X  = {entry[21][0]:.{coord_precision}f}' #BC_X
-            sheet['F12'] = f'Y  = {entry[21][1]:.{coord_precision}f}' #BC_Y
-            sheet['D13'] = f'X  = {entry[22][0]:.{coord_precision}f}' #EC_X
-            sheet['F13'] = f'Y  = {entry[22][1]:.{coord_precision}f}' #EC_Y
-            
-        else:  # Cubic parabola case
-            sheet['A3'] = f"'===================< IP  NO. {entry[0]} >==================="#IPNO
-            sheet['A4'] = f'I P [ X ]  = {entry[1][0]:.{coord_precision}f}' # Write IP_X to cell F5
-            sheet['D4'] = f'I P [ Y ]  = {entry[1][1]:.{coord_precision}f}' # Write IP_Y to cell L5
-            sheet['G6'] = '3차포물선' #curvetype
-            sheet['E6'] = f'({entry[3]})' #curvedirection
-            sheet['A5'] = f"방위각 1  = {degrees_to_dms(entry[4])}" #방위각1
-            sheet['E5'] = f"방위각 2  = {degrees_to_dms(entry[5])}" #방위각2
-            sheet['A6'] = f'교각(IA)  = {degrees_to_dms(entry[6])}'  #교각
-            sheet['A7'] = 'CURVE CENTER'
-            sheet['C7'] = f'X  = {entry[7][0]:.{coord_precision}f}' # CENTER X
-            sheet['F7'] = f'Y  = {entry[7][1]:.{coord_precision}f}' # CENTER X
-            sheet['A8'] = f'R  = {entry[8]:.{dimention}f}' # R
-            sheet['C8'] = f'IP 연장1  = {entry[9]:.{dimention}f}' #ip연장1
-            
-            sheet['A9'] = f'M  = {entry[11]:.{dimention}f}' #M
-            sheet['C9'] = f'V  = {entry[13]:.{dimention}f}' #V
-            sheet['F9'] = f'Z  = {entry[12] * 0.001:.{dimention}f}' #Z
-            sheet['A12'] = f'X1  = {entry[14][0]:.{dimention}f}' #X1
-            sheet['A10'] = f'TL  = {entry[14][10]:.{dimention}f}' #TL
-            sheet['C10'] = f'CL  = {entry[14][12]:.{dimention}f}' #CL
-            sheet['A11'] = f'LC  = {entry[14][11]:.{dimention}f}' #lc
-            sheet['C12'] = f'Y1  = {entry[14][4]:.{dimention}f}' #Y1
-            sheet['C11'] = f'L  = {entry[14][3]:.{dimention}f}' #L
-            sheet['F10'] = f'SL  = {entry[14][13]:.{dimention}f}' #SL
-            
-            #sheet['H13'] = f'W = {entry[14][9]:.3f}' #W
-            #sheet['L13'] = f'X2 = {entry[14][1]:.3f}' #X2
-            #sheet['P13'] = f'S = {entry[14][7]:.3f}' #S
-            #sheet['P14'] = f'F = {entry[14][6]:.3f}' #F
-            sheet['D13'] = f'THITA = {degrees_to_dms(math.degrees(entry[17]))}' #PC점의 접선각
-            #sheet['H16'] = f'Θ3 = {degrees_to_dms(entry[16])}' #SP>PC점의 방위각
-            #sheet['M16'] = f'O→PC = {degrees_to_dms(entry[15])}' #O>PC점 방위각
-
-            sheet['A13'] = f'B  = {degrees_to_dms(math.degrees(entry[14][16]))}'#B
-            
-            sheet['A14'] = f'C  = {degrees_to_dms(math.degrees(entry[14][15]))}'#C
-            sheet['D14'] = f'원곡선교각  = {degrees_to_dms(math.degrees(entry[14][14]))}'#원곡선교각
-
-
-            
-            sheet['A15'] = f'IP 정측점  = {format_distance(entry[18], decimal_places=km_precision)}' #IP정측점
-            sheet['D15'] = f'IP 역측점  = {format_distance(entry[18], decimal_places=km_precision)}' #IP정측점
-            
-            sheet['B16'] = f'SP  = {format_distance(entry[19], decimal_places=km_precision)}' #SP측점
-            sheet['B17'] = f'PC  = {format_distance(entry[20], decimal_places=km_precision)}' #PC측점
-            sheet['B18'] = f'CP  = {format_distance(entry[21], decimal_places=km_precision)}' #CP측점
-            sheet['B19'] = f'PS  = {format_distance(entry[22], decimal_places=km_precision)}' #PS측점
-            sheet['D16'] = f'X  = {entry[23][0]:.{coord_precision}f}' #SP_X
-            sheet['F16'] = f'Y  = {entry[23][1]:.{coord_precision}f}' #SP_Y
-            sheet['D17'] = f'X  = {entry[24][0]:.{coord_precision}f}' #PC_X
-            sheet['F17'] = f'Y  = {entry[24][1]:.{coord_precision}f}' #PC_Y
-            sheet['D18'] = f'X  = {entry[25][0]:.{coord_precision}f}' #CP_X
-            sheet['F18'] = f'Y  = {entry[25][1]:.{coord_precision}f}' #CP_Y
-            sheet['D19'] = f'X  = {entry[26][0]:.{coord_precision}f}' #PS_X
-            sheet['F19'] = f'Y  = {entry[26][1]:.{coord_precision}f}' #PS_Y
-
-        #공통
-        sheet['B21'] = 'CHAINAGE'
-        sheet['D21'] = 'X(North)'
-        sheet['F21'] = 'Y(East)'
-
-        #임시 방위각 출력
-        '''
-        sheet['G21'] = '접선방위각'
-        sheet['H21'] = '사거리'
-        sheet['I21'] = '편기각'
-        sheet['J21'] = '접선각'
-        sheet['K21'] = '방위각'
-        '''
-        
-        # Write the relevant station data for the current entry
-        if i < len(data2):  # Ensure you do not exceed data2 bounds
-            station_group = data2[i]  # Get the corresponding station group for the current entry
-            start_row = 22  # Start writing station data from row 21
-
-            for station_data in station_group:
-                for row in station_data:  # Iterate through the innermost list
-
-                    lable, sta, station_offset, coord, shiftx, shifty , Ta, sageoriS , Q, T, Azimuth = row
-                    # Write values into the sheet
-                    sheet[f'A{start_row}'] = lable
-                    sheet[f'B{start_row}'] = format_distance(sta, decimal_places=km_precision)
-                    #sheet[f'C{start_row}'] = station_offset
-                    sheet[f'D{start_row}'] = coord[0]
-                    sheet[f'F{start_row}'] = coord[1]
-                    
-                    '''
-                    sheet[f'G{start_row}'] = Ta #degrees_to_dms(Ta) #접선방위각
-                    sheet[f'H{start_row}'] = sageoriS
-                    sheet[f'I{start_row}'] = Q #degrees_to_dms(Q) #편기각
-                    sheet[f'J{start_row}'] = T #degrees_to_dms(T) #접선각
-                    sheet[f'K{start_row}'] = Azimuth #degrees_to_dms(Azimuth) #방위각
-                    
-                    #sheet[f'G{start_row}'] = shifty
-                    '''
-                    start_row += 1  # Move to the next row
-            
-    # Remove default sheet if it exists (usually "Sheet" when a new workbook is created)
-    if 'Sheet' in workbook.sheetnames:
-        del workbook['Sheet']
-
-    # Save the workbook
-    save_with_retry(workbook, filename, max_retries=100, delay=1)
-    #workbook.save(filename)
-    print(f"Data successfully written to {filename}")
-
-
-def format_distance(number, decimal_places=2):
-    negative = False
-    if number < 0:
-        negative = True
-        number = abs(number)
-        
-    km = int(number) // 1000
-    remainder = round(number % 1000, decimal_places)  # Round remainder to the specified decimal places
-    
-    # Format the remainder to have at least 'decimal_places' digits after the decimal point
-    formatted_distance = "{:d}km{:0{}.{}f}".format(km, remainder, 4 + decimal_places, decimal_places)
-    
-    if negative:
-        formatted_distance = "-" + formatted_distance
-    
-    return formatted_distance
-'''
-def format_distance(number, decimal_places=2):
-    negative = False
-    if number < 0:
-        negative = True
-        number = abs(number)
-        
-    km = int(number) // 1000
-    remainder = "{:.2f}".format(number % 1000)
-    formatted_distance = "{:d}km{:06.2f}".format(km, float(remainder))
-    
-    if negative:
-        formatted_distance = "-" + formatted_distance
-    
-    return formatted_distance
-'''
-
-def get_station_coordinates(data1, data2, input_station):
-    # input_station은 어느 IP에 속하는지 찾기
-
-    for i, entry in enumerate(data1):
-        IPN0 = entry[0]  # IP번호
-        #print(f'data2길이 : {len(data2)}')
-        station_group = data2[i]  # Get the corresponding station group for the current entry
-        
-        BP_STA = station_group[0][0][1]
-        EP_STA = station_group[0][-1][1]
-
-        BPXY = (station_group[0][0][3][0], station_group[0][0][3][1])
-
-        
-        '''
-        print(f' BP_STA = {BP_STA}')
-        print(f' EP_STA = {EP_STA}')
-        print(f' BPXY = {BPXY}')
-        '''
-        
-        
-        
-        
-        try:
-            h1 ,h2 = entry[4], entry[5]
-            W13 = entry[8] if entry[3] == 'RIGHT CURVE' else entry[8] * -1
-
-            
-            if entry[2] == 'simplecurve':#단곡선
-                BC_STA, EC_STA = entry[19], entry[20]
-                
-                if BP_STA<= input_station <= EP_STA:#해당IP인지 체크
-                                
-                    #맞으면 좌표계산 수행
-                    
-                    StationOffset = calculate_station_offset(input_station, BC_STA, BC_STA, EC_STA, EC_STA, BP_STA)#측거
-
-                    BC_XY = entry[21]
-                    EC_XY = entry[22]
-                    
-                    CURVE_CENTER = entry[7]
-                    
-                    coord = calculate_coordinates(input_station,
-                                                  BC_STA, BC_STA, EC_STA, EC_STA,
-                                                  h1, h2, h1,
-                                                  StationOffset, W13,
-                                                  0, 0,
-                                                  BPXY[0], BPXY[1],
-                                                  BC_XY[0], BC_XY[1],
-                                                  CURVE_CENTER[0], CURVE_CENTER[1],
-                                                  EC_XY[0], EC_XY[1])
-
-                    if coord:#좌표를 찾은경우 반복문 탈출
-                        break
-                else:#해당 IP가 아니면 건너뛰고 다음 IP계산 수행
-                    continue
-                
-            else:#3차포물선인경우
-                
-                SP_STA, PC_STA, CP_STA, PS_STA = entry[19], entry[20], entry[21], entry[22]
-               
-                StationOffset = calculate_station_offset(input_station, SP_STA, PC_STA, CP_STA, PS_STA, BP_STA)#측거
-                
-                if BP_STA<= input_station <= EP_STA:#해당IP인지 체크
-                    
-                    SP_PC_bearing = entry[16]
-                    L = entry[14][3]
-                    x1 = entry[14][0]
-                    
-                    #이정량X
-                    shiftx =  cal_spiral_shiftx(input_station, SP_STA, PC_STA, CP_STA, PS_STA, StationOffset, W13, L)
-                    #이정량Y
-                    shifty =  cal_spiral_shifty(input_station, SP_STA, PC_STA, CP_STA, PS_STA, shiftx, W13, x1)
-
-                    SP_XY = entry[23]
-                    PS_XY = entry[26]
-                    
-                    CURVE_CENTER = entry[7]
-                    
-                    coord = calculate_coordinates(input_station,
-                                              SP_STA, PC_STA, CP_STA, PS_STA,
-                                              h1, h2, SP_PC_bearing,
-                                              StationOffset, W13,
-                                              shiftx, shifty,
-                                              BPXY[0], BPXY[1],
-                                              SP_XY[0], SP_XY[1],
-                                              CURVE_CENTER[0], CURVE_CENTER[1],
-                                              PS_XY[0], PS_XY[1])
-                
-                    if coord:#좌표를 찾은경우 반복문 탈출
-                        return coord
-                    
-                else:#해당 IP가 아니면 건너뛰고 다음 IP계산 수행
-                    continue
-            if not coord:
-                 print('측점이 범위를 벗어났습니다.')
-                 return None
-                
-        except IndexError:
-            print(f"Entry doesn't have enough data or is malformed: {entry}")
-        except Exception as e:
-            print(f"An error occurred: {e}")
-
-    return None
-
-def create_civil3d_xlsx(data):
-    filename = 'c:/temp/AlignmentExample.xlsx'
-
-    # Create a new workbook or load an existing one
-    # Create a new workbook, overwriting any existing file
-    workbook = Workbook()
-    sheetname = 'Sheet1' # Dynamic sheet name like IP1, IP2, etc.
-
-    # Check if the sheet already exists, if not create a new one
-    if sheetname in workbook.sheetnames:
-        sheet = workbook[sheetname]
-    else:
-        sheet = workbook.create_sheet(title=sheetname)
-            
-    sheet['A1'] = 'Previous Entity ID'
-    sheet['B1'] = 'Next Entity ID'
-    sheet['C1'] = 'Radius'
-    sheet['D1'] = 'Spiral Length'
-    start_row = 2
-    #data1에서 unwrap
-    for i, entry in enumerate(data):
-        R = entry[8]
-        L = entry[14][3] if entry[2] == 'cubic' else ''
-        sheet[f'A{start_row}'] = entry[0]
-        sheet[f'B{start_row}'] = entry[0] +1
-        sheet[f'C{start_row}'] = R
-        sheet[f'D{start_row}'] = L
-
-        start_row += 1  # Move to the next row
-        
-    # Remove default sheet if it exists (usually "Sheet" when a new workbook is created)
-    if 'Sheet' in workbook.sheetnames:
-        del workbook['Sheet']
-
-    # Save the workbook
-    save_with_retry(workbook, filename, max_retries=100, delay=1)
-    #workbook.save(filename)
-    print(f"Data successfully written to {filename}")
-
-
-
-def find_perpendicular_projection(coord, linestring):
-
-    # coord가 (x, y) 튜플일 경우 Point 객체로 변환
-    if not isinstance(coord, Point):
-        point = Point(coord)  # 튜플을 Point 객체로 변환
-    else:
-        point = coord
-    
-    # linestring이 Shapely LineString 객체인지 확인
-    if not isinstance(linestring, LineString):
-        print("linestring은 Shapely LineString 객체여야 합니다.")
-        #Shapely LineString 객체로 변환
-        linestring = LineString(linestring)
-        
-    # Project the point onto the LineString
-    projected_distance = linestring.project(point)
-    
-    
-    # 점을 linestring에 투영
-    projection_point = linestring.interpolate(projected_distance)
-    
-    # 투영된 점의 거리에 해당하는 선형 길이 찾기
-    projected_length = linestring.project(point)
-
-    # 투영된 점이 속한 segment의 시작 좌표를 찾기 위해 각 세그먼트를 순회
-    for i, (start, end) in enumerate(zip(linestring.coords[:-1], linestring.coords[1:])):
-        segment = LineString([start, end])
-        segment_length = segment.length
-        
-        # 투영된 거리가 현재 segment 내에 있는지 확인
-        if projected_length <= segment_length:
-            start_coordinate = Point(start)
-            break
-        else:
-            projected_length -= segment_length
-    
-    # 점과 투영된 좌표 간의 거리 (오프셋 거리)
-    offset_distance = point.distance(projection_point)
-
-    # 투영된 좌표와 시작 좌표 간의 수평 거리
-    horizen_distance = projection_point.distance(start_coordinate)
-        
-    # 결과 반환: [오프셋 거리, 투영된 좌표, 수평 거리, 시작 좌표]
-    result = [offset_distance, projection_point, horizen_distance, start_coordinate]
-
-    print(f' projection_point = {projection_point}')
-    
-    return result
-
-def plot_projection(point, projection_point, linestring):
-
-    # linestring이 Shapely LineString 객체인지 확인
-    if not isinstance(linestring, LineString):
-        print("linestring은 Shapely LineString 객체여야 합니다.")
-        #Shapely LineString 객체로 변환
-        linestring = LineString(linestring)
-        
-    # coord가 (x, y) 튜플일 경우 Point 객체로 변환
-    if not isinstance(point, Point):
-        point = Point(point)  # 튜플을 Point 객체로 변환
-    else:
-        point = coord    
-    # Extract x and y coordinates from LineString
-    x, y = linestring.xy
-
-    # Create a plot
-    plt.figure(figsize=(6, 6))
-    
-    # Plot LineString
-    plt.plot(x, y, label="LineString", color='blue', linewidth=2)
-
-    # Plot original point
-    plt.plot(point.x, point.y, 'ro', label="Original Point", markersize=8)
-
-    # Plot projection point
-    plt.plot(projection_point.x, projection_point.y, 'go', label="Projection Point", markersize=8)
-
-    # Draw a line between the original point and the projection point
-    plt.plot([point.x, projection_point.x], [point.y, projection_point.y], 'k--', label="Perpendicular Line")
-
-    # Add labels
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.axis('equal')
-    
-    plt.legend()
-
-    # Show the plot
-    plt.grid(True)
-    plt.show()
-    
-def get_station_from_coordinates(linestring, coord, data):
-    tolerance = 1e-6
-    
-    #찾을 station
-    find_station = None
-
-    #토목좌표를 수학좌표로 변환
-    # 각 튜플의 요소들을 뒤집기(토목좌표를 수학좌표로 변환)
-    linestring_math = [(y, x) for x, y in linestring]
-
-    
-    #튜플뒤집기(토목좌표를 수학좌표로 변환)
-    coord_math = (coord[1],coord[0])
-
-    
-    
-    #주어진 점을 선분에 수직으로 투영하는 함수호출
-    result2 = find_perpendicular_projection(coord_math, linestring_math)#입력좌표,polycurve
-
-    distance = result2[0]#offset 거리
-    horizen_distance = result2[2]#시작점에서 투영점까지의 거리
-    
-    # result2[3]이 Point 객체라면 x, y 속성을 사용하여 튜플로 변환
-    start_coordinate = (result2[3].x, result2[3].y)  # Point 객체에서 x, y 좌표 추출
-    perpendicular_coord = (result2[1].x, result2[1].y)  # Point 객체에서 x, y 좌표 추출
-
-    
-    #선분 시작점의 좌표를 data 리스트에서 찾기
-    for i , group in enumerate(data):
-        for j, entry in enumerate(group):
-            for k, row in enumerate(entry):
-                destinate_coord = row[3][1]
-                
-                if abs(start_coordinate[0] - destinate_coord) < tolerance:  # e.g., tolerance = 1e-6
-                    find_station = row[1]
-                    print(f"선형계산서 측점: {find_station}")
-                    break
-    
-    if find_station:
-        final_station = horizen_distance + find_station
-        print(f"최종 측점: {final_station}")
-        print(f'offset: {distance:.2f}')
-        print(f'좌표: X = {perpendicular_coord[0]:.4f}, Y = {perpendicular_coord[1]:.4f}')     
-        
-    else:
-        print("sta 값을 찾을 수 없습니다.")
-        final_station = 0
-
-
-    plot_projection(coord_math, result2[1], linestring_math)
-    return final_station
-
-#좌표로 측점찾기
-def perpendicular_point_on_curve(p, curve):
-    px, py = p  # 임의의 점 p의 좌표
-
-    
-    # 곡선의 모든 인접한 두 점을 순회
-    for i in range(len(curve) - 1):
-        x1, y1 = curve[i]
-        x2, y2 = curve[i + 1]
-
-        # 직선 벡터와 점 벡터 구하기
-        line_vec = np.array([x2 - x1, y2 - y1])
-        point_vec = np.array([px - x1, py - y1])
-
-        # 직선 벡터의 크기 제곱
-        line_len_sq = np.dot(line_vec, line_vec)
-        if line_len_sq == 0:
-            continue  # 두 점이 같은 위치일 경우 패스
-
-        # 수선의 발의 위치를 직선 상의 비율로 찾기
-        t = np.dot(point_vec, line_vec) / line_len_sq
-
-        # 수직인 점이 선분 내부에 있는지 확인
-        if 0 <= t <= 1:
-            ax = x1 + t * line_vec[0]
-            ay = y1 + t * line_vec[1]
-            return (ax, ay) , i # 수선의 발 a의 좌표를 반환
-
-    return None  # 수직인 점을 찾지 못한 경우
-
-def get_station_at_coordinates(p, curve, data):
-
-    curve = [(y, x) for x, y in curve]#토목조표를 수학좌표로 변환
-    
-    apoint , index = perpendicular_point_on_curve(p, curve)  # 수선의 발
-
-    #인덱스에 해당하는 좌표 반환
-    destination_coord = curve[index]
-
-    # 좌표 비교 (소수점 4자리로 반올림)
-    destination_coord_x, destination_coord_y = destination_coord
-    destination_coord_x_int = int(destination_coord_x)
-    destination_coord_y_int = int(destination_coord_y)
-
-    # `data`에서 좌표가 수직점과 일치하는지 확인
-    for i, group in enumerate(data):
-        for subgroup in group:
-            for row in subgroup:
-                label, sta, station_offset, coord, shiftx, shifty, Ta, sageoriS, Q, T, Azimuth = row
-
-                data_coord_y, data_coord_x = coord
-                data_coord_x_int = int(data_coord_x)
-                data_coord_y_int = int(data_coord_y)
-
-                if data_coord_x_int == destination_coord_x_int:                    
-                    distance = calculate_distance(coord[1], coord[0], apoint[0], apoint[1])                    
-                    final_sta = sta + distance
-                    return final_sta  # 찾은 최종 측점 반환
-    return None
-
-
-def is_close(a, b, tol=1e-4):
-    return abs(a - b) < tol
-
-def save_total_coordinates(data, filename="C:/temp/total_coord.txt"):
-    import csv
-    from pathlib import Path
-
-    path = Path(filename)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    total_coords = []
-
-    # 모든 IP의 측점 데이터 취합
-    for station_group in data:
-        for station_data in station_group:
-            for row in station_data:
-                label, sta, offset, coord, shiftx, shifty, Ta, S, Q, T, Azimuth = row
-
-                x, y = coord
-                total_coords.append((sta, x, y, label))
-
-    # 측점 기준 정렬
-    total_coords.sort(key=lambda item: item[0])
-
-    # 동일 측점 중복 제거
-    unique_coords = []
-    seen = set()
-
-    for sta, x, y, label in total_coords:
-        key = round(sta, 6)
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-        unique_coords.append((sta, x, y, label))
-
-    # TXT 저장
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-        writer.writerow(["STA", "X", "Y", "LABEL"])
-
-        for sta, x, y, label in unique_coords:
-            writer.writerow([
-                f"{sta:.4f}",
-                f"{x:.4f}",
-                f"{y:.4f}",
-                label
-            ])
-
-    print(f"좌표 저장 완료: {path}")
-    print(f"총 좌표 수: {len(unique_coords)}")
-
-    return unique_coords
-
-def format_station(sta):
+    return 1 if math.sin(math.radians(h2 - h1)) >= 0 else -1
+
+
+def generate_integers(start: float, end: float, inc: int) -> list[int]:
+    """start~end 사이 inc 배수 정수 리스트 (음수/역방향 지원)"""
+    if inc <= 0:
+        raise ValueError(f"증분은 양수여야 합니다: {inc}")
+    if start > end:
+        start, end = end, start
+    start_rounded = math.ceil(start / inc) * inc
+    end_rounded = math.floor(end / inc) * inc
+    return list(range(int(start_rounded), int(end_rounded) + inc, inc))
+
+
+# ============================================================
+# 각도/거리 포맷
+# ============================================================
+def degrees_to_dms(degrees: float) -> str:
+    """도분초 문자열 (부호 유지)"""
+    sign = "-" if degrees < 0 else ""
+    d = abs(degrees)
+    deg = int(d)
+    minutes = int((d - deg) * 60)
+    seconds = (d - deg - minutes / 60) * 3600
+    return f"{sign}{deg}도  {minutes}분  {seconds:.2f}초"
+
+
+def degrees_to_dms2(degrees: float) -> str:
+    """도분초 문자열 (기호 표기)"""
+    sign = "-" if degrees < 0 else ""
+    d = abs(degrees)
+    deg = int(d)
+    minutes = int((d - deg) * 60)
+    seconds = (d - deg - minutes / 60) * 3600
+    return f"{sign}{deg}° {minutes}' {seconds:.2f}\""
+
+
+def format_distance(number: float, decimal_places: int = 2) -> str:
+    """km+m 형식"""
+    negative = number < 0
+    num = abs(number)
+    km = int(num) // 1000
+    remainder = num % 1000
+    formatted = f"{km:d}km{remainder:0{4 + decimal_places}.{decimal_places}f}"
+    return f"-{formatted}" if negative else formatted
+
+
+def format_station(sta: float) -> str:
     km = int(sta // 1000)
     meter = sta - km * 1000
     return f"{km}+{meter:06.2f}"
 
-def format_bearing(angle):
-    # 기존 Ta는 북쪽 0도, 시계방향 증가 방식
+
+def format_bearing(angle: float) -> str:
     angle = angle % 360
     total_seconds = round(angle * 3600) % (360 * 3600)
-    deg, remainder = divmod(total_seconds, 3600)
-    minute, second = divmod(remainder, 60)
+    deg, rem = divmod(total_seconds, 3600)
+    minute, second = divmod(rem, 60)
     return f'N {deg:03d}° {minute:02d}\' {second:02d}"'
 
-def create_incremental_station_report(
-    data,
-    unit=25,
-    alignment_name="복선중심선",
-    filename="C:/temp/Incremental_Station_Report",
-    file_ext='xlsx'
+
+# ============================================================
+# 파일 I/O
+# ============================================================
+def save_with_retry(workbook, filename: Path, max_retries: int = None, delay: int = None) -> bool:
+    """Excel 저장 재시도 (GUI 블로킹 최소화)"""
+    max_retries = max_retries or Config.SAVE_MAX_RETRIES
+    delay = delay or Config.SAVE_RETRY_DELAY
+    for attempt in range(max_retries):
+        try:
+            workbook.save(str(filename))
+            logger.info("File saved: %s", filename)
+            return True
+        except PermissionError:
+            logger.warning(
+                "Attempt %d/%d: permission denied (%s). Retrying in %ds...",
+                attempt + 1, max_retries, filename.name, delay,
+            )
+            time.sleep(delay)
+    logger.error("Failed to save after %d attempts: %s", max_retries, filename)
+    return False
+
+
+def dxf_save_with_retry(doc, filename: str, max_retries: int = None, delay: int = None) -> bool:
+    """DXF 저장 재시도"""
+    max_retries = max_retries or Config.SAVE_MAX_RETRIES
+    delay = delay or Config.SAVE_RETRY_DELAY
+    out_path = Config.ensure_output_dir() / filename
+    for attempt in range(max_retries):
+        try:
+            doc.saveas(str(out_path))
+            logger.info("DXF saved: %s", out_path)
+            return True
+        except PermissionError:
+            logger.warning(
+                "Attempt %d/%d: permission denied (%s). Retrying in %ds...",
+                attempt + 1, max_retries, out_path.name, delay,
+            )
+            time.sleep(delay)
+    logger.error("Failed to save DXF after %d attempts: %s", max_retries, out_path)
+    return False
+
+
+def read_alignment_file() -> list[list[str]]:
+    """파일 선택 및 읽기 (UTF-8 → EUC-KR 폴백)"""
+    from tkinter import filedialog
+
+    file_path = filedialog.askopenfilename(
+        defaultextension=".txt",
+        filetypes=[("txt files", "*.txt"), ("All files", "*.*")],
+    )
+    if not file_path:
+        return []
+    logger.info("선택 파일: %s", file_path)
+
+    for encoding in ("utf-8", "euc-kr"):
+        try:
+            with open(file_path, "r", encoding=encoding) as f:
+                return list(csv.reader(f))
+        except UnicodeDecodeError:
+            logger.warning("%s 인코딩 실패, 다음 시도...", encoding)
+    logger.error("파일을 읽을 수 없습니다: %s", file_path)
+    return []
+
+
+def parse_ip_lines(lines: list[list[str]]) -> list[list[float]]:
+    """IP 데이터 파싱 (예외 처리 강화)"""
+    alignment = []
+    for line in lines:
+        try:
+            ip_y = float(line[0])
+            ip_x = float(line[1])
+            radius = float(line[2]) if len(line) > 2 else 0.0
+        except (IndexError, ValueError) as e:
+            logger.warning("IP 파싱 실패 (line=%s): %s", line, e)
+            continue
+        alignment.append([ip_x, ip_y, radius])
+    return alignment
+
+
+def create_linestring(alignment: list[list[float]]) -> LineString:
+    return LineString([(p[0], p[1]) for p in alignment])
+
+
+# ============================================================
+# 캔트/M/Z/V 계산
+# ============================================================
+def get_cant_limits(v: float, track_type: str) -> tuple[int, int]:
+    """설계속도·도상별 (최대설정캔트, 최대부족캔트)"""
+    if track_type == "자갈도상":
+        if v > 400:
+            raise ValueError(f"지원 범위 초과: V={v}")
+        if 350 < v <= 400:
+            return 180, 130
+        if 250 < v <= 350:
+            return 160, 80
+        return 160, 100
+    if track_type == "콘크리트도상":
+        if v > 400:
+            raise ValueError(f"지원 범위 초과: V={v}")
+        return 180, 130
+    raise ValueError(f"잘못된 도상 유형: {track_type}")
+
+
+def calculate_v(cm: int, cd: int, radius: float, max_v: int) -> int:
+    v = int(math.sqrt((cm + cd) * radius / Config.CANT_COEFFICIENT))
+    return min(v, max_v)
+
+
+def calculate_parameters(
+    radius_list: list[float],
+    max_v: int = Config.DEFAULT_MAX_V,
+    track_type: str = "자갈도상",
+) -> list[list[float]]:
+    """곡선별 [M, Z, V] 계산"""
+    parameters = []
+    for radius in radius_list:
+        cm, cd = get_cant_limits(max_v, track_type)
+        v = round(calculate_v(cm, cd, radius, max_v) / Config.V_ROUNDING) * Config.V_ROUNDING
+        m = int(M_VALUE_TABLE.get(v, Config.M_FALLBACK_COEFFICIENT * v))
+        m = round(m / Config.M_ROUNDING) * Config.M_ROUNDING
+        z = min(Config.CANT_COEFFICIENT * v ** 2 / radius, cm)
+        z = round(z / Config.Z_ROUNDING) * Config.Z_ROUNDING
+        parameters.append([m, z, v])
+    return parameters
+
+
+def dictionary_cubicparabola(v: int) -> float:
+    """완화곡선 미삽입 최소 곡선반경"""
+    not_spiral_min_radius = {250: 24000, 200: 12000, 150: 5000, 120: 2500, 70: 600}
+    cdlim = {400: 20, 350: 25, 300: 27, 250: 32, 200: 40, 150: 57, 120: 69, 100: 83, 70: 100}
+
+    if v in not_spiral_min_radius:
+        return not_spiral_min_radius[v]
+
+    # cdlim 보간
+    if v in cdlim:
+        cdlim_val = cdlim[v]
+    else:
+        keys = sorted(cdlim)
+        if v < keys[0] or v > keys[-1]:
+            raise ValueError(f"속도 {v} 범위 초과 ({keys[0]}~{keys[-1]})")
+        cdlim_val = None
+        for i in range(len(keys) - 1):
+            if keys[i] <= v <= keys[i + 1]:
+                x1, y1 = keys[i], cdlim[keys[i]]
+                x2, y2 = keys[i + 1], cdlim[keys[i + 1]]
+                cdlim_val = y1 + (v - x1) * (y2 - y1) / (x2 - x1)
+                break
+
+    return Config.CANT_COEFFICIENT * (v ** 2 / cdlim_val)
+
+
+# ============================================================
+# 선형 계산 (수식 원본 유지)
+# ============================================================
+def calculate_theta_pc(m: float, z: float, rc: float) -> float:
+    return math.atan(m * (z * 0.001) / (2 * rc))
+
+
+def calculate_cubic_parabola_parameter(
+    m: float, z: float, direction: int, theta_pc: float, rc: float, ia_rad: float
+) -> list[float]:
+    x1 = m * (z * 0.001)
+    x2 = x1 - rc * math.sin(theta_pc)
+    w13 = rc * direction
+    L = x1 * (1 + (math.tan(theta_pc) ** 2) / 10)
+    Y = (x1 ** 2) / (6 * rc)
+    w15 = (x1 ** 2) / (6 * w13)
+    F = Y - rc * (1 - math.cos(theta_pc))
+    S = F / math.cos(ia_rad / 2)
+    K = F * math.tan(ia_rad / 2)
+    W = (rc + F) * math.tan(ia_rad / 2)
+    TL = x2 + W
+    Lc = rc * (ia_rad - 2 * theta_pc)
+    CL = Lc + 2 * L
+    SL = rc * (1 / math.cos(ia_rad / 2) - 1) + S
+    RIA = ia_rad - 2 * theta_pc
+    C = math.atan(Y / x1)
+    XB = math.pi / 2 - theta_pc
+    B = math.pi / 2 - C - XB
+    return [x1, x2, w13, L, Y, w15, F, S, K, W, TL, Lc, CL, SL, RIA, C, B]
+
+
+def calculate_simplecurve_parameter(direction: int, rc: float, ia_rad: float) -> list[float]:
+    TL = rc * math.tan(ia_rad / 2)
+    CL = rc * ia_rad
+    SL = rc * (1 / math.cos(ia_rad / 2) - 1)
+    S = rc * (1 - math.cos(ia_rad / 2))
+    W13 = rc * direction
+    return [TL, CL, SL, S, W13]
+
+
+def calculate_sp_pc_bearing(w13: float, v10: float, x10: float) -> float:
+    result = v10 - x10 if w13 < 0 else v10 + x10
+    return result + 360 if result < 0 else (result - 360 if result > 360 else result)
+
+
+def calculate_o_pc_bearing(v10: float, theta_pc: float, w13: float) -> float:
+    x10 = math.degrees(theta_pc)
+    if w13 > 0:
+        r = v10 + x10 - 90
+        return r + 360 if r < 0 else r
+    r = v10 - x10 + 90
+    return r - 360 if r > 360 else r
+
+
+def calculate_cp_xy(k21, n21, w13, w18, p10, v11) -> tuple[float, float]:
+    a1 = w13 * math.cos(math.radians(w18 + 90))
+    a2 = w13 * math.cos(math.radians(w18 - 90 + (180 * p10) / (math.pi * w13)))
+    b1 = w13 * math.sin(math.radians(w18 + 90))
+    b2 = w13 * math.sin(math.radians(w18 - 90 + (180 * p10) / (math.pi * w13)))
+    return k21 + a1 + a2, n21 + b1 + b2
+
+
+def calculate_spiral_coordinates(
+    bp_xy, ip_xy, ep_xy, h1, h2, tl, x1, y, sp_pc_bearing, rc, lc, w13
 ):
+    sp_xy = (
+        math.cos(math.radians(h1 + 180)) * tl + ip_xy[0],
+        math.sin(math.radians(h1 + 180)) * tl + ip_xy[1],
+    )
+    pc_xy = (
+        sp_xy[0] + x1 * math.cos(math.radians(h1)) + y * math.cos(math.radians(h1 + 90)),
+        sp_xy[1] + x1 * math.sin(math.radians(h1)) + y * math.sin(math.radians(h1 + 90)),
+    )
+    cp_xy = calculate_cp_xy(pc_xy[0], pc_xy[1], w13, sp_pc_bearing, lc, h2)
+    ps_xy = (
+        math.cos(math.radians(h2)) * tl + ip_xy[0],
+        math.sin(math.radians(h2)) * tl + ip_xy[1],
+    )
+    return sp_xy, pc_xy, cp_xy, ps_xy
 
 
-    # IP별 좌표 통합
+def calculate_simplecurve_coordinates(v10, v11, tl, ip) -> list[tuple[float, float]]:
+    bc = (
+        math.cos(math.radians(v10 + 180)) * tl + ip[0],
+        math.sin(math.radians(v10 + 180)) * tl + ip[1],
+    )
+    ec = (
+        math.cos(math.radians(v11)) * tl + ip[0],
+        math.sin(math.radians(v11)) * tl + ip[1],
+    )
+    return [bc, ec]
+
+
+# ============================================================
+# 측거/이정량
+# ============================================================
+def calculate_station_offset(
+    sta: float, sp: float, pc: float, cp: float, ps: float, bp: float
+) -> float:
+    s, sp_i, pc_i, cp_i, ps_i, bp_i = map(int, (sta, sp, pc, cp, ps, bp))
+    if s <= sp_i:
+        return sta - bp
+    if s < pc_i:
+        return sta - sp
+    if s <= cp_i:
+        return sta - pc
+    if s <= ps_i:
+        return ps - sta
+    return sta - ps
+
+
+def cal_spiral_shiftx(sta, sp, pc, cp, ps, offset, w13, length) -> float:
+    s, sp_i, pc_i, cp_i, ps_i = map(int, (sta, sp, pc, cp, ps))
+    if sp_i >= s:
+        return 0.0
+    if pc_i > s or ps_i >= s:
+        return offset - offset ** 5 / (40 * w13 ** 2 * length ** 2)
+    return 0.0
+
+
+def cal_spiral_shifty(sta, sp, pc, cp, ps, shiftx, w13, x1) -> float:
+    s, sp_i, pc_i, cp_i, ps_i = map(int, (sta, sp, pc, cp, ps))
+    if sp_i >= s:
+        return 0.0
+    if pc_i > s or ps_i >= s:
+        return shiftx ** 3 / (6 * w13 * x1)
+    return 0.0
+
+
+def get_station_label(
+    curve_type: str, station: float,
+    sp: float, pc: float, cp: float, ps: float, ep: float,
+    eps: float = 1e-6,
+) -> str:
+    checks = [
+        (sp, "BC" if curve_type == "simplecurve" else "SP"),
+        (pc, "BC" if curve_type == "simplecurve" else "PC"),
+        (cp, "EC" if curve_type == "simplecurve" else "CP"),
+        (ps, "EC" if curve_type == "simplecurve" else "PS"),
+        (ep, "EP"),
+    ]
+    for target, label in checks:
+        if abs(station - target) < eps:
+            return label
+    return ""
+
+
+def calculate_coordinates(
+    sta, sp, pc, cp, ps,
+    h1, h2, sp_pc_bearing,
+    offset, w13, shiftx, shifty,
+    bp_x, bp_y, sp_x, sp_y, center_x, center_y, ps_x, ps_y,
+) -> tuple[float, float]:
+    """선형 좌표 계산 (측점 위치별 분기)"""
+    s, sp_i, pc_i, cp_i, ps_i = map(int, (sta, sp, pc, cp, ps))
+
+    if s <= sp_i:  # BP~SP
+        x = math.cos(math.radians(h1)) * offset + bp_x
+        y = math.sin(math.radians(h1)) * offset + bp_y
+    elif s < pc_i:  # SP~PC
+        x = (math.cos(math.radians(h1 + 90)) * shifty
+             + math.cos(math.radians(h1)) * shiftx + sp_x)
+        y = (math.sin(math.radians(h1 + 90)) * shifty
+             + math.sin(math.radians(h1)) * shiftx + sp_y)
+    elif s <= cp_i:  # PC~CP
+        angle = sp_pc_bearing - 90 + (180 * offset) / math.pi / w13
+        x = math.cos(math.radians(angle)) * w13 + center_x
+        y = math.sin(math.radians(angle)) * w13 + center_y
+    elif s <= ps_i:  # CP~PS
+        x = (math.cos(math.radians(h2 + 90)) * shifty
+             + math.cos(math.radians(h2 + 180)) * shiftx + ps_x)
+        y = (math.sin(math.radians(h2 + 90)) * shifty
+             + math.sin(math.radians(h2 + 180)) * shiftx + ps_y)
+    else:  # PS~EP
+        x = math.cos(math.radians(h2)) * offset + ps_x
+        y = math.sin(math.radians(h2)) * offset + ps_y
+    return x, y
+
+
+# ============================================================
+# 메인 선형 계산
+# ============================================================
+def calculate_curve(
+    linestring: LineString,
+    radius_list: list[float],
+    angles: list[float],
+    parameters: list[list[float]],
+    unit: int = Config.DEFAULT_UNIT,
+    start_sta: float = Config.DEFAULT_START_STA,
+) -> tuple[list[list[list[StationRow]]], list[CurveParams], list[tuple[float, float]]]:
+    """모든 IP의 선형 계산"""
+    station_groups: list[list[list[StationRow]]] = []
+    curves: list[CurveParams] = []
+    polycurve: list[tuple[float, float]] = []
+
+    tl_list: list[float] = []
+    end_sta_list: list[float] = []
+    end_xy_list: list[tuple[float, float]] = []
+
+    bp_sta = start_sta
+    coords = linestring.coords
+
+    for i in range(len(coords) - 2):
+        ia_rad = math.radians(angles[i])
+        ia_deg = angles[i]
+
+        bp_xy = (coords[i][0], coords[i][1])
+        ip_xy = (coords[i + 1][0], coords[i + 1][1])
+        ep_xy = (coords[i + 2][0], coords[i + 2][1])
+
+        h1 = calculate_bearing_n(*bp_xy, *ip_xy)
+        h2 = calculate_bearing_n(*ip_xy, *ep_xy)
+        ip_dist1 = calculate_distance(*bp_xy, *ip_xy)
+        ip_dist2 = calculate_distance(*ip_xy, *ep_xy)
+
+        rc = radius_list[i]
+        m, z, v = parameters[i]
+        not_spiral_min = dictionary_cubicparabola(v)
+
+        curve_type = "simplecurve" if rc >= not_spiral_min else "cubic"
+        direction = find_direction(rc, h1, h2)
+        curvedir = "RIGHT CURVE" if direction == 1 else "LEFT CURVE"
+
+        is_last_ip = (i == len(coords) - 3)
+
+        # ---------- 곡선 파라미터 계산 ----------
+        if curve_type == "simplecurve":
+            theta_pc = 0.0
+            sc_params = calculate_simplecurve_parameter(direction, rc, ia_rad)
+            tl, cl, sl, s_val, w13 = sc_params
+
+            o_pc_bearing = calculate_o_pc_bearing(h1, theta_pc, w13)
+            sp_pc_bearing = h1
+            bc_xy, ec_xy = calculate_simplecurve_coordinates(h1, h2, tl, ip_xy)
+            center_xy = (
+                math.cos(math.radians(o_pc_bearing + 180)) * rc + bc_xy[0],
+                math.sin(math.radians(o_pc_bearing + 180)) * rc + bc_xy[1],
+            )
+
+            if i == 0:
+                ip_sta = bp_sta + ip_dist1
+                bc_sta = ip_sta - tl
+                ec_sta = bc_sta + cl
+            else:
+                bp_sta = end_sta_list[i - 1]
+                ip_sta = bp_sta + ip_dist1 - tl_list[i - 1]
+                bc_sta = ip_sta - tl
+                ec_sta = bc_sta + cl
+
+            end_sta_list.append(ec_sta)
+            end_xy_list.append(ec_xy)
+
+            curves.append(CurveParams(
+                ip_no=i + 1, ip_xy=ip_xy, curve_type=curve_type, direction=curvedir,
+                h1=h1, h2=h2, ia_degree=ia_deg, center_xy=center_xy, radius=rc,
+                ip_distance1=ip_dist1, ip_distance2=ip_dist2, m=m, z=z, v=v,
+                params=sc_params, o_pc_bearing=o_pc_bearing,
+                sp_pc_bearing=sp_pc_bearing, theta_pc=theta_pc, ip_sta=ip_sta,
+                bc_sta=bc_sta, ec_sta=ec_sta, bc_xy=bc_xy, ec_xy=ec_xy,
+            ))
+
+        else:  # cubic
+            theta_pc = calculate_theta_pc(m, z, rc)
+            cb_params = calculate_cubic_parabola_parameter(m, z, direction, theta_pc, rc, ia_rad)
+            x1, x2, w13, L, Y, w15, F, S, K, W, tl, lc, cl, sl, ria, C, B = cb_params
+
+            o_pc_bearing = calculate_o_pc_bearing(h1, theta_pc, w13)
+            sp_pc_bearing = calculate_sp_pc_bearing(w13, h1, math.degrees(theta_pc))
+            sp_xy, pc_xy, cp_xy, ps_xy = calculate_spiral_coordinates(
+                bp_xy, ip_xy, ep_xy, h1, h2, tl, x1, w15, sp_pc_bearing, rc, lc, w13
+            )
+            center_xy = (
+                math.cos(math.radians(o_pc_bearing + 180)) * rc + pc_xy[0],
+                math.sin(math.radians(o_pc_bearing + 180)) * rc + pc_xy[1],
+            )
+
+            if i == 0:
+                ip_sta = bp_sta + ip_dist1
+            else:
+                bp_sta = end_sta_list[i - 1]
+                ip_sta = bp_sta + ip_dist1 - tl_list[i - 1]
+
+            sp_sta = ip_sta - tl
+            pc_sta = sp_sta + L
+            cp_sta = pc_sta + lc
+            ps_sta = cp_sta + L
+
+            if bp_sta > sp_sta:
+                logger.warning(
+                    "곡선겹침 IP%d: BP=%s, SP=%s",
+                    i + 1, format_distance(bp_sta), format_distance(sp_sta),
+                )
+
+            end_sta_list.append(ps_sta)
+            end_xy_list.append(ps_xy)
+
+            curves.append(CurveParams(
+                ip_no=i + 1, ip_xy=ip_xy, curve_type=curve_type, direction=curvedir,
+                h1=h1, h2=h2, ia_degree=ia_deg, center_xy=center_xy, radius=rc,
+                ip_distance1=ip_dist1, ip_distance2=ip_dist2, m=m, z=z, v=v,
+                params=cb_params, o_pc_bearing=o_pc_bearing,
+                sp_pc_bearing=sp_pc_bearing, theta_pc=theta_pc, ip_sta=ip_sta,
+                sp_sta=sp_sta, pc_sta=pc_sta, cp_sta=cp_sta, ps_sta=ps_sta,
+                sp_xy=sp_xy, pc_xy=pc_xy, cp_xy=cp_xy, ps_xy=ps_xy,
+            ))
+
+        tl_list.append(tl)
+
+        # ---------- 측점별 좌표 계산 ----------
+        station_group = _build_station_group(
+            curve=curves[-1], bp_sta=bp_sta, bp_xy=bp_xy,
+            prev_xy=end_xy_list[i - 1] if i > 0 else bp_xy,
+            is_last_ip=is_last_ip, ep_xy=ep_xy, unit=unit,
+        )
+        station_groups.append([station_group])
+        polycurve.extend(row.coord for row in station_group)
+
+    return station_groups, curves, polycurve
+
+
+def _build_station_group(
+    curve: CurveParams, bp_sta: float, bp_xy: tuple[float, float],
+    prev_xy: tuple[float, float], is_last_ip: bool,
+    ep_xy: tuple[float, float], unit: int,
+) -> list[StationRow]:
+    """한 IP에 대한 측점 리스트 생성"""
+    rows: list[StationRow] = []
+
+    if curve.curve_type == "simplecurve":
+        bc_sta, ec_sta = curve.bc_sta, curve.ec_sta
+        end_sta = _compute_end_sta(curve, ec_sta, ec_xy=curve.ec_xy,
+                                   ep_xy=ep_xy, is_last_ip=is_last_ip)
+        stations = generate_integers(int(round(bp_sta)), int(round(end_sta)), unit)
+        stations.extend([bp_sta, bc_sta, ec_sta])
+        if is_last_ip:
+            stations.append(end_sta)
+        station_keys = [bc_sta, bc_sta, ec_sta, ec_sta, end_sta]
+    else:
+        sp_sta, pc_sta, cp_sta, ps_sta = (
+            curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta
+        )
+        end_sta = _compute_end_sta(curve, ps_sta, ec_xy=curve.ps_xy,
+                                   ep_xy=ep_xy, is_last_ip=is_last_ip)
+        stations = generate_integers(int(round(bp_sta)), int(round(end_sta)), unit)
+        extra = [sp_sta, pc_sta, cp_sta, ps_sta]
+        if bp_sta % unit != 0:
+            extra.insert(0, bp_sta)
+        if is_last_ip:
+            extra.append(end_sta)
+        stations.extend(extra)
+        station_keys = [sp_sta, pc_sta, cp_sta, ps_sta, end_sta]
+
+    stations = sorted(set(stations))
+
+    for j, sta in enumerate(stations):
+        if j == 0:
+            label = "BP"
+            offset = 0.0
+        else:
+            sp, pc, cp, ps, ep = station_keys
+            label = get_station_label(curve.curve_type, sta, sp, pc, cp, ps, ep)
+            offset = calculate_station_offset(sta, sp, pc, cp, ps, bp_sta)
+
+        # 이정량
+        if curve.curve_type == "cubic":
+            shiftx = cal_spiral_shiftx(
+                sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
+                offset, curve.params[2], curve.params[3],
+            )
+            shifty = cal_spiral_shifty(
+                sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
+                shiftx, curve.params[2], curve.params[0],
+            )
+        else:
+            shiftx = shifty = 0.0
+
+        coord = calculate_coordinates(
+            sta,
+            station_keys[0], station_keys[1], station_keys[2], station_keys[3],
+            curve.h1, curve.h2, curve.sp_pc_bearing,
+            offset, curve.params[2], shiftx, shifty,
+            prev_xy[0], prev_xy[1],
+            (curve.bc_xy or curve.sp_xy)[0], (curve.bc_xy or curve.sp_xy)[1],
+            curve.center_xy[0], curve.center_xy[1],
+            (curve.ec_xy or curve.ps_xy)[0], (curve.ec_xy or curve.ps_xy)[1],
+        )
+
+        ta, azimuth, q, t, chord = _compute_tangent_fields(curve, sta, offset)
+
+        rows.append(StationRow(
+            label=label, sta=sta, station_offset=offset, coord=coord,
+            shiftx=shiftx, shifty=shifty,
+            ta=ta, chord_length=chord, q=q, t=t, azimuth=azimuth,
+        ))
+
+    return rows
+
+
+def _compute_end_sta(curve: CurveParams, base_sta: float, ec_xy, ep_xy, is_last_ip) -> float:
+    """마지막 IP면 EP까지 연장"""
+    if not is_last_ip:
+        return base_sta
+    end_xy = ec_xy
+    return base_sta + calculate_distance(end_xy[0], end_xy[1], ep_xy[0], ep_xy[1])
+
+
+def _compute_tangent_fields(
+    curve: CurveParams, sta: float, offset: float
+) -> tuple[float, float, float, float, float]:
+    """(Ta, Azimuth, Q, T, 사거리) 계산"""
+    sc = curve.curve_type == "simplecurve"
+    bc_sta = curve.bc_sta if sc else None
+    ec_sta = curve.ec_sta if sc else None
+    pc_sta = None if sc else curve.pc_sta
+    cp_sta = None if sc else curve.cp_sta
+    sp_sta = None if sc else curve.sp_sta
+    ps_sta = None if sc else curve.ps_sta
+
+    theta_deg = math.degrees(curve.theta_pc)
+    direction = 1 if curve.direction == "RIGHT CURVE" else -1
+
+    if sc:
+        if bc_sta < sta <= ec_sta:
+            q = (180 / (2 * math.pi)) * (offset / curve.radius)
+            t = theta_deg
+            azimuth = curve.h1 + theta_deg + q if direction == 1 else curve.h1 - theta_deg - q
+            ta = curve.h1 + theta_deg + 2 * q if direction == 1 else curve.h1 - theta_deg - 2 * q
+            chord = 2 * curve.radius * math.sin(
+                ((offset / curve.cl) * math.radians(curve.ia_degree)) / 2 * math.pi / 180
+            )
+        elif sta <= bc_sta:
+            ta, q, t, azimuth, chord = curve.h1, 0, 0, 0, 0.0
+        else:
+            ta, q, t, azimuth, chord = curve.h2, 0, 0, 0, 0.0
+    else:
+        if pc_sta <= sta <= cp_sta:
+            q = (180 / (2 * math.pi)) * (offset / curve.radius)
+            t = theta_deg
+            azimuth = curve.h1 + theta_deg + q if direction == 1 else curve.h1 - theta_deg - q
+            ta = curve.h1 + theta_deg + 2 * q if direction == 1 else curve.h1 - theta_deg - 2 * q
+            chord = 2 * curve.radius * math.sin(
+                ((offset / curve.params[11]) * math.radians(math.degrees(curve.params[14]))) / 2 * math.pi / 180
+            )
+        elif sp_sta < sta < pc_sta:
+            shiftx = cal_spiral_shiftx(
+                sta, sp_sta, pc_sta, cp_sta, ps_sta, offset, curve.params[2], curve.params[3]
+            )
+            q = math.atan(shiftx ** 2 / (6 * curve.radius * curve.params[0]))
+            t = (180 * shiftx ** 2) / (6 * math.pi * curve.radius * curve.params[3]) * 3
+            azimuth = curve.h1 + math.degrees(q) if direction == 1 else curve.h1 - math.degrees(q)
+            ta = curve.h1 + t if direction == 1 else curve.h1 - t
+            chord = math.sqrt(shiftx ** 2 + 0)
+        elif cp_sta < sta < ps_sta:
+            shiftx = cal_spiral_shiftx(
+                sta, sp_sta, pc_sta, cp_sta, ps_sta, offset, curve.params[2], curve.params[3]
+            )
+            q = math.atan(shiftx ** 2 / (6 * curve.radius * curve.params[0]))
+            t = (180 * shiftx ** 2) / (6 * math.pi * curve.radius * curve.params[3]) * 3
+            azimuth = curve.h2 - math.degrees(q) if direction == 1 else curve.h2 + math.degrees(q)
+            ta = curve.h2 - t if direction == 1 else curve.h2 + t
+            chord = math.sqrt(shiftx ** 2 + 0)
+        elif sta <= sp_sta:
+            ta, q, t, azimuth, chord = curve.h1, 0, 0, 0, 0.0
+        else:
+            ta, q, t, azimuth, chord = curve.h2, 0, 0, 0, 0.0
+
+    return ta, azimuth, q, t, chord
+
+
+# ============================================================
+# DXF 출력
+# ============================================================
+def create_dxf(
+    coordinates: list[tuple[float, float]],
+    linestring: LineString,
+    curves: list[CurveParams],
+    station_groups: list[list[list[StationRow]]],
+    unit: int,
+    filename: str = Config.DXF_FILENAME,
+    scale: int = Config.DEFAULT_SCALE,
+) -> None:
+    """평면선형 DXF 출력"""
+    doc = ezdxf.new()
+    msp = doc.modelspace()
+
+    scale_factor = scale / 1000  # 1단위 변환
+
+    # 토목 → 수학 좌표
+    coords_math = [(y, x) for x, y in coordinates]
+    ls_math = [(y, x) for x, y in linestring.coords]
+
+    polyline = msp.add_lwpolyline(coords_math)
+    ippolyline = msp.add_lwpolyline(ls_math)
+
+    polyline.dxf.layer = "FL"
+    ippolyline.dxf.layer = "IP라인"
+    polyline.dxf.color = Config.COLOR_RED
+    ippolyline.dxf.color = Config.COLOR_BYLAYER
+    polyline.dxf.const_width = scale_factor
+
+    text_height = 3 * scale_factor
+
+    # ---------- IP 제원표 블록 ----------
+    for i, curve in enumerate(curves):
+        _add_ip_block(doc, msp, curve, i, scale_factor, text_height)
+
+    # ---------- 측점 심볼 ----------
+    for i, group in enumerate(station_groups):
+        for subgroup in group:
+            # pop(0) 대신 슬라이싱으로 원본 보존
+            rows = subgroup[1:] if i != 0 else subgroup
+            for row in rows:
+                _add_station_symbol(msp, row, scale_factor, text_height, unit, curve=curves[i])
+
+    # ---------- IP 교점선 ----------
+    for i in range(len(ls_math) - 2):
+        x1, y1 = ls_math[i]
+        x2, y2 = ls_math[i + 1]
+        x3, y3 = ls_math[i + 2]
+
+        v1 = calculate_bearing(x1, y1, x2, y2)
+        v2 = calculate_bearing(x2, y2, x3, y3)
+
+        msp.add_line(
+            calculate_destination_coordinates(x2, y2, v1 + 180, 7 * scale_factor),
+            calculate_destination_coordinates(x2, y2, v1, 3 * scale_factor),
+            dxfattribs={"layer": "IP교점선", "color": Config.COLOR_RED},
+        )
+        start_pt = (x2, y2)
+        msp.add_line(
+            start_pt,
+            calculate_destination_coordinates(x2, y2, v2, 7 * scale_factor),
+            dxfattribs={"layer": "IP교점선", "color": Config.COLOR_RED},
+        )
+        msp.add_text(
+            f"IP NO.{i + 1}",
+            dxfattribs={
+                "layer": "IP문자", "insert": start_pt,
+                "height": text_height, "color": Config.COLOR_RED, "rotation": 0,
+            },
+        )
+
+    dxf_save_with_retry(doc, filename)
+
+
+def _add_ip_block(doc, msp, curve: CurveParams, idx: int, scale: float, text_height: float):
+    """IP 제원표 블록 삽입"""
+    ip_no = f"IP  NO. {curve.ip_no}"
+    ia = f"IA = {degrees_to_dms2(curve.ia_degree)}"
+    radius = f"R = {curve.radius:.2f}"
+    tl_text = f"TL = {curve.tl:.2f}"
+    cl_text = f"CL = {curve.cl:.2f}"
+    x_text = f"X = {curve.ip_xy[0]:.4f}"
+    y_text = f"Y = {curve.ip_xy[1]:.4f}"
+
+    labels = [ip_no, ia, radius, tl_text, cl_text, x_text, y_text]
+    offsets = [0, -10, -20, -30, -40, -50, -60]
+
+    block_name = f"IP_Block_{idx}"
+    block = doc.blocks.new(name=block_name)
+    for off, label in zip(offsets, labels):
+        coord = (curve.ip_xy[1], curve.ip_xy[0] + off * scale)
+        block.add_text(label, dxfattribs={
+            "insert": coord, "height": text_height,
+            "color": Config.COLOR_WHITE, "layer": "IP제원표",
+        })
+    msp.add_blockref(block_name, insert=(0, 0))
+
+
+def _add_station_symbol(msp, row: StationRow, scale: float, text_height: float,
+                        unit: int, curve: CurveParams):
+    """측점별 심볼/문자/선 출력"""
+    x, y = row.coord
+    coord_math = (y, x)
+    ta_math = (450 - row.ta) % 360
+
+    if row.sta % 1000 == 0:
+        msp.add_circle(coord_math, radius=2 * scale, dxfattribs={"layer": "km심볼", "color": Config.COLOR_RED})
+        msp.add_circle(coord_math, radius=1.5 * scale, dxfattribs={"layer": "200심볼", "color": Config.COLOR_RED})
+        msp.add_text(
+            f"{int(row.sta) // 1000}km",
+            dxfattribs={"layer": "km문자", "insert": coord_math, "height": text_height,
+                        "color": Config.COLOR_RED, "rotation": ta_math},
+        )
+        _add_station_tick(msp, x, y, ta_math, scale)
+    elif row.sta % 200 == 0:
+        msp.add_circle(coord_math, radius=1.5 * scale, dxfattribs={"layer": "200심볼", "color": Config.COLOR_RED})
+        msp.add_text(
+            str(int(row.sta) % 1000),
+            dxfattribs={"layer": "200문자", "insert": coord_math, "height": text_height,
+                        "color": Config.COLOR_RED, "rotation": ta_math},
+        )
+        _add_station_tick(msp, x, y, ta_math, scale)
+    elif row.sta % unit == 0:
+        _add_station_tick(msp, x, y, ta_math, scale)
+    else:
+        # 완화곡선 인출선
+        end_point = calculate_destination_coordinates(
+            y, x, ta_math + 90 if curve.direction == "LEFT CURVE" else ta_math - 90, 50 * scale
+        )
+        msp.add_line(coord_math, end_point, dxfattribs={"layer": "곡선인출선", "color": Config.COLOR_RED})
+
+        text_rotation = ta_math - 90
+        reverse_rot = (ta_math + 90 + 180) if curve.direction == "LEFT CURVE" else (ta_math - 90 + 180)
+
+        if row.sta / 1000 < 10:
+            text_pos = calculate_destination_coordinates(y, x, reverse_rot, -20 * scale)
+        elif row.sta / 1000 < 100:
+            text_pos = calculate_destination_coordinates(y, x, reverse_rot, -16 * scale)
+        else:
+            text_pos = calculate_destination_coordinates(y, x, reverse_rot, -12 * scale)
+
+        insert_pos = end_point if curve.direction == "LEFT CURVE" else text_pos
+        msp.add_text(
+            f"{row.label}={format_distance(row.sta, Config.KM_PRECISION)}",
+            dxfattribs={"layer": "곡선제원문자", "insert": insert_pos,
+                        "height": text_height, "color": Config.COLOR_RED, "rotation": text_rotation},
+        )
+
+
+def _add_station_tick(msp, x: float, y: float, ta_math: float, scale: float):
+    start = calculate_destination_coordinates(y, x, ta_math + 90, 1.5 * scale)
+    end = calculate_destination_coordinates(y, x, ta_math + 90, -1.5 * scale)
+    msp.add_line(start, end, dxfattribs={"layer": "보조측점", "color": Config.COLOR_RED})
+
+
+# ============================================================
+# Excel 보고서
+# ============================================================
+def write_report(curves: list[CurveParams], station_groups: list[list[list[StationRow]]]) -> None:
+    """IP별 선형계산서 Excel 출력"""
+    Config.ensure_output_dir()
+    filename = Config.OUTPUT_DIR / Config.REPORT_FILENAME
+
+    wb = Workbook()
+    if "Sheet" in wb.sheetnames:
+        del wb["Sheet"]
+
+    for i, curve in enumerate(curves):
+        sheet = wb.create_sheet(title=f"IP{curve.ip_no}")
+        if curve.curve_type == "simplecurve":
+            _write_simple_curve_sheet(sheet, curve)
+        else:
+            _write_cubic_sheet(sheet, curve)
+        _write_station_table(sheet, station_groups[i] if i < len(station_groups) else [])
+
+    save_with_retry(wb, filename)
+
+
+def _write_simple_curve_sheet(sheet, curve: CurveParams):
+    sheet["A3"] = f"'===================〈 IP  NO. {curve.ip_no} >===================="
+    sheet["A4"] = f"I P [ X ] = {curve.ip_xy[0]:.4f}"
+    sheet["D4"] = f"I P [ Y ] = {curve.ip_xy[1]:.4f}"
+    sheet["G6"] = "단곡선"
+    sheet["E6"] = f"({curve.direction})"
+    sheet["A5"] = f"방위각 1 = {degrees_to_dms(curve.h1)}"
+    sheet["E5"] = f"방위각 2 = {degrees_to_dms(curve.h2)}"
+    sheet["A6"] = f"교각(IA) = {degrees_to_dms(curve.ia_degree)}"
+    sheet["A7"] = "CURVE CENTER"
+    sheet["C7"] = f"X = {curve.center_xy[0]:.4f}"
+    sheet["F7"] = f"Y = {curve.center_xy[1]:.4f}"
+    sheet["A8"] = f"R = {curve.radius:.3f}"
+    sheet["C8"] = f"IP 연장1 = {curve.ip_distance1:.3f}"
+    sheet["A9"] = "M = 0"
+    sheet["C9"] = f"V = {curve.v:.3f}"
+    sheet["F9"] = f"Z = {curve.z * 0.001:.3f}"
+    sheet["A10"] = f"TL = {curve.tl:.3f}"
+    sheet["C10"] = f"CL = {curve.cl:.3f}"
+    sheet["F10"] = f"SL = {curve.params[2]:.3f}"
+    sheet["A11"] = f"IP 정측점 = {format_distance(curve.ip_sta, Config.KM_PRECISION)}"
+    sheet["B12"] = f"BC = {format_distance(curve.bc_sta, Config.KM_PRECISION)}"
+    sheet["B13"] = f"EC = {format_distance(curve.ec_sta, Config.KM_PRECISION)}"
+    sheet["D12"] = f"X  = {curve.bc_xy[0]:.4f}"
+    sheet["F12"] = f"Y  = {curve.bc_xy[1]:.4f}"
+    sheet["D13"] = f"X  = {curve.ec_xy[0]:.4f}"
+    sheet["F13"] = f"Y  = {curve.ec_xy[1]:.4f}"
+
+
+def _write_cubic_sheet(sheet, curve: CurveParams):
+    p = curve.params
+    sheet["A3"] = f"'===================< IP  NO. {curve.ip_no} >===================="
+    sheet["A4"] = f"I P [ X ]  = {curve.ip_xy[0]:.4f}"
+    sheet["D4"] = f"I P [ Y ]  = {curve.ip_xy[1]:.4f}"
+    sheet["G6"] = "3차포물선"
+    sheet["E6"] = f"({curve.direction})"
+    sheet["A5"] = f"방위각 1  = {degrees_to_dms(curve.h1)}"
+    sheet["E5"] = f"방위각 2  = {degrees_to_dms(curve.h2)}"
+    sheet["A6"] = f"교각(IA)  = {degrees_to_dms(curve.ia_degree)}"
+    sheet["A7"] = "CURVE CENTER"
+    sheet["C7"] = f"X  = {curve.center_xy[0]:.4f}"
+    sheet["F7"] = f"Y  = {curve.center_xy[1]:.4f}"
+    sheet["A8"] = f"R  = {curve.radius:.3f}"
+    sheet["C8"] = f"IP 연장1  = {curve.ip_distance1:.3f}"
+    sheet["A9"] = f"M  = {curve.m:.3f}"
+    sheet["C9"] = f"V  = {curve.v:.3f}"
+    sheet["F9"] = f"Z  = {curve.z * 0.001:.3f}"
+    sheet["A12"] = f"X1  = {p[0]:.3f}"
+    sheet["A10"] = f"TL  = {p[10]:.3f}"
+    sheet["C10"] = f"CL  = {p[12]:.3f}"
+    sheet["A11"] = f"LC  = {p[11]:.3f}"
+    sheet["C12"] = f"Y1  = {p[4]:.3f}"
+    sheet["C11"] = f"L  = {p[3]:.3f}"
+    sheet["F10"] = f"SL  = {p[13]:.3f}"
+    sheet["D13"] = f"THITA = {degrees_to_dms(math.degrees(curve.theta_pc))}"
+    sheet["A13"] = f"B  = {degrees_to_dms(math.degrees(p[16]))}"
+    sheet["A14"] = f"C  = {degrees_to_dms(math.degrees(p[15]))}"
+    sheet["D14"] = f"원곡선교각  = {degrees_to_dms(math.degrees(p[14]))}"
+    sheet["A15"] = f"IP 정측점  = {format_distance(curve.ip_sta, Config.KM_PRECISION)}"
+    sheet["D15"] = f"IP 역측점  = {format_distance(curve.ip_sta, Config.KM_PRECISION)}"
+    sheet["B16"] = f"SP  = {format_distance(curve.sp_sta, Config.KM_PRECISION)}"
+    sheet["B17"] = f"PC  = {format_distance(curve.pc_sta, Config.KM_PRECISION)}"
+    sheet["B18"] = f"CP  = {format_distance(curve.cp_sta, Config.KM_PRECISION)}"
+    sheet["B19"] = f"PS  = {format_distance(curve.ps_sta, Config.KM_PRECISION)}"
+    sheet["D16"] = f"X  = {curve.sp_xy[0]:.4f}"
+    sheet["F16"] = f"Y  = {curve.sp_xy[1]:.4f}"
+    sheet["D17"] = f"X  = {curve.pc_xy[0]:.4f}"
+    sheet["F17"] = f"Y  = {curve.pc_xy[1]:.4f}"
+    sheet["D18"] = f"X  = {curve.cp_xy[0]:.4f}"
+    sheet["F18"] = f"Y  = {curve.cp_xy[1]:.4f}"
+    sheet["D19"] = f"X  = {curve.ps_xy[0]:.4f}"
+    sheet["F19"] = f"Y  = {curve.ps_xy[1]:.4f}"
+
+
+def _write_station_table(sheet, station_groups: list[list[StationRow]]):
+    sheet["B21"] = "CHAINAGE"
+    sheet["D21"] = "X(North)"
+    sheet["F21"] = "Y(East)"
+    row_idx = 22
+    for subgroup in station_groups:
+        for row in subgroup:
+            sheet[f"A{row_idx}"] = row.label
+            sheet[f"B{row_idx}"] = format_distance(row.sta, Config.KM_PRECISION)
+            sheet[f"D{row_idx}"] = row.coord[0]
+            sheet[f"F{row_idx}"] = row.coord[1]
+            row_idx += 1
+
+
+# ============================================================
+# Civil3D / 좌표 저장
+# ============================================================
+def create_civil3d_xlsx(curves: list[CurveParams]) -> None:
+    Config.ensure_output_dir()
+    filename = Config.OUTPUT_DIR / Config.CIVIL3D_FILENAME
+    wb = Workbook()
+    sheet = wb.active
+    sheet.title = "Sheet1"
+
+    headers = ["Previous Entity ID", "Next Entity ID", "Radius", "Spiral Length"]
+    for col, header in enumerate(headers, 1):
+        sheet.cell(row=1, column=col, value=header)
+
+    for i, curve in enumerate(curves, 2):
+        sheet[f"A{i}"] = curve.ip_no
+        sheet[f"B{i}"] = curve.ip_no + 1
+        sheet[f"C{i}"] = curve.radius
+        sheet[f"D{i}"] = curve.spiral_length if curve.curve_type == "cubic" else ""
+
+    save_with_retry(wb, filename)
+
+
+def save_total_coordinates(
+    station_groups: list[list[list[StationRow]]], filename: Path = None
+) -> list[tuple]:
+    filename = filename or (Config.ensure_output_dir() / Config.TOTAL_COORD_FILENAME)
     records = []
+    for group in station_groups:
+        for subgroup in group:
+            for row in subgroup:
+                records.append((row.sta, row.coord[0], row.coord[1], row.label))
 
-    for station_group in data:
-        for station_data in station_group:
-            for row in station_data:
-                label, sta, offset, coord, shiftx, shifty, Ta, S, Q, T, Azimuth = row
-
-                # 증분 측점만 추출 (부동소수점 오차 허용)
-                if abs(sta / unit - round(sta / unit)) > 1e-7:
-                    continue
-
-                x, y = coord
-                records.append((sta, x, y, Ta))
-
-    # 측점 정렬 및 중복 제거
     records.sort(key=lambda r: r[0])
-    unique_records = []
-    seen = set()
+    unique, seen = [], set()
+    for rec in records:
+        key = round(rec[0], 6)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(rec)
 
-    for record in records:
-        key = round(record[0], 6)
-        if key not in seen:
-            seen.add(key)
-            unique_records.append(record)
+    with open(filename, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["STA", "X", "Y", "LABEL"])
+        for sta, x, y, label in unique:
+            writer.writerow([f"{sta:.4f}", f"{x:.4f}", f"{y:.4f}", label])
 
-    if not unique_records:
-        raise ValueError("출력할 증분 측점 데이터가 없습니다.")
+    logger.info("좌표 저장 완료: %s (%d개)", filename, len(unique))
+    return unique
 
+
+def create_incremental_station_report(
+    station_groups: list[list[list[StationRow]]],
+    unit: int = 25,
+    alignment_name: str = "복선중심선",
+    file_ext: str = "xlsx",
+) -> None:
     if file_ext not in ("xls", "xlsx"):
         raise ValueError(f"지원하지 않는 형식: {file_ext}")
 
-    # 확장자 자동 일치
-    from pathlib import Path
-    path = Path(filename).with_suffix(f".{file_ext}")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    records = []
+    for group in station_groups:
+        for subgroup in group:
+            for row in subgroup:
+                if abs(row.sta / unit - round(row.sta / unit)) > 1e-7:
+                    continue
+                records.append((row.sta, row.coord[0], row.coord[1], row.ta))
 
-    # Excel 생성
-    if file_ext == 'xls':
-        wb = create_xls(unique_records, alignment_name, unit=unit)
-    else:
-        wb = create_xlsx(unique_records, alignment_name, unit=unit)
+    records.sort(key=lambda r: r[0])
+    unique, seen = [], set()
+    for rec in records:
+        key = round(rec[0], 6)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(rec)
 
-    wb.save(path)
-    print(f"증분 측점 보고서 저장 완료: {path}")
-    print(f"출력 측점 수: {len(unique_records)}")
+    if not unique:
+        raise ValueError("출력할 증분 측점 데이터가 없습니다.")
 
-def create_xls(unique_records, alignment_name, unit=25):
-    import xlwt
+    path = (Config.ensure_output_dir() / Config.INCREMENTAL_REPORT_FILENAME).with_suffix(f".{file_ext}")
+    wb = _create_xls_workbook(unique, alignment_name, unit) if file_ext == "xls" \
+         else _create_xlsx_workbook(unique, alignment_name, unit)
+    wb.save(str(path))
+    logger.info("증분 측점 보고서 저장: %s (%d개)", path, len(unique))
 
-    # Excel 97-2003 통합 문서 생성
-    wb = xlwt.Workbook(encoding="utf-8")
-    ws = wb.add_sheet("선형 증분 측점 보고서")
 
-    # 열 너비
-    ws.col(0).width = 23 * 256
-    ws.col(1).width = 25 * 256
-    ws.col(2).width = 25 * 256
-    ws.col(3).width = 28 * 256
-
-    # 스타일
-    title_style = xlwt.easyxf(
-        "font: bold on, height 320;"
-        "align: horiz left;"
-    )
-
-    header_style = xlwt.easyxf(
-        "font: bold on, colour white;"
-        "pattern: pattern solid, fore_colour ocean_blue;"
-        "align: horiz center;"
-    )
-
-    number_style = xlwt.easyxf(
-        num_format_str='#,##0.0000"미터"'
-    )
-
-    start_sta = unique_records[0][0]
-    end_sta = unique_records[-1][0]
-
-    # 제목
-    ws.write_merge(0, 0, 0, 3, "선형 증분 측점 보고서", title_style)
-
-    # 상단 정보
-    ws.write(2, 0, "클라이언트:")
-    ws.write(2, 1, "작성자:")
-    ws.write(3, 0, "Client")
-    ws.write(3, 1, "Preparer")
-    ws.write(4, 0, "Client Company")
-    ws.write(4, 1, "Your Company Name")
-    ws.write(5, 0, "Address 1")
-    ws.write(5, 1, "123 Main Street")
-
-    ws.write(6, 0, f"날짜: {datetime.now():%Y-%m-%d %H:%M:%S}")
-    ws.write(9, 0, f"선형 이름: {alignment_name}")
-    ws.write(10, 0, f"설명:")
-    ws.write(11, 0, f"측점 범위: 시작: {format_station(start_sta)}, 끝: {format_station(end_sta)}")
-    ws.write(12, 0, f"측점 증분: {unit:.2f}")
-
-    # 헤더
-    headers = ["측점", "Northing", "Easting", "접선 방향"]
-
-    for col, header in enumerate(headers):
-        ws.write(14, col, header, header_style)
-
-    # 측점 데이터
-    for row_idx, (sta, x, y, Ta) in enumerate(unique_records, 15):
-        ws.write(row_idx, 0, format_station(sta))
-        ws.write(row_idx, 1, x, number_style)
-        ws.write(row_idx, 2, y, number_style)
-        ws.write(row_idx, 3, format_bearing(Ta))
-
-    return wb
-
-def create_xlsx(unique_records, alignment_name, unit=25):
-    """xlsx저장함수"""
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-
+def _create_xlsx_workbook(records, alignment_name, unit):
     wb = Workbook()
     ws = wb.active
     ws.title = "선형 증분 측점 보고서"
 
-    ws.column_dimensions["A"].width = 23
-    ws.column_dimensions["B"].width = 25
-    ws.column_dimensions["C"].width = 25
-    ws.column_dimensions["D"].width = 28
+    widths = {"A": 23, "B": 25, "C": 25, "D": 28}
+    for col, w in widths.items():
+        ws.column_dimensions[col].width = w
 
     ws.merge_cells("A1:D1")
     ws["A1"] = "선형 증분 측점 보고서"
     ws["A1"].font = Font(size=16, bold=True)
-    ws["A1"].alignment = Alignment(horizontal="left")
 
-    ws["A3"] = "클라이언트:"
-    ws["B3"] = "작성자:"
-    ws["A4"] = "Client"
-    ws["B4"] = "Preparer"
-    ws["A5"] = "Client Company"
-    ws["B5"] = "Your Company Name"
-    ws["A6"] = "Address 1"
-    ws["B6"] = "123 Main Street"
-
+    ws["A3"], ws["B3"] = "클라이언트:", "작성자:"
+    ws["A4"], ws["B4"] = "Client", "Preparer"
     ws["A7"] = f"날짜: {datetime.now():%Y-%m-%d %H:%M:%S}"
-
     ws["A10"] = f"선형 이름: {alignment_name}"
-    ws["A11"] = "설명:"
-
-    start_sta = unique_records[0][0]
-    end_sta = unique_records[-1][0]
-
-    ws["A12"] = (
-        f"측점 범위: 시작: {format_station(start_sta)}, "
-        f"끝: {format_station(end_sta)}"
-    )
+    ws["A12"] = f"측점 범위: 시작: {format_station(records[0][0])}, 끝: {format_station(records[-1][0])}"
     ws["A13"] = f"측점 증분: {unit:.2f}"
 
-    # 데이터 헤더
     headers = ["측점", "Northing", "Easting", "접선 방향"]
-
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=15, column=col, value=header)
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=15, column=col, value=h)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="4472C4")
         cell.alignment = Alignment(horizontal="center")
 
     thin = Side(style="thin", color="D9E2F3")
-
-    # 측점 데이터
-    for row_idx, (sta, x, y, Ta) in enumerate(unique_records, 16):
-        ws.cell(row_idx, 1, format_station(sta))
-
-        northing = ws.cell(row_idx, 2, x)
-        easting = ws.cell(row_idx, 3, y)
-
-        northing.number_format = '#,##0.0000"미터"'
-        easting.number_format = '#,##0.0000"미터"'
-
-        ws.cell(row_idx, 4, format_bearing(Ta))
-
-        for cell in ws[row_idx][:4]:
+    for r, (sta, x, y, ta) in enumerate(records, 16):
+        ws.cell(r, 1, format_station(sta))
+        ws.cell(r, 2, x).number_format = '#,##0.0000"미터"'
+        ws.cell(r, 3, y).number_format = '#,##0.0000"미터"'
+        ws.cell(r, 4, format_bearing(ta))
+        for cell in ws[r][:4]:
             cell.border = Border(bottom=thin)
-            cell.alignment = Alignment(vertical="center")
 
     ws.freeze_panes = "A16"
-    ws.auto_filter.ref = f"A15:D{15 + len(unique_records)}"
-
+    ws.auto_filter.ref = f"A15:D{15 + len(records)}"
     return wb
 
-def main_gui():
-    global unit
-    
-    root = tk.Tk()
-    root.title("Railway Alignment Tool")
 
-    # Default values
-    unit = 20
-    start_STA = 0
-    designSpeed = 250
-    ballast = '자갈도상'
-    ismanualmzv = False
-    parameters = []
+def _create_xls_workbook(records, alignment_name, unit):
+    """xls 저장 (xlwt 필요)"""
+    try:
+        import xlwt
+    except ImportError as e:
+        raise ImportError("xls 저장에는 'xlwt' 패키지가 필요합니다.") from e
 
-    def get_input_values():
-        nonlocal start_STA, designSpeed, ballast, ismanualmzv
-        global final_result, alignment_report_variable_list, polycurve, linestring
-        
+    wb = xlwt.Workbook(encoding="utf-8")
+    ws = wb.add_sheet("선형 증분 측점 보고서")
+
+    title_style = xlwt.easyxf("font: bold on, height 320; align: horiz left;")
+    header_style = xlwt.easyxf(
+        "font: bold on, colour white; pattern: pattern solid, fore_colour ocean_blue;"
+        "align: horiz center;"
+    )
+    num_style = xlwt.easyxf(num_format_str='#,##0.0000"미터"')
+
+    ws.write_merge(0, 0, 0, 3, "선형 증분 측점 보고서", title_style)
+    ws.write(2, 0, "클라이언트:")
+    ws.write(3, 0, f"날짜: {datetime.now():%Y-%m-%d %H:%M:%S}")
+    ws.write(5, 0, f"선형 이름: {alignment_name}")
+    ws.write(6, 0, f"측점 범위: {format_station(records[0][0])} ~ {format_station(records[-1][0])}")
+    ws.write(7, 0, f"측점 증분: {unit:.2f}")
+
+    for col, h in enumerate(["측점", "Northing", "Easting", "접선 방향"]):
+        ws.write(9, col, h, header_style)
+
+    for i, (sta, x, y, ta) in enumerate(records, 10):
+        ws.write(i, 0, format_station(sta))
+        ws.write(i, 1, x, num_style)
+        ws.write(i, 2, y, num_style)
+        ws.write(i, 3, format_bearing(ta))
+    return wb
+
+
+# ============================================================
+# 좌표 ↔ 측점 조회
+# ============================================================
+def get_coord_from_station(curves: list[CurveParams], station_groups, sta: float):
+    """측점 → 좌표"""
+    for i, curve in enumerate(curves):
+        group = station_groups[i] if i < len(station_groups) else []
+        if not group:
+            continue
+        flat = group[0]
+        if not flat:
+            continue
+        bp = flat[0].sta
+        ep = flat[-1].sta
+        if not (bp <= sta <= ep):
+            continue
+
+        if curve.curve_type == "simplecurve":
+            offset = calculate_station_offset(sta, curve.bc_sta, curve.bc_sta,
+                                              curve.ec_sta, curve.ec_sta, bp)
+            return calculate_coordinates(
+                sta, curve.bc_sta, curve.bc_sta, curve.ec_sta, curve.ec_sta,
+                curve.h1, curve.h2, curve.h1, offset, curve.params[2], 0, 0,
+                flat[0].coord[0], flat[0].coord[1],
+                curve.bc_xy[0], curve.bc_xy[1],
+                curve.center_xy[0], curve.center_xy[1],
+                curve.ec_xy[0], curve.ec_xy[1],
+            )
+        offset = calculate_station_offset(sta, curve.sp_sta, curve.pc_sta,
+                                          curve.cp_sta, curve.ps_sta, bp)
+        shiftx = cal_spiral_shiftx(sta, curve.sp_sta, curve.pc_sta, curve.cp_sta,
+                                   curve.ps_sta, offset, curve.params[2], curve.params[3])
+        shifty = cal_spiral_shifty(sta, curve.sp_sta, curve.pc_sta, curve.cp_sta,
+                                   curve.ps_sta, shiftx, curve.params[2], curve.params[0])
+        return calculate_coordinates(
+            sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
+            curve.h1, curve.h2, curve.sp_pc_bearing, offset, curve.params[2],
+            shiftx, shifty,
+            flat[0].coord[0], flat[0].coord[1],
+            curve.sp_xy[0], curve.sp_xy[1],
+            curve.center_xy[0], curve.center_xy[1],
+            curve.ps_xy[0], curve.ps_xy[1],
+        )
+    return None
+
+
+def perpendicular_point_on_curve(p, curve):
+    px, py = p
+    for i in range(len(curve) - 1):
+        x1, y1 = curve[i]
+        x2, y2 = curve[i + 1]
+        line_vec = np.array([x2 - x1, y2 - y1])
+        point_vec = np.array([px - x1, py - y1])
+        line_len_sq = float(np.dot(line_vec, line_vec))
+        if line_len_sq == 0:
+            continue
+        t = float(np.dot(point_vec, line_vec)) / line_len_sq
+        if 0 <= t <= 1:
+            return (x1 + t * line_vec[0], y1 + t * line_vec[1]), i
+    return None, None
+
+
+def get_station_at_coordinates(
+    p: tuple[float, float], polycurve: list[tuple[float, float]],
+    station_groups,
+) -> Optional[float]:
+    """좌표 → 측점"""
+    curve_math = [(y, x) for x, y in polycurve]
+    apoint, index = perpendicular_point_on_curve(p, curve_math)
+    if apoint is None:
+        return None
+
+    dest_x, dest_y = curve_math[index]
+    dest_x_i, dest_y_i = int(dest_x), int(dest_y)
+
+    for group in station_groups:
+        for subgroup in group:
+            for row in subgroup:
+                cy, cx = row.coord
+                if int(cx) == dest_x_i and int(cy) == dest_y_i:
+                    return row.sta + calculate_distance(cx, cy, apoint[0], apoint[1])
+    return None
+
+
+# ============================================================
+# GUI
+# ============================================================
+class AlignmentApp:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("Railway Alignment Tool v10")
+        self.context = AppContext()
+        self._build_ui()
+
+    def _build_ui(self):
+        r = self.root
+
+        tk.Label(r, text="계산 간격 (기본 20)").grid(row=0, column=0)
+        self.entry_unit = tk.Entry(r)
+        self.entry_unit.grid(row=0, column=1)
+
+        tk.Label(r, text="시작 측점 (기본 0)").grid(row=1, column=0)
+        self.entry_start = tk.Entry(r)
+        self.entry_start.grid(row=1, column=1)
+
+        tk.Label(r, text="설계 최고 속도 (기본 250)").grid(row=2, column=0)
+        self.entry_speed = tk.Entry(r)
+        self.entry_speed.grid(row=2, column=1)
+
+        tk.Label(r, text="도상 유형").grid(row=3, column=0)
+        self.ballast_var = tk.IntVar(value=0)
+        tk.Radiobutton(r, text="자갈도상", variable=self.ballast_var, value=0).grid(row=3, column=1)
+        tk.Radiobutton(r, text="콘크리트도상", variable=self.ballast_var, value=1).grid(row=3, column=2)
+
+        tk.Button(r, text="계산 시작", command=self.run_calculation).grid(row=4, columnspan=3, pady=10)
+
+        tk.Label(r, text="도면 축척").grid(row=5, column=0)
+        self.entry_scale = tk.Entry(r)
+        self.entry_scale.insert(0, "1000")
+        self.entry_scale.grid(row=5, column=1)
+        tk.Button(r, text="도면 출력", command=self.export_dxf).grid(row=5, column=2)
+
+        tk.Label(r, text="측점 → 좌표").grid(row=6, column=0)
+        self.entry_station = tk.Entry(r)
+        self.entry_station.grid(row=6, column=1)
+        tk.Button(r, text="좌표 계산", command=self.lookup_coord).grid(row=6, column=2)
+
+        tk.Label(r, text="좌표 → 측점").grid(row=7, column=0)
+        self.entry_coord = tk.Entry(r)
+        self.entry_coord.grid(row=7, column=1)
+        tk.Button(r, text="측점 찾기", command=self.lookup_station).grid(row=7, column=2)
+
+        tk.Button(r, text="프로그램 종료", command=self.root.destroy).grid(row=8, columnspan=3, pady=10)
+
+    def _read_inputs(self) -> tuple[int, float, int, str]:
+        unit = int(self.entry_unit.get()) if self.entry_unit.get() else Config.DEFAULT_UNIT
+        start_sta = float(self.entry_start.get()) if self.entry_start.get() else Config.DEFAULT_START_STA
+        speed = int(self.entry_speed.get()) if self.entry_speed.get() else Config.DEFAULT_DESIGN_SPEED
+        ballast = "자갈도상" if self.ballast_var.get() == 0 else "콘크리트도상"
+        return unit, start_sta, speed, ballast
+
+    def run_calculation(self):
+        from tkinter import messagebox
         try:
-            unit = int(entry_unit.get()) if entry_unit.get() else 20
-            start_STA = float(entry_start_STA.get()) if entry_start_STA.get() else 0
-            designSpeed = int(entry_designSpeed.get()) if entry_designSpeed.get() else 250
-            ballast = '자갈도상' if ballast_var.get() == 0 else '콘크리트도상'
-            ismanualmzv = manual_var.get() == 1
-
-            lines = read_file()
+            unit, start_sta, speed, ballast = self._read_inputs()
+            lines = read_alignment_file()
             if not lines:
-                messagebox.showerror("Error", "No alignment data found.")
+                messagebox.showerror("Error", "선형 데이터를 읽을 수 없습니다.")
                 return
 
-            alignment = pasing_ip(lines)
-            linestring = create_Linestring(alignment)
-            Radius_list = [point[2] for point in alignment[1:-1]]
-            ia_list = calculate_angles_and_plot(linestring)
+            alignment = parse_ip_lines(lines)
+            self.context.linestring = create_linestring(alignment)
+            radius_list = [p[2] for p in alignment[1:-1]]
+            angles = calculate_angles(self.context.linestring)
+            parameters = calculate_parameters(radius_list, speed, ballast)
 
-            if ismanualmzv:
-                parameters = []
-            else:
-                parameters = cal_parameter(Radius_list, designSpeed, ballast)
-
-            final_result, alignment_report_variable_list, polycurve = calculate_curve(
-                linestring, Radius_list, ia_list, parameters, unit, start_STA
+            self.context.station_groups, self.context.curves, self.context.polycurve = calculate_curve(
+                self.context.linestring, radius_list, angles, parameters, unit, start_sta
             )
 
-            write_report(alignment_report_variable_list, final_result)
-            create_civil3d_xlsx(alignment_report_variable_list)
-            # 모든 좌표 취합 및 TXT 저장
-            save_total_coordinates(final_result)
-            # Civil 3D 증분 측점 보고서 추가
-            create_incremental_station_report(
-                final_result,
-                unit=unit,
-                alignment_name="복선중심선",
-                file_ext='xls'
-            )
+            write_report(self.context.curves, self.context.station_groups)
+            create_civil3d_xlsx(self.context.curves)
+            save_total_coordinates(self.context.station_groups)
+            create_incremental_station_report(self.context.station_groups, unit=unit, file_ext="xls")
 
-            messagebox.showinfo("Success", "Report and Civil3D output generated successfully!")
+            messagebox.showinfo("Success", "보고서 및 Civil3D 출력이 완료되었습니다.")
+        except Exception as e:
+            logger.exception("계산 중 오류")
+            messagebox.showerror("Error", f"계산 실패: {e}")
 
-        except ValueError:
-            messagebox.showerror("Input Error", "Please enter valid numerical values.")
-    
-    def create_drawing():
+    def export_dxf(self):
+        from tkinter import messagebox
         try:
-            scale = int(entry_scale.get()) if entry_scale.get() else 1000
-            if scale < 1000:
-                raise ValueError("Scale must be 1000 or greater.")
-            create_dxf(polycurve, linestring, alignment_report_variable_list, final_result, filename='본선평면선형.dxf', scale=scale)
-            messagebox.showinfo("Success", "Drawing created successfully!")
-        except ValueError as e:
+            scale = int(self.entry_scale.get()) if self.entry_scale.get() else Config.DEFAULT_SCALE
+            if scale < Config.DEFAULT_SCALE:
+                raise ValueError("축척은 1000 이상이어야 합니다.")
+            if not self.context.curves:
+                raise ValueError("먼저 선형 계산을 실행하세요.")
+            unit, *_ = self._read_inputs()
+            create_dxf(
+                self.context.polycurve, self.context.linestring,
+                self.context.curves, self.context.station_groups,
+                unit=unit, scale=scale,
+            )
+            messagebox.showinfo("Success", "도면이 생성되었습니다.")
+        except Exception as e:
             messagebox.showerror("Error", str(e))
 
-    def calculate_station_coordinates():
+    def lookup_coord(self):
+        from tkinter import messagebox
         try:
-            input_station = float(entry_station.get())
-            
-            find_coord = get_station_coordinates(alignment_report_variable_list, final_result, input_station)
-            if find_coord:
-                messagebox.showinfo("Result", f'Coordinates found: X = {find_coord[0]:.4f}, Y = {find_coord[1]:.4f}')
+            sta = float(self.entry_station.get())
+            coord = get_coord_from_station(self.context.curves, self.context.station_groups, sta)
+            if coord:
+                messagebox.showinfo("Result", f"X = {coord[0]:.4f}, Y = {coord[1]:.4f}")
             else:
-                messagebox.showerror("Error", "Coordinates not found.")
+                messagebox.showerror("Error", "좌표를 찾을 수 없습니다.")
         except ValueError:
-            messagebox.showerror("Input Error", "Please enter a valid station value.")
+            messagebox.showerror("Input Error", "유효한 측점을 입력하세요.")
 
-    def find_station_by_coordinates():
+    def lookup_station(self):
+        from tkinter import messagebox
         try:
-            x, y = map(float, entry_coordinates.get().split(','))
-            input_xy = (x, y)
-            find_station = get_station_at_coordinates(input_xy, polycurve, final_result)
-            if find_station is not None:
-                messagebox.showinfo("Result", f'Found station: {find_station}')
+            x, y = map(float, self.entry_coord.get().split(","))
+            sta = get_station_at_coordinates((x, y), self.context.polycurve, self.context.station_groups)
+            if sta is not None:
+                messagebox.showinfo("Result", f"측점: {format_station(sta)}")
             else:
-                messagebox.showerror("Error", "No station found for given coordinates.")
+                messagebox.showerror("Error", "측점을 찾을 수 없습니다.")
         except ValueError:
-            messagebox.showerror("Input Error", "Please enter valid coordinates separated by a comma.")
+            messagebox.showerror("Input Error", "좌표를 'x,y' 형식으로 입력하세요.")
 
-    def exit_program():
-        print("프로그램을 종료합니다.")
-        root.destroy()
-    
-    # User Interface
-    tk.Label(root, text="계산 간격 입력: (기본값 20)").grid(row=0, column=0)
-    entry_unit = tk.Entry(root)
-    entry_unit.grid(row=0, column=1)
 
-    tk.Label(root, text="시작 측점 입력: (기본값 0)").grid(row=1, column=0)
-    entry_start_STA = tk.Entry(root)
-    entry_start_STA.grid(row=1, column=1)
-
-    tk.Label(root, text="설계 최고 속도 입력: (기본값 250)").grid(row=2, column=0)
-    entry_designSpeed = tk.Entry(root)
-    entry_designSpeed.grid(row=2, column=1)
-
-    tk.Label(root, text="구간내 적용 도상 입력").grid(row=3, column=0)
-    ballast_var = tk.IntVar(value=0)
-    tk.Radiobutton(root, text="자갈도상", variable=ballast_var, value=0).grid(row=3, column=1)
-    tk.Radiobutton(root, text="콘크리트도상", variable=ballast_var, value=1).grid(row=3, column=2)
-
-    tk.Label(root, text="M,Z,V 수동 입력? (기본값 아니오)").grid(row=4, column=0)
-    manual_var = tk.IntVar(value=0)
-    tk.Radiobutton(root, text="아니오", variable=manual_var, value=0).grid(row=4, column=1)
-    tk.Radiobutton(root, text="예", variable=manual_var, value=1).grid(row=4, column=2)
-
-    tk.Button(root, text="계산 시작", command=get_input_values).grid(row=5, columnspan=3, pady=10)
-
-    # Additional menu options
-    tk.Label(root, text="도면 출력 (축척)").grid(row=6, column=0)
-    entry_scale = tk.Entry(root)
-    entry_scale.insert(0, "1000")
-    entry_scale.grid(row=6, column=1)
-    tk.Button(root, text="도면 출력", command=create_drawing).grid(row=6, column=2)
-
-    tk.Label(root, text="측점으로 좌표 계산").grid(row=7, column=0)
-    entry_station = tk.Entry(root)
-    entry_station.grid(row=7, column=1)
-    tk.Button(root, text="좌표 계산", command=calculate_station_coordinates).grid(row=7, column=2)
-
-    tk.Label(root, text="좌표로 측점 찾기").grid(row=8, column=0)
-    entry_coordinates = tk.Entry(root)
-    entry_coordinates.grid(row=8, column=1)
-    tk.Button(root, text="측점 찾기", command=find_station_by_coordinates).grid(row=8, column=2)
-
-    tk.Button(root, text="프로그램 종료", command=exit_program).grid(row=9, columnspan=3, pady=10)
-
+def main_gui():
+    root = tk.Tk()
+    AlignmentApp(root)
     root.mainloop()
 
 
-    
-if __name__ == '__main__':
+if __name__ == "__main__":
     main_gui()
