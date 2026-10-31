@@ -44,6 +44,7 @@ from coordinate_calculator import (
     create_coordinate_calculator,
 )
 from station_builder import build_station_group
+from report_writer import write_report, dxf_save_with_retry, save_with_retry
 
 # ============================================================
 # 로깅 설정
@@ -311,46 +312,7 @@ def format_bearing(angle: float) -> str:
     return f'N {deg:03d}° {minute:02d}\' {second:02d}"'
 
 
-# ============================================================
-# 파일 I/O
-# ============================================================
-def save_with_retry(workbook, filename: Path, max_retries: int = None, delay: int = None) -> bool:
-    """Excel 저장 재시도 (GUI 블로킹 최소화)"""
-    max_retries = max_retries or Config.SAVE_MAX_RETRIES
-    delay = delay or Config.SAVE_RETRY_DELAY
-    for attempt in range(max_retries):
-        try:
-            workbook.save(str(filename))
-            logger.info("File saved: %s", filename)
-            return True
-        except PermissionError:
-            logger.warning(
-                "Attempt %d/%d: permission denied (%s). Retrying in %ds...",
-                attempt + 1, max_retries, filename.name, delay,
-            )
-            time.sleep(delay)
-    logger.error("Failed to save after %d attempts: %s", max_retries, filename)
-    return False
 
-
-def dxf_save_with_retry(doc, filename: str, max_retries: int = None, delay: int = None) -> bool:
-    """DXF 저장 재시도"""
-    max_retries = max_retries or Config.SAVE_MAX_RETRIES
-    delay = delay or Config.SAVE_RETRY_DELAY
-    out_path = Config.ensure_output_dir() / filename
-    for attempt in range(max_retries):
-        try:
-            doc.saveas(str(out_path))
-            logger.info("DXF saved: %s", out_path)
-            return True
-        except PermissionError:
-            logger.warning(
-                "Attempt %d/%d: permission denied (%s). Retrying in %ds...",
-                attempt + 1, max_retries, out_path.name, delay,
-            )
-            time.sleep(delay)
-    logger.error("Failed to save DXF after %d attempts: %s", max_retries, out_path)
-    return False
 
 
 def read_alignment_file() -> list[list[str]]:
@@ -927,117 +889,6 @@ def _add_station_tick(msp, x: float, y: float, ta_math: float, scale: float):
     start = calculate_destination_coordinates(y, x, ta_math + 90, 1.5 * scale)
     end = calculate_destination_coordinates(y, x, ta_math + 90, -1.5 * scale)
     msp.add_line(start, end, dxfattribs={"layer": "보조측점", "color": Config.COLOR_RED})
-
-
-# ============================================================
-# Excel 보고서
-# ============================================================
-def write_report(curves: list[CurveParams], station_groups: list[list[list[StationRow]]]) -> None:
-    """IP별 선형계산서 Excel 출력"""
-    Config.ensure_output_dir()
-    filename = Config.OUTPUT_DIR / Config.REPORT_FILENAME
-
-    wb = Workbook()
-    if "Sheet" in wb.sheetnames:
-        del wb["Sheet"]
-
-    for i, curve in enumerate(curves):
-        sheet = wb.create_sheet(title=f"IP{curve.ip_no}")
-        if curve.curve_type == "simplecurve":
-            _write_simple_curve_sheet(sheet, curve)
-        else:
-            _write_cubic_sheet(sheet, curve)
-        _write_station_table(sheet, station_groups[i] if i < len(station_groups) else [])
-
-    save_with_retry(wb, filename)
-
-
-def _write_simple_curve_sheet(sheet, curve: CurveParams):
-    sheet["A3"] = f"'===================〈 IP  NO. {curve.ip_no} >===================="
-    sheet["A4"] = f"I P [ X ] = {curve.ip_xy[0]:.4f}"
-    sheet["D4"] = f"I P [ Y ] = {curve.ip_xy[1]:.4f}"
-    sheet["G6"] = "단곡선"
-    sheet["E6"] = f"({curve.direction})"
-    sheet["A5"] = f"방위각 1 = {degrees_to_dms(curve.h1)}"
-    sheet["E5"] = f"방위각 2 = {degrees_to_dms(curve.h2)}"
-    sheet["A6"] = f"교각(IA) = {degrees_to_dms(curve.ia_degree)}"
-    sheet["A7"] = "CURVE CENTER"
-    sheet["C7"] = f"X = {curve.center_xy[0]:.4f}"
-    sheet["F7"] = f"Y = {curve.center_xy[1]:.4f}"
-    sheet["A8"] = f"R = {curve.radius:.3f}"
-    sheet["C8"] = f"IP 연장1 = {curve.ip_distance1:.3f}"
-    sheet["A9"] = "M = 0"
-    sheet["C9"] = f"V = {curve.v:.3f}"
-    sheet["F9"] = f"Z = {curve.z * 0.001:.3f}"
-    sheet["A10"] = f"TL = {curve.tl:.3f}"
-    sheet["C10"] = f"CL = {curve.cl:.3f}"
-    sheet["F10"] = f"SL = {curve.params[2]:.3f}"
-    sheet["A11"] = f"IP 정측점 = {format_distance(curve.ip_sta, Config.KM_PRECISION)}"
-    sheet["B12"] = f"BC = {format_distance(curve.bc_sta, Config.KM_PRECISION)}"
-    sheet["B13"] = f"EC = {format_distance(curve.ec_sta, Config.KM_PRECISION)}"
-    sheet["D12"] = f"X  = {curve.bc_xy[0]:.4f}"
-    sheet["F12"] = f"Y  = {curve.bc_xy[1]:.4f}"
-    sheet["D13"] = f"X  = {curve.ec_xy[0]:.4f}"
-    sheet["F13"] = f"Y  = {curve.ec_xy[1]:.4f}"
-
-
-def _write_cubic_sheet(sheet, curve: CurveParams):
-    p = curve.params
-    sheet["A3"] = f"'===================< IP  NO. {curve.ip_no} >===================="
-    sheet["A4"] = f"I P [ X ]  = {curve.ip_xy[0]:.4f}"
-    sheet["D4"] = f"I P [ Y ]  = {curve.ip_xy[1]:.4f}"
-    sheet["G6"] = "3차포물선"
-    sheet["E6"] = f"({curve.direction})"
-    sheet["A5"] = f"방위각 1  = {degrees_to_dms(curve.h1)}"
-    sheet["E5"] = f"방위각 2  = {degrees_to_dms(curve.h2)}"
-    sheet["A6"] = f"교각(IA)  = {degrees_to_dms(curve.ia_degree)}"
-    sheet["A7"] = "CURVE CENTER"
-    sheet["C7"] = f"X  = {curve.center_xy[0]:.4f}"
-    sheet["F7"] = f"Y  = {curve.center_xy[1]:.4f}"
-    sheet["A8"] = f"R  = {curve.radius:.3f}"
-    sheet["C8"] = f"IP 연장1  = {curve.ip_distance1:.3f}"
-    sheet["A9"] = f"M  = {curve.m:.3f}"
-    sheet["C9"] = f"V  = {curve.v:.3f}"
-    sheet["F9"] = f"Z  = {curve.z * 0.001:.3f}"
-    sheet["A12"] = f"X1  = {p[0]:.3f}"
-    sheet["A10"] = f"TL  = {p[10]:.3f}"
-    sheet["C10"] = f"CL  = {p[12]:.3f}"
-    sheet["A11"] = f"LC  = {p[11]:.3f}"
-    sheet["C12"] = f"Y1  = {p[4]:.3f}"
-    sheet["C11"] = f"L  = {p[3]:.3f}"
-    sheet["F10"] = f"SL  = {p[13]:.3f}"
-    sheet["D13"] = f"THITA = {degrees_to_dms(math.degrees(curve.theta_pc))}"
-    sheet["A13"] = f"B  = {degrees_to_dms(math.degrees(p[16]))}"
-    sheet["A14"] = f"C  = {degrees_to_dms(math.degrees(p[15]))}"
-    sheet["D14"] = f"원곡선교각  = {degrees_to_dms(math.degrees(p[14]))}"
-    sheet["A15"] = f"IP 정측점  = {format_distance(curve.ip_sta, Config.KM_PRECISION)}"
-    sheet["D15"] = f"IP 역측점  = {format_distance(curve.ip_sta, Config.KM_PRECISION)}"
-    sheet["B16"] = f"SP  = {format_distance(curve.sp_sta, Config.KM_PRECISION)}"
-    sheet["B17"] = f"PC  = {format_distance(curve.pc_sta, Config.KM_PRECISION)}"
-    sheet["B18"] = f"CP  = {format_distance(curve.cp_sta, Config.KM_PRECISION)}"
-    sheet["B19"] = f"PS  = {format_distance(curve.ps_sta, Config.KM_PRECISION)}"
-    sheet["D16"] = f"X  = {curve.sp_xy[0]:.4f}"
-    sheet["F16"] = f"Y  = {curve.sp_xy[1]:.4f}"
-    sheet["D17"] = f"X  = {curve.pc_xy[0]:.4f}"
-    sheet["F17"] = f"Y  = {curve.pc_xy[1]:.4f}"
-    sheet["D18"] = f"X  = {curve.cp_xy[0]:.4f}"
-    sheet["F18"] = f"Y  = {curve.cp_xy[1]:.4f}"
-    sheet["D19"] = f"X  = {curve.ps_xy[0]:.4f}"
-    sheet["F19"] = f"Y  = {curve.ps_xy[1]:.4f}"
-
-
-def _write_station_table(sheet, station_groups: list[list[StationRow]]):
-    sheet["B21"] = "CHAINAGE"
-    sheet["D21"] = "X(North)"
-    sheet["F21"] = "Y(East)"
-    row_idx = 22
-    for subgroup in station_groups:
-        for row in subgroup:
-            sheet[f"A{row_idx}"] = row.label
-            sheet[f"B{row_idx}"] = format_distance(row.sta, Config.KM_PRECISION)
-            sheet[f"D{row_idx}"] = row.coord[0]
-            sheet[f"F{row_idx}"] = row.coord[1]
-            row_idx += 1
 
 
 # ============================================================
