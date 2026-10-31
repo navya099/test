@@ -43,6 +43,7 @@ from coordinate_calculator import (
     build_geometry_from_curve,
     create_coordinate_calculator,
 )
+from station_builder import build_station_group
 
 # ============================================================
 # 로깅 설정
@@ -738,96 +739,27 @@ def calculate_curve(
 
         tl_list.append(tl)
 
-        # ---------- 측점별 좌표 계산 ----------
-        station_group = _build_station_group(
-            curve=curves[-1], bp_sta=bp_sta, bp_xy=bp_xy,
-            prev_xy=end_xy_list[i - 1] if i > 0 else bp_xy,
-            is_last_ip=is_last_ip, ep_xy=ep_xy, unit=unit,
+        # 변경 후
+        prev_xy = end_xy_list[i - 1] if i > 0 else bp_xy
+        end_sta = _compute_end_sta(
+            curves[-1],
+            base_sta=(curves[-1].ec_sta if curves[-1].curve_type == "simplecurve"
+                      else curves[-1].ps_sta),
+            ec_xy=(curves[-1].ec_xy or curves[-1].ps_xy),
+            ep_xy=ep_xy,
+            is_last_ip=is_last_ip,
+        )
+        station_group = build_station_group(
+            curve=curves[-1],
+            bp_sta=bp_sta,
+            bp_xy=prev_xy,
+            end_sta=end_sta,
+            unit=unit,
         )
         station_groups.append([station_group])
         polycurve.extend(row.coord for row in station_group)
 
     return station_groups, curves, polycurve
-
-
-def _build_station_group(
-    curve: CurveParams, bp_sta: float, bp_xy: tuple[float, float],
-    prev_xy: tuple[float, float], is_last_ip: bool,
-    ep_xy: tuple[float, float], unit: int,
-) -> list[StationRow]:
-    """한 IP에 대한 측점 리스트 생성"""
-    rows: list[StationRow] = []
-
-    # ✅ 계산기 인스턴스 생성 (측점 루프 밖에서 1회)
-    tangent_calc = create_tangent_calculator(curve)
-    coord_calc = create_coordinate_calculator(curve)
-
-    if curve.curve_type == "simplecurve":
-        bc_sta, ec_sta = curve.bc_sta, curve.ec_sta
-        end_sta = _compute_end_sta(curve, ec_sta, ec_xy=curve.ec_xy,
-                                   ep_xy=ep_xy, is_last_ip=is_last_ip)
-        stations = generate_integers(int(round(bp_sta)), int(round(end_sta)), unit)
-        stations.extend([bp_sta, bc_sta, ec_sta])
-        if is_last_ip:
-            stations.append(end_sta)
-        station_keys = [bc_sta, bc_sta, ec_sta, ec_sta, end_sta]
-    else:
-        sp_sta, pc_sta, cp_sta, ps_sta = (
-            curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta
-        )
-        end_sta = _compute_end_sta(curve, ps_sta, ec_xy=curve.ps_xy,
-                                   ep_xy=ep_xy, is_last_ip=is_last_ip)
-        stations = generate_integers(int(round(bp_sta)), int(round(end_sta)), unit)
-        extra = [sp_sta, pc_sta, cp_sta, ps_sta]
-        if bp_sta % unit != 0:
-            extra.insert(0, bp_sta)
-        if is_last_ip:
-            extra.append(end_sta)
-        stations.extend(extra)
-        station_keys = [sp_sta, pc_sta, cp_sta, ps_sta, end_sta]
-
-    stations = sorted(set(stations))
-
-    for j, sta in enumerate(stations):
-        if j == 0:
-            label = "BP"
-            offset = 0.0
-        else:
-            sp, pc, cp, ps, ep = station_keys
-            label = get_station_label(curve.curve_type, sta, sp, pc, cp, ps, ep)
-            offset = calculate_station_offset(sta, sp, pc, cp, ps, bp_sta)
-
-        # 이정량
-        if curve.curve_type == "cubic":
-            shiftx = cal_spiral_shiftx(
-                sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
-                offset, curve.params[2], curve.params[3],
-            )
-            shifty = cal_spiral_shifty(
-                sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
-                shiftx, curve.params[2], curve.params[0],
-            )
-        else:
-            shiftx = shifty = 0.0
-
-        # ✅ 기하 컨텍스트 생성 후 좌표 계산
-        geometry = build_geometry_from_curve(
-            curve, bp_xy=prev_xy, shiftx=shiftx, shifty=shifty
-        )
-        coord_result = coord_calc.compute(sta, offset, geometry)
-        coord = coord_result.as_tuple()
-
-        # ✅ 접선 필드 계산
-        fields = tangent_calc.compute(sta, offset)
-
-        rows.append(StationRow(
-            label=label, sta=sta, station_offset=offset, coord=coord,
-            shiftx=shiftx, shifty=shifty,
-            ta=fields.ta, chord_length=fields.chord,
-            q=fields.q, t=fields.t, azimuth=fields.azimuth,
-        ))
-
-    return rows
 
 
 def _compute_end_sta(curve: CurveParams, base_sta: float, ec_xy, ep_xy, is_last_ip) -> float:
