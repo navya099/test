@@ -16,12 +16,13 @@ from __future__ import annotations
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from tangent_calculator import Zone, _classify_zone
+import numpy as np
 
-if TYPE_CHECKING:
-    from 본선선형계산v10 import CurveParams
+from src.railway_alignment.core.math_util import calculate_distance
+from src.railway_alignment.core.tangent_calculator import Zone, _classify_zone
+
 
 
 # ============================================================
@@ -274,3 +275,39 @@ def build_geometry_from_curve(
         shiftx=shiftx,
         shifty=shifty,
     )
+
+def get_station_at_coordinates(
+    p: tuple[float, float], polycurve: list[tuple[float, float]],
+    station_groups,
+) -> Optional[float]:
+    """좌표 → 측점"""
+    curve_math = [(y, x) for x, y in polycurve]
+    apoint, index = perpendicular_point_on_curve(p, curve_math)
+    if apoint is None:
+        return None
+
+    dest_x, dest_y = curve_math[index]
+    dest_x_i, dest_y_i = int(dest_x), int(dest_y)
+
+    for group in station_groups:
+        for subgroup in group:
+            for row in subgroup:
+                cy, cx = row.coord
+                if int(cx) == dest_x_i and int(cy) == dest_y_i:
+                    return row.sta + calculate_distance(cx, cy, apoint[0], apoint[1])
+    return None
+
+def perpendicular_point_on_curve(p, curve):
+    px, py = p
+    for i in range(len(curve) - 1):
+        x1, y1 = curve[i]
+        x2, y2 = curve[i + 1]
+        line_vec = np.array([x2 - x1, y2 - y1])
+        point_vec = np.array([px - x1, py - y1])
+        line_len_sq = float(np.dot(line_vec, line_vec))
+        if line_len_sq == 0:
+            continue
+        t = float(np.dot(point_vec, line_vec)) / line_len_sq
+        if 0 <= t <= 1:
+            return (x1 + t * line_vec[0], y1 + t * line_vec[1]), i
+    return None, None

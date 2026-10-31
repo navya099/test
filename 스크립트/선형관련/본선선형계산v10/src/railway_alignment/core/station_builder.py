@@ -17,18 +17,18 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from coordinate_calculator import (
+from src.railway_alignment.core.coordinate_calculator import (
     CoordinateCalculator,
     build_geometry_from_curve,
     create_coordinate_calculator,
 )
-from tangent_calculator import (
+from src.railway_alignment.core.math_util import get_station_label, calculate_station_offset
+from src.railway_alignment.core.models import StationRow, CurveParams
+
+from src.railway_alignment.core.tangent_calculator import (
     TangentCalculator,
     create_tangent_calculator,
 )
-
-if TYPE_CHECKING:
-    from 본선선형계산v10 import CurveParams, StationRow
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,8 @@ class StationListBuilder(ABC):
 
     def _base_stations(self) -> list[int]:
         """unit 간격 정수 측점"""
-        from 본선선형계산v10 import generate_integers
 
+        from src.railway_alignment.core.linestring import generate_integers
         return generate_integers(
             int(round(self.bp_sta)),
             int(round(self.end_sta)),
@@ -216,7 +216,6 @@ class StationRowFactory:
         label: str,
         shift: ShiftResult,
     ) -> "StationRow":
-        from 본선선형계산v10 import StationRow
 
         geometry = build_geometry_from_curve(
             self.curve,
@@ -264,7 +263,6 @@ def build_station_group(
     Returns:
         StationRow 리스트
     """
-    from 본선선형계산v10 import calculate_station_offset, get_station_label
 
     # 1) 계산기 준비
     station_builder = create_station_list_builder(curve, bp_sta, end_sta, unit)

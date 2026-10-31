@@ -19,8 +19,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from 본선선형계산v10 import CurveParams
+from src.railway_alignment.core.models import CurveParams
 
 
 # ============================================================

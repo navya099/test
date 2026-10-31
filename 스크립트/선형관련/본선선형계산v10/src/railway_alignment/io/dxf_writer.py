@@ -15,24 +15,16 @@
 from __future__ import annotations
 
 import logging
-import math
-import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
+from shapely.geometry.linestring  import LineString
 import ezdxf
 
-from 스크립트.선형관련.본선선형계산v10.math_util import degrees_to_dms2, calculate_destination_coordinates, format_distance, \
+from src.railway_alignment.core.constant_config import Config
+from src.railway_alignment.core.math_util import degrees_to_dms2, calculate_destination_coordinates, format_distance, \
     calculate_bearing
-from 스크립트.선형관련.본선선형계산v10.constant_config import Config
-
-if TYPE_CHECKING:
-    from ezdxf.document import Drawing
-    from ezdxf.layouts import Modelspace
-    from shapely.geometry import LineString
-
-    from 본선선형계산v10 import CurveParams, StationRow
-
+from src.railway_alignment.core.models import StationRow, CurveParams
+from src.railway_alignment.io.civil3d_wirter import dxf_save_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +50,7 @@ class CoordTransform:
         return [(y, x) for x, y in coords]
 
     @staticmethod
-    def linestring_to_math(linestring: "LineString") -> list[tuple[float, float]]:
+    def linestring_to_math(linestring: LineString) -> list[tuple[float, float]]:
         return [(y, x) for x, y in linestring.coords]
 
 
@@ -417,7 +409,7 @@ def create_dxf(
     coordinates: list[tuple[float, float]],
     linestring: "LineString",
     curves: list["CurveParams"],
-    station_groups: list[list[list["StationRow"]]],
+    station_groups: list[list[list[StationRow]]],
     unit: int,
     filename: str = Config.DXF_FILENAME,
     scale: int = Config.DEFAULT_SCALE,
@@ -441,23 +433,3 @@ def create_dxf(
         raise IOError(f"DXF 저장 실패: {filename}")
 
     logger.info("DXF 저장 완료: %s", filename)
-
-def dxf_save_with_retry(doc, filename: str, max_retries: int = None, delay: int = None) -> bool:
-    """DXF 저장 재시도"""
-    max_retries = max_retries or Config.SAVE_MAX_RETRIES
-
-    delay = delay or Config.SAVE_RETRY_DELAY
-    out_path = Config.ensure_output_dir() / filename
-    for attempt in range(max_retries):
-        try:
-            doc.saveas(str(out_path))
-            logger.info("DXF saved: %s", out_path)
-            return True
-        except PermissionError:
-            logger.warning(
-                "Attempt %d/%d: permission denied (%s). Retrying in %ds...",
-                attempt + 1, max_retries, out_path.name, delay,
-            )
-            time.sleep(delay)
-    logger.error("Failed to save DXF after %d attempts: %s", max_retries, out_path)
-    return False

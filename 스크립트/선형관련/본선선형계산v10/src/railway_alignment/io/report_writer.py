@@ -15,15 +15,15 @@ import math
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from src.railway_alignment.core.constant_config import Config
+from src.railway_alignment.core.math_util import format_distance, degrees_to_dms
+from src.railway_alignment.core.models import CurveParams, StationRow
+
 logger = logging.getLogger(__name__)
-import time
-from 스크립트.선형관련.본선선형계산v10.math_util import format_distance
-from 스크립트.선형관련.본선선형계산v10.constant_config import Config
 
 # ============================================================
 # 공통 셀 유틸
@@ -105,7 +105,6 @@ class BaseSheetWriter(ABC):
         h.write("G6", "3차포물선" if c.curve_type == "cubic" else "단곡선")
         h.write("E6", f"({c.direction})")
 
-        from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import degrees_to_dms
         h.write("A5", f"방위각 1  = {degrees_to_dms(c.h1)}")
         h.write("E5", f"방위각 2  = {degrees_to_dms(c.h2)}")
         h.write("A6", f"교각(IA)  = {degrees_to_dms(c.ia_degree)}")
@@ -182,8 +181,6 @@ class CubicSheetWriter(BaseSheetWriter):
         h.write("F10", f"SL  = {p[13]:.3f}")
 
         # 각도
-
-        from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import degrees_to_dms
         h.write("D13", f"THITA = {degrees_to_dms(math.degrees(c.theta_pc))}")
         h.write("A13", f"B  = {degrees_to_dms(math.degrees(p[16]))}")
         h.write("A14", f"C  = {degrees_to_dms(math.degrees(p[15]))}")
@@ -244,8 +241,8 @@ class ReportWorkbook:
 # 편의 함수 (기존 write_report 대체)
 # ============================================================
 def write_report(
-    curves: list["CurveParams"],
-    station_groups: list[list[list["StationRow"]]],
+    curves: list[CurveParams],
+    station_groups: list[list[list[StationRow]]],
     filename: Path | None = None,
 ) -> None:
     """IP별 선형계산서 Excel 출력
