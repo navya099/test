@@ -26,7 +26,10 @@ def validate_points(points, name):
     for i in range(1, len(result)):
         if result[i][0] <= result[i - 1][0]:
             raise ValueError(
-                f"{name}: 측점은 중복 없이 오름차순이어야 합니다."
+                f"{name}: 측점은 중복 없이 오름차순이어야 합니다.",
+                f"{name}: {i}번째 점 오류\n"
+                f"이전 측점 = {result[i - 1][0]}\n"
+                f"현재 측점 = {result[i][0]}"
             )
 
     return result
