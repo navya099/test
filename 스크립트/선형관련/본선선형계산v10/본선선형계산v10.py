@@ -37,6 +37,12 @@ from tangent_calculator import (
     TangentFields,
     create_tangent_calculator,
 )
+from coordinate_calculator import (
+    CoordinateResult,
+    CurveGeometry,
+    build_geometry_from_curve,
+    create_coordinate_calculator,
+)
 
 # ============================================================
 # 로깅 설정
@@ -603,38 +609,6 @@ def get_station_label(
     return ""
 
 
-def calculate_coordinates(
-    sta, sp, pc, cp, ps,
-    h1, h2, sp_pc_bearing,
-    offset, w13, shiftx, shifty,
-    bp_x, bp_y, sp_x, sp_y, center_x, center_y, ps_x, ps_y,
-) -> tuple[float, float]:
-    """선형 좌표 계산 (측점 위치별 분기)"""
-    s, sp_i, pc_i, cp_i, ps_i = map(int, (sta, sp, pc, cp, ps))
-
-    if s <= sp_i:  # BP~SP
-        x = math.cos(math.radians(h1)) * offset + bp_x
-        y = math.sin(math.radians(h1)) * offset + bp_y
-    elif s < pc_i:  # SP~PC
-        x = (math.cos(math.radians(h1 + 90)) * shifty
-             + math.cos(math.radians(h1)) * shiftx + sp_x)
-        y = (math.sin(math.radians(h1 + 90)) * shifty
-             + math.sin(math.radians(h1)) * shiftx + sp_y)
-    elif s <= cp_i:  # PC~CP
-        angle = sp_pc_bearing - 90 + (180 * offset) / math.pi / w13
-        x = math.cos(math.radians(angle)) * w13 + center_x
-        y = math.sin(math.radians(angle)) * w13 + center_y
-    elif s <= ps_i:  # CP~PS
-        x = (math.cos(math.radians(h2 + 90)) * shifty
-             + math.cos(math.radians(h2 + 180)) * shiftx + ps_x)
-        y = (math.sin(math.radians(h2 + 90)) * shifty
-             + math.sin(math.radians(h2 + 180)) * shiftx + ps_y)
-    else:  # PS~EP
-        x = math.cos(math.radians(h2)) * offset + ps_x
-        y = math.sin(math.radians(h2)) * offset + ps_y
-    return x, y
-
-
 # ============================================================
 # 메인 선형 계산
 # ============================================================
@@ -786,6 +760,7 @@ def _build_station_group(
 
     # ✅ 계산기 인스턴스 생성 (측점 루프 밖에서 1회)
     tangent_calc = create_tangent_calculator(curve)
+    coord_calc = create_coordinate_calculator(curve)
 
     if curve.curve_type == "simplecurve":
         bc_sta, ec_sta = curve.bc_sta, curve.ec_sta
@@ -835,23 +810,21 @@ def _build_station_group(
         else:
             shiftx = shifty = 0.0
 
-        coord = calculate_coordinates(
-            sta,
-            station_keys[0], station_keys[1], station_keys[2], station_keys[3],
-            curve.h1, curve.h2, curve.sp_pc_bearing,
-            offset, curve.params[2], shiftx, shifty,
-            prev_xy[0], prev_xy[1],
-            (curve.bc_xy or curve.sp_xy)[0], (curve.bc_xy or curve.sp_xy)[1],
-            curve.center_xy[0], curve.center_xy[1],
-            (curve.ec_xy or curve.ps_xy)[0], (curve.ec_xy or curve.ps_xy)[1],
+        # ✅ 기하 컨텍스트 생성 후 좌표 계산
+        geometry = build_geometry_from_curve(
+            curve, bp_xy=prev_xy, shiftx=shiftx, shifty=shifty
         )
+        coord_result = coord_calc.compute(sta, offset, geometry)
+        coord = coord_result.as_tuple()
+
+        # ✅ 접선 필드 계산
         fields = tangent_calc.compute(sta, offset)
-        ta, azimuth, q, t, chord = fields.ta, fields.azimuth, fields.q, fields.t, fields.chord
 
         rows.append(StationRow(
             label=label, sta=sta, station_offset=offset, coord=coord,
             shiftx=shiftx, shifty=shifty,
-            ta=ta, chord_length=chord, q=q, t=t, azimuth=azimuth,
+            ta=fields.ta, chord_length=fields.chord,
+            q=fields.q, t=fields.t, azimuth=fields.azimuth,
         ))
 
     return rows
@@ -1302,46 +1275,42 @@ def _create_xls_workbook(records, alignment_name, unit):
 # ============================================================
 # 좌표 ↔ 측점 조회
 # ============================================================
-def get_coord_from_station(curves: list[CurveParams], station_groups, sta: float):
-    """측점 → 좌표"""
+def get_coord_from_station(curves, station_groups, sta: float):
+    """측점 → 좌표 (계산기 사용)"""
     for i, curve in enumerate(curves):
         group = station_groups[i] if i < len(station_groups) else []
-        if not group:
+        if not group or not group[0]:
             continue
         flat = group[0]
-        if not flat:
-            continue
-        bp = flat[0].sta
-        ep = flat[-1].sta
-        if not (bp <= sta <= ep):
+        bp_sta, ep_sta = flat[0].sta, flat[-1].sta
+        if not (bp_sta <= sta <= ep_sta):
             continue
 
+        bp_xy = flat[0].coord  # 이전 IP 끝점 or BP
+
         if curve.curve_type == "simplecurve":
-            offset = calculate_station_offset(sta, curve.bc_sta, curve.bc_sta,
-                                              curve.ec_sta, curve.ec_sta, bp)
-            return calculate_coordinates(
-                sta, curve.bc_sta, curve.bc_sta, curve.ec_sta, curve.ec_sta,
-                curve.h1, curve.h2, curve.h1, offset, curve.params[2], 0, 0,
-                flat[0].coord[0], flat[0].coord[1],
-                curve.bc_xy[0], curve.bc_xy[1],
-                curve.center_xy[0], curve.center_xy[1],
-                curve.ec_xy[0], curve.ec_xy[1],
+            offset = calculate_station_offset(
+                sta, curve.bc_sta, curve.bc_sta,
+                curve.ec_sta, curve.ec_sta, bp_sta,
             )
-        offset = calculate_station_offset(sta, curve.sp_sta, curve.pc_sta,
-                                          curve.cp_sta, curve.ps_sta, bp)
-        shiftx = cal_spiral_shiftx(sta, curve.sp_sta, curve.pc_sta, curve.cp_sta,
-                                   curve.ps_sta, offset, curve.params[2], curve.params[3])
-        shifty = cal_spiral_shifty(sta, curve.sp_sta, curve.pc_sta, curve.cp_sta,
-                                   curve.ps_sta, shiftx, curve.params[2], curve.params[0])
-        return calculate_coordinates(
-            sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
-            curve.h1, curve.h2, curve.sp_pc_bearing, offset, curve.params[2],
-            shiftx, shifty,
-            flat[0].coord[0], flat[0].coord[1],
-            curve.sp_xy[0], curve.sp_xy[1],
-            curve.center_xy[0], curve.center_xy[1],
-            curve.ps_xy[0], curve.ps_xy[1],
-        )
+            shiftx = shifty = 0.0
+        else:
+            offset = calculate_station_offset(
+                sta, curve.sp_sta, curve.pc_sta,
+                curve.cp_sta, curve.ps_sta, bp_sta,
+            )
+            shiftx = cal_spiral_shiftx(
+                sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
+                offset, curve.params[2], curve.params[3],
+            )
+            shifty = cal_spiral_shifty(
+                sta, curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta,
+                shiftx, curve.params[2], curve.params[0],
+            )
+
+        geometry = build_geometry_from_curve(curve, bp_xy=bp_xy, shiftx=shiftx, shifty=shifty)
+        calc = create_coordinate_calculator(curve)
+        return calc.compute(sta, offset, geometry).as_tuple()
     return None
 
 
