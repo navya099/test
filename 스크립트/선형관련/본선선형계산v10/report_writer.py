@@ -22,6 +22,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 logger = logging.getLogger(__name__)
 import time
+from 스크립트.선형관련.본선선형계산v10.math_util import format_distance
+from 스크립트.선형관련.본선선형계산v10.constant_config import Config
 
 # ============================================================
 # 공통 셀 유틸
@@ -65,8 +67,8 @@ class StationTableWriter:
         for subgroup in station_groups:
             for row in subgroup:
                 sheet[f"A{row_idx}"] = row.label
-                from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import format_distance
-                from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import Config
+
+
                 sheet[f"B{row_idx}"] = format_distance(row.sta, Config.KM_PRECISION)
                 sheet[f"D{row_idx}"] = row.coord[0]
                 sheet[f"F{row_idx}"] = row.coord[1]
@@ -143,8 +145,6 @@ class SimpleCurveSheetWriter(BaseSheetWriter):
         h.write("F10", f"SL = {c.params[2]:.3f}")
 
         # IP 측점
-        from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import format_distance
-        from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import Config
         h.write("A11", f"IP 정측점 = {format_distance(c.ip_sta, Config.KM_PRECISION)}")
 
         # BC/EC 측점
@@ -190,8 +190,7 @@ class CubicSheetWriter(BaseSheetWriter):
         h.write("D14", f"원곡선교각  = {degrees_to_dms(math.degrees(p[14]))}")
 
         # IP 측점
-        from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import format_distance
-        from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import Config
+
         h.write("A15", f"IP 정측점  = {format_distance(c.ip_sta, Config.KM_PRECISION)}")
         h.write("D15", f"IP 역측점  = {format_distance(c.ip_sta, Config.KM_PRECISION)}")
 
@@ -224,7 +223,7 @@ class ReportWorkbook:
     """선형계산서 워크북 생성/저장"""
 
     def __init__(self, filename: Path | None = None):
-        from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import Config
+
         self.filename = filename or (Config.ensure_output_dir() / Config.REPORT_FILENAME)
         self.workbook = Workbook()
         if "Sheet" in self.workbook.sheetnames:
@@ -273,7 +272,6 @@ def write_report(
 # ============================================================
 def save_with_retry(workbook, filename: Path, max_retries: int = None, delay: int = None) -> bool:
     """Excel 저장 재시도 (GUI 블로킹 최소화)"""
-    from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import Config
     max_retries = max_retries or Config.SAVE_MAX_RETRIES
     delay = delay or Config.SAVE_RETRY_DELAY
     for attempt in range(max_retries):
@@ -289,25 +287,4 @@ def save_with_retry(workbook, filename: Path, max_retries: int = None, delay: in
             import time
             time.sleep(delay)
     logger.error("Failed to save after %d attempts: %s", max_retries, filename)
-    return False
-
-
-def dxf_save_with_retry(doc, filename: str, max_retries: int = None, delay: int = None) -> bool:
-    """DXF 저장 재시도"""
-    max_retries = max_retries or Config.SAVE_MAX_RETRIES
-    from 스크립트.선형관련.본선선형계산v10.본선선형계산v10 import Config
-    delay = delay or Config.SAVE_RETRY_DELAY
-    out_path = Config.ensure_output_dir() / filename
-    for attempt in range(max_retries):
-        try:
-            doc.saveas(str(out_path))
-            logger.info("DXF saved: %s", out_path)
-            return True
-        except PermissionError:
-            logger.warning(
-                "Attempt %d/%d: permission denied (%s). Retrying in %ds...",
-                attempt + 1, max_retries, out_path.name, delay,
-            )
-            time.sleep(delay)
-    logger.error("Failed to save DXF after %d attempts: %s", max_retries, out_path)
     return False

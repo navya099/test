@@ -44,7 +44,10 @@ from coordinate_calculator import (
     create_coordinate_calculator,
 )
 from station_builder import build_station_group
-from report_writer import write_report, dxf_save_with_retry, save_with_retry
+from report_writer import write_report, save_with_retry
+from dxf_writer import create_dxf
+from 스크립트.선형관련.본선선형계산v10.constant_config import Config, M_VALUE_TABLE
+from 스크립트.선형관련.본선선형계산v10.math_util import calculate_bearing_n, calculate_distance, format_distance
 
 # ============================================================
 # 로깅 설정
@@ -54,65 +57,6 @@ logging.basicConfig(
     format="[%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# 상수 정의
-# ============================================================
-class Config:
-    """프로그램 전역 상수"""
-
-    # 파일 경로 (사용자 환경에 맞게 변경 가능)
-    OUTPUT_DIR = Path(tempfile.gettempdir()) / "railway_alignment"
-    DXF_FILENAME = "본선평면선형.dxf"
-    REPORT_FILENAME = "alignmentreport.xlsx"
-    CIVIL3D_FILENAME = "AlignmentExample.xlsx"
-    TOTAL_COORD_FILENAME = "total_coord.txt"
-    INCREMENTAL_REPORT_FILENAME = "Incremental_Station_Report"
-
-    # 기본값
-    DEFAULT_UNIT = 20
-    DEFAULT_START_STA = 0.0
-    DEFAULT_DESIGN_SPEED = 250
-    DEFAULT_SCALE = 1000
-    DEFAULT_MAX_V = 250
-
-    # 계산 상수
-    CANT_COEFFICIENT = 11.8       # 캔트 계산 계수
-    M_FALLBACK_COEFFICIENT = 7.31  # M값 폴백 계수
-    M_ROUNDING = 50
-    V_ROUNDING = 10
-    Z_ROUNDING = 10
-    COORD_PRECISION = 4
-    KM_PRECISION = 2
-    DIMENSION_PRECISION = 3
-
-    # 파일 저장 재시도
-    SAVE_MAX_RETRIES = 100
-    SAVE_RETRY_DELAY = 1
-
-    # DXF 색상
-    COLOR_RED = 1
-    COLOR_WHITE = 7
-    COLOR_BYLAYER = 9
-
-    @classmethod
-    def ensure_output_dir(cls) -> Path:
-        cls.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        return cls.OUTPUT_DIR
-
-
-# 설계속도별 M값 테이블
-M_VALUE_TABLE: dict[int, float] = {
-    70: 600,
-    120: 900,
-    150: 1100,
-    200: 1450,
-    250: 1850,
-    300: 2200,
-    350: 2550,
-    400: 2950,
-}
 
 
 # ============================================================
@@ -204,29 +148,9 @@ class AppContext:
     polycurve: list[tuple[float, float]] = field(default_factory=list)
 
 
-# ============================================================
-# 기하 계산 유틸
-# ============================================================
-def calculate_bearing(x1: float, y1: float, x2: float, y2: float) -> float:
-    """방위각 (수학각, -180~180)"""
-    return math.degrees(math.atan2(y2 - y1, x2 - x1))
 
 
-def calculate_bearing_n(x1: float, y1: float, x2: float, y2: float) -> float:
-    """방위각 (북 기준 0~360)"""
-    bearing = calculate_bearing(x1, y1, x2, y2)
-    return bearing + 360 if bearing <= 0 else bearing
 
-
-def calculate_distance(x1: float, y1: float, x2: float, y2: float) -> float:
-    return math.hypot(x2 - x1, y2 - y1)
-
-
-def calculate_destination_coordinates(
-    x1: float, y1: float, bearing: float, distance: float
-) -> tuple[float, float]:
-    angle = math.radians(bearing)
-    return x1 + distance * math.cos(angle), y1 + distance * math.sin(angle)
 
 
 def calculate_inner_angle(v1: tuple, v2: tuple) -> float:
@@ -278,24 +202,9 @@ def degrees_to_dms(degrees: float) -> str:
     return f"{sign}{deg}도  {minutes}분  {seconds:.2f}초"
 
 
-def degrees_to_dms2(degrees: float) -> str:
-    """도분초 문자열 (기호 표기)"""
-    sign = "-" if degrees < 0 else ""
-    d = abs(degrees)
-    deg = int(d)
-    minutes = int((d - deg) * 60)
-    seconds = (d - deg - minutes / 60) * 3600
-    return f"{sign}{deg}° {minutes}' {seconds:.2f}\""
 
 
-def format_distance(number: float, decimal_places: int = 2) -> str:
-    """km+m 형식"""
-    negative = number < 0
-    num = abs(number)
-    km = int(num) // 1000
-    remainder = num % 1000
-    formatted = f"{km:d}km{remainder:0{4 + decimal_places}.{decimal_places}f}"
-    return f"-{formatted}" if negative else formatted
+
 
 
 def format_station(sta: float) -> str:
@@ -377,6 +286,7 @@ def get_cant_limits(v: float, track_type: str) -> tuple[int, int]:
 
 
 def calculate_v(cm: int, cd: int, radius: float, max_v: int) -> int:
+
     v = int(math.sqrt((cm + cd) * radius / Config.CANT_COEFFICIENT))
     return min(v, max_v)
 
@@ -732,165 +642,6 @@ def _compute_end_sta(curve: CurveParams, base_sta: float, ec_xy, ep_xy, is_last_
     return base_sta + calculate_distance(end_xy[0], end_xy[1], ep_xy[0], ep_xy[1])
 
 
-
-
-# ============================================================
-# DXF 출력
-# ============================================================
-def create_dxf(
-    coordinates: list[tuple[float, float]],
-    linestring: LineString,
-    curves: list[CurveParams],
-    station_groups: list[list[list[StationRow]]],
-    unit: int,
-    filename: str = Config.DXF_FILENAME,
-    scale: int = Config.DEFAULT_SCALE,
-) -> None:
-    """평면선형 DXF 출력"""
-    doc = ezdxf.new()
-    msp = doc.modelspace()
-
-    scale_factor = scale / 1000  # 1단위 변환
-
-    # 토목 → 수학 좌표
-    coords_math = [(y, x) for x, y in coordinates]
-    ls_math = [(y, x) for x, y in linestring.coords]
-
-    polyline = msp.add_lwpolyline(coords_math)
-    ippolyline = msp.add_lwpolyline(ls_math)
-
-    polyline.dxf.layer = "FL"
-    ippolyline.dxf.layer = "IP라인"
-    polyline.dxf.color = Config.COLOR_RED
-    ippolyline.dxf.color = Config.COLOR_BYLAYER
-    polyline.dxf.const_width = scale_factor
-
-    text_height = 3 * scale_factor
-
-    # ---------- IP 제원표 블록 ----------
-    for i, curve in enumerate(curves):
-        _add_ip_block(doc, msp, curve, i, scale_factor, text_height)
-
-    # ---------- 측점 심볼 ----------
-    for i, group in enumerate(station_groups):
-        for subgroup in group:
-            # pop(0) 대신 슬라이싱으로 원본 보존
-            rows = subgroup[1:] if i != 0 else subgroup
-            for row in rows:
-                _add_station_symbol(msp, row, scale_factor, text_height, unit, curve=curves[i])
-
-    # ---------- IP 교점선 ----------
-    for i in range(len(ls_math) - 2):
-        x1, y1 = ls_math[i]
-        x2, y2 = ls_math[i + 1]
-        x3, y3 = ls_math[i + 2]
-
-        v1 = calculate_bearing(x1, y1, x2, y2)
-        v2 = calculate_bearing(x2, y2, x3, y3)
-
-        msp.add_line(
-            calculate_destination_coordinates(x2, y2, v1 + 180, 7 * scale_factor),
-            calculate_destination_coordinates(x2, y2, v1, 3 * scale_factor),
-            dxfattribs={"layer": "IP교점선", "color": Config.COLOR_RED},
-        )
-        start_pt = (x2, y2)
-        msp.add_line(
-            start_pt,
-            calculate_destination_coordinates(x2, y2, v2, 7 * scale_factor),
-            dxfattribs={"layer": "IP교점선", "color": Config.COLOR_RED},
-        )
-        msp.add_text(
-            f"IP NO.{i + 1}",
-            dxfattribs={
-                "layer": "IP문자", "insert": start_pt,
-                "height": text_height, "color": Config.COLOR_RED, "rotation": 0,
-            },
-        )
-
-    dxf_save_with_retry(doc, filename)
-
-
-def _add_ip_block(doc, msp, curve: CurveParams, idx: int, scale: float, text_height: float):
-    """IP 제원표 블록 삽입"""
-    ip_no = f"IP  NO. {curve.ip_no}"
-    ia = f"IA = {degrees_to_dms2(curve.ia_degree)}"
-    radius = f"R = {curve.radius:.2f}"
-    tl_text = f"TL = {curve.tl:.2f}"
-    cl_text = f"CL = {curve.cl:.2f}"
-    x_text = f"X = {curve.ip_xy[0]:.4f}"
-    y_text = f"Y = {curve.ip_xy[1]:.4f}"
-
-    labels = [ip_no, ia, radius, tl_text, cl_text, x_text, y_text]
-    offsets = [0, -10, -20, -30, -40, -50, -60]
-
-    block_name = f"IP_Block_{idx}"
-    block = doc.blocks.new(name=block_name)
-    for off, label in zip(offsets, labels):
-        coord = (curve.ip_xy[1], curve.ip_xy[0] + off * scale)
-        block.add_text(label, dxfattribs={
-            "insert": coord, "height": text_height,
-            "color": Config.COLOR_WHITE, "layer": "IP제원표",
-        })
-    msp.add_blockref(block_name, insert=(0, 0))
-
-
-def _add_station_symbol(msp, row: StationRow, scale: float, text_height: float,
-                        unit: int, curve: CurveParams):
-    """측점별 심볼/문자/선 출력"""
-    x, y = row.coord
-    coord_math = (y, x)
-    ta_math = (450 - row.ta) % 360
-
-    if row.sta % 1000 == 0:
-        msp.add_circle(coord_math, radius=2 * scale, dxfattribs={"layer": "km심볼", "color": Config.COLOR_RED})
-        msp.add_circle(coord_math, radius=1.5 * scale, dxfattribs={"layer": "200심볼", "color": Config.COLOR_RED})
-        msp.add_text(
-            f"{int(row.sta) // 1000}km",
-            dxfattribs={"layer": "km문자", "insert": coord_math, "height": text_height,
-                        "color": Config.COLOR_RED, "rotation": ta_math},
-        )
-        _add_station_tick(msp, x, y, ta_math, scale)
-    elif row.sta % 200 == 0:
-        msp.add_circle(coord_math, radius=1.5 * scale, dxfattribs={"layer": "200심볼", "color": Config.COLOR_RED})
-        msp.add_text(
-            str(int(row.sta) % 1000),
-            dxfattribs={"layer": "200문자", "insert": coord_math, "height": text_height,
-                        "color": Config.COLOR_RED, "rotation": ta_math},
-        )
-        _add_station_tick(msp, x, y, ta_math, scale)
-    elif row.sta % unit == 0:
-        _add_station_tick(msp, x, y, ta_math, scale)
-    else:
-        # 완화곡선 인출선
-        end_point = calculate_destination_coordinates(
-            y, x, ta_math + 90 if curve.direction == "LEFT CURVE" else ta_math - 90, 50 * scale
-        )
-        msp.add_line(coord_math, end_point, dxfattribs={"layer": "곡선인출선", "color": Config.COLOR_RED})
-
-        text_rotation = ta_math - 90
-        reverse_rot = (ta_math + 90 + 180) if curve.direction == "LEFT CURVE" else (ta_math - 90 + 180)
-
-        if row.sta / 1000 < 10:
-            text_pos = calculate_destination_coordinates(y, x, reverse_rot, -20 * scale)
-        elif row.sta / 1000 < 100:
-            text_pos = calculate_destination_coordinates(y, x, reverse_rot, -16 * scale)
-        else:
-            text_pos = calculate_destination_coordinates(y, x, reverse_rot, -12 * scale)
-
-        insert_pos = end_point if curve.direction == "LEFT CURVE" else text_pos
-        msp.add_text(
-            f"{row.label}={format_distance(row.sta, Config.KM_PRECISION)}",
-            dxfattribs={"layer": "곡선제원문자", "insert": insert_pos,
-                        "height": text_height, "color": Config.COLOR_RED, "rotation": text_rotation},
-        )
-
-
-def _add_station_tick(msp, x: float, y: float, ta_math: float, scale: float):
-    start = calculate_destination_coordinates(y, x, ta_math + 90, 1.5 * scale)
-    end = calculate_destination_coordinates(y, x, ta_math + 90, -1.5 * scale)
-    msp.add_line(start, end, dxfattribs={"layer": "보조측점", "color": Config.COLOR_RED})
-
-
 # ============================================================
 # Civil3D / 좌표 저장
 # ============================================================
@@ -1230,10 +981,15 @@ class AlignmentApp:
             if not self.context.curves:
                 raise ValueError("먼저 선형 계산을 실행하세요.")
             unit, *_ = self._read_inputs()
+            # 변경 후 (동일하지만 station_groups 타입이 명확해짐)
             create_dxf(
-                self.context.polycurve, self.context.linestring,
-                self.context.curves, self.context.station_groups,
-                unit=unit, scale=scale,
+                coordinates=self.context.polycurve,
+                linestring=self.context.linestring,
+                curves=self.context.curves,
+                station_groups=self.context.station_groups,
+                unit=unit,
+                filename=Config.DXF_FILENAME,
+                scale=scale,
             )
             messagebox.showinfo("Success", "도면이 생성되었습니다.")
         except Exception as e:
