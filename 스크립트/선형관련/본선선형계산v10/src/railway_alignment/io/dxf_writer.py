@@ -347,8 +347,11 @@ class StationSymbolWriter:
             dxfattribs={"layer": lyr.name, "color": lyr.color},
         )
 
-    # ---------- 완화곡선 인출선 ----------
     def _write_curve_leader(self, row: StationRow, curve: CurveParams) -> None:
+        # ✅ 라벨 없으면 인출선도, 문자도 그리지 않음
+        if not row.label:
+            return
+
         x, y = row.coord
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
@@ -357,6 +360,7 @@ class StationSymbolWriter:
         leader_lyr = self.style.layer_curve_leader
         text_lyr = self.style.layer_curve_text
 
+        # 인출선
         leader_bearing = (
             ta_math + 90 if curve.direction == "LEFT CURVE" else ta_math - 90
         )
@@ -369,19 +373,17 @@ class StationSymbolWriter:
             dxfattribs={"layer": leader_lyr.name, "color": leader_lyr.color},
         )
 
-        # ✅ 라벨 텍스트 결정
-        if not row.label:
-            return  # 라벨 없으면 문자 생략
-
+        # ✅ 문자 결정
         if cfg.curve_label_mode == "label_only":
-            text = row.label  # "SP" / "PC" / "CP" / "PS" 만
+            text = row.label  # "SP"/"PC"/"CP"/"PS"
         else:  # full
-            text = f"{row.label}={format_distance(row.sta, cfg.km_precision)}"
+            text = f"{row.label}={format_distance(row.sta, cfg.km_precision)}"  # ✅ cfg.km_precision
+
         text_rotation = ta_math - 90
         insert_pos = self._text_insert_point(row, curve, ta_math, end_point)
 
         self.msp.add_text(
-            f"{row.label}={format_distance(row.sta, Config.KM_PRECISION)}",
+            text,  # ✅ text 사용
             dxfattribs={
                 "layer": text_lyr.name,
                 "insert": insert_pos,
@@ -390,7 +392,6 @@ class StationSymbolWriter:
                 "rotation": text_rotation,
             },
         )
-
     def _text_insert_point(
         self,
         row: StationRow,
