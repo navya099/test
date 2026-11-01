@@ -66,6 +66,21 @@ class DxfStyle:
     config: DXFConfig
     scale_factor: float
 
+    @property
+    def layer_km_symbol(self): return self.config.layer_km_symbol
+
+    @property
+    def layer_sub_symbol(self): return self.config.layer_sub_symbol
+
+    @property
+    def layer_km_text(self): return self.config.layer_km_text
+
+    @property
+    def layer_sub_text(self): return self.config.layer_sub_text
+
+    @property
+    def layer_aux(self): return self.config.layer_aux_station
+
     @classmethod
     def from_scale(cls, scale: int, config: DXFConfig | None = None) -> "DxfStyle":
         return cls(
@@ -103,25 +118,6 @@ class DxfStyle:
     def layer_ip_junction(self) -> LayerStyle:
         return self.config.layer_ip_intersect
 
-    @property
-    def layer_km_symbol(self) -> LayerStyle:
-        return self.config.layer_km_symbol
-
-    @property
-    def layer_km_text(self) -> LayerStyle:
-        return self.config.layer_km_text
-
-    @property
-    def layer_200_symbol(self) -> LayerStyle:
-        return self.config.layer_200_symbol
-
-    @property
-    def layer_200_text(self) -> LayerStyle:
-        return self.config.layer_200_text
-
-    @property
-    def layer_aux(self) -> LayerStyle:
-        return self.config.layer_aux_station
 
     @property
     def layer_curve_leader(self) -> LayerStyle:
@@ -240,14 +236,9 @@ class StationSymbolWriter:
         self.unit = unit
         self.cfg = style.config
 
-    def write(
-        self,
-        station_groups: list[list[list[StationRow]]],
-        curves: list[CurveParams],
-    ) -> None:
+    def write(self, station_groups, curves):
         for i, group in enumerate(station_groups):
             if i >= len(curves):
-                logger.warning("IP %d: CurveParams 없음, 스킵", i)
                 continue
             curve = curves[i]
             for subgroup in group:
@@ -257,80 +248,92 @@ class StationSymbolWriter:
 
     def _dispatch(self, row: StationRow, curve: CurveParams) -> None:
         cfg = self.cfg
+        sta_int = int(row.sta)
 
-        if cfg.km_interval > 0 and row.sta % cfg.km_interval == 0:
-            self._write_km_marker(row)
-        elif (cfg.show_200_text and cfg.sym200_interval > 0
-              and row.sta % cfg.sym200_interval == 0):
-            self._write_200_marker(row)
-        elif self.unit > 0 and row.sta % self.unit == 0:
+        # 1순위: main_tick (큰 원 + km 문자)
+        if cfg.main_tick > 0 and sta_int % cfg.main_tick == 0:
+            self._write_main_symbol(row)
+            return
+
+        # 2순위: sub_symbol (작은 원 + m 숫자)
+        #   1000m 배수 지점은 제외 (main_tick 영역)
+        if (cfg.sub_symbol > 0
+                and sta_int % cfg.sub_symbol == 0
+                and sta_int % 1000 != 0):
+            self._write_sub_symbol(row)
+            return
+
+        # 3순위: sub_tick (선만)
+        if cfg.sub_tick > 0 and sta_int % cfg.sub_tick == 0:
             self._write_aux_tick(row)
-        else:
-            if cfg.show_curve_label:
-                self._write_curve_leader(row, curve)
+            return
 
-    # ---------- km 심볼 ----------
-    def _write_km_marker(self, row: StationRow) -> None:
+        # 4순위: 곡선 제원 문자
+        if cfg.show_curve_label:
+            self._write_curve_leader(row, curve)
+
+    def _write_main_symbol(self, row: StationRow) -> None:
         x, y = row.coord
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
         cfg = self.cfg
 
-        km_lyr = self.style.layer_km_symbol
-        s200_lyr = self.style.layer_200_symbol
-        km_text_lyr = self.style.layer_km_text
-
-        if self.cfg.show_km_text:
-            self.msp.add_circle(
-                coord_math,
-                radius=cfg.km_symbol_radius * self.style.scale_factor,
-                dxfattribs={"layer": km_lyr.name, "color": km_lyr.color},
-            )
-            self.msp.add_circle(
-                coord_math,
-                radius=cfg.sym200_radius * self.style.scale_factor,
-                dxfattribs={"layer": s200_lyr.name, "color": s200_lyr.color},
-            )
+        # 큰 원
+        self.msp.add_circle(
+            coord_math,
+            radius=cfg.km_symbol_radius * self.style.scale_factor,
+            dxfattribs={"layer": self.style.layer_km_symbol.name,
+                        "color": self.style.layer_km_symbol.color},
+        )
+        # 안쪽 원
+        self.msp.add_circle(
+            coord_math,
+            radius=cfg.sub_symbol_radius * self.style.scale_factor,
+            dxfattribs={"layer": self.style.layer_sub_symbol.name,
+                        "color": self.style.layer_sub_symbol.color},
+        )
+        # km 문자
+        if cfg.show_km_text:
+            km_value = int(row.sta) // 1000
             self.msp.add_text(
-                f"{int(row.sta) // cfg.km_interval}km",
+                f"{km_value}km",
                 dxfattribs={
-                    "layer": km_text_lyr.name,
+                    "layer": self.style.layer_km_text.name,
                     "insert": coord_math,
                     "height": self.style.text_height,
-                    "color": km_text_lyr.color,
+                    "color": self.style.layer_km_text.color,
                     "rotation": ta_math,
                 },
             )
-        self._write_aux_tick(row)
 
-    # ---------- 200 심볼 ----------
-    def _write_200_marker(self, row: StationRow) -> None:
+    def _write_sub_symbol(self, row: StationRow) -> None:
         x, y = row.coord
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
         cfg = self.cfg
 
-        s200_lyr = self.style.layer_200_symbol
-        s200_text_lyr = self.style.layer_200_text
-
+        # 작은 원
         self.msp.add_circle(
             coord_math,
-            radius=cfg.sym200_radius * self.style.scale_factor,
-            dxfattribs={"layer": s200_lyr.name, "color": s200_lyr.color},
+            radius=cfg.sub_symbol_radius * self.style.scale_factor,
+            dxfattribs={"layer": self.style.layer_sub_symbol.name,
+                        "color": self.style.layer_sub_symbol.color},
         )
-        self.msp.add_text(
-            str(int(row.sta) % cfg.km_interval),
-            dxfattribs={
-                "layer": s200_text_lyr.name,
-                "insert": coord_math,
-                "height": self.style.text_height,
-                "color": s200_text_lyr.color,
-                "rotation": ta_math,
-            },
-        )
-        self._write_aux_tick(row)
 
-    # ---------- 보조측점선 ----------
+        # m 숫자 문자
+        if cfg.show_sub_text:
+            meter = int(row.sta) % 1000
+            self.msp.add_text(
+                str(meter),
+                dxfattribs={
+                    "layer": self.style.layer_sub_text.name,
+                    "insert": coord_math,
+                    "height": self.style.text_height,
+                    "color": self.style.layer_sub_text.color,
+                    "rotation": ta_math,
+                },
+            )
+
     def _write_aux_tick(self, row: StationRow) -> None:
         x, y = row.coord
         ta_math = self._ta_math(row.ta)
@@ -490,9 +493,9 @@ class DxfDocument:
             self.config.layer_ip_text,
             self.config.layer_ip_table,
             self.config.layer_km_symbol,
-            self.config.layer_200_symbol,
+            self.config.layer_sub_symbol,
             self.config.layer_km_text,
-            self.config.layer_200_text,
+            self.config.layer_sub_text,
             self.config.layer_aux_station,
             self.config.layer_curve_leader,
             self.config.layer_curve_text,

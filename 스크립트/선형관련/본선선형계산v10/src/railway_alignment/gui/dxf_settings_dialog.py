@@ -37,28 +37,27 @@ _LAYER_FIELDS: list[tuple[str, str]] = [
     ("layer_ip_text",      "IP 문자"),
     ("layer_ip_table",     "IP 제원표"),
     ("layer_km_symbol",    "km 심볼"),
-    ("layer_200_symbol",   "200m 심볼"),
+    ("layer_sub_symbol",   "200m 심볼"),
     ("layer_km_text",      "km 문자"),
-    ("layer_200_text",     "200m 문자"),
+    ("layer_sub_text",     "200m 문자"),
     ("layer_aux_station",  "보조 측점"),
     ("layer_curve_leader", "곡선 인출선"),
     ("layer_curve_text",   "곡선 제원 문자"),
 ]
 
-_SIZE_FIELDS: list[tuple[str, str]] = [
-    ("text_height",          "문자 높이 (m)"),
-    ("km_symbol_radius",     "km 심볼 반경 (m)"),
-    ("sym200_radius",        "200m 심볼 반경 (m)"),
-    ("tick_half_length",     "측점 틱 반장 (m)"),
-    ("leader_length",        "곡선 인출선 길이 (m)"),
-    ("ip_intersect_short",   "IP 교점선 짧은 (m)"),
-    ("ip_intersect_long",    "IP 교점선 긴 (m)"),
+_SIZE_FIELDS = [
+    ("text_height",         "문자 높이 (m)"),
+    ("km_symbol_radius",    "주 심볼 반경 (m)"),
+    ("sub_symbol_radius",   "보조 심볼 반경 (m)"),
+    ("tick_half_length",    "틱 반장 (m)"),
+    ("leader_length",       "곡선 인출선 길이 (m)"),
+    ("ip_intersect_short",  "IP 교점선 짧은 (m)"),
+    ("ip_intersect_long",   "IP 교점선 긴 (m)"),
     ("ip_block_line_spacing","IP 제원표 행 간격 (m)"),
     ("curve_text_offset_far", "곡선 문자 오프셋 <10km (m)"),
     ("curve_text_offset_mid", "곡선 문자 오프셋 10~100km (m)"),
     ("curve_text_offset_near","곡선 문자 오프셋 100km+ (m)"),
 ]
-
 
 class DXFSettingsDialog(tk.Toplevel):
     """도면 설정 모달 다이얼로그.
@@ -255,12 +254,13 @@ class DXFSettingsDialog(tk.Toplevel):
         ttk.Radiobutton(opts, text="라벨만 (SP/PC/CP/PS)", value="label_only",
                         variable=self._var_label_mode).grid(row=1, column=2, sticky="w")
 
+        # show_sub_text, show_km_text 체크박스로 (기존 show_200_text → show_sub_text로 이름 변경)
         # ── 200m/km 문자 ──
-        self._var_show_200 = tk.BooleanVar(value=self._config.show_200_text)
+        self._var_show_sub  = tk.BooleanVar(value=self._config.show_sub_text)
         ttk.Checkbutton(opts, text="200m 문자 표시",
-                        variable=self._var_show_200).grid(row=2, column=0, sticky="w", padx=6, pady=2)
+                        variable=self._var_show_sub).grid(row=2, column=0, sticky="w", padx=6, pady=2)
 
-        self._var_show_km = tk.BooleanVar(value=self._config.show_km_text)
+        self._var_show_km  = tk.BooleanVar(value=self._config.show_km_text)
         ttk.Checkbutton(opts, text="km 문자 표시",
                         variable=self._var_show_km).grid(row=2, column=1, sticky="w", padx=6, pady=2)
         # ── 기존 크기 필드들 (row 2부터) ──
@@ -276,21 +276,22 @@ class DXFSettingsDialog(tk.Toplevel):
         ttk.Separator(frame, orient="horizontal").grid(
             row=base2, column=0, columnspan=3, sticky="ew", pady=6,
         )
-        ttk.Label(frame, text="km 간격 (m)").grid(row=base2 + 1, column=0, sticky="w", padx=8, pady=3)
-        self._km_interval_var = tk.StringVar(value=str(self._config.km_interval))
-        ttk.Entry(frame, textvariable=self._km_interval_var, width=12).grid(
+        # ── 측점 표시 ──
+        ttk.Label(frame, text="주 심볼 간격 (m)").grid(row=base2 + 1, column=0, sticky="w", padx=8, pady=3)
+        self._main_tick_var = tk.StringVar(value=str(self._config.main_tick))
+        ttk.Entry(frame, textvariable=self._main_tick_var , width=12).grid(
             row=base2 + 1, column=1, padx=8, pady=3, sticky="w",
         )
 
-        ttk.Label(frame, text="200m 간격 (m)").grid(row=base2 + 2, column=0, sticky="w", padx=8, pady=3)
-        self._sym200_interval_var = tk.StringVar(value=str(self._config.sym200_interval))
-        ttk.Entry(frame, textvariable=self._sym200_interval_var, width=12).grid(
+        ttk.Label(frame, text="보조 심볼 간격 (m, 0=비활성)").grid(row=base2 + 2, column=0, sticky="w", padx=8, pady=3)
+        self._sub_symbol_var  = tk.StringVar(value=str(self._config.sub_symbol))
+        ttk.Entry(frame, textvariable=self._sub_symbol_var , width=12).grid(
             row=base2 + 2, column=1, padx=8, pady=3, sticky="w",
         )
 
-        ttk.Label(frame, text="보조측점 최소 간격 (m)").grid(row=base2 + 3, column=0, sticky="w", padx=8, pady=3)
-        self._unit_floor_var = tk.StringVar(value=str(self._config.unit_floor))
-        ttk.Entry(frame, textvariable=self._unit_floor_var, width=12).grid(
+        ttk.Label(frame, text="보조 틱 간격 (m, 0=비활성)").grid(row=base2 + 3, column=0, sticky="w", padx=8, pady=3)
+        self._sub_tick_var  = tk.StringVar(value=str(self._config.sub_tick))
+        ttk.Entry(frame, textvariable=self._sub_tick_var, width=12).grid(
             row=base2 + 3, column=1, padx=8, pady=3, sticky="w",
         )
 
@@ -381,15 +382,15 @@ class DXFSettingsDialog(tk.Toplevel):
 
         # 간격 필드
         try:
-            self._config.km_interval = int(self._km_interval_var.get())
+            self._config.km_interval = int(self._main_tick_var.get())
         except ValueError:
             pass
         try:
-            self._config.sym200_interval = int(self._sym200_interval_var.get())
+            self._config.sym200_interval = int(self._sub_symbol_var.get())
         except ValueError:
             pass
         try:
-            self._config.unit_floor = int(self._unit_floor_var.get())
+            self._config.unit_floor = int(self._sub_tick_var.get())
         except ValueError:
             pass
         try:
@@ -402,7 +403,7 @@ class DXFSettingsDialog(tk.Toplevel):
         self._config.ip_block_type = _TYPE_ID_BY_LABEL.get(label, "default")
         self._config.show_curve_label = self._var_show_curve.get()
         self._config.curve_label_mode = self._var_label_mode.get()
-        self._config.show_200_text = self._var_show_200.get()
+        self._config.show_200_text = self._var_show_sub.get()
         self._config.show_km_text = self._var_show_km.get()
         self._config.scale_preset = self._preset_var.get()
 
@@ -418,9 +419,9 @@ class DXFSettingsDialog(tk.Toplevel):
         # 크기 탭 갱신
         for key, var in self._size_vars.items():
             var.set(str(getattr(self._config, key)))
-        self._km_interval_var.set(str(self._config.km_interval))
-        self._sym200_interval_var.set(str(self._config.sym200_interval))
-        self._unit_floor_var.set(str(self._config.unit_floor))
+        self._main_tick_var.set(str(self._config.main_tick))
+        self._sub_symbol_var.set(str(self._config.sub_symbol))
+        self._sub_tick_var.set(str(self._config.sub_tick))
         self._km_precision_var.set(str(self._config.km_precision))
 
         # 표시 옵션
@@ -428,7 +429,7 @@ class DXFSettingsDialog(tk.Toplevel):
         self._var_ip_block_label.set(label)
         self._var_show_curve.set(self._config.show_curve_label)
         self._var_label_mode.set(self._config.curve_label_mode)
-        self._var_show_200.set(self._config.show_200_text)
+        self._var_show_sub.set(self._config.show_sub_text)
         self._var_show_km.set(self._config.show_km_text)
         self._preset_var.set(self._config.scale_preset)
 
