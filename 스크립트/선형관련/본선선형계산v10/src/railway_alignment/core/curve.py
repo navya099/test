@@ -1,21 +1,40 @@
+"""
+선형 계산 (핵심)
+==================
+curve.py 리팩터:
+- tl_list/end_sta_list/end_xy_list 3개 리스트 제거 → prev_* 로컬 변수
+- bp_sta 재할당 → prev_end_sta로 명확화
+- curves[-1] 반복 참조 → curve 로컬 변수
+- ec_xy or ps_xy falsy 오판 → curve_type 명시 분기
+- center_xy / ip_sta 계산 중복 → 헬퍼로 통합
+- _compute_end_sta 인라인화 (내부 전용)
+"""
 
 import math
-from shapely.geometry.linestring  import LineString
+import logging
+
+from shapely.geometry.linestring import LineString
 
 from src.railway_alignment.core.cant import dictionary_cubicparabola
 from src.railway_alignment.core.constants import Config
-from src.railway_alignment.core.math_util import calculate_bearing_n, calculate_distance, find_direction, \
-    format_distance
+from src.railway_alignment.core.math_util import (
+    calculate_bearing_n,
+    calculate_distance,
+    find_direction,
+    format_distance,
+)
 from src.railway_alignment.core.models import StationRow, CurveParams
 from src.railway_alignment.core.station_builder import build_station_group
-import logging
+
 logger = logging.getLogger(__name__)
 
+
 # ============================================================
-# 선형 계산 (수식 원본 유지)
+# 기하 계산 (수식 원본 유지)
 # ============================================================
 def calculate_theta_pc(m: float, z: float, rc: float) -> float:
     return math.atan(m * (z * 0.001) / (2 * rc))
+
 
 def calculate_cubic_parabola_parameter(
     m: float, z: float, direction: int, theta_pc: float, rc: float, ia_rad: float
@@ -103,9 +122,6 @@ def calculate_simplecurve_coordinates(v10, v11, tl, ip) -> list[tuple[float, flo
     return [bc, ec]
 
 
-
-
-
 def cal_spiral_shiftx(sta, sp, pc, cp, ps, offset, w13, length) -> float:
     s, sp_i, pc_i, cp_i, ps_i = map(int, (sta, sp, pc, cp, ps))
     if sp_i >= s:
@@ -124,6 +140,49 @@ def cal_spiral_shifty(sta, sp, pc, cp, ps, shiftx, w13, x1) -> float:
     return 0.0
 
 
+# ============================================================
+# 내부 헬퍼 (리팩터)
+# ============================================================
+def _shift_by_bearing(bearing_deg: float, dist: float, ref_xy) -> tuple[float, float]:
+    """ref_xy에서 (bearing_deg + 180) 방향으로 dist만큼 이동한 좌표.
+
+    곡선 중심(center_xy) 계산에 사용.
+    """
+    rad = math.radians(bearing_deg + 180)
+    return (math.cos(rad) * dist + ref_xy[0], math.sin(rad) * dist + ref_xy[1])
+
+
+def _compute_ip_sta(
+    i: int, prev_end_sta: float, ip_dist1: float, prev_tl: float,
+) -> float:
+    """IP 정측점 계산.
+
+    - 첫 IP: BP + 거리
+    - 이후 IP: 이전 곡선 종점 + 거리 - 이전 접선장
+    """
+    if i == 0:
+        return prev_end_sta + ip_dist1
+    return prev_end_sta + ip_dist1 - prev_tl
+
+
+def _resolve_end_xy(curve: CurveParams) -> tuple[float, float]:
+    """곡선 타입에 따라 종점 좌표(ec_xy 또는 ps_xy) 반환."""
+    end_xy = curve.ec_xy if curve.curve_type == "simplecurve" else curve.ps_xy
+    if end_xy is None:
+        raise ValueError(
+            f"IP{curve.ip_no}: {curve.curve_type} 종점 좌표가 없습니다."
+        )
+    return end_xy
+
+
+def _resolve_end_sta(curve: CurveParams) -> float:
+    """곡선 타입에 따라 종점 측점(ec_sta 또는 ps_sta) 반환."""
+    end_sta = curve.ec_sta if curve.curve_type == "simplecurve" else curve.ps_sta
+    if end_sta is None:
+        raise ValueError(
+            f"IP{curve.ip_no}: {curve.curve_type} 종점 측점이 없습니다."
+        )
+    return end_sta
 
 
 # ============================================================
@@ -136,24 +195,47 @@ def calculate_curve(
     parameters: list[list[float]],
     unit: int = Config.DEFAULT_UNIT,
     start_sta: float = Config.DEFAULT_START_STA,
-    type_overrides: dict[int, str] | None = None,   # ✅ ip_no → "simplecurve"/"cubic"
+    type_overrides: dict[int, str] | None = None,
 ) -> tuple[list[list[list[StationRow]]], list[CurveParams], list[tuple[float, float]]]:
-    """모든 IP의 선형 계산"""
+    """모든 IP의 선형 계산.
+
+    Parameters
+    ----------
+    linestring : LineString
+        BP, IP1, ..., IPN, EP 순서의 좌표
+    radius_list : list[float]
+        각 IP의 곡선 반경 (IP1..IPN)
+    angles : list[float]
+        각 IP의 교각 (도)
+    parameters : list[list[float]]
+        각 IP의 [M, Z, V]
+    unit : int
+        측점 간격 (m)
+    start_sta : float
+        시작 측점 (BP)
+    type_overrides : dict[int, str] | None
+        ip_no(1-based) → "simplecurve"/"cubic" 타입 오버라이드
+    """
+    type_overrides = type_overrides or {}
+
     station_groups: list[list[list[StationRow]]] = []
     curves: list[CurveParams] = []
     polycurve: list[tuple[float, float]] = []
 
-    tl_list: list[float] = []
-    end_sta_list: list[float] = []
-    end_xy_list: list[tuple[float, float]] = []
-
-    bp_sta = start_sta
     coords = linestring.coords
+    n_ips = len(coords) - 2
 
-    for i in range(len(coords) - 2):
+    # 반복문 상태 (이전 곡선의 종점 정보)
+    prev_end_sta: float = start_sta
+    prev_end_xy: tuple[float, float] = (coords[0][0], coords[0][1])   # BP
+    prev_tl: float = 0.0
+
+    for i in range(n_ips):
         ip_no = i + 1
-        ia_rad = math.radians(angles[i])
+        is_last_ip = (i == n_ips - 1)
+
         ia_deg = angles[i]
+        ia_rad = math.radians(ia_deg)
 
         bp_xy = (coords[i][0], coords[i][1])
         ip_xy = (coords[i + 1][0], coords[i + 1][1])
@@ -168,17 +250,19 @@ def calculate_curve(
         m, z, v = parameters[i]
         not_spiral_min = dictionary_cubicparabola(v)
 
-        # ✅ 타입 오버라이드 우선, 없으면 반경 기준
+        # 곡선 타입 결정 (오버라이드 우선)
         if ip_no in type_overrides:
             curve_type = type_overrides[ip_no]
         else:
             curve_type = "simplecurve" if rc >= not_spiral_min else "cubic"
+
         direction = find_direction(rc, h1, h2)
         curvedir = "RIGHT CURVE" if direction == 1 else "LEFT CURVE"
 
-        is_last_ip = (i == len(coords) - 3)
+        # IP 정측점 (공통)
+        ip_sta = _compute_ip_sta(i, prev_end_sta, ip_dist1, prev_tl)
 
-        # ---------- 곡선 파라미터 계산 ----------
+        # ── 곡선별 파라미터 계산 ──
         if curve_type == "simplecurve":
             theta_pc = 0.0
             sc_params = calculate_simplecurve_parameter(direction, rc, ia_rad)
@@ -187,107 +271,100 @@ def calculate_curve(
             o_pc_bearing = calculate_o_pc_bearing(h1, theta_pc, w13)
             sp_pc_bearing = h1
             bc_xy, ec_xy = calculate_simplecurve_coordinates(h1, h2, tl, ip_xy)
-            center_xy = (
-                math.cos(math.radians(o_pc_bearing + 180)) * rc + bc_xy[0],
-                math.sin(math.radians(o_pc_bearing + 180)) * rc + bc_xy[1],
+            center_xy = _shift_by_bearing(o_pc_bearing, rc, bc_xy)
+
+            bc_sta = ip_sta - tl
+            ec_sta = bc_sta + cl
+
+            curve = CurveParams(
+                ip_no=ip_no, ip_xy=ip_xy, curve_type=curve_type,
+                direction=curvedir,
+                h1=h1, h2=h2, ia_degree=ia_deg,
+                center_xy=center_xy, radius=rc,
+                ip_distance1=ip_dist1, ip_distance2=ip_dist2,
+                m=m, z=z, v=v, params=sc_params,
+                o_pc_bearing=o_pc_bearing,
+                sp_pc_bearing=sp_pc_bearing,
+                theta_pc=theta_pc, ip_sta=ip_sta,
+                bc_sta=bc_sta, ec_sta=ec_sta,
+                bc_xy=bc_xy, ec_xy=ec_xy,
             )
-
-            if i == 0:
-                ip_sta = bp_sta + ip_dist1
-                bc_sta = ip_sta - tl
-                ec_sta = bc_sta + cl
-            else:
-                bp_sta = end_sta_list[i - 1]
-                ip_sta = bp_sta + ip_dist1 - tl_list[i - 1]
-                bc_sta = ip_sta - tl
-                ec_sta = bc_sta + cl
-
-            end_sta_list.append(ec_sta)
-            end_xy_list.append(ec_xy)
-
-            curves.append(CurveParams(
-                ip_no=i + 1, ip_xy=ip_xy, curve_type=curve_type, direction=curvedir,
-                h1=h1, h2=h2, ia_degree=ia_deg, center_xy=center_xy, radius=rc,
-                ip_distance1=ip_dist1, ip_distance2=ip_dist2, m=m, z=z, v=v,
-                params=sc_params, o_pc_bearing=o_pc_bearing,
-                sp_pc_bearing=sp_pc_bearing, theta_pc=theta_pc, ip_sta=ip_sta,
-                bc_sta=bc_sta, ec_sta=ec_sta, bc_xy=bc_xy, ec_xy=ec_xy,
-            ))
+            end_sta = ec_sta
+            end_xy = ec_xy
 
         else:  # cubic
             theta_pc = calculate_theta_pc(m, z, rc)
-            cb_params = calculate_cubic_parabola_parameter(m, z, direction, theta_pc, rc, ia_rad)
-            x1, x2, w13, L, Y, w15, F, S, K, W, tl, lc, cl, sl, ria, C, B = cb_params
+            cb_params = calculate_cubic_parabola_parameter(
+                m, z, direction, theta_pc, rc, ia_rad,
+            )
+            (x1, x2, w13, L, Y, w15, F, S, K, W,
+             tl, lc, cl, sl, ria, C, B) = cb_params
 
             o_pc_bearing = calculate_o_pc_bearing(h1, theta_pc, w13)
-            sp_pc_bearing = calculate_sp_pc_bearing(w13, h1, math.degrees(theta_pc))
+            sp_pc_bearing = calculate_sp_pc_bearing(
+                w13, h1, math.degrees(theta_pc),
+            )
             sp_xy, pc_xy, cp_xy, ps_xy = calculate_spiral_coordinates(
-                bp_xy, ip_xy, ep_xy, h1, h2, tl, x1, w15, sp_pc_bearing, rc, lc, w13
+                bp_xy, ip_xy, ep_xy, h1, h2, tl,
+                x1, w15, sp_pc_bearing, rc, lc, w13,
             )
-            center_xy = (
-                math.cos(math.radians(o_pc_bearing + 180)) * rc + pc_xy[0],
-                math.sin(math.radians(o_pc_bearing + 180)) * rc + pc_xy[1],
-            )
-
-            if i == 0:
-                ip_sta = bp_sta + ip_dist1
-            else:
-                bp_sta = end_sta_list[i - 1]
-                ip_sta = bp_sta + ip_dist1 - tl_list[i - 1]
+            center_xy = _shift_by_bearing(o_pc_bearing, rc, pc_xy)
 
             sp_sta = ip_sta - tl
             pc_sta = sp_sta + L
             cp_sta = pc_sta + lc
             ps_sta = cp_sta + L
 
-            if bp_sta > sp_sta:
+            if prev_end_sta > sp_sta:
                 logger.warning(
                     "곡선겹침 IP%d: BP=%s, SP=%s",
-                    i + 1, format_distance(bp_sta), format_distance(sp_sta),
+                    ip_no,
+                    format_distance(prev_end_sta),
+                    format_distance(sp_sta),
                 )
 
-            end_sta_list.append(ps_sta)
-            end_xy_list.append(ps_xy)
+            curve = CurveParams(
+                ip_no=ip_no, ip_xy=ip_xy, curve_type=curve_type,
+                direction=curvedir,
+                h1=h1, h2=h2, ia_degree=ia_deg,
+                center_xy=center_xy, radius=rc,
+                ip_distance1=ip_dist1, ip_distance2=ip_dist2,
+                m=m, z=z, v=v, params=cb_params,
+                o_pc_bearing=o_pc_bearing,
+                sp_pc_bearing=sp_pc_bearing,
+                theta_pc=theta_pc, ip_sta=ip_sta,
+                sp_sta=sp_sta, pc_sta=pc_sta,
+                cp_sta=cp_sta, ps_sta=ps_sta,
+                sp_xy=sp_xy, pc_xy=pc_xy,
+                cp_xy=cp_xy, ps_xy=ps_xy,
+            )
+            end_sta = ps_sta
+            end_xy = ps_xy
 
-            curves.append(CurveParams(
-                ip_no=i + 1, ip_xy=ip_xy, curve_type=curve_type, direction=curvedir,
-                h1=h1, h2=h2, ia_degree=ia_deg, center_xy=center_xy, radius=rc,
-                ip_distance1=ip_dist1, ip_distance2=ip_dist2, m=m, z=z, v=v,
-                params=cb_params, o_pc_bearing=o_pc_bearing,
-                sp_pc_bearing=sp_pc_bearing, theta_pc=theta_pc, ip_sta=ip_sta,
-                sp_sta=sp_sta, pc_sta=pc_sta, cp_sta=cp_sta, ps_sta=ps_sta,
-                sp_xy=sp_xy, pc_xy=pc_xy, cp_xy=cp_xy, ps_xy=ps_xy,
-            ))
+        curves.append(curve)
 
-        tl_list.append(tl)
+        # ── 마지막 IP면 EP까지 연장 ──
+        if is_last_ip:
+            extended_sta = end_sta + calculate_distance(
+                end_xy[0], end_xy[1], ep_xy[0], ep_xy[1],
+            )
+        else:
+            extended_sta = end_sta
 
-        # 변경 후
-        prev_xy = end_xy_list[i - 1] if i > 0 else bp_xy
-        end_sta = _compute_end_sta(
-            curves[-1],
-            base_sta=(curves[-1].ec_sta if curves[-1].curve_type == "simplecurve"
-                      else curves[-1].ps_sta),
-            ec_xy=(curves[-1].ec_xy or curves[-1].ps_xy),
-            ep_xy=ep_xy,
-            is_last_ip=is_last_ip,
-        )
+        # ── 측점 그룹 생성 ──
         station_group = build_station_group(
-            curve=curves[-1],
-            bp_sta=bp_sta,
-            bp_xy=prev_xy,
-            end_sta=end_sta,
+            curve=curve,
+            bp_sta=prev_end_sta,
+            bp_xy=prev_end_xy,
+            end_sta=extended_sta,
             unit=unit,
         )
         station_groups.append([station_group])
-        polycurve.extend(row.coord for row in station_group)
+        polycurve.extend([row.coord for row in station_group])
+
+        # ── 다음 반복용 상태 갱신 ──
+        prev_end_sta = end_sta
+        prev_end_xy = end_xy
+        prev_tl = tl
 
     return station_groups, curves, polycurve
-
-
-def _compute_end_sta(curve: CurveParams, base_sta: float, ec_xy, ep_xy, is_last_ip) -> float:
-    """마지막 IP면 EP까지 연장"""
-    if not is_last_ip:
-        return base_sta
-    end_xy = ec_xy
-    return base_sta + calculate_distance(end_xy[0], end_xy[1], ep_xy[0], ep_xy[1])
-
