@@ -78,6 +78,8 @@ class DXFConfig:
     show_200_text: bool = True        # 200m 문자 표시
     show_km_text: bool = True         # km 문자 표시
 
+    ip_block_mode: str = "full"  # "full" | "compact" | "minimal" | "none"
+
     # ------------------------------------------------------------------
     def to_dict(self) -> dict:
         return asdict(self)
@@ -131,7 +133,7 @@ class ScalePreset:
     km_interval: int
     sym200_interval: int
     km_precision: int
-    show_ip_block: bool
+    ip_block_mode: str  # ✅ "full" | "compact" | "minimal" | "none"
     show_curve_label: bool
     curve_label_mode: str          # "full" | "label_only"
     show_200_text: bool
@@ -142,31 +144,36 @@ SCALE_PRESETS: list[ScalePreset] = [
     ScalePreset(
         scale=1000, label="1:1000 실시설계",
         unit_floor=20, km_interval=1000, sym200_interval=200, km_precision=2,
-        show_ip_block=True, show_curve_label=True, curve_label_mode="full",
+        ip_block_mode="full",
+        show_curve_label=True, curve_label_mode="full",
         show_200_text=True, show_km_text=True,
     ),
     ScalePreset(
         scale=2000, label="1:2000",
         unit_floor=20, km_interval=1000, sym200_interval=200, km_precision=2,
-        show_ip_block=True, show_curve_label=True, curve_label_mode="full",
+        ip_block_mode="full",
+        show_curve_label=True, curve_label_mode="full",
         show_200_text=True, show_km_text=True,
     ),
     ScalePreset(
         scale=5000, label="1:5000 기본계획",
         unit_floor=40, km_interval=1000, sym200_interval=200, km_precision=1,
-        show_ip_block=True, show_curve_label=True, curve_label_mode="full",
+        ip_block_mode="compact",
+        show_curve_label=True, curve_label_mode="full",
         show_200_text=True, show_km_text=True,
     ),
     ScalePreset(
         scale=10000, label="1:10000",
         unit_floor=100, km_interval=2000, sym200_interval=400, km_precision=1,
-        show_ip_block=False, show_curve_label=True, curve_label_mode="label_only",
+        ip_block_mode="minimal",
+        show_curve_label=True, curve_label_mode="label_only",
         show_200_text=False, show_km_text=True,
     ),
     ScalePreset(
         scale=25000, label="1:25000 개략",
         unit_floor=200, km_interval=5000, sym200_interval=1000, km_precision=0,
-        show_ip_block=False, show_curve_label=True, curve_label_mode="label_only",
+        ip_block_mode="minimal",
+        show_curve_label=True, curve_label_mode="label_only",
         show_200_text=False, show_km_text=True,
     ),
 ]
@@ -185,7 +192,7 @@ def apply_preset_to_config(config: DXFConfig, preset: ScalePreset) -> DXFConfig:
     new.km_interval = preset.km_interval
     new.sym200_interval = preset.sym200_interval
     new.km_precision = preset.km_precision
-    new.show_ip_block = preset.show_ip_block
+    new.ip_block_mode = preset.ip_block_mode  # ✅
     new.show_curve_label = preset.show_curve_label
     new.curve_label_mode = preset.curve_label_mode
     new.show_200_text = preset.show_200_text

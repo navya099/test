@@ -170,13 +170,40 @@ class IPBlockWriter:
         self.doc = doc
         self.msp = msp
         self.style = style
+        self.cfg = style.config
 
     def write(self, curves: list[CurveParams]) -> None:
+        if self.cfg.ip_block_mode == "none":
+            return
         for i, curve in enumerate(curves):
-            self._write_curve_block(curve, i)
+            labels = self._build_labels(curve)
+            if not labels:
+                continue
+            self._write_curve_block(curve, i, labels)
 
-    def _write_curve_block(self, curve: CurveParams, idx: int) -> None:
-        labels = self._build_labels(curve)
+    def _build_labels(self, curve: CurveParams) -> list[str]:
+        mode = self.cfg.ip_block_mode
+        if mode == "full":
+            return [
+                f"IP  NO. {curve.ip_no}",
+                f"IA = {degrees_to_dms2(curve.ia_degree)}",
+                f"R = {curve.radius:.2f}",
+                f"TL = {curve.tl:.2f}",
+                f"CL = {curve.cl:.2f}",
+                f"X = {curve.ip_xy[0]:.4f}",
+                f"Y = {curve.ip_xy[1]:.4f}",
+            ]
+        if mode == "compact":
+            return [
+                f"IP  NO. {curve.ip_no}",
+                f"R = {curve.radius:.2f}",
+                f"TL = {curve.tl:.2f}",
+            ]
+        if mode == "minimal":
+            return [f"IP  NO. {curve.ip_no}"]
+        return []  # 알 수 없는 모드 → 표시 안 함
+
+    def _write_curve_block(self, curve: CurveParams, idx: int, labels: list[str]) -> None:
         block_name = f"IP_Block_{idx}"
         block = self.doc.blocks.new(name=block_name)
 
@@ -186,15 +213,12 @@ class IPBlockWriter:
         for i, label in enumerate(labels):
             off = -i * spacing * self.style.scale_factor
             coord = (curve.ip_xy[1], curve.ip_xy[0] + off)
-            block.add_text(
-                label,
-                dxfattribs={
-                    "insert": coord,
-                    "height": self.style.text_height,
-                    "color": lyr.color,
-                    "layer": lyr.name,
-                },
-            )
+            block.add_text(label, dxfattribs={
+                "insert": coord,
+                "height": self.style.text_height,
+                "color": lyr.color,
+                "layer": lyr.name,
+            })
 
         self.msp.add_blockref(block_name, insert=(0, 0))
 
@@ -493,8 +517,7 @@ class DxfDocument:
         unit: int,
     ) -> None:
         PolylineBuilder(self.msp, self.style).build(coordinates, linestring)
-        if self.config.show_ip_block:  # ✅
-            IPBlockWriter(self.doc, self.msp, self.style).write(curves)
+        IPBlockWriter(self.doc, self.msp, self.style).write(curves)
         StationSymbolWriter(self.msp, self.style, unit).write(station_groups, curves)
         linestring_math = CoordTransform.linestring_to_math(linestring)
         IPJunctionWriter(self.msp, self.style).write(linestring_math)

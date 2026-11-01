@@ -220,9 +220,13 @@ class DXFSettingsDialog(tk.Toplevel):
         opts = ttk.LabelFrame(frame, text="표시 옵션")
         opts.grid(row=1, column=0, columnspan=3, sticky="ew", padx=8, pady=6)
 
-        self._var_show_ip_block = tk.BooleanVar(value=self._config.show_ip_block)
-        ttk.Checkbutton(opts, text="IP 제원표 블록 표시",
-                        variable=self._var_show_ip_block).grid(row=0, column=0, sticky="w", padx=6, pady=2)
+        # IP 제원표 블록 모드
+        ttk.Label(opts, text="IP 제원표 블록").grid(row=0, column=0, sticky="w", padx=6, pady=2)
+        self._var_ip_block_mode = tk.StringVar(value=self._config.ip_block_mode)
+        ttk.Combobox(
+            opts, textvariable=self._var_ip_block_mode, width=12, state="readonly",
+            values=["full", "compact", "minimal", "none"],
+        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
 
         self._var_show_curve = tk.BooleanVar(value=self._config.show_curve_label)
         ttk.Checkbutton(opts, text="곡선제원문자 표시",
@@ -376,7 +380,7 @@ class DXFSettingsDialog(tk.Toplevel):
         except ValueError:
             pass
 
-        self._config.show_ip_block = self._var_show_ip_block.get()
+        self._config.ip_block_mode = self._var_ip_block_mode.get()      # ✅
         self._config.show_curve_label = self._var_show_curve.get()
         self._config.curve_label_mode = self._var_label_mode.get()
         self._config.show_200_text = self._var_show_200.get()
@@ -400,7 +404,7 @@ class DXFSettingsDialog(tk.Toplevel):
         self._unit_floor_var.set(str(self._config.unit_floor))
         self._km_precision_var.set(str(self._config.km_precision))
 
-        self._var_show_ip_block.set(self._config.show_ip_block)
+        self._var_ip_block_mode.set(self._config.ip_block_mode)          # ✅
         self._var_show_curve.set(self._config.show_curve_label)
         self._var_label_mode.set(self._config.curve_label_mode)
         self._var_show_200.set(self._config.show_200_text)
