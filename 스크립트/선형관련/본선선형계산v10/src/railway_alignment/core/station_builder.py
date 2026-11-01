@@ -13,6 +13,7 @@ _build_station_group의 책임을 분리:
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -53,16 +54,33 @@ class StationListBuilder(ABC):
         """측점 리스트 (정렬 + 중복 제거)"""
         ...
 
-    def _base_stations(self) -> list[int]:
-        """unit 간격 정수 측점"""
-        from src.railway_alignment.core.linestring import generate_integers
-        import math
-        start = math.ceil(self.bp_sta / self.unit) * self.unit
-        return generate_integers(
-            start,
-            int(round(self.end_sta)),
-            self.unit,
-        )
+    def _base_stations(self) -> list[float]:
+        """측점 리스트 생성.
+
+        ✅ bp_sta와 end_sta를 반드시 포함 (연속성 보장).
+        - bp_sta가 unit 배수가 아니면 bp_sta 직접 포함
+        - unit 배수로 채움
+        - end_sta가 마지막 unit 배수 이후면 end_sta 직접 포함
+        """
+        stations: list[float] = []
+
+        # 1) bp_sta가 unit 배수가 아니면 직접 포함
+        if self.bp_sta % self.unit != 0:
+            stations.append(self.bp_sta)
+
+        # 2) bp_sta 이후 첫 unit 배수부터 end_sta 이전 마지막 unit 배수까지
+        start_unit = math.ceil(self.bp_sta / self.unit) * self.unit
+        end_unit = math.floor(self.end_sta / self.unit) * self.unit
+        if start_unit <= end_unit:
+            stations.extend(
+                float(v) for v in range(int(start_unit), int(end_unit) + 1, self.unit)
+            )
+
+        # 3) end_sta가 마지막 unit 배수 이후면 직접 포함
+        if end_unit < self.end_sta - 1e-6:
+            stations.append(self.end_sta)
+
+        return stations
 
     def _finalize(self, stations: list[float]) -> list[float]:
         """0.01m 정밀도로 중복 제거 + 정렬 (부동소수점 안전)."""
