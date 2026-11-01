@@ -1,7 +1,7 @@
 """
 평면선형 DXF Writer 모듈
 =========================
-기존 create_dxf 함수를 Writer 클래스 계층으로 분리.
+DXFConfig 기반으로 레이어/색상/크기/오프셋을 커스텀.
 
 구조:
   DxfDocument           — DXF 생성/저장 오케스트레이션
@@ -16,33 +16,35 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-from shapely.geometry.linestring  import LineString
+from shapely.geometry.linestring import LineString
 import ezdxf
 
 from src.railway_alignment.core.constants import Config
-from src.railway_alignment.core.math_util import degrees_to_dms2, calculate_destination_coordinates, format_distance, \
-    calculate_bearing
-from src.railway_alignment.core.models import StationRow, CurveParams
+from src.railway_alignment.core.math_util import (
+    calculate_bearing,
+    calculate_destination_coordinates,
+    degrees_to_dms2,
+    format_distance,
+)
+from src.railway_alignment.core.models import CurveParams, StationRow
 from src.railway_alignment.io.civil3d_wirter import dxf_save_with_retry
+from src.railway_alignment.io.dxf_config import DXFConfig, LayerStyle
 
 logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# 좌표 변환 유틸
+# 좌표 변환
 # ============================================================
 class CoordTransform:
-    """토목좌표(X=North, Y=East) ↔ 수학좌표(x=East, y=North) 변환"""
+    """토목좌표(X=North, Y=East) ↔ 수학좌표(x=East, y=North)"""
 
     @staticmethod
     def to_math(coord: tuple[float, float]) -> tuple[float, float]:
-        """(X, Y) → (y, x)"""
         return (coord[1], coord[0])
 
     @staticmethod
     def to_civil(coord: tuple[float, float]) -> tuple[float, float]:
-        """(y, x) → (X, Y)"""
         return (coord[1], coord[0])
 
     @staticmethod
@@ -55,49 +57,93 @@ class CoordTransform:
 
 
 # ============================================================
-# DXF 스타일 상수
+# 런타임 스타일 (scale 반영 계산값 + config 원본)
 # ============================================================
 @dataclass(frozen=True)
 class DxfStyle:
-    """DXF 스타일/레이어 상수"""
+    """DXF 스타일 런타임 계산값 + config 참조"""
 
+    config: DXFConfig
     scale_factor: float
-    text_height: float
-
-    # 레이어명
-    LAYER_FL = "FL"
-    LAYER_IP_LINE = "IP라인"
-    LAYER_IP_TABLE = "IP제원표"
-    LAYER_IP_TEXT = "IP문자"
-    LAYER_IP_JUNCTION = "IP교점선"
-    LAYER_KM_SYMBOL = "km심볼"
-    LAYER_KM_TEXT = "km문자"
-    LAYER_200_SYMBOL = "200심볼"
-    LAYER_200_TEXT = "200문자"
-    LAYER_AUX = "보조측점"
-    LAYER_CURVE_LEADER = "곡선인출선"
-    LAYER_CURVE_TEXT = "곡선제원문자"
 
     @classmethod
-    def from_scale(cls, scale: int) -> "DxfStyle":
-        factor = scale / 1000
-        return cls(scale_factor=factor, text_height=3 * factor)
+    def from_scale(cls, scale: int, config: DXFConfig | None = None) -> "DxfStyle":
+        return cls(
+            config=config or DXFConfig(),
+            scale_factor=scale / 1000,
+        )
+
+    # ---- 계산된 크기 (m 단위 × scale_factor) ----
+    @property
+    def text_height(self) -> float:
+        return self.config.text_height * self.scale_factor
+
+    def length(self, meters: float) -> float:
+        """config의 m 단위 값을 scale 반영 길이로."""
+        return meters * self.scale_factor
+
+    # ---- 레이어 헬퍼 ----
+    @property
+    def layer_fl(self) -> LayerStyle:
+        return self.config.layer_fl
+
+    @property
+    def layer_ip_line(self) -> LayerStyle:
+        return self.config.layer_ip_line
+
+    @property
+    def layer_ip_table(self) -> LayerStyle:
+        return self.config.layer_ip_table
+
+    @property
+    def layer_ip_text(self) -> LayerStyle:
+        return self.config.layer_ip_text
+
+    @property
+    def layer_ip_junction(self) -> LayerStyle:
+        return self.config.layer_ip_intersect
+
+    @property
+    def layer_km_symbol(self) -> LayerStyle:
+        return self.config.layer_km_symbol
+
+    @property
+    def layer_km_text(self) -> LayerStyle:
+        return self.config.layer_km_text
+
+    @property
+    def layer_200_symbol(self) -> LayerStyle:
+        return self.config.layer_200_symbol
+
+    @property
+    def layer_200_text(self) -> LayerStyle:
+        return self.config.layer_200_text
+
+    @property
+    def layer_aux(self) -> LayerStyle:
+        return self.config.layer_aux_station
+
+    @property
+    def layer_curve_leader(self) -> LayerStyle:
+        return self.config.layer_curve_leader
+
+    @property
+    def layer_curve_text(self) -> LayerStyle:
+        return self.config.layer_curve_text
 
 
 # ============================================================
 # 폴리라인 빌더
 # ============================================================
 class PolylineBuilder:
-    """선형(FL) 및 IP라인 폴리라인 생성"""
-
-    def __init__(self, msp: "Modelspace", style: DxfStyle):
+    def __init__(self, msp, style: DxfStyle):
         self.msp = msp
         self.style = style
 
     def build(
         self,
         coordinates: list[tuple[float, float]],
-        linestring: "LineString",
+        linestring: LineString,
     ) -> None:
         coords_math = CoordTransform.list_to_math(coordinates)
         ls_math = CoordTransform.linestring_to_math(linestring)
@@ -105,51 +151,55 @@ class PolylineBuilder:
         polyline = self.msp.add_lwpolyline(coords_math)
         ippolyline = self.msp.add_lwpolyline(ls_math)
 
-        polyline.dxf.layer = self.style.LAYER_FL
+        lyr_fl = self.style.layer_fl
+        lyr_ip = self.style.layer_ip_line
 
-
-        polyline.dxf.color = Config.COLOR_RED
+        polyline.dxf.layer = lyr_fl.name
+        polyline.dxf.color = lyr_fl.color
         polyline.dxf.const_width = self.style.scale_factor
 
-        ippolyline.dxf.layer = self.style.LAYER_IP_LINE
-        ippolyline.dxf.color = Config.COLOR_BYLAYER
+        ippolyline.dxf.layer = lyr_ip.name
+        ippolyline.dxf.color = lyr_ip.color
 
 
 # ============================================================
 # IP 제원표 블록 Writer
 # ============================================================
 class IPBlockWriter:
-    """IP 제원표 블록 (IP번호, IA, R, TL, CL, X, Y)"""
-
-    TEXT_OFFSETS = [0, -10, -20, -30, -40, -50, -60]
-
-    def __init__(self, doc: "Drawing", msp: "Modelspace", style: DxfStyle):
+    def __init__(self, doc, msp, style: DxfStyle):
         self.doc = doc
         self.msp = msp
         self.style = style
 
-    def write(self, curves: list["CurveParams"]) -> None:
+    def write(self, curves: list[CurveParams]) -> None:
         for i, curve in enumerate(curves):
             self._write_curve_block(curve, i)
 
-    def _write_curve_block(self, curve: "CurveParams", idx: int) -> None:
+    def _write_curve_block(self, curve: CurveParams, idx: int) -> None:
         labels = self._build_labels(curve)
         block_name = f"IP_Block_{idx}"
         block = self.doc.blocks.new(name=block_name)
 
-        for offset, label in zip(self.TEXT_OFFSETS, labels):
-            coord = (curve.ip_xy[1], curve.ip_xy[0] + offset * self.style.scale_factor)
-            block.add_text(label, dxfattribs={
-                "insert": coord,
-                "height": self.style.text_height,
-                "color": Config.COLOR_WHITE,
-                "layer": self.style.LAYER_IP_TABLE,
-            })
+        spacing = self.style.config.ip_block_line_spacing
+        lyr = self.style.layer_ip_table
+
+        for i, label in enumerate(labels):
+            off = -i * spacing * self.style.scale_factor
+            coord = (curve.ip_xy[1], curve.ip_xy[0] + off)
+            block.add_text(
+                label,
+                dxfattribs={
+                    "insert": coord,
+                    "height": self.style.text_height,
+                    "color": lyr.color,
+                    "layer": lyr.name,
+                },
+            )
 
         self.msp.add_blockref(block_name, insert=(0, 0))
 
     @staticmethod
-    def _build_labels(curve: "CurveParams") -> list[str]:
+    def _build_labels(curve: CurveParams) -> list[str]:
         return [
             f"IP  NO. {curve.ip_no}",
             f"IA = {degrees_to_dms2(curve.ia_degree)}",
@@ -165,115 +215,134 @@ class IPBlockWriter:
 # 측점 심볼 Writer
 # ============================================================
 class StationSymbolWriter:
-    """측점별 심볼/문자/보조선 출력
-
-    분류:
-      - km 배수   : 원 2개 + km문자 + 보조선
-      - 200 배수  : 원 1개 + 200문자 + 보조선
-      - unit 배수 : 보조선만
-      - 기타      : 완화곡선 인출선 + 제원문자
-    """
-
-    def __init__(self, msp: "Modelspace", style: DxfStyle, unit: int):
+    def __init__(self, msp, style: DxfStyle, unit: int):
         self.msp = msp
         self.style = style
         self.unit = unit
+        self.cfg = style.config
 
     def write(
         self,
-        station_groups: list[list[list["StationRow"]]],
-        curves: list["CurveParams"],
+        station_groups: list[list[list[StationRow]]],
+        curves: list[CurveParams],
     ) -> None:
         for i, group in enumerate(station_groups):
             if i >= len(curves):
-                logger.warning("IP %d: 대응 CurveParams 없음, 측점 심볼 스킵", i)
+                logger.warning("IP %d: CurveParams 없음, 스킵", i)
                 continue
             curve = curves[i]
             for subgroup in group:
-                # 원본 v9: 첫 IP 이후는 pop(0) → 슬라이싱으로 원본 보존
                 rows = subgroup[1:] if i != 0 else subgroup
                 for row in rows:
                     self._dispatch(row, curve)
 
-    def _dispatch(self, row: "StationRow", curve: "CurveParams") -> None:
-        if row.sta % 1000 == 0:
+    def _dispatch(self, row: StationRow, curve: CurveParams) -> None:
+        km_iv = self.cfg.km_interval
+        s200_iv = self.cfg.sym200_interval
+
+        if km_iv > 0 and row.sta % km_iv == 0:
             self._write_km_marker(row)
-        elif row.sta % 200 == 0:
+        elif s200_iv > 0 and row.sta % s200_iv == 0:
             self._write_200_marker(row)
-        elif row.sta % self.unit == 0:
+        elif self.unit > 0 and row.sta % self.unit == 0:
             self._write_aux_tick(row)
         else:
             self._write_curve_leader(row, curve)
 
     # ---------- km 심볼 ----------
-    def _write_km_marker(self, row: "StationRow") -> None:
+    def _write_km_marker(self, row: StationRow) -> None:
         x, y = row.coord
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
+        cfg = self.cfg
+
+        km_lyr = self.style.layer_km_symbol
+        s200_lyr = self.style.layer_200_symbol
+        km_text_lyr = self.style.layer_km_text
 
         self.msp.add_circle(
-            coord_math, radius=2 * self.style.scale_factor,
-            dxfattribs={"layer": self.style.LAYER_KM_SYMBOL, "color": Config.COLOR_RED},
+            coord_math,
+            radius=cfg.km_symbol_radius * self.style.scale_factor,
+            dxfattribs={"layer": km_lyr.name, "color": km_lyr.color},
         )
         self.msp.add_circle(
-            coord_math, radius=1.5 * self.style.scale_factor,
-            dxfattribs={"layer": self.style.LAYER_200_SYMBOL, "color": Config.COLOR_RED},
+            coord_math,
+            radius=cfg.sym200_radius * self.style.scale_factor,
+            dxfattribs={"layer": s200_lyr.name, "color": s200_lyr.color},
         )
         self.msp.add_text(
-            f"{int(row.sta) // 1000}km",
+            f"{int(row.sta) // cfg.km_interval}km",
             dxfattribs={
-                "layer": self.style.LAYER_KM_TEXT, "insert": coord_math,
-                "height": self.style.text_height, "color": Config.COLOR_RED,
+                "layer": km_text_lyr.name,
+                "insert": coord_math,
+                "height": self.style.text_height,
+                "color": km_text_lyr.color,
                 "rotation": ta_math,
             },
         )
         self._write_aux_tick(row)
 
     # ---------- 200 심볼 ----------
-    def _write_200_marker(self, row: "StationRow") -> None:
+    def _write_200_marker(self, row: StationRow) -> None:
         x, y = row.coord
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
+        cfg = self.cfg
+
+        s200_lyr = self.style.layer_200_symbol
+        s200_text_lyr = self.style.layer_200_text
 
         self.msp.add_circle(
-            coord_math, radius=1.5 * self.style.scale_factor,
-            dxfattribs={"layer": self.style.LAYER_200_SYMBOL, "color": Config.COLOR_RED},
+            coord_math,
+            radius=cfg.sym200_radius * self.style.scale_factor,
+            dxfattribs={"layer": s200_lyr.name, "color": s200_lyr.color},
         )
         self.msp.add_text(
-            str(int(row.sta) % 1000),
+            str(int(row.sta) % cfg.km_interval),
             dxfattribs={
-                "layer": self.style.LAYER_200_TEXT, "insert": coord_math,
-                "height": self.style.text_height, "color": Config.COLOR_RED,
+                "layer": s200_text_lyr.name,
+                "insert": coord_math,
+                "height": self.style.text_height,
+                "color": s200_text_lyr.color,
                 "rotation": ta_math,
             },
         )
         self._write_aux_tick(row)
 
     # ---------- 보조측점선 ----------
-    def _write_aux_tick(self, row: "StationRow") -> None:
+    def _write_aux_tick(self, row: StationRow) -> None:
         x, y = row.coord
         ta_math = self._ta_math(row.ta)
-        start = calculate_destination_coordinates(y, x, ta_math + 90, 1.5 * self.style.scale_factor)
-        end = calculate_destination_coordinates(y, x, ta_math + 90, -1.5 * self.style.scale_factor)
+        half = self.cfg.tick_half_length * self.style.scale_factor
+        lyr = self.style.layer_aux
+
+        start = calculate_destination_coordinates(y, x, ta_math + 90, half)
+        end = calculate_destination_coordinates(y, x, ta_math + 90, -half)
         self.msp.add_line(
             start, end,
-            dxfattribs={"layer": self.style.LAYER_AUX, "color": Config.COLOR_RED},
+            dxfattribs={"layer": lyr.name, "color": lyr.color},
         )
 
     # ---------- 완화곡선 인출선 ----------
-    def _write_curve_leader(self, row: "StationRow", curve: "CurveParams") -> None:
+    def _write_curve_leader(self, row: StationRow, curve: CurveParams) -> None:
         x, y = row.coord
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
+        cfg = self.cfg
 
-        # 인출선 방향: LEFT면 +90, RIGHT면 -90
-        leader_bearing = ta_math + 90 if curve.direction == "LEFT CURVE" else ta_math - 90
+        leader_lyr = self.style.layer_curve_leader
+        text_lyr = self.style.layer_curve_text
+
+        leader_bearing = (
+            ta_math + 90 if curve.direction == "LEFT CURVE" else ta_math - 90
+        )
         end_point = calculate_destination_coordinates(
-            y, x, leader_bearing, 50 * self.style.scale_factor,
+            y, x, leader_bearing,
+            cfg.leader_length * self.style.scale_factor,
         )
         self.msp.add_line(
             coord_math, end_point,
-            dxfattribs={"layer": self.style.LAYER_CURVE_LEADER, "color": Config.COLOR_RED},
+            dxfattribs={"layer": leader_lyr.name, "color": leader_lyr.color},
         )
 
         text_rotation = ta_math - 90
@@ -282,38 +351,46 @@ class StationSymbolWriter:
         self.msp.add_text(
             f"{row.label}={format_distance(row.sta, Config.KM_PRECISION)}",
             dxfattribs={
-                "layer": self.style.LAYER_CURVE_TEXT, "insert": insert_pos,
-                "height": self.style.text_height, "color": Config.COLOR_RED,
+                "layer": text_lyr.name,
+                "insert": insert_pos,
+                "height": self.style.text_height,
+                "color": text_lyr.color,
                 "rotation": text_rotation,
             },
         )
 
     def _text_insert_point(
-        self, row: "StationRow", curve: "CurveParams",
-        ta_math: float, leader_end: tuple[float, float],
+        self,
+        row: StationRow,
+        curve: CurveParams,
+        ta_math: float,
+        leader_end: tuple[float, float],
     ) -> tuple[float, float]:
-        """문자 삽입점 (km 구간별 거리 조정 + 좌우 방향)"""
         x, y = row.coord
+        cfg = self.cfg
 
         if curve.direction == "LEFT CURVE":
-            return leader_end  # 인출선 끝에 배치
+            return leader_end
 
-        reverse_rot = (ta_math + 90 + 180) if curve.direction == "LEFT CURVE" \
-                      else (ta_math - 90 + 180)
+        reverse_rot = (
+            (ta_math + 90 + 180) if curve.direction == "LEFT CURVE"
+            else (ta_math - 90 + 180)
+        )
 
         km = row.sta / 1000
         if km < 10:
-            dist = -20 * self.style.scale_factor
+            offset_m = cfg.curve_text_offset_far
         elif km < 100:
-            dist = -16 * self.style.scale_factor
+            offset_m = cfg.curve_text_offset_mid
         else:
-            dist = -12 * self.style.scale_factor
+            offset_m = cfg.curve_text_offset_near
 
-        return calculate_destination_coordinates(y, x, reverse_rot, dist)
+        return calculate_destination_coordinates(
+            y, x, reverse_rot, offset_m * self.style.scale_factor,
+        )
 
     @staticmethod
     def _ta_math(ta: float) -> float:
-        """접선방위각 → 수학각도 변환"""
         return (450 - ta) % 360
 
 
@@ -321,13 +398,18 @@ class StationSymbolWriter:
 # IP 교점선 Writer
 # ============================================================
 class IPJunctionWriter:
-    """IP 교점선 및 IP 문자 출력"""
-
-    def __init__(self, msp: "Modelspace", style: DxfStyle):
+    def __init__(self, msp, style: DxfStyle):
         self.msp = msp
         self.style = style
+        self.cfg = style.config
 
     def write(self, linestring_math: list[tuple[float, float]]) -> None:
+        junc_lyr = self.style.layer_ip_junction
+        text_lyr = self.style.layer_ip_text
+
+        short_len = self.cfg.ip_intersect_short * self.style.scale_factor
+        long_len = self.cfg.ip_intersect_long * self.style.scale_factor
+
         for i in range(len(linestring_math) - 2):
             x1, y1 = linestring_math[i]
             x2, y2 = linestring_math[i + 1]
@@ -336,25 +418,24 @@ class IPJunctionWriter:
             v1 = calculate_bearing(x1, y1, x2, y2)
             v2 = calculate_bearing(x2, y2, x3, y3)
 
-            # v1 시작점 (이전 방향으로 연장)
             self.msp.add_line(
-                calculate_destination_coordinates(x2, y2, v1 + 180, 7 * self.style.scale_factor),
-                calculate_destination_coordinates(x2, y2, v1, 3 * self.style.scale_factor),
-                dxfattribs={"layer": self.style.LAYER_IP_JUNCTION, "color": Config.COLOR_RED},
+                calculate_destination_coordinates(x2, y2, v1 + 180, long_len),
+                calculate_destination_coordinates(x2, y2, v1, short_len),
+                dxfattribs={"layer": junc_lyr.name, "color": junc_lyr.color},
             )
-            # v2 시작점 (다음 방향으로 연장)
             start_pt = (x2, y2)
             self.msp.add_line(
                 start_pt,
-                calculate_destination_coordinates(x2, y2, v2, 7 * self.style.scale_factor),
-                dxfattribs={"layer": self.style.LAYER_IP_JUNCTION, "color": Config.COLOR_RED},
+                calculate_destination_coordinates(x2, y2, v2, long_len),
+                dxfattribs={"layer": junc_lyr.name, "color": junc_lyr.color},
             )
-            # IP 문자
             self.msp.add_text(
                 f"IP NO.{i + 1}",
                 dxfattribs={
-                    "layer": self.style.LAYER_IP_TEXT, "insert": start_pt,
-                    "height": self.style.text_height, "color": Config.COLOR_RED,
+                    "layer": text_lyr.name,
+                    "insert": start_pt,
+                    "height": self.style.text_height,
+                    "color": text_lyr.color,
                     "rotation": 0,
                 },
             )
@@ -364,68 +445,68 @@ class IPJunctionWriter:
 # DXF 문서 오케스트레이터
 # ============================================================
 class DxfDocument:
-    """DXF 문서 생성/저장 오케스트레이션
-
-    기존 create_dxf 함수를 대체.
-    """
-
-    def __init__(self, scale: int = Config.DEFAULT_SCALE):
+    def __init__(self, scale: int = Config.DEFAULT_SCALE, config: DXFConfig | None = None):
+        self.config = config or DXFConfig()
         self.doc = ezdxf.new()
         self.msp = self.doc.modelspace()
-        self.style = DxfStyle.from_scale(scale)
+        self.style = DxfStyle.from_scale(scale, self.config)
+        self._register_layers()
+
+    def _register_layers(self) -> None:
+        """config의 모든 레이어를 등록."""
+        for lyr in (
+            self.config.layer_fl,
+            self.config.layer_ip_line,
+            self.config.layer_ip_intersect,
+            self.config.layer_ip_text,
+            self.config.layer_ip_table,
+            self.config.layer_km_symbol,
+            self.config.layer_200_symbol,
+            self.config.layer_km_text,
+            self.config.layer_200_text,
+            self.config.layer_aux_station,
+            self.config.layer_curve_leader,
+            self.config.layer_curve_text,
+        ):
+            if lyr.name and lyr.name not in self.doc.layers:
+                self.doc.layers.new(
+                    name=lyr.name,
+                    dxfattribs={"color": lyr.color, "linetype": lyr.linetype},
+                )
 
     def build(
         self,
         coordinates: list[tuple[float, float]],
-        linestring: "LineString",
-        curves: list["CurveParams"],
-        station_groups: list[list[list["StationRow"]]],
+        linestring: LineString,
+        curves: list[CurveParams],
+        station_groups: list[list[list[StationRow]]],
         unit: int,
     ) -> None:
-        """모든 레이어/심볼 생성"""
-        # 1) 폴리라인
         PolylineBuilder(self.msp, self.style).build(coordinates, linestring)
-
-        # 2) IP 제원표 블록
         IPBlockWriter(self.doc, self.msp, self.style).write(curves)
-
-        # 3) 측점 심볼
         StationSymbolWriter(self.msp, self.style, unit).write(station_groups, curves)
-
-        # 4) IP 교점선
         linestring_math = CoordTransform.linestring_to_math(linestring)
         IPJunctionWriter(self.msp, self.style).write(linestring_math)
 
     def save(self, filename: str) -> bool:
-        """DXF 저장 (재시도 포함)"""
-
         return dxf_save_with_retry(self.doc, filename)
 
 
 # ============================================================
-# 편의 함수 (기존 create_dxf 대체)
+# 편의 함수
 # ============================================================
 def create_dxf(
     coordinates: list[tuple[float, float]],
-    linestring: "LineString",
-    curves: list["CurveParams"],
+    linestring: LineString,
+    curves: list[CurveParams],
     station_groups: list[list[list[StationRow]]],
     unit: int,
     filename: str = Config.DXF_FILENAME,
     scale: int = Config.DEFAULT_SCALE,
+    config: DXFConfig | None = None,
 ) -> None:
-    """평면선형 DXF 출력
-
-    Args:
-        coordinates: 선형 폴리라인 좌표 (토목좌표)
-        linestring: IP 연결선
-        curves: IP별 곡선 파라미터
-        station_groups: IP별 측점 그룹
-        unit: 측점 간격
-        filename: 출력 파일명
-        scale: 축척 (1000 = 1:1000)
-    """
-    doc = DxfDocument(scale)
+    """평면선형 DXF 출력"""
+    doc = DxfDocument(scale, config)
     doc.build(coordinates, linestring, curves, station_groups, unit)
 
     if not doc.save(filename):

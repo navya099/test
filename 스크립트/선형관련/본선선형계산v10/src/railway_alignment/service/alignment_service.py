@@ -31,6 +31,7 @@ from src.railway_alignment.core.math_util import calculate_angles, calculate_sta
 from src.railway_alignment.core.validator import validate_curves, ValidationIssue
 from src.railway_alignment.io.civil3d_wirter import create_civil3d_xlsx, create_incremental_station_report, \
     save_total_coordinates
+from src.railway_alignment.io.dxf_config import DXFConfig
 from src.railway_alignment.io.dxf_writer import create_dxf
 from src.railway_alignment.io.parsers import parse_ip_lines
 from src.railway_alignment.io.report_writer import write_report
@@ -108,7 +109,7 @@ class AlignmentService:
 
     def __init__(self) -> None:
         self.result = AlignmentResult()
-
+        self.dxf_config = DXFConfig.load_or_default()  # ✅ 자동 로드
     # --------------------------------------------------------
     # 공개 API
     # --------------------------------------------------------
@@ -165,12 +166,13 @@ class AlignmentService:
         self.result = result
         return result
 
-    def export_dxf(self, scale: int = Config.DEFAULT_SCALE, filename: str = None) -> Path:
+    def export_dxf(self, scale: int = Config.DEFAULT_SCALE, filename: str = None, config: DXFConfig | None = None) -> Path:
         """DXF 출력 (calculate 호출 후 사용)"""
         if self.result.is_empty:
             raise AlignmentServiceError("먼저 선형 계산을 실행하세요.")
 
         filename = filename or Config.DXF_FILENAME
+        cfg = config or self.dxf_config
         create_dxf(
             coordinates=self.result.polycurve,
             linestring=self.result.linestring,
@@ -179,6 +181,7 @@ class AlignmentService:
             unit=Config.DEFAULT_UNIT,   # TODO: input에서 전달
             filename=filename,
             scale=scale,
+            config=cfg,
         )
         path = Config.ensure_output_dir() / filename
         self.result.dxf_path = path

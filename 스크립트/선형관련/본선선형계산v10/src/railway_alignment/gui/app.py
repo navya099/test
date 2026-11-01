@@ -33,6 +33,8 @@ from src.railway_alignment.service.alignment_service import (
 from src.railway_alignment.gui.preview_canvas import PreviewCanvas
 from src.railway_alignment.gui.ip_table import IPTableEditor
 from src.railway_alignment.gui.validator_panel import ValidatorPanel
+from src.railway_alignment.gui.dxf_settings_dialog import DXFSettingsDialog
+from src.railway_alignment.io.dxf_config import DXFConfig
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +87,11 @@ class MainWindow:
         ttk.Button(params, text="계산+저장", command=self._on_calculate_and_save).grid(
             row=0, column=11, padx=4
         )
+        ttk.Button(params, text="도면 설정", command=self._on_open_dxf_settings).grid(
+            row=0, column=13, padx=(12, 4)
+        )
         ttk.Button(params, text="도면 출력", command=self._on_export_dxf).grid(
-            row=0, column=12, padx=4
+            row=0, column=14, padx=4
         )
 
         center = ttk.PanedWindow(root, orient="horizontal")
@@ -395,7 +400,11 @@ class MainWindow:
                 raise AlignmentServiceError(
                     f"축척은 {Config.DEFAULT_SCALE} 이상이어야 합니다."
                 )
-            path = self.service.export_dxf(scale=scale)
+            # ✅ 현재 서비스에 보관된 설정을 명시적으로 전달
+            path = self.service.export_dxf(
+                scale=scale,
+                config=self.service.dxf_config,
+            )
             messagebox.showinfo("Success", f"도면 생성 완료:\n{path}")
         except AlignmentServiceError as e:
             messagebox.showerror("Error", str(e))
@@ -440,3 +449,17 @@ class MainWindow:
 
     def _on_type_toggle(self, ip_no: int, curve_type: str) -> None:
         self._recalculate(save=False)
+
+    def _on_open_dxf_settings(self) -> None:
+        """도면 설정 다이얼로그 열기."""
+        dialog = DXFSettingsDialog(
+            self.root,
+            config=self.service.dxf_config,
+            on_apply=self._on_dxf_config_applied,
+        )
+        self.wait_window(dialog)
+
+    def _on_dxf_config_applied(self, config: DXFConfig) -> None:
+        """도면 설정 적용 콜백."""
+        self.service.dxf_config = config
+        self.status_var.set("도면 설정이 적용되었습니다.")
