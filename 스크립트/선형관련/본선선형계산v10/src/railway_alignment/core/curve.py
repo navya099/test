@@ -136,6 +136,7 @@ def calculate_curve(
     parameters: list[list[float]],
     unit: int = Config.DEFAULT_UNIT,
     start_sta: float = Config.DEFAULT_START_STA,
+    type_overrides: dict[int, str] | None = None,   # ✅ ip_no → "simplecurve"/"cubic"
 ) -> tuple[list[list[list[StationRow]]], list[CurveParams], list[tuple[float, float]]]:
     """모든 IP의 선형 계산"""
     station_groups: list[list[list[StationRow]]] = []
@@ -150,6 +151,7 @@ def calculate_curve(
     coords = linestring.coords
 
     for i in range(len(coords) - 2):
+        ip_no = i + 1
         ia_rad = math.radians(angles[i])
         ia_deg = angles[i]
 
@@ -166,7 +168,11 @@ def calculate_curve(
         m, z, v = parameters[i]
         not_spiral_min = dictionary_cubicparabola(v)
 
-        curve_type = "simplecurve" if rc >= not_spiral_min else "cubic"
+        # ✅ 타입 오버라이드 우선, 없으면 반경 기준
+        if ip_no in type_overrides:
+            curve_type = type_overrides[ip_no]
+        else:
+            curve_type = "simplecurve" if rc >= not_spiral_min else "cubic"
         direction = find_direction(rc, h1, h2)
         curvedir = "RIGHT CURVE" if direction == 1 else "LEFT CURVE"
 

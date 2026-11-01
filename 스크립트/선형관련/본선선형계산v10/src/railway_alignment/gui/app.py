@@ -43,7 +43,7 @@ class MainWindow:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Railway Alignment Tool — 선형편집도구")
-        self.root.geometry("1280x820")
+        self.root.geometry("1600x820")
 
         self.service = AlignmentService()
 
@@ -100,7 +100,9 @@ class MainWindow:
             on_select=self._on_ip_select,
             on_insert=self._on_ip_insert,
             on_delete=self._on_ip_delete,
-            on_auto_toggle=self._on_auto_toggle
+            on_auto_toggle=self._on_auto_toggle,
+            on_type_toggle=self._on_type_toggle,  # ✅
+
         )
         self.ip_table.pack(fill="both", expand=True)
 
@@ -182,6 +184,7 @@ class MainWindow:
             design_speed=_int(self.entry_speed, Config.DEFAULT_DESIGN_SPEED),
             ballast="자갈도상" if self.ballast_var.get() == 0 else "콘크리트도상",
             parameter_overrides=self.ip_table.get_parameter_overrides(),  # ✅
+            type_overrides=self.ip_table.get_type_overrides(),
         )
 
     # ------------------------------------------------------------------
@@ -433,5 +436,7 @@ class MainWindow:
             messagebox.showerror("Error", "측점을 찾을 수 없습니다.")
 
     def _on_auto_toggle(self, ip_no: int, auto: bool) -> None:
-        """자동/수동 전환 시 재계산."""
+        self._recalculate(save=False)
+
+    def _on_type_toggle(self, ip_no: int, curve_type: str) -> None:
         self._recalculate(save=False)

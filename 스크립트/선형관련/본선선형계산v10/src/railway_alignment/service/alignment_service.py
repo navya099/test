@@ -55,6 +55,9 @@ class AlignmentInput:
     # Z는 내부 계산 단위인 mm로 전달 (테이블에서 변환)
     parameter_overrides: dict[int, dict[str, float]] = field(default_factory=dict)
 
+    # ip_no → "simplecurve"/"cubic" (수동 타입 토글만)
+    type_overrides: dict[int, str] = field(default_factory=dict)
+
 # ============================================================
 # 계산 결과
 # ============================================================
@@ -258,47 +261,71 @@ class AlignmentService:
                 radius_list, input_data.design_speed, input_data.ballast,
             )
 
-            parameters = []
+            parameters: list[list[float]] = []
+            type_overrides = dict(input_data.type_overrides)
+
             for i, auto in enumerate(auto_params):
                 ip_no = i + 1
+                auto_m, auto_z, auto_v = auto[0], auto[1], auto[2]
+
                 override = input_data.parameter_overrides.get(ip_no)
                 if not override:
-                    parameters.append(auto)
+                    parameters.append([auto_m, auto_z, auto_v])
                     continue
 
-                # M: 10~50 단위 반올림 (자동과 일관)
-                m = float(override.get("m", auto[0]))
-                m = round(m / Config.M_ROUNDING) * Config.M_ROUNDING
+                user_m = float(override.get("m", 0))
+                user_v = float(override.get("v", 0))
+                user_z_m = float(override.get("z", 0))  # m 단위
 
-                # V: 정수, 10 단위 반올림
-                v = int(round(override.get("v", auto[2])))
-                v = round(v / Config.V_ROUNDING) * Config.V_ROUNDING
+                # ── M 판정 (최우선)
+                if user_m == 0:
+                    curve_type = "simplecurve"
+                    m_final = 0.0
+                    v_final = auto_v
+                    z_final = auto_z
+                else:
+                    curve_type = "cubic"
+                    m_final = float(round(user_m / Config.M_ROUNDING) * Config.M_ROUNDING)
 
-                # Z: override는 mm 단위로 전달받음 (테이블에서 변환)
-                z = float(override.get("z", auto[1]))
-                z = round(z / Config.Z_ROUNDING) * Config.Z_ROUNDING
+                    if user_v == 0:
+                        v_final = int(round(auto_v / Config.V_ROUNDING) * Config.V_ROUNDING)
+                    else:
+                        v_final = int(round(user_v / Config.V_ROUNDING) * Config.V_ROUNDING)
 
-                parameters.append([m, z, v])
+                    if user_z_m == 0:
+                        z_final = float(round(auto_z / Config.Z_ROUNDING) * Config.Z_ROUNDING)
+                    else:
+                        z_mm = user_z_m * 1000.0
+                        z_final = float(round(z_mm / Config.Z_ROUNDING) * Config.Z_ROUNDING)
+
+                # 명시 타입 토글이 있으면 최우선
+                if ip_no in input_data.type_overrides:
+                    curve_type = input_data.type_overrides[ip_no]
+
+                type_overrides[ip_no] = curve_type
+                parameters.append([m_final, z_final, v_final])
 
             station_groups, curves, polycurve = calculate_curve(
                 linestring, radius_list, angles, parameters,
                 input_data.unit, input_data.start_sta,
+                type_overrides=type_overrides,
             )
         except Exception as e:
             raise AlignmentServiceError(f"선형 계산 실패: {e}") from e
+
+        issues = validate_curves(curves)
 
         return AlignmentResult(
             linestring=linestring,
             curves=curves,
             station_groups=station_groups,
             polycurve=polycurve,
-            issues=validate_curves(curves),
+            issues=issues,
             unit=input_data.unit,
             start_sta=input_data.start_sta,
             design_speed=input_data.design_speed,
             ballast=input_data.ballast,
         )
-
     # --------------------------------------------------------
     # 내부: 결과물 저장
     # --------------------------------------------------------

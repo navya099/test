@@ -3,18 +3,22 @@ IP 파라미터 편집 테이블
 ========================
 ttk.Treeview 기반. 더블클릭 셀 편집.
 
-컬럼:
-    자동 | IP | X | Y | R | L | M | V | Z | 타입 | 방향 | 상태
-
 자동/수동:
     - "자동" 컬럼(#1) 더블클릭 → 토글
-    - 자동: M/V/Z = 계산값 표시, 회색 전경, 편집 불가
-    - 수동: M/V/Z = 사용자 입력, 검정 전경, 편집 가능
+    - 자동: M/V/Z = 계산값, 회색, 편집 불가
+    - 수동: M/V/Z = 사용자 입력(초기 0), 검정, 편집 가능
 
-단위:
-    - M: 정수 (예: 2100)
-    - V: 정수 (예: 270)
-    - Z: m 단위 (예: 0.1600)  ← 실무 표와 동일, 서비스에 mm로 변환 전달
+자동 재계산 표식:
+    - 수동 상태에서 V/Z=0이면 서비스가 자동값으로 대체
+    - 테이블은 실제 사용된 자동값 앞에 '*' 표식 + 파란색 배경(연한 파랑)
+
+곡선 타입:
+    - 'type' 컬럼 더블클릭 → "원곡선" ↔ "3차포물선" 토글
+    - 토글 시 자동 플래그 자동 해제
+
+Z 단위:
+    - 표시: m 단위 (예: 0.1600)
+    - 서비스 전달: m 그대로 (서비스가 mm로 변환)
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ COLUMNS = [
     ("r",      "R (m)",     90,  "e"),
     ("l",      "L (m)",     70,  "e"),
     ("m",      "M",         80,  "e"),
-    ("v",      "V",         60,  "e"),
+    ("v",      "V",         70,  "e"),
     ("z",      "Z (m)",     70,  "e"),
     ("type",   "곡선 타입", 100, "center"),
     ("dir",    "방향",      70,  "center"),
@@ -49,15 +53,7 @@ _MANUAL_KEYS = {"m", "v", "z"}
 
 
 class IPTableEditor(ttk.Frame):
-    """IP 파라미터 편집 테이블
-
-    이벤트 (ip_no는 1-based):
-        on_edit(ip_no, field, new_value)      — 셀 편집 완료
-        on_select(ip_no)                      — 행 선택
-        on_insert(ip_no)                      — IP 삽입
-        on_delete(ip_no)                      — IP 삭제
-        on_auto_toggle(ip_no, auto: bool)     — 자동/수동 전환
-    """
+    """IP 파라미터 편집 테이블"""
 
     def __init__(
         self,
@@ -67,6 +63,7 @@ class IPTableEditor(ttk.Frame):
         on_insert: Optional[Callable[[int], None]] = None,
         on_delete: Optional[Callable[[int], None]] = None,
         on_auto_toggle: Optional[Callable[[int, bool], None]] = None,
+        on_type_toggle: Optional[Callable[[int, str], None]] = None,
     ):
         super().__init__(master)
         self._on_edit = on_edit
@@ -74,8 +71,11 @@ class IPTableEditor(ttk.Frame):
         self._on_insert = on_insert
         self._on_delete = on_delete
         self._on_auto_toggle = on_auto_toggle
+        self._on_type_toggle = on_type_toggle
+
         self._edit_entry: Optional[tk.Entry] = None
-        self._auto_flags: dict[int, bool] = {}  # ip_no → True(자동)
+        self._auto_flags: dict[int, bool] = {}
+        self._type_overrides: dict[int, str] = {}
 
         self._build()
         self._bind_events()
@@ -84,12 +84,8 @@ class IPTableEditor(ttk.Frame):
     def _build(self) -> None:
         toolbar = ttk.Frame(self)
         toolbar.pack(fill="x", padx=4, pady=(4, 0))
-        ttk.Button(toolbar, text="+ IP 삽입", command=self._handle_insert).pack(
-            side="left", padx=2
-        )
-        ttk.Button(toolbar, text="- 삭제", command=self._handle_delete).pack(
-            side="left", padx=2
-        )
+        ttk.Button(toolbar, text="+ IP 삽입", command=self._handle_insert).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="- 삭제", command=self._handle_delete).pack(side="left", padx=2)
         self._status_label = ttk.Label(toolbar, text="", foreground="gray")
         self._status_label.pack(side="right", padx=6)
 
@@ -103,7 +99,6 @@ class IPTableEditor(ttk.Frame):
             selectmode="browse",
             height=14,
         )
-
         for key, title, width, anchor in COLUMNS:
             self.tree.heading(key, text=title)
             self.tree.column(key, width=width, anchor=anchor, stretch=False)
@@ -115,13 +110,15 @@ class IPTableEditor(ttk.Frame):
         container.rowconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
 
-        # 상태 색상 tag
+        # 상태 + 자동/수동 + 자동재계산 배경
         self.tree.tag_configure("error", background="#ffcdd2")
         self.tree.tag_configure("warn", background="#fff9c4")
         self.tree.tag_configure("ok", background="white")
-        # 자동 상태 회색 전경
-        self.tree.tag_configure("auto_row", foreground="gray")
-        self.tree.tag_configure("manual_row", foreground="black")
+
+        self.tree.tag_configure("auto_row", foreground="gray", background="white")
+        self.tree.tag_configure("manual_row", foreground="black", background="white")
+        # 수동인데 V/Z가 자동 재계산된 값을 포함한 행
+        self.tree.tag_configure("manual_auto_fill", foreground="black", background="#e3f2fd")
 
     def _bind_events(self) -> None:
         self.tree.bind("<Double-1>", self._on_double_click)
@@ -131,42 +128,37 @@ class IPTableEditor(ttk.Frame):
     # 공개 API
     # ------------------------------------------------------------------
     def load_curves(self, curves: list) -> None:
-        """CurveParams로 테이블 채우기 (자동 플래그 보존)."""
-        prev_flags = dict(self._auto_flags)
+        prev_auto = dict(self._auto_flags)
+        prev_type = dict(self._type_overrides)
 
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._auto_flags.clear()
+        self._type_overrides.clear()
 
         for curve in curves:
             self._insert_row(curve)
 
-        # 자동 플래그 복원 (없던 IP는 자동=True)
         for curve in curves:
-            self._auto_flags[curve.ip_no] = prev_flags.get(curve.ip_no, True)
-            self._apply_row_style(curve.ip_no)
-
-        # 자동 플래그가 False였던 행은 M/V/Z 재계산값 덮어쓰지 않음
-        for curve in curves:
-            if self._auto_flags.get(curve.ip_no, True):
-                self._set_param_cells(curve)
-            else:
-                # 수동: 표시값 유지 (이전 load_raw 또는 편집값)
-                pass
+            ip_no = curve.ip_no
+            self._auto_flags[ip_no] = prev_auto.get(ip_no, True)
+            if ip_no in prev_type:
+                self._type_overrides[ip_no] = prev_type[ip_no]
+            self._apply_row_style(ip_no)
+            self._set_param_cells(curve, auto=self._auto_flags[ip_no])
 
         self._update_status()
 
     def load_raw(self, raw_lines: list[list[str]]) -> None:
-        """raw_lines로 채우기 (계산 전, 모두 자동 상태)."""
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._auto_flags.clear()
+        self._type_overrides.clear()
 
         ips = raw_lines[1:-1] if len(raw_lines) >= 2 else raw_lines
         for i, row in enumerate(ips, start=1):
             try:
-                y = float(row[0])
-                x = float(row[1])
+                y = float(row[0]); x = float(row[1])
                 r = float(row[2]) if len(row) > 2 else 0.0
             except (ValueError, IndexError):
                 continue
@@ -174,12 +166,8 @@ class IPTableEditor(ttk.Frame):
             self._auto_flags[i] = True
             self.tree.insert(
                 "", "end", iid=str(i),
-                values=[
-                    "✓", f"IP{i}",
-                    f"{x:.4f}", f"{y:.4f}", f"{r:.2f}", "—",
-                    "—", "—", "—",
-                    "(자동)", "—", "—",
-                ],
+                values=["✓", f"IP{i}", f"{x:.4f}", f"{y:.4f}", f"{r:.2f}", "—",
+                        "—", "—", "—", "(자동)", "—", "—"],
                 tags=("ok", "auto_row"),
             )
         self._update_status()
@@ -194,46 +182,31 @@ class IPTableEditor(ttk.Frame):
             if not issues:
                 tag, status = "ok", "✓"
             else:
-                has_error = any(
-                    getattr(i, "severity", None) == Severity.ERROR for i in issues
-                )
+                has_error = any(getattr(i, "severity", None) == Severity.ERROR for i in issues)
                 tag = "error" if has_error else "warn"
                 status = "✗" if has_error else "!"
-
             self.tree.set(iid, "status", status)
-            base_tags = (tag, "auto_row" if self._auto_flags.get(ip_no, True) else "manual_row")
-            self.tree.item(iid, tags=base_tags)
+            self._apply_row_style(ip_no, status_tag=tag)
 
     def update_curve_columns(self, curves: list) -> None:
-        """계산 결과로 L/타입/방향/M/V/Z 갱신."""
         for curve in curves:
             iid = str(curve.ip_no)
             if not self.tree.exists(iid):
                 continue
 
-            if curve.curve_type == "simplecurve":
-                type_text = "단곡선"
-                l_text = "0"
-            else:
-                type_text = "3차포물선"
-                l_text = f"{curve.spiral_length:.1f}"
+            type_text = "단곡선" if curve.curve_type == "simplecurve" else "3차포물선"
+            l_text = "0" if curve.curve_type == "simplecurve" else f"{curve.spiral_length:.1f}"
             dir_text = "우" if curve.direction == "RIGHT CURVE" else "좌"
 
             self.tree.set(iid, "type", type_text)
             self.tree.set(iid, "dir", dir_text)
             self.tree.set(iid, "l", l_text)
 
-            # 자동 상태일 때만 계산값 반영
-            if self._auto_flags.get(curve.ip_no, True):
-                self._set_param_cells(curve)
+            auto = self._auto_flags.get(curve.ip_no, True)
+            self._set_param_cells(curve, auto=auto)
 
     def get_parameter_overrides(self) -> dict[int, dict[str, float]]:
-        """자동 해제된 IP의 M/V/Z를 서비스용 dict로 반환.
-
-        - m: 그대로 (정수 단위 반올림은 서비스에서)
-        - v: 정수 (서비스에서 10단위 반올림)
-        - z: **mm 단위**로 변환 (테이블 m → ×1000)
-        """
+        """자동 해제된 IP의 M/V/Z (z는 m 단위 그대로)."""
         overrides: dict[int, dict[str, float]] = {}
         for iid in self.tree.get_children():
             ip_no = int(iid)
@@ -241,13 +214,18 @@ class IPTableEditor(ttk.Frame):
                 continue
             vals = self.tree.item(iid, "values")
             try:
-                m = float(vals[6])
-                v = float(vals[7])
-                z_m = float(vals[8])           # 표시: m 단위
+                # '*' 표식 제거
+                m = self._parse_cell(vals[6])
+                v = self._parse_cell(vals[7])
+                z_m = self._parse_cell(vals[8])
             except (ValueError, IndexError):
                 continue
-            overrides[ip_no] = {"m": m, "v": v, "z": z_m * 1000.0}
+            overrides[ip_no] = {"m": m, "v": v, "z": z_m}
         return overrides
+
+    def get_type_overrides(self) -> dict[int, str]:
+        """사용자가 명시 토글한 타입만 반환 (M/V/Z 규칙은 서비스 처리)."""
+        return dict(self._type_overrides)
 
     def get_selected_ip_no(self) -> Optional[int]:
         sel = self.tree.selection()
@@ -267,54 +245,113 @@ class IPTableEditor(ttk.Frame):
     # ------------------------------------------------------------------
     # 내부
     # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_cell(text: str) -> float:
+        """셀 값 파싱 ('*' 표식 제거)."""
+        s = str(text).strip().lstrip("*").strip()
+        return float(s) if s else 0.0
+
     def _insert_row(self, curve) -> None:
-        if curve.curve_type == "simplecurve":
-            type_text, l_text = "단곡선", "0"
-        else:
-            type_text, l_text = "3차포물선", f"{curve.spiral_length:.1f}"
+        auto = self._auto_flags.get(curve.ip_no, True)
+        forced = self._type_overrides.get(curve.ip_no)
+        display_type = forced or curve.curve_type
+        type_text = "단곡선" if display_type == "simplecurve" else "3차포물선"
+        l_text = "0" if display_type == "simplecurve" else f"{curve.spiral_length:.1f}"
         dir_text = "우" if curve.direction == "RIGHT CURVE" else "좌"
 
-        # 기본값: 자동 상태로 초기 생성
-        auto = self._auto_flags.get(curve.ip_no, True)
+        if auto:
+            m_text = f"{curve.m:.1f}"
+            v_text = f"{curve.v:.0f}"
+            z_text = f"{curve.z * 0.001:.4f}"
+        else:
+            m_text, v_text, z_text = "0", "0", "0"
 
         self.tree.insert(
             "", "end", iid=str(curve.ip_no),
-            values=[
-                "✓" if auto else "",
-                f"IP{curve.ip_no}",
-                f"{curve.ip_xy[0]:.4f}",
-                f"{curve.ip_xy[1]:.4f}",
-                f"{curve.radius:.2f}",
-                l_text,
-                f"{curve.m:.1f}" if auto else "",   # M
-                f"{curve.v:.0f}" if auto else "",   # V
-                f"{curve.z * 0.001:.4f}" if auto else "",   # Z(mm → m 표시)
-                type_text, dir_text, "—",
-            ],
+            values=["✓" if auto else "", f"IP{curve.ip_no}",
+                    f"{curve.ip_xy[0]:.4f}", f"{curve.ip_xy[1]:.4f}",
+                    f"{curve.radius:.2f}", l_text,
+                    m_text, v_text, z_text,
+                    type_text, dir_text, "—"],
             tags=("ok", "auto_row" if auto else "manual_row"),
         )
 
-    def _set_param_cells(self, curve) -> None:
-        """자동 모드에서 M/V/Z 셀 갱신."""
+    def _set_param_cells(self, curve, auto: bool) -> None:
+        """M/V/Z 셀 갱신.
+        - 자동: 실제 계산값
+        - 수동: 사용자 입력값 유지. 단, 0이면 자동 재계산된 값에 '*' 표식
+        """
         iid = str(curve.ip_no)
-        self.tree.set(iid, "m", f"{curve.m:.1f}")
-        self.tree.set(iid, "v", f"{curve.v:.0f}")
-        self.tree.set(iid, "z", f"{curve.z * 0.001:.4f}")   # mm → m
+        if auto:
+            self.tree.set(iid, "m", f"{curve.m:.1f}")
+            self.tree.set(iid, "v", f"{curve.v:.0f}")
+            self.tree.set(iid, "z", f"{curve.z * 0.001:.4f}")
+            self._apply_row_style(curve.ip_no)
+            return
 
-    def _apply_row_style(self, ip_no: int) -> None:
+        # 수동: 현재 셀 값 유지 + 0인 항목만 '*' 표식
+        has_fill = False
+        vals = self.tree.item(iid, "values")
+
+        # M: 0이면 원곡선 확정이므로 M 셀은 사용자 그대로
+        try:
+            m_user = self._parse_cell(vals[6])
+        except (ValueError, IndexError):
+            m_user = 0.0
+        if m_user != 0:
+            self.tree.set(iid, "m", f"{m_user:.1f}")
+        else:
+            self.tree.set(iid, "m", "0")
+
+        # V: 0이면 자동값 + '*'
+        try:
+            v_user = self._parse_cell(vals[7])
+        except (ValueError, IndexError):
+            v_user = 0.0
+        if v_user == 0 and curve.curve_type == "cubic":
+            self.tree.set(iid, "v", f"*{curve.v:.0f}")
+            has_fill = True
+        else:
+            self.tree.set(iid, "v", f"{v_user:.0f}")
+
+        # Z: 0이면 자동값 + '*'
+        try:
+            z_user = self._parse_cell(vals[8])
+        except (ValueError, IndexError):
+            z_user = 0.0
+        if z_user == 0 and curve.curve_type == "cubic":
+            self.tree.set(iid, "z", f"*{curve.z * 0.001:.4f}")
+            has_fill = True
+        else:
+            self.tree.set(iid, "z", f"{z_user:.4f}")
+
+        self._apply_row_style(curve.ip_no, has_auto_fill=has_fill)
+
+    def _apply_row_style(self, ip_no: int, status_tag: Optional[str] = None,
+                         has_auto_fill: bool = False) -> None:
         iid = str(ip_no)
         if not self.tree.exists(iid):
             return
         auto = self._auto_flags.get(ip_no, True)
-        current = self.tree.item(iid, "tags") or ()
-        # 기존 상태 tag 유지 (error/warn/ok)
-        status_tags = tuple(t for t in current if t in ("error", "warn", "ok"))
-        if not status_tags:
-            status_tags = ("ok",)
-        self.tree.item(
-            iid,
-            tags=status_tags + ("auto_row" if auto else "manual_row",),
-        )
+
+        # 기존 status tag 유지
+        if status_tag is None:
+            current = self.tree.item(iid, "tags") or ()
+            for t in ("error", "warn", "ok"):
+                if t in current:
+                    status_tag = t
+                    break
+            else:
+                status_tag = "ok"
+
+        if auto:
+            mode_tag = "auto_row"
+        elif has_auto_fill:
+            mode_tag = "manual_auto_fill"
+        else:
+            mode_tag = "manual_row"
+
+        self.tree.item(iid, tags=(status_tag, mode_tag))
 
     def _update_status(self) -> None:
         n = len(self.tree.get_children())
@@ -338,7 +375,6 @@ class IPTableEditor(ttk.Frame):
         if not row_id:
             return
 
-        # 자동 토글 (#1)
         if col_id == "#1":
             self._toggle_auto(row_id)
             return
@@ -350,14 +386,16 @@ class IPTableEditor(ttk.Frame):
         if not (0 <= col_index < len(COLUMNS)):
             return
         col_key = COLUMNS[col_index][0]
-
         ip_no = int(row_id)
-        auto = self._auto_flags.get(ip_no, True)
+
+        if col_key == "type":
+            self._toggle_curve_type(row_id)
+            return
 
         if col_key in _EDITABLE_KEYS:
             self._start_edit(row_id, col_key, event)
         elif col_key in _MANUAL_KEYS:
-            if auto:
+            if self._auto_flags.get(ip_no, True):
                 messagebox.showinfo("안내", "자동 상태입니다. '자동' 칸을 더블클릭해 해제하세요.")
                 return
             self._start_edit(row_id, col_key, event)
@@ -367,17 +405,45 @@ class IPTableEditor(ttk.Frame):
         new_flag = not self._auto_flags.get(ip_no, True)
         self._auto_flags[ip_no] = new_flag
         self.tree.set(row_id, "auto", "✓" if new_flag else "")
-        self._apply_row_style(ip_no)
 
         if not new_flag:
-            # 수동으로 전환: 현재 표시된 값 유지 (이미 계산값이 있으면 그걸 시작점으로)
-            pass  # 이후 재계산 시 get_parameter_overrides가 무시 → 서비스는 auto값 사용
+            # 수동 전환: M/V/Z 0으로 초기화
+            self.tree.set(row_id, "m", "0")
+            self.tree.set(row_id, "v", "0")
+            self.tree.set(row_id, "z", "0")
+
+        self._apply_row_style(ip_no)
 
         if self._on_auto_toggle is not None:
             try:
                 self._on_auto_toggle(ip_no, new_flag)
             except Exception:
                 logger.exception("on_auto_toggle 콜백 오류")
+
+    def _toggle_curve_type(self, row_id: str) -> None:
+        ip_no = int(row_id)
+        current_text = self.tree.set(row_id, "type")
+        current = self._type_overrides.get(
+            ip_no, "simplecurve" if current_text == "단곡선" else "cubic",
+        )
+        new = "cubic" if current == "simplecurve" else "simplecurve"
+        self._type_overrides[ip_no] = new
+        self.tree.set(row_id, "type", "단곡선" if new == "simplecurve" else "3차포물선")
+
+        # 타입 토글 시 자동 해제
+        if self._auto_flags.get(ip_no, True):
+            self._auto_flags[ip_no] = False
+            self.tree.set(row_id, "auto", "")
+            self.tree.set(row_id, "m", "0")
+            self.tree.set(row_id, "v", "0")
+            self.tree.set(row_id, "z", "0")
+            self._apply_row_style(ip_no)
+
+        if self._on_type_toggle is not None:
+            try:
+                self._on_type_toggle(ip_no, new)
+            except Exception:
+                logger.exception("on_type_toggle 콜백 오류")
 
     def _start_edit(self, row_id: str, col_key: str, event) -> None:
         self._cancel_edit()
@@ -387,6 +453,8 @@ class IPTableEditor(ttk.Frame):
             return
         x, y, width, height = bbox
         value = self.tree.set(row_id, col_key)
+        # '*' 표식 제거하고 편집 시작
+        value = str(value).lstrip("*").strip()
 
         self._edit_entry = tk.Entry(self.tree)
         self._edit_entry.insert(0, value)
