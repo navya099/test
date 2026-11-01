@@ -164,30 +164,29 @@ class StationSymbolWriter:
                 for row in rows:
                     self._dispatch(row, curve)
 
-    def _dispatch(self, row, curve):
+    def _dispatch(self, row: StationRow, curve: CurveParams) -> None:
         cfg = self.cfg
         sta_int = int(row.sta)
 
+        # ── 1) 인출선: 라벨 있으면 무조건 (심볼과 독립) ──
+        if row.label and cfg.show_curve_label:
+            self._write_curve_leader(row, curve)
+
+        # ── 2) 측점 심볼: sta 위치 기준 (라벨 유무 무관) ──
         # 1순위: main_tick
         if cfg.main_tick > 0 and sta_int % cfg.main_tick == 0:
             self._write_main_symbol(row)
             return
-
-        # 2순위: sub_symbol (1000m 배수 지점 제외)
+        # 2순위: sub_symbol (1000m 배수 제외)
         if (cfg.sub_symbol > 0
                 and sta_int % cfg.sub_symbol == 0
                 and sta_int % 1000 != 0):
             self._write_sub_symbol(row)
             return
-
         # 3순위: sub_tick
         if cfg.sub_tick > 0 and sta_int % cfg.sub_tick == 0:
             self._write_aux_tick(row)
             return
-
-        # 4순위: 곡선 제원 (라벨 있는 지점만)
-        if cfg.show_curve_label and row.label:
-            self._write_curve_leader(row, curve)
 
     def _write_main_symbol(self, row):
         x, y = row.coord

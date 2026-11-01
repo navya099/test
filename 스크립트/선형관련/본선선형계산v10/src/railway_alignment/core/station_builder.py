@@ -56,8 +56,10 @@ class StationListBuilder(ABC):
     def _base_stations(self) -> list[int]:
         """unit 간격 정수 측점"""
         from src.railway_alignment.core.linestring import generate_integers
+        import math
+        start = math.ceil(self.bp_sta / self.unit) * self.unit
         return generate_integers(
-            int(round(self.bp_sta)),
+            start,
             int(round(self.end_sta)),
             self.unit,
         )
@@ -277,7 +279,7 @@ def build_station_group(
     rows: list[StationRow] = []
     for j, sta in enumerate(stations):
         # 라벨/측거
-        if j == 0:
+        if abs(sta - bp_sta) < 1e-6:
             label = "BP"
             offset = 0.0
         else:
