@@ -34,7 +34,7 @@ from src.railway_alignment.gui.preview_canvas import PreviewCanvas
 from src.railway_alignment.gui.ip_table import IPTableEditor
 from src.railway_alignment.gui.validator_panel import ValidatorPanel
 from src.railway_alignment.gui.dxf_settings_dialog import DXFSettingsDialog
-from src.railway_alignment.io.dxf_config import DXFConfig, apply_preset_to_config, find_nearest_preset
+from src.railway_alignment.io.dxf_config import DXFConfig, apply_preset_to_config
 
 logger = logging.getLogger(__name__)
 
@@ -146,16 +146,6 @@ class MainWindow:
         ttk.Button(bottom, text="조회", command=self._on_lookup_station).pack(
             side="left", padx=(0, 12)
         )
-
-        # main_window._build_ui
-        ttk.Label(bottom, text="축척:").pack(side="left")
-        self.scale_var = tk.StringVar(value="1000")
-        self.scale_combo = ttk.Combobox(
-            bottom, textvariable=self.scale_var, width=10,
-            values=["1000", "2000", "3000", "5000", "10000"],
-            state="normal",  # 자유 입력도 가능
-        )
-        self.scale_combo.pack(side="left", padx=(2, 12))
 
         self.status_var = tk.StringVar(value="준비")
         ttk.Label(bottom, textvariable=self.status_var, foreground="gray").pack(
@@ -398,16 +388,8 @@ class MainWindow:
 
     def _on_export_dxf(self) -> None:
         try:
-            try:
-                scale = int(self.scale_var.get())
-            except (ValueError, tk.TclError):
-                scale = Config.DEFAULT_SCALE
-            if scale < 100:
-                raise AlignmentServiceError("축척은 100 이상이어야 합니다.")
-
-            # 축척 → 프리셋 상속
-            preset = find_nearest_preset(scale)
-            cfg = apply_preset_to_config(self.service.dxf_config, preset)
+            cfg = self.service.dxf_config
+            scale = cfg.scale
 
             # unit: 사용자 입력 vs 프리셋 unit_floor 중 최대
             try:
@@ -416,11 +398,15 @@ class MainWindow:
                 user_unit = Config.DEFAULT_UNIT
             effective_unit = max(user_unit, cfg.unit_floor)
 
+            # 파일명: scale 기반
+            base = Config.DXF_FILENAME.rsplit(".", 1)[0]
+            filename = f"{base}_{scale}.dxf"
+
             path = self.service.export_dxf(
                 scale=scale,
                 config=cfg,
                 unit=effective_unit,
-                filename=self._build_dxf_filename(cfg.scale_preset),
+                filename=filename,
             )
             messagebox.showinfo("Success", f"도면 생성 완료:\n{path}")
 
@@ -434,12 +420,6 @@ class MainWindow:
         except Exception as e:
             logger.exception("DXF 출력 오류")
             messagebox.showerror("Error", f"DXF 출력 실패: {e}")
-
-    def _build_dxf_filename(self, preset_label: str) -> str:
-        """축척 프리셋 이름에서 파일명 생성 (예: 본선평면선형_1-1000.dxf)."""
-        base = Config.DXF_FILENAME.rsplit(".", 1)[0]
-        tag = preset_label.split()[0].replace(":", "-")
-        return f"{base}_{tag}.dxf"
 
     def _on_lookup_coord(self) -> None:
         try:

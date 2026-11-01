@@ -220,8 +220,11 @@ class DXFSettingsDialog(tk.Toplevel):
         )
         preset_combo.grid(row=0, column=1, padx=8, pady=4, sticky="w")
         preset_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
-        ttk.Label(frame, text="(값 자동 제안, 이후 자유 편집)",
-                  foreground="gray").grid(row=0, column=2, sticky="w", padx=4)
+        # 프리셋 설명
+        ttk.Label(
+            frame, text="(프리셋 선택 시 축척과 크기가 자동 설정)",
+            foreground="gray",
+        ).grid(row=0, column=2, columnspan=2, sticky="w", padx=4)
 
         # ── 표시 옵션 ──
         opts = ttk.LabelFrame(frame, text="표시 옵션")

@@ -100,6 +100,7 @@ class DXFConfig:
     sym200_interval: int = 200
 
     # ── 축척 프리셋 ──
+    scale: int = 1000
     scale_preset: str = "1:1000 실시설계"
     unit_floor: int = 20
     km_precision: int = 2
@@ -208,15 +209,10 @@ SCALE_PRESETS: list[ScalePreset] = [
     ),
 ]
 
-
-def find_nearest_preset(scale: int) -> ScalePreset:
-    """축척에 가장 가까운 프리셋 반환."""
-    return min(SCALE_PRESETS, key=lambda p: abs(p.scale - scale))
-
-
 def apply_preset_to_config(config: DXFConfig, preset: ScalePreset) -> DXFConfig:
     """프리셋 값을 config 복사본에 반영."""
     new = DXFConfig.from_dict(config.to_dict())
+    new.scale = preset.scale
     new.scale_preset = preset.label
     new.unit_floor = preset.unit_floor
     new.km_interval = preset.km_interval
