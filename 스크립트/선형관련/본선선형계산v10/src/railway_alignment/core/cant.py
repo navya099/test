@@ -1,4 +1,4 @@
-from src.railway_alignment.core.constant_config import Config, M_VALUE_TABLE
+from src.railway_alignment.core.constants import Config, M_VALUE_TABLE
 import math
 
 def calculate_parameters(

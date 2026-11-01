@@ -20,7 +20,7 @@ from typing import Optional
 from shapely.geometry import LineString
 
 from src.railway_alignment.core.cant import calculate_parameters
-from src.railway_alignment.core.constant_config import Config
+from src.railway_alignment.core.constants import Config
 from src.railway_alignment.core.coordinate_calculator import (
     build_geometry_from_curve,
     create_coordinate_calculator, get_station_at_coordinates,
@@ -28,6 +28,7 @@ from src.railway_alignment.core.coordinate_calculator import (
 from src.railway_alignment.core.curve import cal_spiral_shiftx, cal_spiral_shifty, calculate_curve
 from src.railway_alignment.core.linestring import create_linestring
 from src.railway_alignment.core.math_util import calculate_angles, calculate_station_offset
+from src.railway_alignment.core.validator import validate_curves, ValidationIssue
 from src.railway_alignment.io.civil3d_wirter import create_civil3d_xlsx, create_incremental_station_report, \
     save_total_coordinates
 from src.railway_alignment.io.dxf_writer import create_dxf
@@ -69,6 +70,10 @@ class AlignmentResult:
     total_coord_path: Optional[Path] = None
     incremental_report_path: Optional[Path] = None
     dxf_path: Optional[Path] = None
+
+    # ✅ 검증 결과
+    issues: list[ValidationIssue] = field(default_factory=list)
+
 
     @property
     def is_empty(self) -> bool:
@@ -121,6 +126,7 @@ class AlignmentService:
 
         # 2) 선형 계산
         result = self._run_calculation(alignment, input_data)
+        result.issues = validate_curves(result.curves)  # ✅ 추가
         self.result = result
 
         # 3) 결과물 저장
@@ -131,6 +137,22 @@ class AlignmentService:
             len(result.curves),
             sum(len(sg[0]) for sg in result.station_groups),
         )
+        return result
+
+    def calculate_only(self, input_data: AlignmentInput) -> AlignmentResult:
+        """계산만 수행 (파일 저장 없음) — 실시간 UI용"""
+        if not input_data.raw_lines:
+            raise AlignmentServiceError("선형 데이터가 비어 있습니다.")
+
+        alignment = self._parse_alignment(input_data.raw_lines)
+        if len(alignment) < 3:
+            raise AlignmentServiceError(
+                f"IP가 3개 이상 필요합니다 (현재 {len(alignment)}개)."
+            )
+
+        result = self._run_calculation(alignment, input_data)
+        result.issues = validate_curves(result.curves)
+        self.result = result
         return result
 
     def export_dxf(self, scale: int = Config.DEFAULT_SCALE, filename: str = None) -> Path:

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from shapely.geometry.linestring  import LineString
 import ezdxf
 
-from src.railway_alignment.core.constant_config import Config
+from src.railway_alignment.core.constants import Config
 from src.railway_alignment.core.math_util import degrees_to_dms2, calculate_destination_coordinates, format_distance, \
     calculate_bearing
 from src.railway_alignment.core.models import StationRow, CurveParams

@@ -3,7 +3,7 @@ import math
 from shapely.geometry.linestring  import LineString
 
 from src.railway_alignment.core.cant import dictionary_cubicparabola
-from src.railway_alignment.core.constant_config import Config
+from src.railway_alignment.core.constants import Config
 from src.railway_alignment.core.math_util import calculate_bearing_n, calculate_distance, find_direction, \
     format_distance
 from src.railway_alignment.core.models import StationRow, CurveParams

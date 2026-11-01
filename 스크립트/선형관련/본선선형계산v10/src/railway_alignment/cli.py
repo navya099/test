@@ -24,8 +24,8 @@ import logging
 import sys
 from pathlib import Path
 
-from src.railway_alignment.core.constant_config import Config
-from src.railway_alignment.gui.app import AlignmentApp
+from src.railway_alignment.core.constants import Config
+from src.railway_alignment.gui.app import MainWindow
 from src.railway_alignment.service.alignment_service import AlignmentService, AlignmentInput
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ def main_gui() -> None:
     import tkinter as tk
 
     root = tk.Tk()
-    AlignmentApp(root)
+    MainWindow(root)
     root.mainloop()
 
 

@@ -1,120 +1,395 @@
-import tkinter as tk
+"""
+메인 윈도우 (패널 통합)
+========================
+패널 기반 선형편집도구. 서비스(AlignmentService)는 단일 진실 공급원.
 
-from src.railway_alignment.core.constant_config import Config
-from src.railway_alignment.core.math_util import format_station
-from src.railway_alignment.io.parsers import read_alignment_file
-from src.railway_alignment.service.alignment_service import AlignmentService, AlignmentInput, AlignmentServiceError
+규칙:
+    - 편집 중 재계산은 calculate_only() (파일 저장 없음)
+    - "계산+저장" 버튼만 calculate() 호출
+    - 검증 결과는 result.issues(ValidationIssue)에서 읽음
+    - 미리보기 선형 좌표는 result.polycurve
+    - 외부 콜백 인자는 ip_no(1-based)로 통일
+    - raw_lines 인덱스 == ip_no (raw_lines[0]=BP)
+"""
+
+from __future__ import annotations
 
 import logging
+import tkinter as tk
+from tkinter import messagebox, ttk
+from typing import Optional
+
+from src.railway_alignment.core.constants import Config
+from src.railway_alignment.core.math_util import format_station
+from src.railway_alignment.core.validator import issues_by_ip as group_issues_by_ip
+from src.railway_alignment.io.parsers import read_alignment_file
+from src.railway_alignment.service.alignment_service import (
+    AlignmentInput,
+    AlignmentResult,
+    AlignmentService,
+    AlignmentServiceError,
+)
+
+from src.railway_alignment.gui.preview_canvas import PreviewCanvas
+from src.railway_alignment.gui.ip_table import IPTableEditor
+from src.railway_alignment.gui.validator_panel import ValidatorPanel
 
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# GUI
-# ============================================================
-class AlignmentApp:
+
+class MainWindow:
+    """패널 기반 선형편집도구 메인 윈도우."""
+
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Railway Alignment Tool v10")
+        self.root.title("Railway Alignment Tool — 선형편집도구")
+        self.root.geometry("1280x820")
+
         self.service = AlignmentService()
-        self.last_unit = Config.DEFAULT_UNIT  # DXF 출력 시 재사용
+
+        self._raw_lines: Optional[list[list[str]]] = None
+        self._result: Optional[AlignmentResult] = None
+        self._current_file: Optional[str] = None
+
         self._build_ui()
+        self.root.after(100, self._on_open_file)
 
-    def _build_ui(self):
-        r = self.root
+    # ------------------------------------------------------------------
+    # UI
+    # ------------------------------------------------------------------
+    def _build_ui(self) -> None:
+        root = self.root
 
-        tk.Label(r, text="계산 간격 (기본 20)").grid(row=0, column=0)
-        self.entry_unit = tk.Entry(r)
-        self.entry_unit.grid(row=0, column=1)
+        params = ttk.LabelFrame(root, text="계산 파라미터")
+        params.pack(side="top", fill="x", padx=6, pady=(6, 2))
 
-        tk.Label(r, text="시작 측점 (기본 0)").grid(row=1, column=0)
-        self.entry_start = tk.Entry(r)
-        self.entry_start.grid(row=1, column=1)
+        self.entry_unit = self._labeled_entry(params, "계산 간격", "20", col=0)
+        self.entry_start = self._labeled_entry(params, "시작 측점", "0", col=2)
+        self.entry_speed = self._labeled_entry(params, "설계 속도", "250", col=4)
 
-        tk.Label(r, text="설계 최고 속도 (기본 250)").grid(row=2, column=0)
-        self.entry_speed = tk.Entry(r)
-        self.entry_speed.grid(row=2, column=1)
-
-        tk.Label(r, text="도상 유형").grid(row=3, column=0)
+        ttk.Label(params, text="도상 유형").grid(row=0, column=6, padx=(12, 2))
         self.ballast_var = tk.IntVar(value=0)
-        tk.Radiobutton(r, text="자갈도상", variable=self.ballast_var, value=0).grid(row=3, column=1)
-        tk.Radiobutton(r, text="콘크리트도상", variable=self.ballast_var, value=1).grid(row=3, column=2)
+        ttk.Radiobutton(params, text="자갈", variable=self.ballast_var, value=0).grid(
+            row=0, column=7
+        )
+        ttk.Radiobutton(params, text="콘크리트", variable=self.ballast_var, value=1).grid(
+            row=0, column=8
+        )
 
-        tk.Button(r, text="계산 시작", command=self.run_calculation).grid(row=4, columnspan=3, pady=10)
+        ttk.Button(params, text="파일 열기", command=self._on_open_file).grid(
+            row=0, column=9, padx=(16, 4)
+        )
+        ttk.Button(params, text="재계산", command=self._on_recalculate).grid(
+            row=0, column=10, padx=4
+        )
+        ttk.Button(params, text="계산+저장", command=self._on_calculate_and_save).grid(
+            row=0, column=11, padx=4
+        )
+        ttk.Button(params, text="도면 출력", command=self._on_export_dxf).grid(
+            row=0, column=12, padx=4
+        )
 
-        tk.Label(r, text="도면 축척").grid(row=5, column=0)
-        self.entry_scale = tk.Entry(r)
-        self.entry_scale.insert(0, "1000")
-        self.entry_scale.grid(row=5, column=1)
-        tk.Button(r, text="도면 출력", command=self.export_dxf).grid(row=5, column=2)
+        center = ttk.PanedWindow(root, orient="horizontal")
+        center.pack(side="top", fill="both", expand=True, padx=6, pady=4)
 
-        tk.Label(r, text="측점 → 좌표").grid(row=6, column=0)
-        self.entry_station = tk.Entry(r)
-        self.entry_station.grid(row=6, column=1)
-        tk.Button(r, text="좌표 계산", command=self.lookup_coord).grid(row=6, column=2)
+        left = ttk.Frame(center)
+        center.add(left, weight=1)
+        self.ip_table = IPTableEditor(
+            left,
+            on_edit=self._on_ip_edit,
+            on_select=self._on_ip_select,
+            on_insert=self._on_ip_insert,
+            on_delete=self._on_ip_delete,
+        )
+        self.ip_table.pack(fill="both", expand=True)
 
-        tk.Label(r, text="좌표 → 측점").grid(row=7, column=0)
-        self.entry_coord = tk.Entry(r)
-        self.entry_coord.grid(row=7, column=1)
-        tk.Button(r, text="측점 찾기", command=self.lookup_station).grid(row=7, column=2)
+        right = ttk.PanedWindow(center, orient="vertical")
+        center.add(right, weight=2)
 
-        tk.Button(r, text="프로그램 종료", command=self.root.destroy).grid(row=8, columnspan=3, pady=10)
+        preview_frame = ttk.LabelFrame(right, text="평면 미리보기")
+        right.add(preview_frame, weight=3)
+        self.preview = PreviewCanvas(
+            preview_frame, on_ip_click=self._on_preview_ip_click
+        )
+        self.preview.pack(fill="both", expand=True)
 
-    def _read_inputs(self) -> tuple[int, float, int, str]:
-        unit = int(self.entry_unit.get()) if self.entry_unit.get() else Config.DEFAULT_UNIT
-        start_sta = float(self.entry_start.get()) if self.entry_start.get() else Config.DEFAULT_START_STA
-        speed = int(self.entry_speed.get()) if self.entry_speed.get() else Config.DEFAULT_DESIGN_SPEED
-        ballast = "자갈도상" if self.ballast_var.get() == 0 else "콘크리트도상"
-        return unit, start_sta, speed, ballast
+        validator_frame = ttk.LabelFrame(right, text="검증")
+        right.add(validator_frame, weight=1)
+        self.validator = ValidatorPanel(
+            validator_frame,
+            on_issue_select=self._on_issue_select,
+            on_run_validate=self._on_recalculate,
+        )
+        self.validator.pack(fill="both", expand=True)
 
-    # --------------------------------------------------------
-    # 계산 시작 (서비스 위임)
-    # --------------------------------------------------------
-    def run_calculation(self):
-        from tkinter import messagebox
+        bottom = ttk.Frame(root)
+        bottom.pack(side="bottom", fill="x", padx=6, pady=6)
+
+        ttk.Label(bottom, text="측점→좌표:").pack(side="left")
+        self.entry_station = ttk.Entry(bottom, width=12)
+        self.entry_station.pack(side="left", padx=(2, 2))
+        ttk.Button(bottom, text="조회", command=self._on_lookup_coord).pack(
+            side="left", padx=(0, 12)
+        )
+
+        ttk.Label(bottom, text="좌표→측점(x,y):").pack(side="left")
+        self.entry_coord = ttk.Entry(bottom, width=20)
+        self.entry_coord.pack(side="left", padx=(2, 2))
+        ttk.Button(bottom, text="조회", command=self._on_lookup_station).pack(
+            side="left", padx=(0, 12)
+        )
+
+        ttk.Label(bottom, text="축척:").pack(side="left")
+        self.entry_scale = ttk.Entry(bottom, width=8)
+        self.entry_scale.insert(0, str(Config.DEFAULT_SCALE))
+        self.entry_scale.pack(side="left", padx=(2, 12))
+
+        self.status_var = tk.StringVar(value="준비")
+        ttk.Label(bottom, textvariable=self.status_var, foreground="gray").pack(
+            side="right"
+        )
+
+    def _labeled_entry(
+        self, parent: ttk.Widget, label: str, default: str, col: int
+    ) -> ttk.Entry:
+        ttk.Label(parent, text=label).grid(row=0, column=col, padx=(6, 2))
+        entry = ttk.Entry(parent, width=10)
+        entry.insert(0, default)
+        entry.grid(row=0, column=col + 1, padx=(0, 6))
+        return entry
+
+    # ------------------------------------------------------------------
+    # 파라미터
+    # ------------------------------------------------------------------
+    def _read_inputs(self) -> AlignmentInput:
+        def _int(entry: ttk.Entry, default: int) -> int:
+            try:
+                return int(entry.get())
+            except (ValueError, tk.TclError):
+                return default
+
+        def _float(entry: ttk.Entry, default: float) -> float:
+            try:
+                return float(entry.get())
+            except (ValueError, tk.TclError):
+                return default
+
+        return AlignmentInput(
+            raw_lines=self._raw_lines or [],
+            unit=_int(self.entry_unit, Config.DEFAULT_UNIT),
+            start_sta=_float(self.entry_start, Config.DEFAULT_START_STA),
+            design_speed=_int(self.entry_speed, Config.DEFAULT_DESIGN_SPEED),
+            ballast="자갈도상" if self.ballast_var.get() == 0 else "콘크리트도상",
+        )
+
+    # ------------------------------------------------------------------
+    # 파일 열기
+    # ------------------------------------------------------------------
+    def _on_open_file(self) -> None:
+        lines = read_alignment_file()
+        if not lines:
+            self.status_var.set("파일 선택 취소 또는 읽기 실패")
+            return
+
+        self._raw_lines = lines
+        self._current_file = "(선택된 파일)"
+        self.status_var.set(f"파일 로드 완료: {len(lines)}행")
+
+        self.ip_table.load_raw(lines)
+        self._recalculate(save=False)
+
+    # ------------------------------------------------------------------
+    # 재계산
+    # ------------------------------------------------------------------
+    def _on_recalculate(self) -> None:
+        self._recalculate(save=False)
+
+    def _recalculate(self, save: bool) -> None:
+        if not self._raw_lines:
+            messagebox.showwarning("안내", "먼저 선형 데이터 파일을 열어주세요.")
+            return
+
+        self.validator.set_busy(True)
+        self.status_var.set("계산 중...")
+        self.root.update_idletasks()
 
         try:
-            unit, start_sta, speed, ballast = self._read_inputs()
-            self.last_unit = unit
-
-            lines = read_alignment_file()
-            if not lines:
-                messagebox.showerror("Error", "선형 데이터를 읽을 수 없습니다.")
-                return
-
-            input_data = AlignmentInput(
-                raw_lines=lines,
-                unit=unit,
-                start_sta=start_sta,
-                design_speed=speed,
-                ballast=ballast,
+            input_data = self._read_inputs()
+            result = (
+                self.service.calculate(input_data)
+                if save
+                else self.service.calculate_only(input_data)
             )
-            result = self.service.calculate(input_data)
 
-            messagebox.showinfo(
-                "Success",
-                f"보고서 및 Civil3D 출력 완료\n"
-                f"IP: {len(result.curves)}개\n"
-                f"출력 폴더: {Config.OUTPUT_DIR}",
+            self._result = result
+            self.ip_table.load_curves(result.curves)
+            self.ip_table.update_curve_columns(result.curves)
+            self._refresh_preview()
+            self._apply_validation(result)
+
+            suffix = " (저장됨)" if save else ""
+            self.status_var.set(
+                f"계산 완료{suffix} — IP {len(result.curves)}개, "
+                f"검증 {len(result.issues)}건"
             )
         except AlignmentServiceError as e:
             logger.error("계산 실패: %s", e)
             messagebox.showerror("Error", str(e))
+            self.status_var.set("계산 실패")
         except Exception as e:
             logger.exception("예상치 못한 오류")
             messagebox.showerror("Error", f"예상치 못한 오류: {e}")
+            self.status_var.set("계산 실패")
+        finally:
+            self.validator.set_busy(False)
 
-    # --------------------------------------------------------
-    # DXF 출력 (서비스 위임)
-    # --------------------------------------------------------
-    def export_dxf(self):
-        from tkinter import messagebox
+    def _on_calculate_and_save(self) -> None:
+        self._recalculate(save=True)
+        if self._result is not None and not self._result.is_empty:
+            messagebox.showinfo(
+                "Success",
+                f"보고서 및 Civil3D 출력 완료\n"
+                f"IP: {len(self._result.curves)}개\n"
+                f"출력 폴더: {Config.OUTPUT_DIR}",
+            )
 
+    # ------------------------------------------------------------------
+    # 검증 결과 반영
+    # ------------------------------------------------------------------
+    def _apply_validation(self, result: AlignmentResult) -> None:
+        issues = list(result.issues or [])
+        self.validator.set_results([
+            {
+                "severity": it.severity.value,   # "ok" / "warn" / "error"
+                "code": it.code,
+                "message": it.message,
+                "ip_no": it.ip_no,
+            }
+            for it in issues
+        ])
+        if issues:
+            self.ip_table.apply_validation(group_issues_by_ip(issues))
+
+    # ------------------------------------------------------------------
+    # 미리보기
+    # ------------------------------------------------------------------
+    def _refresh_preview(self) -> None:
+        if self._result is None or not self._result.curves:
+            self.preview.clear()
+            return
+        ip_points = [tuple(c.ip_xy) for c in self._result.curves]
+        element_points = (
+            [tuple(p) for p in self._result.polycurve]
+            if self._result.polycurve else None
+        )
+        self.preview.plot_alignment(
+            ip_points=ip_points, element_points=element_points
+        )
+
+    # ------------------------------------------------------------------
+    # IP 번호 ↔ 인덱스 매핑
+    # ------------------------------------------------------------------
+    def _ip_index_of(self, ip_no: int) -> int:
+        """ip_no → result.curves 내 0-based 인덱스."""
+        if self._result:
+            for i, c in enumerate(self._result.curves):
+                if c.ip_no == ip_no:
+                    return i
+        return max(0, ip_no - 1)
+
+    def _raw_index_of(self, ip_no: int) -> Optional[int]:
+        """ip_no → raw_lines 인덱스. raw_lines[0]=BP, raw_lines[1]=IP1."""
+        if not self._raw_lines:
+            return None
+        idx = ip_no  # IP1 ↔ raw_lines[1]
+        if 0 <= idx < len(self._raw_lines):
+            return idx
+        return None
+
+    # ------------------------------------------------------------------
+    # IP 테이블 콜백
+    # ------------------------------------------------------------------
+    def _on_ip_select(self, ip_no: int) -> None:
+        self.preview.highlight_ip(self._ip_index_of(ip_no))
+
+    def _on_ip_edit(self, ip_no: int, field: str, new_value: str) -> None:
+        if not self._raw_lines:
+            return
+        raw_idx = self._raw_index_of(ip_no)
+        if raw_idx is None or raw_idx <= 0:
+            return
+
+        row = list(self._raw_lines[raw_idx])
         try:
-            scale = int(self.entry_scale.get()) if self.entry_scale.get() else Config.DEFAULT_SCALE
-            if scale < Config.DEFAULT_SCALE:
-                raise AlignmentServiceError("축척은 1000 이상이어야 합니다.")
+            val = float(new_value)
+        except ValueError:
+            messagebox.showerror("입력 오류", f"숫자를 입력하세요: {new_value}")
+            return
 
+        # raw_lines 컬럼: [Y, X, R, ...]
+        col_map = {"y": 0, "x": 1, "r": 2, "l": 3}
+        col = col_map.get(field)
+        if col is None:
+            return
+        while len(row) <= col:
+            row.append("0")
+        row[col] = str(val)
+
+        self._raw_lines[raw_idx] = row
+        self._recalculate(save=False)
+
+    def _on_ip_insert(self, ip_no: int) -> None:
+        if not self._raw_lines:
+            messagebox.showwarning("안내", "먼저 파일을 열어주세요.")
+            return
+        raw_idx = self._raw_index_of(ip_no) or max(1, len(self._raw_lines) - 1)
+        base = (
+            list(self._raw_lines[raw_idx])
+            if 0 < raw_idx < len(self._raw_lines)
+            else ["0", "0", "0"]
+        )
+        self._raw_lines.insert(raw_idx, base)
+        self.ip_table.load_raw(self._raw_lines)
+        self._recalculate(save=False)
+
+    def _on_ip_delete(self, ip_no: int) -> None:
+        if not self._raw_lines:
+            return
+        raw_idx = self._raw_index_of(ip_no)
+        if raw_idx is None or not (0 < raw_idx < len(self._raw_lines) - 1):
+            messagebox.showwarning("삭제 불가", "BP/EP는 삭제할 수 없습니다.")
+            return
+        del self._raw_lines[raw_idx]
+        self.ip_table.load_raw(self._raw_lines)
+        self._recalculate(save=False)
+
+    # ------------------------------------------------------------------
+    # 미리보기 / 검증 콜백
+    # ------------------------------------------------------------------
+    def _on_preview_ip_click(self, ip_index: int) -> None:
+        if self._result and 0 <= ip_index < len(self._result.curves):
+            self.ip_table.select_ip_no(self._result.curves[ip_index].ip_no)
+
+    def _on_issue_select(self, ip_no: Optional[int]) -> None:
+        if ip_no is None:
+            self.preview.highlight_ip(None)
+            return
+        self.ip_table.select_ip_no(ip_no)
+        self.preview.highlight_ip(self._ip_index_of(ip_no))
+
+    # ------------------------------------------------------------------
+    # DXF / 조회
+    # ------------------------------------------------------------------
+    def _on_export_dxf(self) -> None:
+        try:
+            try:
+                scale = int(self.entry_scale.get())
+            except (ValueError, tk.TclError):
+                scale = Config.DEFAULT_SCALE
+            if scale < Config.DEFAULT_SCALE:
+                raise AlignmentServiceError(
+                    f"축척은 {Config.DEFAULT_SCALE} 이상이어야 합니다."
+                )
             path = self.service.export_dxf(scale=scale)
             messagebox.showinfo("Success", f"도면 생성 완료:\n{path}")
         except AlignmentServiceError as e:
@@ -123,35 +398,34 @@ class AlignmentApp:
             logger.exception("DXF 출력 오류")
             messagebox.showerror("Error", f"DXF 출력 실패: {e}")
 
-    # --------------------------------------------------------
-    # 조회
-    # --------------------------------------------------------
-    def lookup_coord(self):
-        from tkinter import messagebox
-
+    def _on_lookup_coord(self) -> None:
         try:
             sta = float(self.entry_station.get())
-            coord = self.service.get_coordinate(sta)
-            if coord:
-                messagebox.showinfo("Result", f"X = {coord[0]:.4f}, Y = {coord[1]:.4f}")
-            else:
-                messagebox.showerror("Error", "좌표를 찾을 수 없습니다.")
-        except ValueError:
+        except (ValueError, tk.TclError):
             messagebox.showerror("Input Error", "유효한 측점을 입력하세요.")
+            return
+        try:
+            coord = self.service.get_coordinate(sta)
         except AlignmentServiceError as e:
             messagebox.showerror("Error", str(e))
+            return
+        if coord:
+            messagebox.showinfo("Result", f"X = {coord[0]:.4f}, Y = {coord[1]:.4f}")
+        else:
+            messagebox.showerror("Error", "좌표를 찾을 수 없습니다.")
 
-    def lookup_station(self):
-        from tkinter import messagebox
-
+    def _on_lookup_station(self) -> None:
         try:
             x, y = map(float, self.entry_coord.get().split(","))
-            sta = self.service.get_station(x, y)
-            if sta is not None:
-                messagebox.showinfo("Result", f"측점: {format_station(sta)}")
-            else:
-                messagebox.showerror("Error", "측점을 찾을 수 없습니다.")
         except ValueError:
             messagebox.showerror("Input Error", "좌표를 'x,y' 형식으로 입력하세요.")
+            return
+        try:
+            sta = self.service.get_station(x, y)
         except AlignmentServiceError as e:
             messagebox.showerror("Error", str(e))
+            return
+        if sta is not None:
+            messagebox.showinfo("Result", f"측점: {format_station(sta)}")
+        else:
+            messagebox.showerror("Error", "측점을 찾을 수 없습니다.")

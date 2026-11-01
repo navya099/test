@@ -1,7 +1,7 @@
 import csv
 from pathlib import Path
 
-from src.railway_alignment.core.constant_config import Config
+from src.railway_alignment.core.constants import Config
 from src.railway_alignment.core.math_util import format_station, format_bearing
 from src.railway_alignment.core.models import CurveParams, StationRow
 from src.railway_alignment.io.report_writer import save_with_retry

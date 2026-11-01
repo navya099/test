@@ -19,7 +19,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-from src.railway_alignment.core.constant_config import Config
+from src.railway_alignment.core.constants import Config
 from src.railway_alignment.core.math_util import format_distance, degrees_to_dms
 from src.railway_alignment.core.models import CurveParams, StationRow
 
