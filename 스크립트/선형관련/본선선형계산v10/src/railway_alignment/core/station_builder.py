@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # 1) 측점 리스트 빌더
 # ============================================================
+# ============================================================
+# 1) 측점 리스트 빌더 (개선)
+# ============================================================
 class StationListBuilder(ABC):
     """측점 리스트 생성 전략"""
 
@@ -52,7 +55,6 @@ class StationListBuilder(ABC):
 
     def _base_stations(self) -> list[int]:
         """unit 간격 정수 측점"""
-
         from src.railway_alignment.core.linestring import generate_integers
         return generate_integers(
             int(round(self.bp_sta)),
@@ -61,53 +63,47 @@ class StationListBuilder(ABC):
         )
 
     def _finalize(self, stations: list[float]) -> list[float]:
-        """정렬 + 중복 제거 (부동소수점 안전)"""
-        seen = set()
-        unique = []
-        for sta in sorted(stations):
-            key = round(sta, 6)
-            if key in seen:
-                continue
-            seen.add(key)
-            unique.append(sta)
-        return unique
+        """0.01m 정밀도로 중복 제거 + 정렬 (부동소수점 안전)."""
+        unique: dict[int, float] = {}
+        for sta in stations:
+            key = int(round(sta * 100))  # ✅ 0.01m 단위
+            if key not in unique:
+                unique[key] = sta
+        return [unique[k] for k in sorted(unique)]
 
 
 class SimpleCurveStationListBuilder(StationListBuilder):
-    """단곡선: BP, BC, EC (+ EP)"""
-
     def build(self) -> list[float]:
         stations = self._base_stations()
         stations.extend([self.bp_sta, self.curve.bc_sta, self.curve.ec_sta])
-        if self.end_sta > self.curve.ec_sta:
+        if self.end_sta - self.curve.ec_sta > 1e-6:
             stations.append(self.end_sta)
         return self._finalize(stations)
 
 
 class CubicStationListBuilder(StationListBuilder):
-    """3차포물선: BP, SP, PC, CP, PS (+ EP)"""
-
     def build(self) -> list[float]:
         stations = self._base_stations()
-        extra = [
-            self.curve.sp_sta,
-            self.curve.pc_sta,
-            self.curve.cp_sta,
-            self.curve.ps_sta,
+
+        markers = [
+            self.curve.sp_sta, self.curve.pc_sta,
+            self.curve.cp_sta, self.curve.ps_sta,
         ]
-        # BP가 unit 배수가 아니면 명시 추가
+        if any(m is None for m in markers):
+            raise ValueError(
+                f"IP{self.curve.ip_no}: cubic 곡선인데 SP/PC/CP/PS가 None"
+            )
+        stations.extend(markers)
+
         if self.bp_sta % self.unit != 0:
-            extra.insert(0, self.bp_sta)
-        # 마지막 IP면 EP 추가
-        if self.end_sta > self.curve.ps_sta:
-            extra.append(self.end_sta)
-        stations.extend(extra)
+            stations.append(self.bp_sta)
+        if self.end_sta - self.curve.ps_sta > 1e-6:
+            stations.append(self.end_sta)
+
         return self._finalize(stations)
 
 
-def create_station_list_builder(
-    curve: "CurveParams", bp_sta: float, end_sta: float, unit: int
-) -> StationListBuilder:
+def create_station_list_builder(curve, bp_sta, end_sta, unit):
     if curve.curve_type == "simplecurve":
         return SimpleCurveStationListBuilder(curve, bp_sta, end_sta, unit)
     return CubicStationListBuilder(curve, bp_sta, end_sta, unit)
@@ -294,7 +290,6 @@ def build_station_group(
         # row 생성
         row = row_factory.create(sta, offset, label, shift)
         rows.append(row)
-
     return rows
 
 
