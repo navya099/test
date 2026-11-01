@@ -1,7 +1,13 @@
-"""DXF 출력 설정"""
+"""
+DXF 출력 설정
+================
+레이어/색상/크기/오프셋 + 축척 프리셋 + IP 블록 타입.
+"""
 
 from __future__ import annotations
-import json, logging
+
+import json
+import logging
 from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 from typing import Any, Optional
@@ -13,6 +19,7 @@ def _default_config_path() -> Path:
     return Path.home() / ".railway_alignment" / "dxf_config.json"
 
 
+# ACI 색상 (드롭다운용)
 ACI_COLORS: list[tuple[int, str]] = [
     (1, "빨강"), (2, "노랑"), (3, "초록"), (4, "청록"),
     (5, "파랑"), (6, "자홍"), (7, "흰/검"), (9, "BYLAYER"),
@@ -20,6 +27,29 @@ ACI_COLORS: list[tuple[int, str]] = [
 ACI_BY_VALUE: dict[int, str] = dict(ACI_COLORS)
 
 
+# ============================================================
+# IP 블록 타입
+# ============================================================
+IP_BLOCK_TYPES: list[tuple[str, str]] = [
+    ("default",  "기본 (1:1000 실시설계)"),
+    ("compact",  "간략 (1:5000 기본계획)"),
+    ("none",     "블록 없음"),
+    # ── 미구현 ──
+    ("예타_A",   "예타 타입A"),
+    ("예타_B",   "예타 타입B"),
+    ("예타_C",   "예타 타입C"),
+    ("국가망_A", "국가망 타입A"),
+    ("국가망_B", "국가망 타입B"),
+    ("보도_A",   "보도용 타입A"),
+    ("보도_B",   "보도용 타입B"),
+]
+
+IMPLEMENTED_BLOCK_TYPES: set[str] = {"default", "compact", "none"}
+
+
+# ============================================================
+# 스타일
+# ============================================================
 @dataclass
 class LayerStyle:
     name: str
@@ -27,6 +57,9 @@ class LayerStyle:
     linetype: str = "CONTINUOUS"
 
 
+# ============================================================
+# 설정
+# ============================================================
 @dataclass
 class DXFConfig:
     """DXF 출력 전체 설정"""
@@ -66,19 +99,17 @@ class DXFConfig:
     km_interval: int = 1000
     sym200_interval: int = 200
 
-    # ── ✅ 축척 프리셋 ──
+    # ── 축척 프리셋 ──
     scale_preset: str = "1:1000 실시설계"
-    unit_floor: int = 20              # 보조측점 최소 간격
-    km_precision: int = 2             # km 소수 자리수
+    unit_floor: int = 20
+    km_precision: int = 2
 
-    # ── ✅ 표시 옵션 ──
-    show_ip_block: bool = True        # DXF IP 제원표 블록
-    show_curve_label: bool = True     # 곡선제원문자 표시
-    curve_label_mode: str = "full"    # "full"(라벨+측점) | "label_only"(라벨만)
-    show_200_text: bool = True        # 200m 문자 표시
-    show_km_text: bool = True         # km 문자 표시
-
-    ip_block_mode: str = "full"  # "full" | "compact" | "minimal" | "none"
+    # ── 표시 옵션 ──
+    ip_block_type: str = "default"      # IP_BLOCK_TYPES의 id
+    show_curve_label: bool = True
+    curve_label_mode: str = "full"      # "full" | "label_only"
+    show_200_text: bool = True
+    show_km_text: bool = True
 
     # ------------------------------------------------------------------
     def to_dict(self) -> dict:
@@ -126,16 +157,15 @@ class DXFConfig:
 # ============================================================
 @dataclass(frozen=True)
 class ScalePreset:
-    """축척별 초기값 제안 (사용자가 이후 자유 편집)"""
     scale: int
     label: str
     unit_floor: int
     km_interval: int
     sym200_interval: int
     km_precision: int
-    ip_block_mode: str  # ✅ "full" | "compact" | "minimal" | "none"
+    ip_block_type: str
     show_curve_label: bool
-    curve_label_mode: str          # "full" | "label_only"
+    curve_label_mode: str
     show_200_text: bool
     show_km_text: bool
 
@@ -144,35 +174,35 @@ SCALE_PRESETS: list[ScalePreset] = [
     ScalePreset(
         scale=1000, label="1:1000 실시설계",
         unit_floor=20, km_interval=1000, sym200_interval=200, km_precision=2,
-        ip_block_mode="full",
+        ip_block_type="default",
         show_curve_label=True, curve_label_mode="full",
         show_200_text=True, show_km_text=True,
     ),
     ScalePreset(
         scale=2000, label="1:2000",
         unit_floor=20, km_interval=1000, sym200_interval=200, km_precision=2,
-        ip_block_mode="full",
+        ip_block_type="default",
         show_curve_label=True, curve_label_mode="full",
         show_200_text=True, show_km_text=True,
     ),
     ScalePreset(
         scale=5000, label="1:5000 기본계획",
         unit_floor=40, km_interval=1000, sym200_interval=200, km_precision=1,
-        ip_block_mode="compact",
+        ip_block_type="compact",
         show_curve_label=True, curve_label_mode="full",
         show_200_text=True, show_km_text=True,
     ),
     ScalePreset(
         scale=10000, label="1:10000",
         unit_floor=100, km_interval=2000, sym200_interval=400, km_precision=1,
-        ip_block_mode="minimal",
+        ip_block_type="default",       # 임시 (추후 변경)
         show_curve_label=True, curve_label_mode="label_only",
         show_200_text=False, show_km_text=True,
     ),
     ScalePreset(
         scale=25000, label="1:25000 개략",
         unit_floor=200, km_interval=5000, sym200_interval=1000, km_precision=0,
-        ip_block_mode="minimal",
+        ip_block_type="default",       # 임시 (추후 변경)
         show_curve_label=True, curve_label_mode="label_only",
         show_200_text=False, show_km_text=True,
     ),
@@ -192,7 +222,7 @@ def apply_preset_to_config(config: DXFConfig, preset: ScalePreset) -> DXFConfig:
     new.km_interval = preset.km_interval
     new.sym200_interval = preset.sym200_interval
     new.km_precision = preset.km_precision
-    new.ip_block_mode = preset.ip_block_mode  # ✅
+    new.ip_block_type = preset.ip_block_type
     new.show_curve_label = preset.show_curve_label
     new.curve_label_mode = preset.curve_label_mode
     new.show_200_text = preset.show_200_text

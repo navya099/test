@@ -28,7 +28,7 @@ from src.railway_alignment.core.math_util import (
 )
 from src.railway_alignment.core.models import CurveParams, StationRow
 from src.railway_alignment.io.civil3d_wirter import dxf_save_with_retry
-from src.railway_alignment.io.dxf_config import DXFConfig, LayerStyle
+from src.railway_alignment.io.dxf_config import DXFConfig, LayerStyle, IMPLEMENTED_BLOCK_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,10 @@ class PolylineBuilder:
 # ============================================================
 # IP 제원표 블록 Writer
 # ============================================================
+
 class IPBlockWriter:
+    """IP 제원표 블록 — ip_block_type별 분기"""
+
     def __init__(self, doc, msp, style: DxfStyle):
         self.doc = doc
         self.msp = msp
@@ -173,17 +176,26 @@ class IPBlockWriter:
         self.cfg = style.config
 
     def write(self, curves: list[CurveParams]) -> None:
-        if self.cfg.ip_block_mode == "none":
-            return
-        for i, curve in enumerate(curves):
-            labels = self._build_labels(curve)
-            if not labels:
-                continue
-            self._write_curve_block(curve, i, labels)
+        block_type = self.cfg.ip_block_type
 
-    def _build_labels(self, curve: CurveParams) -> list[str]:
-        mode = self.cfg.ip_block_mode
-        if mode == "full":
+        # 블록 없음
+        if block_type == "none":
+            return
+
+        # 미구현 타입 → 명시적 예외
+        if block_type not in IMPLEMENTED_BLOCK_TYPES:
+            raise NotImplementedError(
+                f"IP 제원표 블록 타입 '{block_type}'은 아직 구현되지 않았습니다. "
+                f"지원: {sorted(IMPLEMENTED_BLOCK_TYPES)}"
+            )
+
+        for i, curve in enumerate(curves):
+            labels = self._build_labels(curve, block_type)
+            if labels:
+                self._write_curve_block(curve, i, labels)
+
+    def _build_labels(self, curve: CurveParams, block_type: str) -> list[str]:
+        if block_type == "default":
             return [
                 f"IP  NO. {curve.ip_no}",
                 f"IA = {degrees_to_dms2(curve.ia_degree)}",
@@ -193,21 +205,18 @@ class IPBlockWriter:
                 f"X = {curve.ip_xy[0]:.4f}",
                 f"Y = {curve.ip_xy[1]:.4f}",
             ]
-        if mode == "compact":
+        if block_type == "compact":
             return [
                 f"IP  NO. {curve.ip_no}",
                 f"R = {curve.radius:.2f}",
                 f"TL = {curve.tl:.2f}",
             ]
-        if mode == "minimal":
-            return [f"IP  NO. {curve.ip_no}"]
-        return []  # 알 수 없는 모드 → 표시 안 함
+        return []
 
-    def _write_curve_block(self, curve: CurveParams, idx: int, labels: list[str]) -> None:
+    def _write_curve_block(self, curve, idx, labels):
         block_name = f"IP_Block_{idx}"
         block = self.doc.blocks.new(name=block_name)
-
-        spacing = self.style.config.ip_block_line_spacing
+        spacing = self.cfg.ip_block_line_spacing
         lyr = self.style.layer_ip_table
 
         for i, label in enumerate(labels):
@@ -219,21 +228,7 @@ class IPBlockWriter:
                 "color": lyr.color,
                 "layer": lyr.name,
             })
-
         self.msp.add_blockref(block_name, insert=(0, 0))
-
-    @staticmethod
-    def _build_labels(curve: CurveParams) -> list[str]:
-        return [
-            f"IP  NO. {curve.ip_no}",
-            f"IA = {degrees_to_dms2(curve.ia_degree)}",
-            f"R = {curve.radius:.2f}",
-            f"TL = {curve.tl:.2f}",
-            f"CL = {curve.cl:.2f}",
-            f"X = {curve.ip_xy[0]:.4f}",
-            f"Y = {curve.ip_xy[1]:.4f}",
-        ]
-
 
 # ============================================================
 # 측점 심볼 Writer

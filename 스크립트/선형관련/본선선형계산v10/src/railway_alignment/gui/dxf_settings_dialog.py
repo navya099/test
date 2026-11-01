@@ -16,11 +16,18 @@ from src.railway_alignment.io.dxf_config import (
     ACI_BY_VALUE,
     ACI_COLORS,
     DXFConfig,
-    LayerStyle, SCALE_PRESETS, ScalePreset, apply_preset_to_config,
+    LayerStyle, SCALE_PRESETS, ScalePreset, apply_preset_to_config, IMPLEMENTED_BLOCK_TYPES, IP_BLOCK_TYPES,
 )
 
 logger = logging.getLogger(__name__)
 
+# 라벨 ↔ id 매핑 (모듈 레벨)
+_TYPE_LABEL_MAP: dict[str, str] = {
+    tid: (label if tid in IMPLEMENTED_BLOCK_TYPES else f"{label} (미구현)")
+    for tid, label in IP_BLOCK_TYPES
+}
+
+_TYPE_ID_BY_LABEL: dict[str, str] = {v: k for k, v in _TYPE_LABEL_MAP.items()}
 
 # 레이어 필드 (표시 이름)
 _LAYER_FIELDS: list[tuple[str, str]] = [
@@ -220,18 +227,24 @@ class DXFSettingsDialog(tk.Toplevel):
         opts = ttk.LabelFrame(frame, text="표시 옵션")
         opts.grid(row=1, column=0, columnspan=3, sticky="ew", padx=8, pady=6)
 
-        # IP 제원표 블록 모드
-        ttk.Label(opts, text="IP 제원표 블록").grid(row=0, column=0, sticky="w", padx=6, pady=2)
-        self._var_ip_block_mode = tk.StringVar(value=self._config.ip_block_mode)
+        # ── IP 블록 타입 ──
+        ttk.Label(opts, text="IP 제원표 블록 타입").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        initial_label = _TYPE_LABEL_MAP.get(self._config.ip_block_type, "기본 (1:1000 실시설계)")
+        self._var_ip_block_label = tk.StringVar(value=initial_label)
         ttk.Combobox(
-            opts, textvariable=self._var_ip_block_mode, width=12, state="readonly",
-            values=["full", "compact", "minimal", "none"],
-        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+            opts, textvariable=self._var_ip_block_label, width=26, state="readonly",
+            values=list(_TYPE_ID_BY_LABEL.keys()),
+        ).grid(row=0, column=1, columnspan=2, sticky="w", padx=6, pady=2)
 
+        # ── 곡선제원문자 표시 ──
         self._var_show_curve = tk.BooleanVar(value=self._config.show_curve_label)
-        ttk.Checkbutton(opts, text="곡선제원문자 표시",
-                        variable=self._var_show_curve).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        ttk.Checkbutton(opts, text="곡선제원문자 표시", variable=self._var_show_curve).grid(
+            row=0, column=3, sticky="w", padx=6, pady=2,
+        )
 
+        # ── 곡선 문자 모드 ──
         ttk.Label(opts, text="곡선 문자 모드").grid(row=1, column=0, sticky="w", padx=6, pady=2)
         self._var_label_mode = tk.StringVar(value=self._config.curve_label_mode)
         ttk.Radiobutton(opts, text="전체 (라벨=측점)", value="full",
@@ -239,6 +252,7 @@ class DXFSettingsDialog(tk.Toplevel):
         ttk.Radiobutton(opts, text="라벨만 (SP/PC/CP/PS)", value="label_only",
                         variable=self._var_label_mode).grid(row=1, column=2, sticky="w")
 
+        # ── 200m/km 문자 ──
         self._var_show_200 = tk.BooleanVar(value=self._config.show_200_text)
         ttk.Checkbutton(opts, text="200m 문자 표시",
                         variable=self._var_show_200).grid(row=2, column=0, sticky="w", padx=6, pady=2)
@@ -246,7 +260,6 @@ class DXFSettingsDialog(tk.Toplevel):
         self._var_show_km = tk.BooleanVar(value=self._config.show_km_text)
         ttk.Checkbutton(opts, text="km 문자 표시",
                         variable=self._var_show_km).grid(row=2, column=1, sticky="w", padx=6, pady=2)
-
         # ── 기존 크기 필드들 (row 2부터) ──
         base = 2
         for i, (key, label) in enumerate(_SIZE_FIELDS):
@@ -356,13 +369,14 @@ class DXFSettingsDialog(tk.Toplevel):
 
     # ---------------- 값 수집 / 반영 ----------------
     def _collect_values(self):
-        # 기존 + 표시 옵션 + 신규 필드
+        # 기존 크기 필드
         for key, var in self._size_vars.items():
             try:
                 setattr(self._config, key, float(var.get()))
             except ValueError:
                 pass
 
+        # 간격 필드
         try:
             self._config.km_interval = int(self._km_interval_var.get())
         except ValueError:
@@ -380,7 +394,9 @@ class DXFSettingsDialog(tk.Toplevel):
         except ValueError:
             pass
 
-        self._config.ip_block_mode = self._var_ip_block_mode.get()      # ✅
+        # 표시 옵션
+        label = self._var_ip_block_label.get()
+        self._config.ip_block_type = _TYPE_ID_BY_LABEL.get(label, "default")
         self._config.show_curve_label = self._var_show_curve.get()
         self._config.curve_label_mode = self._var_label_mode.get()
         self._config.show_200_text = self._var_show_200.get()
@@ -404,7 +420,9 @@ class DXFSettingsDialog(tk.Toplevel):
         self._unit_floor_var.set(str(self._config.unit_floor))
         self._km_precision_var.set(str(self._config.km_precision))
 
-        self._var_ip_block_mode.set(self._config.ip_block_mode)          # ✅
+        # 표시 옵션
+        label = _TYPE_LABEL_MAP.get(self._config.ip_block_type, "기본 (1:1000 실시설계)")    # ✅
+        self._var_ip_block_label.set(label)
         self._var_show_curve.set(self._config.show_curve_label)
         self._var_label_mode.set(self._config.curve_label_mode)
         self._var_show_200.set(self._config.show_200_text)
@@ -414,10 +432,22 @@ class DXFSettingsDialog(tk.Toplevel):
     # ---------------- 적용 ----------------
     def _on_apply_clicked(self) -> None:
         self._collect_values()
+
+        # 미구현 블록 타입 경고
+        if self._config.ip_block_type not in IMPLEMENTED_BLOCK_TYPES:
+            label = _TYPE_LABEL_MAP.get(self._config.ip_block_type, self._config.ip_block_type)
+            if not messagebox.askyesno(
+                    "미구현 블록 타입",
+                    f"'{label}'은 아직 구현되지 않았습니다.\n"
+                    f"DXF 출력 시 오류가 발생합니다. 계속하시겠습니까?",
+                    parent=self,
+            ):
+                return
+
         try:
-            self._config.save()   # 자동 저장 (다음 실행에도 유지)
+            self._config.save()
         except Exception:
-            logger.exception("기본 경로 저장 실패 (무시하고 계속)")
+            logger.exception("기본 경로 저장 실패 (무시)")
 
         if self._on_apply is not None:
             try:
@@ -426,7 +456,6 @@ class DXFSettingsDialog(tk.Toplevel):
                 logger.exception("on_apply 콜백 오류")
 
         self.destroy()
-
 
 
 # ============================================================

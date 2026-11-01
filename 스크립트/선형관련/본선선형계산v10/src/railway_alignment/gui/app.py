@@ -147,10 +147,15 @@ class MainWindow:
             side="left", padx=(0, 12)
         )
 
+        # main_window._build_ui
         ttk.Label(bottom, text="축척:").pack(side="left")
-        self.entry_scale = ttk.Entry(bottom, width=8)
-        self.entry_scale.insert(0, str(Config.DEFAULT_SCALE))
-        self.entry_scale.pack(side="left", padx=(2, 12))
+        self.scale_var = tk.StringVar(value="1000")
+        self.scale_combo = ttk.Combobox(
+            bottom, textvariable=self.scale_var, width=10,
+            values=["1000", "2000", "3000", "5000", "10000"],
+            state="normal",  # 자유 입력도 가능
+        )
+        self.scale_combo.pack(side="left", padx=(2, 12))
 
         self.status_var = tk.StringVar(value="준비")
         ttk.Label(bottom, textvariable=self.status_var, foreground="gray").pack(
@@ -390,31 +395,40 @@ class MainWindow:
     # ------------------------------------------------------------------
     # DXF / 조회
     # ------------------------------------------------------------------
+
     def _on_export_dxf(self) -> None:
         try:
             try:
-                scale = int(self.entry_scale.get())
+                scale = int(self.scale_var.get())
             except (ValueError, tk.TclError):
                 scale = Config.DEFAULT_SCALE
             if scale < 100:
                 raise AlignmentServiceError("축척은 100 이상이어야 합니다.")
-            # ✅ 축척에 가장 가까운 프리셋 → config 복사에 반영
+
+            # 축척 → 프리셋 상속
             preset = find_nearest_preset(scale)
             cfg = apply_preset_to_config(self.service.dxf_config, preset)
-            # 사용자 unit과 프리셋 unit_floor 중 최대
+
+            # unit: 사용자 입력 vs 프리셋 unit_floor 중 최대
             try:
                 user_unit = int(self.entry_unit.get())
             except (ValueError, tk.TclError):
                 user_unit = Config.DEFAULT_UNIT
             effective_unit = max(user_unit, cfg.unit_floor)
 
-            # ✅ 현재 서비스에 보관된 설정을 명시적으로 전달
             path = self.service.export_dxf(
                 scale=scale,
-                config=self.service.dxf_config,
+                config=cfg,
+                unit=effective_unit,
                 filename=self._build_dxf_filename(cfg.scale_preset),
             )
             messagebox.showinfo("Success", f"도면 생성 완료:\n{path}")
+
+        except NotImplementedError as e:
+            messagebox.showwarning(
+                "미구현 블록 타입",
+                f"{e}\n\n도면 설정에서 '기본' 또는 '간략' 블록을 선택해 주세요.",
+            )
         except AlignmentServiceError as e:
             messagebox.showerror("Error", str(e))
         except Exception as e:
@@ -422,9 +436,9 @@ class MainWindow:
             messagebox.showerror("Error", f"DXF 출력 실패: {e}")
 
     def _build_dxf_filename(self, preset_label: str) -> str:
-        """축척 프리셋 이름에서 파일명 생성."""
+        """축척 프리셋 이름에서 파일명 생성 (예: 본선평면선형_1-1000.dxf)."""
         base = Config.DXF_FILENAME.rsplit(".", 1)[0]
-        tag = preset_label.split()[0].replace(":", "-")  # "1:1000" → "1-1000"
+        tag = preset_label.split()[0].replace(":", "-")
         return f"{base}_{tag}.dxf"
 
     def _on_lookup_coord(self) -> None:
