@@ -166,23 +166,22 @@ class AlignmentService:
         self.result = result
         return result
 
-    def export_dxf(self, scale: int = Config.DEFAULT_SCALE, filename: str = None, config: DXFConfig | None = None,
-                   unit: int | None = None) -> Path:
-        """DXF 출력 (calculate 호출 후 사용)"""
+    def export_dxf(self, filename=None, config=None, unit=None) -> Path:
+        """DXF 출력 (scale 인자 없음)."""
         if self.result.is_empty:
             raise AlignmentServiceError("먼저 선형 계산을 실행하세요.")
 
         filename = filename or Config.DXF_FILENAME
         cfg = config or self.dxf_config
+
         create_dxf(
             coordinates=self.result.polycurve,
             linestring=self.result.linestring,
             curves=self.result.curves,
             station_groups=self.result.station_groups,
-            unit=unit or self.result.unit,     # ✅
+            unit=unit or cfg.sub_tick,  # ✅ 서비스에서도 기본값 sub_tick
             filename=filename,
-            scale=scale,
-            config=config or self.dxf_config,
+            config=cfg,
         )
         path = Config.ensure_output_dir() / filename
         self.result.dxf_path = path

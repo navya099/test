@@ -389,27 +389,19 @@ class MainWindow:
     def _on_export_dxf(self) -> None:
         try:
             cfg = self.service.dxf_config
-            scale = cfg.scale
 
-            # unit: 사용자 입력 vs 프리셋 unit_floor 중 최대
-            try:
-                user_unit = int(self.entry_unit.get())
-            except (ValueError, tk.TclError):
-                user_unit = Config.DEFAULT_UNIT
-            effective_unit = max(user_unit, cfg.unit_floor)
+            # ✅ 도면 출력 시 unit은 프리셋의 sub_tick이 대체
+            effective_unit = cfg.sub_tick
 
-            # 파일명: scale 기반
             base = Config.DXF_FILENAME.rsplit(".", 1)[0]
-            filename = f"{base}_{scale}.dxf"
+            filename = f"{base}.dxf"  # ✅ scale 태그 없음
 
             path = self.service.export_dxf(
-                scale=scale,
                 config=cfg,
                 unit=effective_unit,
                 filename=filename,
             )
             messagebox.showinfo("Success", f"도면 생성 완료:\n{path}")
-
         except NotImplementedError as e:
             messagebox.showwarning(
                 "미구현 블록 타입",

@@ -37,9 +37,9 @@ _LAYER_FIELDS: list[tuple[str, str]] = [
     ("layer_ip_text",      "IP 문자"),
     ("layer_ip_table",     "IP 제원표"),
     ("layer_km_symbol",    "km 심볼"),
-    ("layer_sub_symbol",   "200m 심볼"),
+    ("layer_sub_symbol",   "m 심볼"),
     ("layer_km_text",      "km 문자"),
-    ("layer_sub_text",     "200m 문자"),
+    ("layer_sub_text",     "m 문자"),
     ("layer_aux_station",  "보조 측점"),
     ("layer_curve_leader", "곡선 인출선"),
     ("layer_curve_text",   "곡선 제원 문자"),
@@ -47,6 +47,7 @@ _LAYER_FIELDS: list[tuple[str, str]] = [
 
 _SIZE_FIELDS = [
     ("text_height",         "문자 높이 (m)"),
+    ("const_width",          "선 굵기 (m)"),              # ✅ 신규
     ("km_symbol_radius",    "주 심볼 반경 (m)"),
     ("sub_symbol_radius",   "보조 심볼 반경 (m)"),
     ("tick_half_length",    "틱 반장 (m)"),
