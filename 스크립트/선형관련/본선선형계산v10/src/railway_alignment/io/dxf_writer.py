@@ -237,17 +237,18 @@ class StationSymbolWriter:
                     self._dispatch(row, curve)
 
     def _dispatch(self, row: StationRow, curve: CurveParams) -> None:
-        km_iv = self.cfg.km_interval
-        s200_iv = self.cfg.sym200_interval
+        cfg = self.cfg
 
-        if km_iv > 0 and row.sta % km_iv == 0:
+        if cfg.km_interval > 0 and row.sta % cfg.km_interval == 0:
             self._write_km_marker(row)
-        elif s200_iv > 0 and row.sta % s200_iv == 0:
+        elif (cfg.show_200_text and cfg.sym200_interval > 0
+              and row.sta % cfg.sym200_interval == 0):
             self._write_200_marker(row)
         elif self.unit > 0 and row.sta % self.unit == 0:
             self._write_aux_tick(row)
         else:
-            self._write_curve_leader(row, curve)
+            if cfg.show_curve_label:
+                self._write_curve_leader(row, curve)
 
     # ---------- km 심볼 ----------
     def _write_km_marker(self, row: StationRow) -> None:
@@ -260,26 +261,27 @@ class StationSymbolWriter:
         s200_lyr = self.style.layer_200_symbol
         km_text_lyr = self.style.layer_km_text
 
-        self.msp.add_circle(
-            coord_math,
-            radius=cfg.km_symbol_radius * self.style.scale_factor,
-            dxfattribs={"layer": km_lyr.name, "color": km_lyr.color},
-        )
-        self.msp.add_circle(
-            coord_math,
-            radius=cfg.sym200_radius * self.style.scale_factor,
-            dxfattribs={"layer": s200_lyr.name, "color": s200_lyr.color},
-        )
-        self.msp.add_text(
-            f"{int(row.sta) // cfg.km_interval}km",
-            dxfattribs={
-                "layer": km_text_lyr.name,
-                "insert": coord_math,
-                "height": self.style.text_height,
-                "color": km_text_lyr.color,
-                "rotation": ta_math,
-            },
-        )
+        if self.cfg.show_km_text:
+            self.msp.add_circle(
+                coord_math,
+                radius=cfg.km_symbol_radius * self.style.scale_factor,
+                dxfattribs={"layer": km_lyr.name, "color": km_lyr.color},
+            )
+            self.msp.add_circle(
+                coord_math,
+                radius=cfg.sym200_radius * self.style.scale_factor,
+                dxfattribs={"layer": s200_lyr.name, "color": s200_lyr.color},
+            )
+            self.msp.add_text(
+                f"{int(row.sta) // cfg.km_interval}km",
+                dxfattribs={
+                    "layer": km_text_lyr.name,
+                    "insert": coord_math,
+                    "height": self.style.text_height,
+                    "color": km_text_lyr.color,
+                    "rotation": ta_math,
+                },
+            )
         self._write_aux_tick(row)
 
     # ---------- 200 심볼 ----------
@@ -345,6 +347,14 @@ class StationSymbolWriter:
             dxfattribs={"layer": leader_lyr.name, "color": leader_lyr.color},
         )
 
+        # ✅ 라벨 텍스트 결정
+        if not row.label:
+            return  # 라벨 없으면 문자 생략
+
+        if cfg.curve_label_mode == "label_only":
+            text = row.label  # "SP" / "PC" / "CP" / "PS" 만
+        else:  # full
+            text = f"{row.label}={format_distance(row.sta, cfg.km_precision)}"
         text_rotation = ta_math - 90
         insert_pos = self._text_insert_point(row, curve, ta_math, end_point)
 
@@ -483,7 +493,8 @@ class DxfDocument:
         unit: int,
     ) -> None:
         PolylineBuilder(self.msp, self.style).build(coordinates, linestring)
-        IPBlockWriter(self.doc, self.msp, self.style).write(curves)
+        if self.config.show_ip_block:  # ✅
+            IPBlockWriter(self.doc, self.msp, self.style).write(curves)
         StationSymbolWriter(self.msp, self.style, unit).write(station_groups, curves)
         linestring_math = CoordTransform.linestring_to_math(linestring)
         IPJunctionWriter(self.msp, self.style).write(linestring_math)

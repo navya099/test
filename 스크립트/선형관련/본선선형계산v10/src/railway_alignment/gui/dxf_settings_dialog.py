@@ -16,7 +16,7 @@ from src.railway_alignment.io.dxf_config import (
     ACI_BY_VALUE,
     ACI_COLORS,
     DXFConfig,
-    LayerStyle,
+    LayerStyle, SCALE_PRESETS, ScalePreset, apply_preset_to_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -201,28 +201,93 @@ class DXFSettingsDialog(tk.Toplevel):
         self._layer_tree.set(row, "color", ACI_BY_VALUE.get(aci, str(aci)))
 
     # ---------------- 탭2: 크기 ----------------
-    def _build_sizes_tab(self) -> None:
+    def _build_sizes_tab(self):
         frame = self._tab_sizes
+
+        # ── 축척 프리셋 ──
+        ttk.Label(frame, text="축척 프리셋").grid(row=0, column=0, sticky="w", padx=8, pady=4)
+        self._preset_var = tk.StringVar(value=self._config.scale_preset)
+        preset_combo = ttk.Combobox(
+            frame, textvariable=self._preset_var, width=24,
+            values=[p.label for p in SCALE_PRESETS], state="readonly",
+        )
+        preset_combo.grid(row=0, column=1, padx=8, pady=4, sticky="w")
+        preset_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
+        ttk.Label(frame, text="(값 자동 제안, 이후 자유 편집)",
+                  foreground="gray").grid(row=0, column=2, sticky="w", padx=4)
+
+        # ── 표시 옵션 ──
+        opts = ttk.LabelFrame(frame, text="표시 옵션")
+        opts.grid(row=1, column=0, columnspan=3, sticky="ew", padx=8, pady=6)
+
+        self._var_show_ip_block = tk.BooleanVar(value=self._config.show_ip_block)
+        ttk.Checkbutton(opts, text="IP 제원표 블록 표시",
+                        variable=self._var_show_ip_block).grid(row=0, column=0, sticky="w", padx=6, pady=2)
+
+        self._var_show_curve = tk.BooleanVar(value=self._config.show_curve_label)
+        ttk.Checkbutton(opts, text="곡선제원문자 표시",
+                        variable=self._var_show_curve).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+
+        ttk.Label(opts, text="곡선 문자 모드").grid(row=1, column=0, sticky="w", padx=6, pady=2)
+        self._var_label_mode = tk.StringVar(value=self._config.curve_label_mode)
+        ttk.Radiobutton(opts, text="전체 (라벨=측점)", value="full",
+                        variable=self._var_label_mode).grid(row=1, column=1, sticky="w")
+        ttk.Radiobutton(opts, text="라벨만 (SP/PC/CP/PS)", value="label_only",
+                        variable=self._var_label_mode).grid(row=1, column=2, sticky="w")
+
+        self._var_show_200 = tk.BooleanVar(value=self._config.show_200_text)
+        ttk.Checkbutton(opts, text="200m 문자 표시",
+                        variable=self._var_show_200).grid(row=2, column=0, sticky="w", padx=6, pady=2)
+
+        self._var_show_km = tk.BooleanVar(value=self._config.show_km_text)
+        ttk.Checkbutton(opts, text="km 문자 표시",
+                        variable=self._var_show_km).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+
+        # ── 기존 크기 필드들 (row 2부터) ──
+        base = 2
         for i, (key, label) in enumerate(_SIZE_FIELDS):
-            ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w", padx=8, pady=3)
+            row = base + i
+            ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=3)
             var = tk.StringVar(value=str(getattr(self._config, key)))
-            ttk.Entry(frame, textvariable=var, width=12).grid(row=i, column=1, padx=8, pady=3)
+            ttk.Entry(frame, textvariable=var, width=12).grid(row=row, column=1, padx=8, pady=3, sticky="w")
             self._size_vars[key] = var
 
-        base_row = len(_SIZE_FIELDS)
+        base2 = base + len(_SIZE_FIELDS)
         ttk.Separator(frame, orient="horizontal").grid(
-            row=base_row, column=0, columnspan=2, sticky="ew", pady=6,
+            row=base2, column=0, columnspan=3, sticky="ew", pady=6,
         )
-        ttk.Label(frame, text="km 간격 (m)").grid(row=base_row + 1, column=0, sticky="w", padx=8, pady=3)
+        ttk.Label(frame, text="km 간격 (m)").grid(row=base2 + 1, column=0, sticky="w", padx=8, pady=3)
         self._km_interval_var = tk.StringVar(value=str(self._config.km_interval))
         ttk.Entry(frame, textvariable=self._km_interval_var, width=12).grid(
-            row=base_row + 1, column=1, padx=8, pady=3,
+            row=base2 + 1, column=1, padx=8, pady=3, sticky="w",
         )
-        ttk.Label(frame, text="200m 간격 (m)").grid(row=base_row + 2, column=0, sticky="w", padx=8, pady=3)
+
+        ttk.Label(frame, text="200m 간격 (m)").grid(row=base2 + 2, column=0, sticky="w", padx=8, pady=3)
         self._sym200_interval_var = tk.StringVar(value=str(self._config.sym200_interval))
         ttk.Entry(frame, textvariable=self._sym200_interval_var, width=12).grid(
-            row=base_row + 2, column=1, padx=8, pady=3,
+            row=base2 + 2, column=1, padx=8, pady=3, sticky="w",
         )
+
+        ttk.Label(frame, text="보조측점 최소 간격 (m)").grid(row=base2 + 3, column=0, sticky="w", padx=8, pady=3)
+        self._unit_floor_var = tk.StringVar(value=str(self._config.unit_floor))
+        ttk.Entry(frame, textvariable=self._unit_floor_var, width=12).grid(
+            row=base2 + 3, column=1, padx=8, pady=3, sticky="w",
+        )
+
+        ttk.Label(frame, text="km 소수 자리수").grid(row=base2 + 4, column=0, sticky="w", padx=8, pady=3)
+        self._km_precision_var = tk.StringVar(value=str(self._config.km_precision))
+        ttk.Spinbox(frame, from_=0, to=4, textvariable=self._km_precision_var, width=10).grid(
+            row=base2 + 4, column=1, padx=8, pady=3, sticky="w",
+        )
+
+    def _on_preset_selected(self, _e=None):
+        """프리셋 선택 시 값 제안."""
+        label = self._preset_var.get()
+        preset = next((p for p in SCALE_PRESETS if p.label == label), None)
+        if not preset:
+            return
+        self._config = apply_preset_to_config(self._config, preset)
+        self._refresh_all()
 
     # ---------------- 탭3: 프리셋 ----------------
     def _build_preset_tab(self) -> None:
@@ -286,12 +351,14 @@ class DXFSettingsDialog(tk.Toplevel):
             messagebox.showerror("오류", f"저장 실패: {e}", parent=self)
 
     # ---------------- 값 수집 / 반영 ----------------
-    def _collect_values(self) -> None:
+    def _collect_values(self):
+        # 기존 + 표시 옵션 + 신규 필드
         for key, var in self._size_vars.items():
             try:
                 setattr(self._config, key, float(var.get()))
             except ValueError:
                 pass
+
         try:
             self._config.km_interval = int(self._km_interval_var.get())
         except ValueError:
@@ -300,6 +367,21 @@ class DXFSettingsDialog(tk.Toplevel):
             self._config.sym200_interval = int(self._sym200_interval_var.get())
         except ValueError:
             pass
+        try:
+            self._config.unit_floor = int(self._unit_floor_var.get())
+        except ValueError:
+            pass
+        try:
+            self._config.km_precision = int(self._km_precision_var.get())
+        except ValueError:
+            pass
+
+        self._config.show_ip_block = self._var_show_ip_block.get()
+        self._config.show_curve_label = self._var_show_curve.get()
+        self._config.curve_label_mode = self._var_label_mode.get()
+        self._config.show_200_text = self._var_show_200.get()
+        self._config.show_km_text = self._var_show_km.get()
+        self._config.scale_preset = self._preset_var.get()
 
     def _refresh_all(self) -> None:
         # 레이어 탭 갱신
@@ -315,6 +397,15 @@ class DXFSettingsDialog(tk.Toplevel):
             var.set(str(getattr(self._config, key)))
         self._km_interval_var.set(str(self._config.km_interval))
         self._sym200_interval_var.set(str(self._config.sym200_interval))
+        self._unit_floor_var.set(str(self._config.unit_floor))
+        self._km_precision_var.set(str(self._config.km_precision))
+
+        self._var_show_ip_block.set(self._config.show_ip_block)
+        self._var_show_curve.set(self._config.show_curve_label)
+        self._var_label_mode.set(self._config.curve_label_mode)
+        self._var_show_200.set(self._config.show_200_text)
+        self._var_show_km.set(self._config.show_km_text)
+        self._preset_var.set(self._config.scale_preset)
 
     # ---------------- 적용 ----------------
     def _on_apply_clicked(self) -> None:
@@ -331,6 +422,7 @@ class DXFSettingsDialog(tk.Toplevel):
                 logger.exception("on_apply 콜백 오류")
 
         self.destroy()
+
 
 
 # ============================================================
@@ -364,3 +456,4 @@ class ColorPickerPopup(tk.Toplevel):
     def _choose(self, aci: int) -> None:
         self._on_change(aci)
         self.destroy()
+

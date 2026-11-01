@@ -1,20 +1,10 @@
-"""
-DXF 도면 출력 설정
-====================
-레이어 이름/색상/선종류, 문자 높이, 심볼 크기, 오프셋 등을
-사용자가 커스텀할 수 있도록 dataclass로 캡슐화.
-
-저장 위치: ~/.railway_alignment/dxf_config.json
-프리셋: 임의 경로에 JSON 저장/불러오기
-"""
+"""DXF 출력 설정"""
 
 from __future__ import annotations
-
-import json
-import logging
+import json, logging
 from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,25 +13,17 @@ def _default_config_path() -> Path:
     return Path.home() / ".railway_alignment" / "dxf_config.json"
 
 
-# ACI 색상 (드롭다운용)
 ACI_COLORS: list[tuple[int, str]] = [
-    (1, "빨강"),
-    (2, "노랑"),
-    (3, "초록"),
-    (4, "청록"),
-    (5, "파랑"),
-    (6, "자홍"),
-    (7, "흰/검"),
-    (9, "BYLAYER"),
+    (1, "빨강"), (2, "노랑"), (3, "초록"), (4, "청록"),
+    (5, "파랑"), (6, "자홍"), (7, "흰/검"), (9, "BYLAYER"),
 ]
 ACI_BY_VALUE: dict[int, str] = dict(ACI_COLORS)
 
 
 @dataclass
 class LayerStyle:
-    """레이어 하나의 스타일"""
     name: str
-    color: int = 7           # ACI 인덱스
+    color: int = 7
     linetype: str = "CONTINUOUS"
 
 
@@ -63,7 +45,7 @@ class DXFConfig:
     layer_curve_leader: LayerStyle = field(default_factory=lambda: LayerStyle("곡선인출선", 1))
     layer_curve_text: LayerStyle = field(default_factory=lambda: LayerStyle("곡선제원문자", 1))
 
-    # ── 크기 (m 단위, 축척 반영 전) ──
+    # ── 크기 (m 단위, scale_factor 반영 전) ──
     text_height: float = 3.0
     km_symbol_radius: float = 2.0
     sym200_radius: float = 1.5
@@ -75,17 +57,27 @@ class DXFConfig:
     # ── IP 제원표 오프셋 ──
     ip_block_line_spacing: float = 10.0
 
-    # ── 곡선 문자 오프셋 (측점/1000 구간별) ──
-    curve_text_offset_far: float = -20.0    # sta < 10km
-    curve_text_offset_mid: float = -16.0    # 10~100km
-    curve_text_offset_near: float = -12.0   # 100km+
+    # ── 곡선 문자 오프셋 ──
+    curve_text_offset_far: float = -20.0
+    curve_text_offset_mid: float = -16.0
+    curve_text_offset_near: float = -12.0
 
     # ── 측점 간격 ──
     km_interval: int = 1000
     sym200_interval: int = 200
 
-    # ------------------------------------------------------------------
-    # 직렬화
+    # ── ✅ 축척 프리셋 ──
+    scale_preset: str = "1:1000 실시설계"
+    unit_floor: int = 20              # 보조측점 최소 간격
+    km_precision: int = 2             # km 소수 자리수
+
+    # ── ✅ 표시 옵션 ──
+    show_ip_block: bool = True        # DXF IP 제원표 블록
+    show_curve_label: bool = True     # 곡선제원문자 표시
+    curve_label_mode: str = "full"    # "full"(라벨+측점) | "label_only"(라벨만)
+    show_200_text: bool = True        # 200m 문자 표시
+    show_km_text: bool = True         # km 문자 표시
+
     # ------------------------------------------------------------------
     def to_dict(self) -> dict:
         return asdict(self)
@@ -93,9 +85,7 @@ class DXFConfig:
     @classmethod
     def from_dict(cls, data: dict) -> "DXFConfig":
         kwargs: dict[str, Any] = {}
-        layer_field_names = {
-            f.name for f in fields(cls) if f.name.startswith("layer_")
-        }
+        layer_field_names = {f.name for f in fields(cls) if f.name.startswith("layer_")}
         for k, v in data.items():
             if k in layer_field_names:
                 kwargs[k] = LayerStyle(**v) if isinstance(v, dict) else v
@@ -117,16 +107,87 @@ class DXFConfig:
     def load(cls, path: Path | None = None) -> "DXFConfig":
         path = path or _default_config_path()
         if not path.exists():
-            logger.info("DXF 설정 파일 없음, 기본값 사용: %s", path)
             return cls()
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return cls.from_dict(data)
+            return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
         except Exception:
             logger.exception("DXF 설정 로드 실패, 기본값 사용")
             return cls()
 
     @classmethod
     def load_or_default(cls) -> "DXFConfig":
-        """앱 시작 시 자동 로드. 없으면 기본값 반환."""
         return cls.load()
+
+
+# ============================================================
+# 축척 프리셋
+# ============================================================
+@dataclass(frozen=True)
+class ScalePreset:
+    """축척별 초기값 제안 (사용자가 이후 자유 편집)"""
+    scale: int
+    label: str
+    unit_floor: int
+    km_interval: int
+    sym200_interval: int
+    km_precision: int
+    show_ip_block: bool
+    show_curve_label: bool
+    curve_label_mode: str          # "full" | "label_only"
+    show_200_text: bool
+    show_km_text: bool
+
+
+SCALE_PRESETS: list[ScalePreset] = [
+    ScalePreset(
+        scale=1000, label="1:1000 실시설계",
+        unit_floor=20, km_interval=1000, sym200_interval=200, km_precision=2,
+        show_ip_block=True, show_curve_label=True, curve_label_mode="full",
+        show_200_text=True, show_km_text=True,
+    ),
+    ScalePreset(
+        scale=2000, label="1:2000",
+        unit_floor=20, km_interval=1000, sym200_interval=200, km_precision=2,
+        show_ip_block=True, show_curve_label=True, curve_label_mode="full",
+        show_200_text=True, show_km_text=True,
+    ),
+    ScalePreset(
+        scale=5000, label="1:5000 기본계획",
+        unit_floor=40, km_interval=1000, sym200_interval=200, km_precision=1,
+        show_ip_block=True, show_curve_label=True, curve_label_mode="full",
+        show_200_text=True, show_km_text=True,
+    ),
+    ScalePreset(
+        scale=10000, label="1:10000",
+        unit_floor=100, km_interval=2000, sym200_interval=400, km_precision=1,
+        show_ip_block=False, show_curve_label=True, curve_label_mode="label_only",
+        show_200_text=False, show_km_text=True,
+    ),
+    ScalePreset(
+        scale=25000, label="1:25000 개략",
+        unit_floor=200, km_interval=5000, sym200_interval=1000, km_precision=0,
+        show_ip_block=False, show_curve_label=True, curve_label_mode="label_only",
+        show_200_text=False, show_km_text=True,
+    ),
+]
+
+
+def find_nearest_preset(scale: int) -> ScalePreset:
+    """축척에 가장 가까운 프리셋 반환."""
+    return min(SCALE_PRESETS, key=lambda p: abs(p.scale - scale))
+
+
+def apply_preset_to_config(config: DXFConfig, preset: ScalePreset) -> DXFConfig:
+    """프리셋 값을 config 복사본에 반영."""
+    new = DXFConfig.from_dict(config.to_dict())
+    new.scale_preset = preset.label
+    new.unit_floor = preset.unit_floor
+    new.km_interval = preset.km_interval
+    new.sym200_interval = preset.sym200_interval
+    new.km_precision = preset.km_precision
+    new.show_ip_block = preset.show_ip_block
+    new.show_curve_label = preset.show_curve_label
+    new.curve_label_mode = preset.curve_label_mode
+    new.show_200_text = preset.show_200_text
+    new.show_km_text = preset.show_km_text
+    return new

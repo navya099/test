@@ -166,7 +166,8 @@ class AlignmentService:
         self.result = result
         return result
 
-    def export_dxf(self, scale: int = Config.DEFAULT_SCALE, filename: str = None, config: DXFConfig | None = None) -> Path:
+    def export_dxf(self, scale: int = Config.DEFAULT_SCALE, filename: str = None, config: DXFConfig | None = None,
+                   unit: int | None = None) -> Path:
         """DXF 출력 (calculate 호출 후 사용)"""
         if self.result.is_empty:
             raise AlignmentServiceError("먼저 선형 계산을 실행하세요.")
@@ -178,10 +179,10 @@ class AlignmentService:
             linestring=self.result.linestring,
             curves=self.result.curves,
             station_groups=self.result.station_groups,
-            unit=Config.DEFAULT_UNIT,   # TODO: input에서 전달
+            unit=unit or self.result.unit,     # ✅
             filename=filename,
             scale=scale,
-            config=cfg,
+            config=config or self.dxf_config,
         )
         path = Config.ensure_output_dir() / filename
         self.result.dxf_path = path
