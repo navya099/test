@@ -100,6 +100,7 @@ class MainWindow:
             on_select=self._on_ip_select,
             on_insert=self._on_ip_insert,
             on_delete=self._on_ip_delete,
+            on_auto_toggle=self._on_auto_toggle
         )
         self.ip_table.pack(fill="both", expand=True)
 
@@ -180,6 +181,7 @@ class MainWindow:
             start_sta=_float(self.entry_start, Config.DEFAULT_START_STA),
             design_speed=_int(self.entry_speed, Config.DEFAULT_DESIGN_SPEED),
             ballast="자갈도상" if self.ballast_var.get() == 0 else "콘크리트도상",
+            parameter_overrides=self.ip_table.get_parameter_overrides(),  # ✅
         )
 
     # ------------------------------------------------------------------
@@ -313,30 +315,30 @@ class MainWindow:
         self.preview.highlight_ip(self._ip_index_of(ip_no))
 
     def _on_ip_edit(self, ip_no: int, field: str, new_value: str) -> None:
-        if not self._raw_lines:
-            return
-        raw_idx = self._raw_index_of(ip_no)
-        if raw_idx is None or raw_idx <= 0:
-            return
-
-        row = list(self._raw_lines[raw_idx])
-        try:
-            val = float(new_value)
-        except ValueError:
-            messagebox.showerror("입력 오류", f"숫자를 입력하세요: {new_value}")
-            return
-
-        # raw_lines 컬럼: [Y, X, R, ...]
-        col_map = {"y": 0, "x": 1, "r": 2, "l": 3}
-        col = col_map.get(field)
-        if col is None:
-            return
-        while len(row) <= col:
-            row.append("0")
-        row[col] = str(val)
-
-        self._raw_lines[raw_idx] = row
-        self._recalculate(save=False)
+        if field in ("x", "y", "r"):
+            # 기존 raw_lines 갱신 경로
+            if not self._raw_lines:
+                return
+            raw_idx = self._raw_index_of(ip_no)
+            if raw_idx is None or raw_idx <= 0:
+                return
+            row = list(self._raw_lines[raw_idx])
+            try:
+                val = float(new_value)
+            except ValueError:
+                return
+            col_map = {"y": 0, "x": 1, "r": 2}
+            col = col_map.get(field)
+            if col is None:
+                return
+            while len(row) <= col:
+                row.append("0")
+            row[col] = str(val)
+            self._raw_lines[raw_idx] = row
+            self._recalculate(save=False)
+        elif field in ("m", "v", "z"):
+            # raw_lines는 건드리지 않음. 테이블 값만 갱신 후 재계산
+            self._recalculate(save=False)
 
     def _on_ip_insert(self, ip_no: int) -> None:
         if not self._raw_lines:
@@ -429,3 +431,7 @@ class MainWindow:
             messagebox.showinfo("Result", f"측점: {format_station(sta)}")
         else:
             messagebox.showerror("Error", "측점을 찾을 수 없습니다.")
+
+    def _on_auto_toggle(self, ip_no: int, auto: bool) -> None:
+        """자동/수동 전환 시 재계산."""
+        self._recalculate(save=False)

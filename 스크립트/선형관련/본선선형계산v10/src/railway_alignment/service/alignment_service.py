@@ -51,6 +51,9 @@ class AlignmentInput:
     design_speed: int = Config.DEFAULT_DESIGN_SPEED
     ballast: str = "자갈도상"           # '자갈도상' | '콘크리트도상'
 
+    # ip_no(1-based) → {"m": mm아님 그대로, "v": int, "z": **mm**}
+    # Z는 내부 계산 단위인 mm로 전달 (테이블에서 변환)
+    parameter_overrides: dict[int, dict[str, float]] = field(default_factory=dict)
 
 # ============================================================
 # 계산 결과
@@ -74,6 +77,10 @@ class AlignmentResult:
     # ✅ 검증 결과
     issues: list[ValidationIssue] = field(default_factory=list)
 
+    unit: int = Config.DEFAULT_UNIT
+    start_sta: float = Config.DEFAULT_START_STA
+    design_speed: int = Config.DEFAULT_DESIGN_SPEED
+    ballast: str = "자갈도상"
 
     @property
     def is_empty(self) -> bool:
@@ -241,17 +248,37 @@ class AlignmentService:
             raise AlignmentServiceError("유효한 IP 데이터가 없습니다.")
         return alignment
 
-    def _run_calculation(
-        self, alignment: list[list[float]], input_data: AlignmentInput,
-    ) -> AlignmentResult:
-        """핵심 계산 로직"""
+    def _run_calculation(self, alignment, input_data):
         try:
             linestring = create_linestring(alignment)
             radius_list = [p[2] for p in alignment[1:-1]]
             angles = calculate_angles(linestring)
-            parameters = calculate_parameters(
+
+            auto_params = calculate_parameters(
                 radius_list, input_data.design_speed, input_data.ballast,
             )
+
+            parameters = []
+            for i, auto in enumerate(auto_params):
+                ip_no = i + 1
+                override = input_data.parameter_overrides.get(ip_no)
+                if not override:
+                    parameters.append(auto)
+                    continue
+
+                # M: 10~50 단위 반올림 (자동과 일관)
+                m = float(override.get("m", auto[0]))
+                m = round(m / Config.M_ROUNDING) * Config.M_ROUNDING
+
+                # V: 정수, 10 단위 반올림
+                v = int(round(override.get("v", auto[2])))
+                v = round(v / Config.V_ROUNDING) * Config.V_ROUNDING
+
+                # Z: override는 mm 단위로 전달받음 (테이블에서 변환)
+                z = float(override.get("z", auto[1]))
+                z = round(z / Config.Z_ROUNDING) * Config.Z_ROUNDING
+
+                parameters.append([m, z, v])
 
             station_groups, curves, polycurve = calculate_curve(
                 linestring, radius_list, angles, parameters,
@@ -265,6 +292,11 @@ class AlignmentService:
             curves=curves,
             station_groups=station_groups,
             polycurve=polycurve,
+            issues=validate_curves(curves),
+            unit=input_data.unit,
+            start_sta=input_data.start_sta,
+            design_speed=input_data.design_speed,
+            ballast=input_data.ballast,
         )
 
     # --------------------------------------------------------
