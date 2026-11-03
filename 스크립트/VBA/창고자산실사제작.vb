@@ -112,12 +112,20 @@ Sub 창고_자산실사_양식자동생성()
                 srcRow = CLng(rows(1))
 
                 With wsNew
-
+                    
+                    '점포명
                     .Range("B3").Value = dept
+                    
+                    '채널
                     .Range("I3").Value = wsSrc.Cells(srcRow, "B").Value
-                    .Range("L3").Value = wsSrc.Cells(srcRow, "A").Value
-
+                    
+                    '점포No(OAI01234)양식에서 4글자만 추출
+                    .Range("L3").Value = Right(Trim(CStr(wsSrc.Cells(srcRow, "A").Value)), 4)
+                    
+                    '주소
                     .Range("B4").Value = wsSrc.Cells(srcRow, "Q").Value
+                    
+                    '연락처
                     .Range("I4").Value = wsSrc.Cells(srcRow, "R").Value
 
                     ' 장비 데이터 9~31행
@@ -131,6 +139,9 @@ Sub 창고_자산실사_양식자동생성()
                         outRow = 8 + j
 
                         ' 원본 E~J -> 양식 A~F
+                        '소스: E용도, G모델명, H관리번호, I시리얼번호, F자산번호, J제조년월
+                        '양식: A용도, B모델명, C관리번호, D시리얼번호, E자산번호, F제조년월
+
                         .Cells(outRow, "A").Value = _
                             wsSrc.Cells(srcRow, "E").Value
 
@@ -149,12 +160,23 @@ Sub 창고_자산실사_양식자동생성()
                         .Cells(outRow, "F").Value = _
                             wsSrc.Cells(srcRow, "J").Value
 
+                        ' 장비구분이 PC인 경우 보안프로그램 전체 O 표시
+                        If UCase(Trim(CStr(wsSrc.Cells(srcRow, "L").Value))) = "PC" Then
+
+                            .Range("G" & outRow & ":M" & outRow).Value = "O"
+
+                        End If
+
                     Next j
 
                     ' 실사 연월 자동 입력
-                    .Range("A38").Value = _
+                    '.Range("A38").Value = _
                         "실사 일자: " & _
                         Format(Date, "yyyy년 m월")
+                    '수기 입력시 지정한 값 적용
+                    '.Range("A38").Value = "실사 일자:  2026년 10월 22일"
+                    
+                    
 
                 End With
 
