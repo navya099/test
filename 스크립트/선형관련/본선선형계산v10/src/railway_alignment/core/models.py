@@ -49,12 +49,16 @@ class CurveParams:
     # 편의 프로퍼티
     @property
     def tl(self) -> float:
+        if self.curve_type == "straight":
+            return 0.0
         if self.curve_type == "simplecurve":
             return self.params[0]
         return self.params[10]
 
     @property
     def cl(self) -> float:
+        if self.curve_type == "straight":
+            return 0.0
         if self.curve_type == "simplecurve":
             return self.params[1]
         return self.params[12]
@@ -62,8 +66,9 @@ class CurveParams:
     @property
     def spiral_length(self) -> float:
         """완화곡선 길이 L (단곡선이면 0)"""
-        return 0.0 if self.curve_type == "simplecurve" else self.params[3]
-
+        if self.curve_type in ("simplecurve", "straight"):
+            return 0.0
+        return self.params[3]
 
 @dataclass
 class StationRow:

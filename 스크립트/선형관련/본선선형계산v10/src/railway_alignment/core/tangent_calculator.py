@@ -80,8 +80,11 @@ def _classify_zone(
 
 
 def _signed_direction(direction: str) -> int:
-    """'RIGHT CURVE' → +1, 'LEFT CURVE' → -1"""
-    return 1 if direction == "RIGHT CURVE" else -1
+    if direction == "RIGHT CURVE":
+        return 1
+    if direction == "LEFT CURVE":
+        return -1
+    return 0    # 예상 외 값
 
 
 # ============================================================
@@ -248,6 +251,15 @@ class CubicTangentCalculator(TangentCalculator):
         return 0.0
 
 
+class StraightTangentCalculator(TangentCalculator):
+    """직선: 편기각/접선각/사거리 0, 접선방위각 = h1"""
+
+    def __init__(self, curve: "CurveParams"):
+        self.h1 = curve.h1
+
+    def compute(self, sta: float, offset: float) -> TangentFields:
+        return TangentFields.zero(self.h1)
+
 # ============================================================
 # 팩토리
 # ============================================================
@@ -255,4 +267,6 @@ def create_tangent_calculator(curve: "CurveParams") -> TangentCalculator:
     """곡선 타입에 맞는 계산기 생성"""
     if curve.curve_type == "simplecurve":
         return SimpleCurveTangentCalculator(curve)
+    if curve.curve_type == "straight":
+        return StraightTangentCalculator(curve)  # ✅
     return CubicTangentCalculator(curve)

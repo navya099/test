@@ -222,13 +222,20 @@ class CubicCoordinateCalculator(CoordinateCalculator):
         return self._straight_from_ps(g.h2, offset, g.ps_xy)
 
 
+class StraightCoordinateCalculator(CoordinateCalculator):
+    """직선: BP에서 h1 방향"""
+
+    def compute(self, sta: float, offset: float, geometry: CurveGeometry) -> CoordinateResult:
+        return self._straight_from_bp(geometry.h1, offset, geometry.bp_xy)
+
 # ============================================================
 # 팩토리 + 편의 함수
 # ============================================================
-def create_coordinate_calculator(curve: "CurveParams") -> CoordinateCalculator:
-    """곡선 타입에 맞는 계산기 생성"""
+def create_coordinate_calculator(curve):
     if curve.curve_type == "simplecurve":
         return SimpleCurveCoordinateCalculator()
+    if curve.curve_type == "straight":
+        return StraightCoordinateCalculator()   # ✅
     return CubicCoordinateCalculator()
 
 
@@ -241,7 +248,20 @@ def build_geometry_from_curve(
     """CurveParams + BP 좌표로부터 CurveGeometry 생성
 
     단곡선/3차포물선의 필드 차이를 흡수.
+    #ADD FIX: 직선 타입 분기 추가
     """
+    if curve.curve_type == "straight":
+        return CurveGeometry(
+            h1=curve.h1, h2=curve.h2,
+            sp_pc_bearing=curve.h1,
+            w13=0.0,
+            sp_sta=curve.ip_sta, pc_sta=curve.ip_sta,
+            cp_sta=curve.ip_sta, ps_sta=curve.ip_sta,
+            bp_xy=bp_xy,
+            sp_xy=curve.ip_xy,
+            center_xy=(math.nan, math.nan),
+            ps_xy=curve.ip_xy,
+        )
     if curve.curve_type == "simplecurve":
         # 단곡선: BC→SP, EC→PS로 매핑
         return CurveGeometry(

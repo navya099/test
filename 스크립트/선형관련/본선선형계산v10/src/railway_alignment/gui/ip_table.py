@@ -194,10 +194,14 @@ class IPTableEditor(ttk.Frame):
             if not self.tree.exists(iid):
                 continue
 
-            type_text = "단곡선" if curve.curve_type == "simplecurve" else "3차포물선"
-            l_text = "0" if curve.curve_type == "simplecurve" else f"{curve.spiral_length:.1f}"
-            dir_text = "우" if curve.direction == "RIGHT CURVE" else "좌"
+            if curve.curve_type == "simplecurve":
+                type_text, l_text = "단곡선", "0"
+            elif curve.curve_type == "straight":
+                type_text, l_text = "직선", "—"  # ✅
+            else:
+                type_text, l_text = "3차포물선", f"{curve.spiral_length:.1f}"
 
+            dir_text = "우" if curve.direction == "RIGHT CURVE" else "좌"
             self.tree.set(iid, "type", type_text)
             self.tree.set(iid, "dir", dir_text)
             self.tree.set(iid, "l", l_text)
@@ -212,6 +216,14 @@ class IPTableEditor(ttk.Frame):
             ip_no = int(iid)
             if self._auto_flags.get(ip_no, True):
                 continue
+            # ✅ R=0 (직선 IP) 무시
+            r_text = self.tree.set(iid, "r")
+            try:
+                if float(r_text) == 0:
+                    continue
+            except (ValueError, TypeError):
+                continue
+
             vals = self.tree.item(iid, "values")
             try:
                 # '*' 표식 제거
@@ -252,12 +264,14 @@ class IPTableEditor(ttk.Frame):
         return float(s) if s else 0.0
 
     def _insert_row(self, curve) -> None:
+        if curve.curve_type == "simplecurve":
+            type_text, l_text = "단곡선", "0"
+        elif curve.curve_type == "straight":
+            type_text, l_text = "직선", "—"  # ✅
+        else:
+            type_text, l_text = "3차포물선", f"{curve.spiral_length:.1f}"
+        dir_text = "우" if curve.direction == "RIGHT CURVE" else "좌"  # ✅
         auto = self._auto_flags.get(curve.ip_no, True)
-        forced = self._type_overrides.get(curve.ip_no)
-        display_type = forced or curve.curve_type
-        type_text = "단곡선" if display_type == "simplecurve" else "3차포물선"
-        l_text = "0" if display_type == "simplecurve" else f"{curve.spiral_length:.1f}"
-        dir_text = "우" if curve.direction == "RIGHT CURVE" else "좌"
 
         if auto:
             m_text = f"{curve.m:.1f}"

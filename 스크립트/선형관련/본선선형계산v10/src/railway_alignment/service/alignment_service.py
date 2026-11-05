@@ -265,10 +265,17 @@ class AlignmentService:
             )
 
             parameters: list[list[float]] = []
-            type_overrides = dict(input_data.type_overrides)
+            type_overrides = {
+                ip: t for ip, t in input_data.type_overrides.items()
+                if radius_list[ip - 1] != 0  # ✅ R=0 IP는 타입 오버라이드 무시
+            }
 
             for i, auto in enumerate(auto_params):
                 ip_no = i + 1
+                # ✅ R=0 (직선 IP)은 파라미터 [0, 0, 0] 고정
+                if radius_list[i] == 0:
+                    parameters.append([0, 0, 0])
+                    continue
                 auto_m, auto_z, auto_v = auto[0], auto[1], auto[2]
 
                 override = input_data.parameter_overrides.get(ip_no)

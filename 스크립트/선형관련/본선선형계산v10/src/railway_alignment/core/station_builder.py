@@ -122,10 +122,17 @@ class CubicStationListBuilder(StationListBuilder):
 
         return self._finalize(stations)
 
+class StraightStationListBuilder(StationListBuilder):
+    """직선 IP: bp_sta, unit 배수, end_sta만"""
+
+    def build(self) -> list[float]:
+        return self._finalize(self._base_stations())
 
 def create_station_list_builder(curve, bp_sta, end_sta, unit):
     if curve.curve_type == "simplecurve":
         return SimpleCurveStationListBuilder(curve, bp_sta, end_sta, unit)
+    if curve.curve_type == "straight":
+        return StraightStationListBuilder(curve, bp_sta, end_sta, unit)  # ✅
     return CubicStationListBuilder(curve, bp_sta, end_sta, unit)
 
 
@@ -199,8 +206,8 @@ class SpiralShiftCalculator(ShiftCalculator):
 
 
 def create_shift_calculator(curve: "CurveParams") -> ShiftCalculator:
-    if curve.curve_type == "simplecurve":
-        return ZeroShiftCalculator(curve)
+    if curve.curve_type in ("simplecurve", "straight"):
+        return ZeroShiftCalculator(curve)  # ✅ 직선은 이정량 0
     return SpiralShiftCalculator(curve)
 
 
@@ -313,12 +320,9 @@ def build_station_group(
     return rows
 
 
-def _curve_boundaries(curve: "CurveParams", end_sta: float) -> tuple[float, float, float, float, float]:
-    """get_station_label / calculate_station_offset에 전달할 경계값
-
-    Returns:
-        (sp, pc, cp, ps, ep) — 단곡선은 BC/BC/EC/EC로 매핑
-    """
+def _curve_boundaries(curve, end_sta):
     if curve.curve_type == "simplecurve":
         return (curve.bc_sta, curve.bc_sta, curve.ec_sta, curve.ec_sta, end_sta)
+    if curve.curve_type == "straight":
+        return (end_sta, end_sta, end_sta, end_sta, end_sta)   # ✅
     return (curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta, end_sta)

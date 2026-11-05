@@ -66,7 +66,13 @@ def calculate_inner_angle(v1: tuple, v2: tuple) -> float:
 
 def find_direction(radius: float, h1: float, h2: float) -> int:
     if radius == 0:
-        return 0
+        # ✅ R=0: 각도차 정규화 후 부호
+        diff = h2 - h1
+        while diff > 180:
+            diff -= 360
+        while diff <= -180:
+            diff += 360
+        return 1 if diff > 0 else -1
     return 1 if math.sin(math.radians(h2 - h1)) >= 0 else -1
 
 def get_station_label(
@@ -74,6 +80,8 @@ def get_station_label(
     sp: float, pc: float, cp: float, ps: float, ep: float,
     eps: float = 1e-6,
 ) -> str:
+    if curve_type == "straight":
+        return "PI"  # ✅ 직선 IP는 PI
     checks = [
         (sp, "BC" if curve_type == "simplecurve" else "SP"),
         (pc, "BC" if curve_type == "simplecurve" else "PC"),

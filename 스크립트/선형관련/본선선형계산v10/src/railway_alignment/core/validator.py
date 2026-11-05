@@ -74,6 +74,8 @@ def _check_curve_overlap(
     """이전 IP와의 곡선 중첩 검증"""
     if prev_curve is None:
         return None
+    if prev_curve.curve_type == "straight" or curve.curve_type == "straight":
+        return None  # ✅ 직선 IP는 경합 없음
     prev_end = prev_curve.ec_sta if prev_curve.curve_type == "simplecurve" else prev_curve.ps_sta
     curr_start = curve.bc_sta if curve.curve_type == "simplecurve" else curve.sp_sta
     if prev_end is None or curr_start is None:
@@ -110,6 +112,9 @@ def validate_curves(curves: list["CurveParams"]) -> list[ValidationIssue]:
     """전체 IP 검증"""
     issues: list[ValidationIssue] = []
     for i, curve in enumerate(curves):
+        # ✅ 직선 IP는 모든 곡선 검증 스킵
+        if curve.curve_type == "straight":
+            continue
         prev = curves[i - 1] if i > 0 else None
         for check in (
             _check_ia_positive(curve),

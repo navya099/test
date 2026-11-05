@@ -9,6 +9,9 @@ def calculate_parameters(
     """곡선별 [M, Z, V] 계산"""
     parameters = []
     for radius in radius_list:
+        if radius == 0:
+            parameters.append([0, 0, 0]) # ✅ 직선 IP
+            continue
         cm, cd = get_cant_limits(max_v, track_type)
         v = round(calculate_v(cm, cd, radius, max_v) / Config.V_ROUNDING) * Config.V_ROUNDING
         m = int(M_VALUE_TABLE.get(v, Config.M_FALLBACK_COEFFICIENT * v))

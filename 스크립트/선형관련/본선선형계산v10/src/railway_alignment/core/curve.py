@@ -248,6 +248,43 @@ def calculate_curve(
 
         rc = radius_list[i]
         m, z, v = parameters[i]
+        # ✅ R=0: 직선 IP (곡선 없음, 꺾임만)
+        if rc == 0:
+            direction = find_direction(rc, h1, h2)
+            curvedir = "RIGHT CURVE" if direction == 1 else "LEFT CURVE"
+
+            ip_sta = _compute_ip_sta(i, prev_end_sta, ip_dist1, prev_tl)
+
+            curve = CurveParams(
+                ip_no=ip_no, ip_xy=ip_xy, curve_type="straight",
+                direction=curvedir,
+                h1=h1, h2=h2, ia_degree=ia_deg,
+                center_xy=(math.nan, math.nan), radius=0.0,
+                ip_distance1=ip_dist1, ip_distance2=ip_dist2,
+                m=0, z=0, v=0, params=[0.0],
+                o_pc_bearing=h1, sp_pc_bearing=h1,
+                theta_pc=0.0, ip_sta=ip_sta,
+            )
+            curves.append(curve)
+
+            if is_last_ip:
+                extended_sta = ip_sta + calculate_distance(
+                    ip_xy[0], ip_xy[1], ep_xy[0], ep_xy[1],
+                )
+            else:
+                extended_sta = ip_sta
+
+            station_group = build_station_group(
+                curve=curve, bp_sta=prev_end_sta, bp_xy=prev_end_xy,
+                end_sta=extended_sta, unit=unit,
+            )
+            station_groups.append([station_group])
+            polycurve.extend([row.coord for row in station_group])
+
+            prev_end_sta = ip_sta
+            prev_end_xy = ip_xy
+            prev_tl = 0.0
+            continue
         not_spiral_min = dictionary_cubicparabola(v)
 
         # 곡선 타입 결정 (오버라이드 우선)
