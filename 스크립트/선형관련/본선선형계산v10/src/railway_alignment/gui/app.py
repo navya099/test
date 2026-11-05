@@ -345,40 +345,84 @@ class MainWindow:
     # ------------------------------------------------------------------
     # IP 테이블 콜백
     # ------------------------------------------------------------------
-    def _on_ip_select(self, ip_no: int) -> None:
+    def _on_ip_select(self, ip_no: Optional[int]) -> None:
+        if ip_no is None:
+            self.preview.highlight_ip(None)
+            return
         self.preview.highlight_ip(self._ip_index_of(ip_no))
 
-    def _on_ip_edit(self, ip_no: int, field: str, new_value: str) -> None:
-        if field in ("x", "y", "r"):
-            # 기존 raw_lines 갱신 경로
-            if not self._raw_lines:
-                return
-            raw_idx = self._raw_index_of(ip_no)
-            if raw_idx is None or raw_idx <= 0:
-                return
-            row = list(self._raw_lines[raw_idx])
-            try:
-                val = float(new_value)
-            except ValueError:
-                return
-            col_map = {"y": 0, "x": 1, "r": 2}
-            col = col_map.get(field)
-            if col is None:
-                return
-            while len(row) <= col:
-                row.append("0")
-            row[col] = str(val)
-            self._raw_lines[raw_idx] = row
-            self._recalculate(save=False)
-        elif field in ("m", "v", "z"):
-            # raw_lines는 건드리지 않음. 테이블 값만 갱신 후 재계산
-            self._recalculate(save=False)
+    def _on_ip_edit(self, iid: str, field: str, new_value: str) -> None:
+        if not self._raw_lines:
+            return
 
-    def _on_ip_insert(self, ip_no: int) -> None:
+        # ✅ BP/EP
+        if iid in ("BP", "EP"):
+            self._on_bp_ep_edit(iid, field, new_value)
+            return
+
+        # ✅ IP
+        try:
+            ip_no = int(iid)
+        except ValueError:
+            return
+
+        raw_idx = self._raw_index_of(ip_no)
+        if raw_idx is None or raw_idx <= 0:
+            return
+        row = list(self._raw_lines[raw_idx])
+        try:
+            val = float(new_value)
+        except ValueError:
+            messagebox.showerror("입력 오류", f"숫자를 입력하세요: {new_value}")
+            return
+        col_map = {"y": 0, "x": 1, "r": 2}
+        col = col_map.get(field)
+        if col is None:
+            return
+        while len(row) <= col:
+            row.append("0")
+        row[col] = str(val)
+        self._raw_lines[raw_idx] = row
+        self._recalculate(save=False)
+
+    def _on_bp_ep_edit(self, iid: str, field: str, new_value: str) -> None:
+        """BP/EP 좌표 편집 → raw_lines 갱신 → 재계산"""
+        if not self._raw_lines:
+            return
+        raw_idx = 0 if iid == "BP" else len(self._raw_lines) - 1
+        row = list(self._raw_lines[raw_idx])
+        try:
+            val = float(new_value)
+        except ValueError:
+            messagebox.showerror("입력 오류", f"숫자를 입력하세요: {new_value}")
+            return
+
+        col_map = {"y": 0, "x": 1}  # raw_lines: [Y, X, R]
+        col = col_map.get(field)
+        if col is None:
+            return
+        while len(row) <= col:
+            row.append("0")
+        row[col] = str(val)
+        self._raw_lines[raw_idx] = row
+        self._recalculate(save=False)
+
+    def _on_ip_insert(self, iid: str) -> None:
         if not self._raw_lines:
             messagebox.showwarning("안내", "먼저 파일을 열어주세요.")
             return
-        raw_idx = self._raw_index_of(ip_no) or max(1, len(self._raw_lines) - 1)
+
+        if iid == "BP":
+            raw_idx = 1
+        elif iid == "EP":
+            raw_idx = len(self._raw_lines) - 1
+        else:
+            try:
+                ip_no = int(iid)
+                raw_idx = self._raw_index_of(ip_no) or 1
+            except ValueError:
+                raw_idx = 1
+
         base = (
             list(self._raw_lines[raw_idx])
             if 0 < raw_idx < len(self._raw_lines)
@@ -388,12 +432,18 @@ class MainWindow:
         self.ip_table.load_raw(self._raw_lines)
         self._recalculate(save=False)
 
-    def _on_ip_delete(self, ip_no: int) -> None:
+    def _on_ip_delete(self, iid: str) -> None:
+        if iid in ("BP", "EP"):
+            return  # ip_table에서 이미 막음
+        try:
+            ip_no = int(iid)
+        except ValueError:
+            return
         if not self._raw_lines:
             return
         raw_idx = self._raw_index_of(ip_no)
         if raw_idx is None or not (0 < raw_idx < len(self._raw_lines) - 1):
-            messagebox.showwarning("삭제 불가", "BP/EP는 삭제할 수 없습니다.")
+            messagebox.showwarning("삭제 불가", "삭제할 수 없습니다.")
             return
         del self._raw_lines[raw_idx]
         self.ip_table.load_raw(self._raw_lines)
