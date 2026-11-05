@@ -153,12 +153,19 @@ class IPBlockWriter:
 
 
 class StationSymbolWriter:
-    def __init__(self, msp, style: DxfStyle, unit: int, layer_suffix: str = ""):
+    def __init__(self, msp, style: DxfStyle, unit: int, layer_suffix: str = "", color_override: int | None = None):
         self.msp = msp
         self.style = style
         self.unit = unit
         self.cfg = style.config
         self.layer_suffix = layer_suffix  # "" | "_상선" | "_하선"
+        self.color_override = color_override
+
+    def _layer(self, base: LayerStyle) -> tuple[str, int]:
+        """(레이어명, 색상) 반환 (궤도 접미사 + 색상 override)."""
+        name = base.name + self.layer_suffix if self.layer_suffix else base.name
+        color = self.color_override if self.color_override is not None else base.color
+        return name, color
 
     def _layer_name(self, base: LayerStyle) -> str:
         return base.name + self.layer_suffix if self.layer_suffix else base.name
@@ -202,16 +209,19 @@ class StationSymbolWriter:
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
         cfg = self.cfg
+        km_name, km_color = self._layer(cfg.layer_km_symbol)
+        sub_name, sub_color = self._layer(cfg.layer_sub_symbol)
+        text_name, text_color = self._layer(cfg.layer_km_text)
 
         self.msp.add_circle(
             coord_math, radius=cfg.km_symbol_radius,           # ✅ 절대값
-            dxfattribs={"layer": self._layer_name(cfg.layer_km_symbol),
-                        "color": cfg.layer_km_symbol.color},
+            dxfattribs={"layer": km_name,
+                        "color": km_color}
         )
         self.msp.add_circle(
             coord_math, radius=cfg.sub_symbol_radius,
-            dxfattribs={"layer": self._layer_name(cfg.layer_sub_symbol),
-                        "color": cfg.layer_sub_symbol.color},
+            dxfattribs={"layer": sub_name,
+                        "color": sub_color}
         )
 
         if cfg.show_km_text:
@@ -219,10 +229,10 @@ class StationSymbolWriter:
             self.msp.add_text(
                 f"{km_value}km",
                 dxfattribs={
-                    "layer": self._layer_name(cfg.layer_km_text),
+                    "layer": text_name,
                     "insert": coord_math,
                     "height": cfg.text_height,
-                    "color": cfg.layer_km_text.color,
+                    "color": text_color,
                     "rotation": ta_math,
                 },
             )
@@ -232,11 +242,13 @@ class StationSymbolWriter:
         coord_math = (y, x)
         ta_math = self._ta_math(row.ta)
         cfg = self.cfg
+        sub_name, sub_color = self._layer(cfg.layer_sub_symbol)
+        sub_text, sub_text_color = self._layer(cfg.layer_sub_text)
 
         self.msp.add_circle(
             coord_math, radius=cfg.sub_symbol_radius,
-            dxfattribs={"layer": self._layer_name(cfg.layer_sub_symbol),
-                        "color": cfg.layer_sub_symbol.color},
+            dxfattribs={"layer": sub_name,
+                        "color": sub_color},
         )
 
         if cfg.show_sub_text:
@@ -244,10 +256,10 @@ class StationSymbolWriter:
             self.msp.add_text(
                 str(meter),
                 dxfattribs={
-                    "layer": self._layer_name(cfg.layer_sub_text),
+                    "layer": sub_text,
                     "insert": coord_math,
                     "height": cfg.text_height,
-                    "color": cfg.layer_sub_text.color,
+                    "color": sub_text_color,
                     "rotation": ta_math,
                 },
             )
@@ -257,11 +269,12 @@ class StationSymbolWriter:
         ta_math = self._ta_math(row.ta)
         half = self.cfg.tick_half_length                    # ✅ 절대값
         lyr = self.cfg.layer_aux_station
+        aux_name, aux_color = self._layer(lyr)
 
         start = calculate_destination_coordinates(y, x, ta_math + 90, half)
         end = calculate_destination_coordinates(y, x, ta_math + 90, -half)
         self.msp.add_line(start, end,
-                          dxfattribs={"layer": self._layer_name(lyr), "color": lyr.color})
+                          dxfattribs={"layer": aux_name, "color": aux_color})
 
     def _write_curve_leader(self, row, curve):
         if not row.label:
@@ -273,13 +286,15 @@ class StationSymbolWriter:
 
         leader_lyr = cfg.layer_curve_leader
         text_lyr = cfg.layer_curve_text
+        leader_lyr_name, leader_lyr_color = self._layer(leader_lyr)
+        text_lyr_name, text_lyr_color = self._layer(text_lyr)
 
         leader_bearing = ta_math + 90 if curve.direction == "LEFT CURVE" else ta_math - 90
         end_point = calculate_destination_coordinates(
             y, x, leader_bearing, cfg.leader_length,       # ✅ 절대값
         )
         self.msp.add_line(coord_math, end_point,
-                          dxfattribs={"layer": self._layer_name(leader_lyr), "color": leader_lyr.color})
+                          dxfattribs={"layer": leader_lyr_name, "color": leader_lyr_color})
 
         if cfg.curve_label_mode == "label_only":
             text = row.label
@@ -290,10 +305,10 @@ class StationSymbolWriter:
         insert_pos = self._text_insert_point(row, curve, ta_math, end_point)
 
         self.msp.add_text(text, dxfattribs={
-            "layer": self._layer_name(text_lyr),
+            "layer": text_lyr_name,
             "insert": insert_pos,
             "height": cfg.text_height,
-            "color": text_lyr.color,
+            "color": text_lyr_color,
             "rotation": text_rotation,
         })
 
@@ -391,12 +406,17 @@ class DxfDocument:
             self.config.layer_aux_station, self.config.layer_curve_leader,
             self.config.layer_curve_text,
         ]
-        for suffix in ("_상선", "_하선"):
+        track_color_map = {
+            "_상선": self.config.layer_upper_track.color,
+            "_하선": self.config.layer_lower_track.color,
+        }
+        for suffix, track_color in track_color_map.items():
             for base in symbol_layers:
                 name = base.name + suffix
                 if name not in self.doc.layers:
                     self.doc.layers.new(name=name, dxfattribs={
-                        "color": base.color, "linetype": base.linetype,
+                        "color": track_color,
+                        "linetype": base.linetype,
                     })
 
     def build(self, coordinates, linestring, curves, station_groups, unit, upper_track=None, lower_track=None):
@@ -423,9 +443,11 @@ class DxfDocument:
         poly.dxf.layer = layer.name
         poly.dxf.color = layer.color
 
-        # 2) 측점 심볼 (궤도 레이어 접미사)
+        # ✅ 심볼 색상 override (궤도 색상 강제)
         writer = StationSymbolWriter(
-            self.msp, self.style, unit, layer_suffix=suffix,
+            self.msp, self.style, unit,
+            layer_suffix=suffix,
+            color_override=layer.color,
         )
         writer.write(track["station_groups"], track["curves"])
 
