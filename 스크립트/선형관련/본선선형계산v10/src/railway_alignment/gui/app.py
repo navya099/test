@@ -667,33 +667,34 @@ class MainWindow:
         self._set_entry(self.entry_speed, str(data.design_speed))
         self.ballast_var.set(0 if data.ballast == "자갈도상" else 1)
 
-        # 3) 도면 설정
+        # ✅ 3) 복선 옵션 (반드시 _recalculate 전에!)
+        self.double_track_var.set(data.double_track)
+        self._set_entry(self.entry_track_gauge, str(data.track_gauge))
+        self.track_swap_var.set(data.track_swap_direction)
+
+        # 4) 도면 설정
         try:
             from src.railway_alignment.io.dxf_config import DXFConfig
             self.service.dxf_config = DXFConfig.from_dict(data.dxf_config)
         except Exception:
             logger.exception("도면 설정 복원 실패 (기본값 유지)")
 
-        # 4) IP 테이블 상태 (pending)
+        # 5) IP 테이블 상태 (pending)
         self.ip_table.set_state({
             "auto_flags": data.auto_flags,
             "type_overrides": data.type_overrides,
         })
 
-        # 5) 뷰포트 초기화 (새 프로젝트이므로 fit 필요)
-        self.preview.reset_view_state()  # ✅
-        
-        # 5) raw 로드 + 재계산
+        # 6) 뷰포트 초기화
+        self.preview.reset_view_state()
+
+        # 7) raw 로드 + 재계산 (복선 옵션 반영 완료 상태)
         self.ip_table.load_raw(data.raw_lines)
         self._recalculate(save=False)
 
-        # 6) M/V/Z 오버라이드 복원
+        # 8) M/V/Z 오버라이드 복원
         self._restore_parameter_overrides(data.parameter_overrides)
         self._recalculate(save=False)
-
-        self.double_track_var.set(data.double_track)
-        self._set_entry(self.entry_track_gauge, str(data.track_gauge))
-        self.track_swap_var.set(data.track_swap_direction)
 
     def _set_entry(self, entry, value):
         entry.delete(0, "end")
