@@ -230,6 +230,7 @@ class MainWindow:
         self._current_file = "(선택된 파일)"
         self._current_project = None  # ✅ TXT 열면 새 프로젝트
         self.status_var.set(f"파일 로드 완료: {len(lines)}행")
+        self.preview.reset_view_state()  # ✅ 뷰포트 초기화
 
         self.ip_table.load_raw(lines)
         self._recalculate(save=False)
@@ -633,6 +634,9 @@ class MainWindow:
             "type_overrides": data.type_overrides,
         })
 
+        # 5) 뷰포트 초기화 (새 프로젝트이므로 fit 필요)
+        self.preview.reset_view_state()  # ✅
+        
         # 5) raw 로드 + 재계산
         self.ip_table.load_raw(data.raw_lines)
         self._recalculate(save=False)
