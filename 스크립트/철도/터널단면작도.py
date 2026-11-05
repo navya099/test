@@ -1,708 +1,513 @@
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, Button
-import matplotlib.patches as patches
-from matplotlib.patches import Circle, Arc
+"""
+터널 단면 작도 프로그램 (리팩토링 버전)
+
+구조:
+    - TunnelParams   : 모든 입력 파라미터 (dataclass)
+    - TunnelGeometry : 계산된 기하 결과 (dataclass)
+    - compute_geometry() : 순수 계산 (테스트 가능)
+    - draw_*         : 렌더링 함수 (ax만 받음)
+    - TunnelApp      : tkinter UI
+"""
+from __future__ import annotations
+
 import math
-import ezdxf
-from scipy.optimize import minimize
-from shapely.geometry import LineString, Polygon, Point
-from shapely.affinity import rotate
+from dataclasses import dataclass, field, replace
+from typing import Optional
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.patches import Arc, Circle
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 import tkinter as tk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk  # 추가
-import numpy as np
-from tkinter import filedialog, Tk, StringVar, ttk , messagebox, simpledialog
+from tkinter import filedialog, messagebox, simpledialog
+import ezdxf
+from shapely.geometry import LineString, Polygon
+from scipy.optimize import minimize
 
-plt.rcParams['font.family'] ='Malgun Gothic'
-plt.rcParams['axes.unicode_minus'] =False
+plt.rcParams['font.family'] = 'Malgun Gothic'
+plt.rcParams['axes.unicode_minus'] = False
 
-def draw_angle_annotation(ax, p1, p2, p3, radius=1, angle_color='black'):
-    """
-    두 선 사이의 각도를 표시합니다.
-
-    Parameters:
-    - ax: Matplotlib Axes 객체
-    - p1, p2, p3: 각도를 나타내는 세 점 (p2는 각도의 중심점)
-    - radius: 각도 호의 반지름
-    - angle_color: 각도 기호의 색상
-    """
-    # 벡터 계산
-    v1 = np.array(p1) - np.array(p2)
-    v2 = np.array(p3) - np.array(p2)
-    
-    # 벡터의 각도 계산 (0도에서 시작)
-    angle = np.arccos(np.clip(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)), -1.0, 1.0))
-    angle_deg = np.degrees(angle)
-    
-    # 벡터의 방향과 각도를 기반으로 호의 시작각과 끝각 계산
-    angle_start = np.arctan2(v1[1], v1[0])
-    angle_end = np.arctan2(v2[1], v2[0])
-
-    # 호 그리기
-    arc = patches.Arc(p2, 2 * radius, 2 * radius, angle=0, 
-                      theta1=np.degrees(angle_end), theta2=np.degrees(angle_start), 
-                      color=angle_color)
-    ax.add_patch(arc)
-
-    
-    
-    # 각도 기호 표시
-    mid_angle = (angle_start + angle_end) / 2
-    ax.text(p2[0] + radius * 0.7 * np.cos(mid_angle), 
-            p2[1] + radius * 0.7 * np.sin(mid_angle),
-            f'{angle_deg:.1f}°', color=angle_color, fontsize=12, ha='center')
+# ---------------------------------------------------------------------------
+# 상수
+# ---------------------------------------------------------------------------
+FL_TOLERANCE = 0.02          # FL 검토 허용오차
+ARC_SAMPLES = 1000           # 아크 샘플링 개수
+POLYGON_ARC_POINTS = 100     # 폴리곤 근사용 아크 점 개수
+LABEL_Y_MARGIN = 0.5         # CL 라벨 상단 여유
+DXF_DEFAULT_IN = "c:/temp/건축한계.dxf"
+DXF_DEFAULT_OUT = "C:/TEMP/TUNNEL_output.dxf"
 
 
-def find_extreme_x_on_arc(center, radius, start_angle, end_angle):
-    """
-    호의 중심(center), 반지름(radius), 시작 각도(start_angle), 끝 각도(end_angle)를 기반으로
-    호 위의 가장 큰 x값과 가장 작은 x값을 찾습니다.
-    """
-    # 각도를 라디안으로 변환
-    start_angle_rad = np.radians(start_angle)
-    end_angle_rad = np.radians(end_angle)
-    
-    # 시작 각도와 끝 각도 사이의 각도를 샘플링 (더 정밀한 값을 원할 경우 증가)
-    angles = np.linspace(start_angle_rad, end_angle_rad, 1000)
-    
-    # x 좌표 계산
-    x_values = center[0] + radius * np.cos(angles)
-    
-    # Y 좌표 계산
-    y_values = center[1] + radius * np.sin(angles)
-    
-    # x 좌표의 최대값과 최소값 찾기
-    max_x_index = np.argmax(x_values)
-    min_x_index = np.argmin(x_values)
-    
-    # 최대값과 최소값에 해당하는 좌표 (x, y)
-    max_x_point = (x_values[max_x_index], y_values[max_x_index])
-    min_x_point = (x_values[min_x_index], y_values[min_x_index])
-    
-    # 좌표 반환
-    return max_x_point, min_x_point
+# ---------------------------------------------------------------------------
+# 파라미터 / 기하 결과
+# ---------------------------------------------------------------------------
+@dataclass
+class TunnelParams:
+    R1: float = 7.166
+    top_angle: float = 90.0
+    R2: float = 5.54
+    r2_angle: float = 69.0
+    R1_Y: float = 1.572
+    D: float = 4.4
 
-def check_polygon_closure(polygon):
-    # 첫 좌표와 마지막 좌표 비교
-    is_closed = polygon.exterior.is_ring
-    is_valid = polygon.is_valid
+    # 고정값 (초기에는 상수였던 항목들)
+    FL: float = 0.0
+    RL: float = 0.472              # FL + rail offset
+    fl_to_culvert: float = 0.472   # 공동구 상단 ~ FL
+    sideL: float = 0.8
+    sideR: float = 0.8
+    safeheight: float = 2.1
 
-    return is_closed, is_valid
-
-def plot_polygon_with_area(polygon):
-    # 폴리곤 좌표 추출
-    x, y = polygon.exterior.xy
-    
-    # 플롯 생성
-    fig, ax = plt.subplots()
-    ax.plot(x, y, color='blue', linewidth=2, solid_capstyle='round', zorder=1)
-    
-    # 폴리곤 면적 계산
-    area = polygon.area
-    
-    # 폴리곤 중심 좌표 계산
-    centroid = polygon.centroid
-    
-    # 면적을 폴리곤 내부에 표시
-    ax.text(centroid.x, centroid.y, f'Area: {area:.2f}', fontsize=12, ha='center')
-    
-    # 폴리곤을 그래프의 중앙에 배치하고 보기 좋게 스케일 조정
-    minx, miny, maxx, maxy = polygon.bounds
-    ax.set_xlim([minx - 0.1, maxx + 0.1])
-    ax.set_ylim([miny - 0.1, maxy + 0.1])
-    ax.set_aspect('equal', 'box')
-    
-    # 그래프 제목과 축 제거
-    ax.set_title("Polygon with Area")
-    ax.axis('off')
-    
-    plt.show()
-    
-def arc_to_linestring(center, radius, start_angle, end_angle, num_points=100):
-    """Arc 객체를 다각형으로 변환하기 위해 작은 선분(LineString)으로 분리합니다."""
-    angles = np.linspace(np.radians(start_angle), np.radians(end_angle), num_points)
-    points = [(center[0] + radius * np.cos(angle), center[1] + radius * np.sin(angle)) for angle in angles]
-    return LineString(points)
-
-def tunnel_section_area(params):
-    R1, TOP_ANGLE, R2, R2_ANGLE = params
-    center_top = (0, s_R1_Y.get())
-    
-    # 좌우 측면의 중심 계산
-    left_center, right_center = find_side_center(center_top, R1, 90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2), R2)
-    
-    # 상단 아크
-    top_arc = arc_to_linestring(center_top, R1, 90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2))
-    
-    # 좌우 측면 아크
-    left_arc = arc_to_linestring(left_center, R2, 90 + (TOP_ANGLE / 2),90 + (TOP_ANGLE / 2) + R2_ANGLE)
-    right_arc = arc_to_linestring(right_center, R2, 90 - (TOP_ANGLE / 2),90 - (TOP_ANGLE / 2) - R2_ANGLE)
-    
-    # 아래 라인 (좌우 아크의 끝점을 연결)
-    bottom_line = LineString([left_arc.coords[-1], right_arc.coords[-1]])
-
-    
-     # 모든 부분을 연결하여 폐합된 다각형 생성
-    # 좌표를 올바른 순서로 나열하여 폐합된 폴리곤 생성
-    polygon_coords = (
-        list(left_arc.coords[::-1]) + #좌측 아크는 역순
-        list(top_arc.coords) + 
-        list(right_arc.coords) +
-        list(bottom_line.coords[::-1]) # 아래 라인은 역순으로
-        
-    )
-    
-    # 폴리곤 생성
-    polygon = Polygon(polygon_coords)
-    
-    return polygon
-
-def drawcad(ax, translate_x=0, translate_y=0):
-    # DWG 파일 열기
-    dxf_file = "c:/temp/건축한계.dxf"
-    doc = ezdxf.readfile(dxf_file)
-
-    # 레이아웃 선택 (예: ModelSpace)
-    msp = doc.modelspace()
-
-    # 도형을 Matplotlib에 플롯
-    for entity in msp:
-        if entity.dxftype() == 'LINE':
-            start_point = entity.dxf.start
-            end_point = entity.dxf.end
-            ax.plot([start_point.x + translate_x, end_point.x + translate_x],
-                    [start_point.y + translate_y, end_point.y + translate_y], 'k-')
-
-        elif entity.dxftype() == 'CIRCLE':
-            center = entity.dxf.center
-            radius = entity.dxf.radius
-            circle = plt.Circle((center.x + translate_x, center.y + translate_y), radius, color='r', fill=False)
-            ax.add_patch(circle)
-
-        elif entity.dxftype() == 'ARC':
-            center = entity.dxf.center
-            radius = entity.dxf.radius
-            start_angle = entity.dxf.start_angle
-            end_angle = entity.dxf.end_angle
-            arc = patches.Arc((center.x + translate_x, center.y + translate_y), 2*radius, 2*radius, angle=0,
-                              theta1=start_angle, theta2=end_angle, color='g')
-            ax.add_patch(arc)
+    @property
+    def r1_angles(self) -> tuple[float, float]:
+        half = self.top_angle / 2.0
+        return (90.0 + half, 90.0 - half)   # (좌, 우)
 
 
-def draw_arc(ax, center_point, radius, start_angle, end_angle, color='b', direction=1):
-    x_center, y_center = center_point
-
-    # Ensure angles are positive
-    if start_angle > end_angle:
-        start_angle, end_angle = end_angle, start_angle
-        end_angle += 360
-    else:
-        end_angle += 360 if end_angle < start_angle else 0
-
-    # Adjust for direction
-    if direction == -1:
-        start_angle, end_angle = end_angle, start_angle
-
-    # Create Arc patch
-    arc = patches.Arc(
-        (x_center, y_center),
-        2 * radius,  # width
-        2 * radius,  # height
-        angle=0,
-        theta1=start_angle,
-        theta2=end_angle,
-        color=color
-    )
-
-    # Add Arc to the plot
-    ax.add_patch(arc)
-
-    return arc  # Return the Arc object for further processing
+@dataclass
+class TunnelGeometry:
+    p: TunnelParams
+    center_top: tuple[float, float]
+    left_center: tuple[float, float]
+    right_center: tuple[float, float]
+    top_start: tuple[float, float]
+    top_end: tuple[float, float]
+    left_end: tuple[float, float]
+    right_end: tuple[float, float]
+    polygon: Polygon
+    area: float
+    SL: float
+    A: float
+    top_of_tunnel: float
 
 
-def find_side_center(top_center, top_radius, top_start_angle, top_end_angle, side_radius):
-    top_start_x = top_center[0] + top_radius * np.cos(np.radians(top_start_angle))
-    top_start_y = top_center[1] + top_radius * np.sin(np.radians(top_start_angle))
+# ---------------------------------------------------------------------------
+# 기하 유틸
+# ---------------------------------------------------------------------------
+def _polar(center, radius, deg):
+    rad = math.radians(deg)
+    return (center[0] + radius * math.cos(rad),
+            center[1] + radius * math.sin(rad))
 
-    top_end_x = top_center[0] + top_radius * np.cos(np.radians(top_end_angle))
-    top_end_y = top_center[1] + top_radius * np.sin(np.radians(top_end_angle))
 
-    direction_x = top_start_x - top_center[0]
-    direction_y = top_start_y - top_center[1]
+def find_side_center(top_center, top_radius, ang_left, ang_right, side_radius):
+    """상단 아크의 좌/우 끝점에서 접선 방향으로 side_radius만큼 이동한 원 중심."""
+    left_pt = _polar(top_center, top_radius, ang_left)
+    right_pt = _polar(top_center, top_radius, ang_right)
 
-    end_direction_x = top_end_x - top_center[0]
-    end_direction_y = top_end_y - top_center[1]
-    
-    norm = np.sqrt(direction_x**2 + direction_y**2)
-    direction_x /= norm
-    direction_y /= norm
+    def unit(a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dx, dy)
+        return dx / n, dy / n
 
-    end_norm = np.sqrt(end_direction_x**2 + end_direction_y**2)
-    end_direction_x /= end_norm
-    end_direction_y /= end_norm
-    
-    left_center = (top_start_x - direction_x * side_radius, top_start_y - direction_y * side_radius)
-    right_center = (top_end_x - end_direction_x * side_radius, top_end_y - end_direction_y * side_radius)
-    
+    dx_l, dy_l = unit(top_center, left_pt)
+    dx_r, dy_r = unit(top_center, right_pt)
+
+    left_center = (left_pt[0] - dx_l * side_radius,
+                   left_pt[1] - dy_l * side_radius)
+    right_center = (right_pt[0] - dx_r * side_radius,
+                    right_pt[1] - dy_r * side_radius)
     return left_center, right_center
 
-def find_start_point(center, radius, end_point, angle):
-    end_angle = np.degrees(np.arctan2(end_point[1] - center[1], end_point[0] - center[0]))
-    start_angle = end_angle - angle
-    
-    start_x = center[0] + radius * np.cos(np.radians(start_angle))
-    start_y = center[1] + radius * np.sin(np.radians(start_angle))
-    
-    return (start_x, start_y)
-
-def find_end_point(center, radius, start_point, angle):
-    start_angle = np.degrees(np.arctan2(start_point[1] - center[1], start_point[0] - center[0]))
-    end_angle = start_angle + angle
-    
-    end_x = center[0] + radius * np.cos(np.radians(end_angle))
-    end_y = center[1] + radius * np.sin(np.radians(end_angle))
-    
-    return (end_x, end_y)
-
-def draw_tunnel_section(ax, R1, R1_ANGLE, R2, R2_ANGLE, center_top):
-    left_center, right_center = find_side_center(center_top, R1, R1_ANGLE[0], R1_ANGLE[1], R2)
-    
-    start_point = (center_top[0] + R1 * np.cos(np.radians(R1_ANGLE[0])),
-                   center_top[1] + R1 * np.sin(np.radians(R1_ANGLE[0])))
-
-    end_point = (center_top[0] + R1 * np.cos(np.radians(R1_ANGLE[1])),
-                 center_top[1] + R1 * np.sin(np.radians(R1_ANGLE[1])))
-    
-    left_end_point = find_end_point(left_center, R2, start_point, R2_ANGLE)
-    right_end_point = find_end_point(right_center, R2, end_point, -R2_ANGLE)
-    
-    draw_arc(ax, center_top, R1, R1_ANGLE[0], R1_ANGLE[1], color='r', direction=1)
-    
-    left_start_angle = np.degrees(np.arctan2(start_point[1] - left_center[1], start_point[0] - left_center[0]))
-    left_end_angle = np.degrees(np.arctan2(left_end_point[1] - left_center[1], left_end_point[0] - left_center[0]))
-
-    draw_arc(ax, left_center, R2, left_start_angle, left_end_angle, color='b', direction=-1)
-    
-    right_start_angle = np.degrees(np.arctan2(end_point[1] - right_center[1], end_point[0] - right_center[0]))
-    right_end_angle = np.degrees(np.arctan2(right_end_point[1] - right_center[1], right_end_point[0] - right_center[0]))
-
-    draw_arc(ax, right_center, R2, right_start_angle, right_end_angle, color='g', direction=1)
-
-    return left_end_point, right_end_point
-
-# Example function to draw a vertical line at D/2
-def draw_axline(ax, D):
-    ax.axvline(x=-D/2, color='gray', linestyle='--', linewidth=1)  # Draw vertical line at D/2
-    ax.axvline(x= origin[0], color='gray', linestyle='--', linewidth=1)  # Draw vertical line at D/2
-    ax.axvline(x= D/2, color='gray', linestyle='--', linewidth=1)  # Draw vertical line at D/2
-    ax.text(-D/2,7.40,'CL of 하선')
-    ax.text( D/2,7.40,'CL of 상선')
-    ax.text(0,7.40,'CL of 터널')
-    
-def update_plot():
-    ax.clear()
-    ax.set_aspect('equal', adjustable='box')
-    ax.grid(True)
-
-    R1 = s_R1.get()
-    TOP_ANGLE = s_TOP_ANGLE.get()
-    R2 = s_R2.get()
-    R2_ANGLE = s_R2_ANGLE.get()
-    D = s_D.get()
-    R1_XY = (0, s_R1_Y.get())
-
-    R1_ANGLE = [90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2)]
-
-    drawcad(ax, translate_x=-D/2, translate_y=+RL)
-    drawcad(ax, translate_x=D/2, translate_y=+RL)
-
-    start_point = (R1_XY[0] + R1 * np.cos(np.radians(R1_ANGLE[0])),
-                   R1_XY[1] + R1 * np.sin(np.radians(R1_ANGLE[0])))
-
-    end_point = (R1_XY[0] + R1 * np.cos(np.radians(R1_ANGLE[1])),
-                 R1_XY[1] + R1 * np.sin(np.radians(R1_ANGLE[1])))
-    
-    left_end_point, right_end_point = draw_tunnel_section(ax, R1, [90 + (TOP_ANGLE / 2), 90 - (TOP_ANGLE / 2)], R2, R2_ANGLE, R1_XY)
-
-    # R2 라인 그리기
-    L_C, R_C = find_side_center(R1_XY, R1, R1_ANGLE[0], R1_ANGLE[1], R2)
-
-
-    x_values = [left_end_point[0], left_end_point[0] + sideL, left_end_point[0] + sideL , origin[0]]
-    y_values = [left_end_point[1], left_end_point[1], left_end_point[1] - FL_TO_CULVUT, left_end_point[1] - FL_TO_CULVUT]
-    ax.plot(x_values,y_values)
-
-    x_values = [right_end_point[0], right_end_point[0] - sideR, right_end_point[0] - sideR , origin[0]]
-    y_values = [right_end_point[1], right_end_point[1], right_end_point[1] - FL_TO_CULVUT, right_end_point[1] - FL_TO_CULVUT]
-    ax.plot(x_values,y_values)
-
-    draw_axline(ax, D)
-    
-    params = [R1, TOP_ANGLE, R2, R2_ANGLE]
-    params2 = [left_end_point, right_end_point]
-    console_print_tunnel_spec(params, params2)
-    check_tunnel_spec(params2)
-
-    draw_R1R2_LINE(ax, params, params2)
-
-    #R1, R2각도표시
-    draw_angle_annotation(ax, start_point, R1_XY, end_point)#R1
-    draw_angle_annotation(ax, left_end_point, L_C, start_point)#R2_L
-    draw_angle_annotation(ax, end_point, R_C, right_end_point)#R2_R
-
-    #공동구통로표시
-    plot_safeline(left_end_point, right_end_point)
-    
-    initial_guess = [R1_XY[0], R1_XY[1]]
-    result = minimize(objective_function, initial_guess, args=(R1, R1_ANGLE, R2, R2_ANGLE, D), method='L-BFGS-B')
-
-    optimized_R1_XY = result.x
-    print(f"찾은 R1_XY: {optimized_R1_XY[1]}")
-
-    canvas.draw()
-
-def draw_line(ax, start, end, linestyle='--', color='gray'):
-    """
-    두 점 사이에 선을 그리고 주어진 스타일로 설정합니다.
-    """
-    x_values = [start[0], end[0]]
-    y_values = [start[1], end[1]]
-    ax.plot(x_values, y_values, linestyle=linestyle, color=color)
-
-def add_text(ax, position, text, rotation=0, offset=(0, 0)):
-    """
-    텍스트를 주어진 위치에 추가하고, 회전 및 오프셋을 적용합니다.
-    """
-    ax.text(position[0] + offset[0], position[1] + offset[1], text, rotation=rotation)
-
-def calculate_midpoint(p1, p2):
-    """
-    두 점 사이의 중점을 계산합니다.
-    """
-    return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
-
-def draw_R1R2_LINE(ax, params, params2):
-    # R1 라인 그리기
-    center_top = (0, s_R1_Y.get())
-    R1_ANGLE = [90 + (params[1] / 2), 90 - (params[1] / 2)]
-    
-    start_point = (center_top[0] + params[0] * np.cos(np.radians(R1_ANGLE[0])),
-                   center_top[1] + params[0] * np.sin(np.radians(R1_ANGLE[0])))
-    
-    end_point = (center_top[0] + params[0] * np.cos(np.radians(R1_ANGLE[1])),
-                 center_top[1] + params[0] * np.sin(np.radians(R1_ANGLE[1])))
-
-    # 시작선과 끝선 그리기
-    draw_line(ax, center_top, end_point)
-    draw_line(ax, center_top, start_point)
-    
-    # 중점 계산 및 텍스트 추가
-    mid_end = calculate_midpoint(center_top, end_point)
-    add_text(ax, mid_end, f'R1 = {params[0]*1000:.0f}', rotation=R1_ANGLE[1], offset=(-0.25, 0.25))
-
-    mid_start = calculate_midpoint(center_top, start_point)
-    add_text(ax, mid_start, f'R1 = {params[0]*1000:.0f}', rotation=R1_ANGLE[0] + 180, offset=(-0.5, -0.5))
-    
-    # R2 라인 그리기
-    L_C, R_C = find_side_center(center_top, params[0], R1_ANGLE[0], R1_ANGLE[1], params[2])
-
-    # 시작선과 끝선 그리기
-    draw_line(ax, L_C, params2[0])
-    draw_line(ax, R_C, params2[1])
-    
-    # 중점 계산 및 텍스트 추가
-    mid_start_R2 = calculate_midpoint(L_C, params2[0])
-    r2_bearing_start = calculate_bearing(params2[0][0], params2[0][1], L_C[0], L_C[1])
-    add_text(ax, mid_start_R2, f'R2 = {params[2]*1000:.0f}', rotation=r2_bearing_start)
-
-    mid_end_R2 = calculate_midpoint(R_C, params2[1])
-    r2_bearing_end = calculate_bearing(R_C[0], R_C[1], params2[1][0], params2[1][1])
-    add_text(ax, mid_end_R2, f'R2 = {params[2]*1000:.0f}', rotation=r2_bearing_end)
-
-
-    
-def calculate_bearing(x1, y1, x2, y2):
-    # Calculate the bearing (direction) between two points in Cartesian coordinates
-    dx = x2 - x1
-    dy = y2 - y1
-    bearing = math.degrees(math.atan2(dy, dx))
-    return bearing
-
-def console_print_tunnel_spec(params, params2):
-    
-    polygon = tunnel_section_area(params)
-
-    #plot_polygon_with_area(polygon)
-    center_top = (0, s_R1_Y.get())
-    TOP_of_Tunnel = center_top[1] + R1 - origin[1]
-    
-    # 폐합 여부 확인
-    is_closed, is_valid = check_polygon_closure(polygon)
-
-    '''
-    if is_closed:
-        print("Polygon is closed.")
-    else:
-        print("Polygon is NOT closed.")
-
-    if is_valid:
-        print("Polygon is valid.")
-    else:
-        print("Polygon is NOT valid.")
-    '''
-    
-    A = abs(params2[0][0] - origin[0])
-    
-    R1_ANGLE = [90 + (params[1] / 2), 90 - (params[1] / 2)]
-    
-    L_C ,R_C = find_side_center(center_top, params[0], R1_ANGLE[0], R1_ANGLE[1], params[2])
-    left_SA = find_start_point(L_C, params[2], params2[0], params[3])
-    
-    p1,p2 = find_extreme_x_on_arc(L_C, params[2], R1_ANGLE[0], R1_ANGLE[0] + params[3])
-
-    ax.axhline(y=p2[1], color='gray', linestyle='--', linewidth=1)  # SL라인 그리기
-    ax.text(p2[0],p2[1],'SL')
-
-    print(f'------------------터널제원출력----------------\n')
-    print(f'내공단면적 {polygon.area:.2f}m^2')
-    print(f'R1 : {params[0]:.2f}')
-    print(f'Top Angle {params[1]}')
-    print(f'R2 : {params[2]}')
-    print(f'R2 Angle: {params[3]}')
-    print(f'A: {A:.2f}')
-    print(f'SL: {p2[1]:.2f}')
-    print(f'R2/R1비 : {R2/R1:.2f}')
-    print(f'편평률: {TOP_of_Tunnel / (A*2):.2f}')
-    
-def check_tunnel_spec(params):
-    tolerance = 0.02
-    new_FL = params[0][1] - FL_TO_CULVUT #FL Y좌표
-
-    print(f"현재 FL 값: {new_FL:.2f}")
-    
-    if abs(new_FL - FL) <= tolerance:
-        print('검토결과 : OK')
-    elif new_FL > FL:
-        print('검토결과 : 미달 FL을 내려야 함.')
-    else:
-        print('검토결과 : 미달 FL을 올려야 함.')
-    print('------------------출력종료--------------------------')
-    
-def objective_function(params, *args):
-    R1, R1_ANGLE, R2, R2_ANGLE, D = args
-    R1_XY = params
-    center_top = (0, R1_XY[1])
-    
-    # 최적화 문제에서 사용할 계산 로직
-    left_center, right_center = find_side_center(center_top, R1, R1_ANGLE[0], R1_ANGLE[1], R2)
-    
-    # 측벽의 시작점과 끝점 계산
-    start_point = (center_top[0] + R1 * np.cos(np.radians(R1_ANGLE[0])),
-                   center_top[1] + R1 * np.sin(np.radians(R1_ANGLE[0])))
-    end_point = (center_top[0] + R1 * np.cos(np.radians(R1_ANGLE[1])),
-                 center_top[1] + R1 * np.sin(np.radians(R1_ANGLE[1])))
-
-    # 좌측 및 우측 원호의 끝점 계산
-    left_end_point = find_end_point(left_center, R2, start_point, R2_ANGLE)
-    right_end_point = find_end_point(right_center, R2, end_point, -R2_ANGLE)
-
-    # FL 값 계산
-    new_FL = left_end_point[1] - FL_TO_CULVUT
-
-    return abs(new_FL)
-
-# 버튼 클릭 이벤트 핸들러
-def save_dxf(event=None):
-    filename = "C:/TEMP/TUNEEL_output.dxf"  # 저장할 DXF 파일 이름
-    save_plot_to_dxf(filename, ax)
-    print(f"플롯 상태가 {filename} 파일로 저장되었습니다.")
-
-def save_plot_to_dxf(filename, ax):
-    doc = ezdxf.new()
-    msp = doc.modelspace()
-
-    # 선 추가
-    for line in ax.lines:
-        x_data, y_data = line.get_data()
-        for i in range(len(x_data) - 1):
-            start_point = (x_data[i], y_data[i])
-            end_point = (x_data[i + 1], y_data[i + 1])
-            msp.add_line(start=start_point, end=end_point)
-
-    # 원과 원호 추가
-    for patch in ax.patches:
-        if isinstance(patch, Circle):
-            center = patch.center
-            radius = patch.radius
-            msp.add_circle(center=center, radius=radius)
-
-        elif isinstance(patch, Arc):
-            center = patch.center
-            width = patch.width
-            height = patch.height
-            radius = width / 2
-            
-            # Matplotlib의 Arc는 시작 각도와 끝 각도를 0도에서 360도 사이로 사용
-            start_angle = patch.theta1
-            end_angle = patch.theta2
-
-            # DXF의 경우, 시계방향으로 각도를 계산
-            if end_angle < start_angle:
-                end_angle += 360
-            
-            # Arc의 끝 각도가 360도를 넘어가는 경우, 시작 각도와 끝 각도를 조정
-            if end_angle > 360:
-                end_angle -= 360
-
-            # DXF 아크의 각도는 0도에서 360도 사이로 정의
-            start_angle = (start_angle % 360)
-            end_angle = (end_angle % 360)
-
-            msp.add_arc(center=center, radius=radius, start_angle=start_angle, end_angle=end_angle)
-
-    doc.saveas(filename)
-
-def set_slider_value(slider, label):
-    # 사용자에게 값을 입력받아 슬라이더 값 설정
-    value = simpledialog.askfloat("입력", f"{label} 값을 입력하세요:", initialvalue=slider.get())
-    if value is not None:
-        slider.set(value)
-        update_plot()
-
-def exit_program():
-    print("프로그램을 종료합니다.")
-    
-    # plot_root가 존재하는지 확인한 후 destroy() 호출
-    if plot_root.winfo_exists():
-        plot_root.destroy()
-    
-    # slider_root가 존재하는지 확인한 후 destroy() 호출
-    if slider_root.winfo_exists():
-        slider_root.destroy()
-    
-def plot_safeline(left_end_point, right_end_point):#안전라인 그리기
-    #좌측
-    x = [left_end_point[0], left_end_point[0] ,left_end_point[0] + sideL, left_end_point[0] +sideL]
-    y = [left_end_point[1], left_end_point[1] + safeheight, left_end_point[1] + safeheight, left_end_point[1]]
-    ax.plot(x,y, color='gray', linestyle='--')
-
-    #X표시
-    x2 = [left_end_point[0], left_end_point[0] + sideL]
-    y2 = [left_end_point[1] + safeheight,left_end_point[1]]
-    ax.plot(x2,y2, color='gray', linestyle='--')
-    #X표시
-    x2 = [left_end_point[0] + sideL,  left_end_point[0]]
-    y2 = [left_end_point[1] + safeheight,left_end_point[1]]
-    ax.plot(x2,y2, color='gray', linestyle='--')
-    
-    #우측
-    x = [right_end_point[0], right_end_point[0] ,right_end_point[0] - sideL, right_end_point[0] - sideL]
-    y = [right_end_point[1], right_end_point[1] + safeheight, right_end_point[1] + safeheight, left_end_point[1]]
-    ax.plot(x,y, color='gray', linestyle='--')
-
-    #X표시
-    x2 = [right_end_point[0], right_end_point[0] - sideL]
-    y2 = [right_end_point[1] + safeheight,right_end_point[1]]
-    ax.plot(x2,y2, color='gray', linestyle='--')
-    #X표시
-    x2 = [right_end_point[0] - sideL,  right_end_point[0]]
-    y2 = [right_end_point[1] + safeheight,right_end_point[1]]
-    ax.plot(x2,y2, color='gray', linestyle='--')
-#초기값          
-origin = (0,0) #원점
-FL = 0 #시공기면
-RL = FL + 0.472 #레일면고
-sideL = 0.8 #좌측 공동구 점검원 통로폭
-sideR = 0.8 #우측 공동구 점검원 통로폭
-safeheight = 2.1#안전반경높이
-FL_TO_CULVUT = 0.472 #공동구 상단에서 FL까지의 높이
-D = 4.4 #선로중심간격
-T = 0.4 #라이닝 두께
-
-R1_XY = (0, 1.572) #R1원점 FL에서 R1까지 높이
-R1 = 7.166# R1반경
-TOP_ANGLE = 90 #R1각도
-R2 = 5.54 #R2반경
-R2_ANGLE = 69 #R2각도
-
-# 슬라이더가 위치할 창을 위한 tkinter 설정
-slider_root = tk.Tk()
-slider_root.title("Slider Control")
-# 윈도우 크기 설정 (가로 x 세로)
-slider_root.geometry("200x700")  # 가로 800, 세로 400
-
-# 플롯 창 생성
-plot_root = tk.Toplevel(slider_root)
-plot_root.title("Plot Window")
-# 윈도우 크기 설정 (가로 x 세로)
-plot_root.geometry("600x700")  # 가로 800, 세로 400
-
-# Matplotlib 플롯을 위한 설정
-fig, ax = plt.subplots()
-ax.set_aspect('equal', adjustable='box')
-ax.grid(True)
-
-canvas = FigureCanvasTkAgg(fig, master=plot_root)
-canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-# Create a frame for the toolbar
-toolbar_frame = tk.Frame(plot_root)
-toolbar_frame.pack(side=tk.BOTTOM, fill=tk.X)
-
-# Add the navigation toolbar
-toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
-toolbar.update()
-
-
-# 슬라이더 생성 (초기에는 command가 없음)
-s_R1 = tk.Scale(slider_root, label='R1', from_=1.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
-s_R1.set(7.166)
-s_R1.pack(fill=tk.X, padx=5, pady=5)
-
-s_TOP_ANGLE = tk.Scale(slider_root, label='TOP_ANGLE', from_=0.0, to=180.0, resolution=1.0, orient=tk.HORIZONTAL)
-s_TOP_ANGLE.set(90)
-s_TOP_ANGLE.pack(fill=tk.X, padx=5, pady=5)
-
-s_R2 = tk.Scale(slider_root, label='R2', from_=1.0, to=20.0, resolution=0.1, orient=tk.HORIZONTAL)
-s_R2.set(5.54)
-s_R2.pack(fill=tk.X, padx=5, pady=5)
-
-s_R2_ANGLE = tk.Scale(slider_root, label='R2_ANGLE', from_=0.0, to=180.0, resolution=1.0, orient=tk.HORIZONTAL)
-s_R2_ANGLE.set(69)
-s_R2_ANGLE.pack(fill=tk.X, padx=5, pady=5)
-
-s_D = tk.Scale(slider_root, label='선로중심간격', from_=0.0, to=30.0, resolution=0.1, orient=tk.HORIZONTAL)
-s_D.set(4.4)
-s_D.pack(fill=tk.X, padx=5, pady=5)
-
-s_R1_Y = tk.Scale(slider_root, label='R1_Y', from_=-10.0, to=10.0, resolution=0.01, orient=tk.HORIZONTAL)
-s_R1_Y.set(1.572)
-s_R1_Y.pack(fill=tk.X, padx=5, pady=5)
-
-# 슬라이더에 command 설정
-s_R1.config(command=lambda x: update_plot())
-s_TOP_ANGLE.config(command=lambda x: update_plot())
-s_R2.config(command=lambda x: update_plot())
-s_R2_ANGLE.config(command=lambda x: update_plot())
-s_D.config(command=lambda x: update_plot())
-s_R1_Y.config(command=lambda x: update_plot())
-
-# 버튼 생성 및 슬라이더와 연결
-tk.Button(slider_root, text="R1 입력", command=lambda: set_slider_value(s_R1, 'R1')).pack(fill=tk.X, padx=5, pady=5)
-tk.Button(slider_root, text="TOP_ANGLE 입력", command=lambda: set_slider_value(s_TOP_ANGLE, 'TOP_ANGLE')).pack(fill=tk.X, padx=5, pady=5)
-tk.Button(slider_root, text="R2 입력", command=lambda: set_slider_value(s_R2, 'R2')).pack(fill=tk.X, padx=5, pady=5)
-tk.Button(slider_root, text="R2_ANGLE 입력", command=lambda: set_slider_value(s_R2_ANGLE, 'R2_ANGLE')).pack(fill=tk.X, padx=5, pady=5)
-tk.Button(slider_root, text="선로중심간격 입력", command=lambda: set_slider_value(s_D, '선로중심간격')).pack(fill=tk.X, padx=5, pady=5)
-tk.Button(slider_root, text="R1_Y 입력", command=lambda: set_slider_value(s_R1_Y, 'R1_Y')).pack(fill=tk.X, padx=5, pady=5)
-
-
-# 다시그리기 버튼 생성
-btn_save_dxf = tk.Button(slider_root, text="도면으로 저장하기", command=save_dxf)
-btn_save_dxf.pack(side=tk.LEFT, pady=5, padx=10)
-
-# 종료 버튼 생성
-exit_button = tk.Button(slider_root, text="종료", command=exit_program)
-exit_button.pack(side=tk.LEFT, pady=5, padx=10)
-
-# tkinter 메인 루프 시작
-slider_root.mainloop()
+
+def find_end_point(center, radius, start_point, angle_deg):
+    start_ang = math.degrees(math.atan2(start_point[1] - center[1],
+                                        start_point[0] - center[0]))
+    return _polar(center, radius, start_ang + angle_deg)
+
+
+def find_start_point(center, radius, end_point, angle_deg):
+    end_ang = math.degrees(math.atan2(end_point[1] - center[1],
+                                      end_point[0] - center[0]))
+    return _polar(center, radius, end_ang - angle_deg)
+
+
+def arc_to_linestring(center, radius, start_deg, end_deg,
+                      num_points=POLYGON_ARC_POINTS):
+    angs = np.linspace(math.radians(start_deg), math.radians(end_deg), num_points)
+    pts = [(center[0] + radius * math.cos(a),
+            center[1] + radius * math.sin(a)) for a in angs]
+    return LineString(pts)
+
+
+def find_extreme_x_on_arc(center, radius, start_deg, end_deg):
+    """start→end(반시계 기준) 아크 위 x최대/최소 점. end<start여도 안전."""
+    if end_deg < start_deg:
+        end_deg += 360.0
+    angs = np.radians(np.linspace(start_deg, end_deg, ARC_SAMPLES))
+    xs = center[0] + radius * np.cos(angs)
+    ys = center[1] + radius * np.sin(angs)
+    return (xs.max(), ys[xs.argmax()]), (xs.min(), ys[xs.argmin()])
+
+
+# ---------------------------------------------------------------------------
+# 계산 (순수 함수)
+# ---------------------------------------------------------------------------
+def compute_geometry(p: TunnelParams) -> TunnelGeometry:
+    center_top = (0.0, p.R1_Y)
+    a_left, a_right = p.r1_angles
+
+    left_center, right_center = find_side_center(
+        center_top, p.R1, a_left, a_right, p.R2)
+
+    top_start = _polar(center_top, p.R1, a_left)
+    top_end = _polar(center_top, p.R1, a_right)
+
+    left_end = find_end_point(left_center, p.R2, top_start, p.r2_angle)
+    right_end = find_end_point(right_center, p.R2, top_end, -p.r2_angle)
+
+    # 폴리곤
+    left_arc = arc_to_linestring(left_center, p.R2, a_left, a_left + p.r2_angle)
+    top_arc = arc_to_linestring(center_top, p.R1, a_left, a_right)
+    right_arc = arc_to_linestring(right_center, p.R2, a_right, a_right - p.r2_angle)
+    bottom = LineString([left_arc.coords[-1], right_arc.coords[-1]])
+
+    coords = (list(left_arc.coords[::-1]) + list(top_arc.coords)
+              + list(right_arc.coords) + list(bottom.coords[::-1]))
+    polygon = Polygon(coords)
+
+    _, sl_point = find_extreme_x_on_arc(left_center, p.R2, a_left, a_left + p.r2_angle)
+
+    return TunnelGeometry(
+        p=p,
+        center_top=center_top,
+        left_center=left_center,
+        right_center=right_center,
+        top_start=top_start,
+        top_end=top_end,
+        left_end=left_end,
+        right_end=right_end,
+        polygon=polygon,
+        area=polygon.area,
+        SL=sl_point[1],
+        A=abs(left_end[0] - 0.0),          # 원점 기준 좌측 반폭
+        top_of_tunnel=p.R1_Y + p.R1 - p.FL,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 렌더링 헬퍼
+# ---------------------------------------------------------------------------
+def draw_arc(ax, center, radius, start_deg, end_deg, color='b'):
+    """start → end (반시계) 아크. end < start면 +360."""
+    if end_deg < start_deg:
+        end_deg += 360.0
+    ax.add_patch(Arc(center, 2 * radius, 2 * radius,
+                     angle=0, theta1=start_deg, theta2=end_deg, color=color))
+
+
+def draw_line(ax, start, end, linestyle='--', color='gray', lw=1):
+    ax.plot([start[0], end[0]], [start[1], end[1]],
+            linestyle=linestyle, color=color, linewidth=lw)
+
+
+def draw_angle_annotation(ax, p1, p2, p3, radius=1.0, color='black'):
+    """p2를 중심으로 p1-p2-p3 사이 각도 호 및 라벨."""
+    v1 = np.array(p1) - np.array(p2)
+    v2 = np.array(p3) - np.array(p2)
+    cos = np.clip(v1 @ v2 / (np.linalg.norm(v1) * np.linalg.norm(v2)), -1, 1)
+    angle_deg = math.degrees(math.acos(cos))
+
+    a1 = math.degrees(math.atan2(v1[1], v1[0]))
+    a2 = math.degrees(math.atan2(v2[1], v2[0]))
+
+    # 반시계 방향으로 두 각 사이를 정렬
+    if a2 < a1:
+        a2 += 360.0
+    ax.add_patch(Arc(p2, 2 * radius, 2 * radius, angle=0,
+                     theta1=a1, theta2=a2, color=color))
+
+    mid = math.radians((a1 + a2) / 2.0)
+    ax.text(p2[0] + radius * 0.7 * math.cos(mid),
+            p2[1] + radius * 0.7 * math.sin(mid),
+            f'{angle_deg:.1f}°', color=color, fontsize=12, ha='center')
+
+
+def _mid(p1, p2):
+    return ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0)
+
+
+def _bearing(p1, p2):
+    return math.degrees(math.atan2(p2[1] - p1[1], p2[0] - p1[0]))
+
+
+# ---------------------------------------------------------------------------
+# DXF 캐시
+# ---------------------------------------------------------------------------
+class DxfCache:
+    def __init__(self):
+        self.path: Optional[str] = None
+        self.entities: Optional[list] = None
+
+    def load(self, path: str, force: bool = False):
+        if not force and path == self.path and self.entities is not None:
+            return self.entities
+        try:
+            doc = ezdxf.readfile(path)
+        except (FileNotFoundError, IOError) as e:
+            messagebox.showwarning("DXF 로드 실패", f"{path}\n{e}")
+            self.path, self.entities = None, None
+            return None
+        self.path = path
+        self.entities = list(doc.modelspace())
+        return self.entities
+
+
+# ---------------------------------------------------------------------------
+# 메인 애플리케이션
+# ---------------------------------------------------------------------------
+class TunnelApp:
+    def __init__(self):
+        self.params = TunnelParams()
+        self.dxf = DxfCache()
+        self.dxf_path = DXF_DEFAULT_IN
+
+        self._build_ui()
+        self.update_plot()
+
+    # ----- UI 구성 ----------------------------------------------------------
+    def _build_ui(self):
+        self.root = tk.Tk()
+        self.root.title("터널 단면 작도")
+        self.root.geometry("220x780")
+
+        self.plot_win = tk.Toplevel(self.root)
+        self.plot_win.title("터널 단면")
+        self.plot_win.geometry("900x780")
+
+        self.fig, self.ax = plt.subplots()
+        self.ax.set_aspect('equal', adjustable='box')
+        self.ax.grid(True)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_win)
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        tb_frame = tk.Frame(self.plot_win)
+        tb_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        NavigationToolbar2Tk(self.canvas, tb_frame).update()
+
+        # 슬라이더 (라벨, 속성명, from, to, resolution)
+        self.scales: dict[str, tk.Scale] = {}
+        specs = [
+            ("R1",           "R1",           1.0, 20.0, 0.1),
+            ("TOP_ANGLE",    "top_angle",    0.0, 180.0, 1.0),
+            ("R2",           "R2",           1.0, 20.0, 0.1),
+            ("R2_ANGLE",     "r2_angle",     0.0, 180.0, 1.0),
+            ("선로중심간격",  "D",            0.0, 30.0, 0.1),
+            ("R1_Y",         "R1_Y",        -10.0, 10.0, 0.01),
+        ]
+        for label, attr, lo, hi, res in specs:
+            s = tk.Scale(self.root, label=label, from_=lo, to=hi,
+                         resolution=res, orient=tk.HORIZONTAL)
+            s.set(getattr(self.params, attr))
+            s.pack(fill=tk.X, padx=5, pady=3)
+            s.config(command=lambda _v, a=attr: self._on_slider(a))
+            self.scales[attr] = s
+
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(fill=tk.X, pady=5)
+        tk.Button(btn_frame, text="도면 저장", command=self.save_dxf).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="DXF 열기", command=self.open_dxf).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="종료", command=self.close).pack(side=tk.LEFT, padx=5)
+
+    # ----- 이벤트 -----------------------------------------------------------
+    def _on_slider(self, attr: str):
+        setattr(self.params, attr, self.scales[attr].get())
+        self.update_plot()
+
+    def open_dxf(self):
+        path = filedialog.askopenfilename(
+            title="DXF 파일 선택",
+            filetypes=[("DXF", "*.dxf"), ("All files", "*.*")])
+        if not path:
+            return
+        self.dxf_path = path
+        if self.dxf.load(path, force=True) is not None:
+            self.update_plot()
+
+    # ----- 그리기 -----------------------------------------------------------
+    def update_plot(self):
+        p = self.params
+        geom = compute_geometry(p)
+        ax = self.ax
+        ax.clear()
+        ax.set_aspect('equal', adjustable='box')
+        ax.grid(True)
+
+        self._draw_cad(translate_x=-p.D / 2, translate_y=+p.RL)
+        self._draw_cad(translate_x=+p.D / 2, translate_y=+p.RL)
+
+        self._draw_tunnel(geom)
+        self._draw_haunch_bottom(geom)
+        self._draw_centerlines(p, geom)
+        self._draw_dimension_lines(geom)
+        self._draw_angles(geom)
+        self._draw_safe_box(geom)
+        self._draw_sl_line(geom)
+        self._print_spec(geom)
+
+        self.canvas.draw()
+
+    # ----- 세부 그리기 ------------------------------------------------------
+    def _draw_cad(self, translate_x, translate_y):
+        ents = self.dxf.load(self.dxf_path)
+        if not ents:
+            return
+        ax = self.ax
+        for e in ents:
+            t = e.dxftype()
+            if t == 'LINE':
+                s, en = e.dxf.start, e.dxf.end
+                ax.plot([s.x + translate_x, en.x + translate_x],
+                        [s.y + translate_y, en.y + translate_y], 'k-', lw=0.8)
+            elif t == 'CIRCLE':
+                c, r = e.dxf.center, e.dxf.radius
+                ax.add_patch(Circle((c.x + translate_x, c.y + translate_y),
+                                    r, color='r', fill=False))
+            elif t == 'ARC':
+                c, r = e.dxf.center, e.dxf.radius
+                ax.add_patch(Arc((c.x + translate_x, c.y + translate_y),
+                                 2 * r, 2 * r, angle=0,
+                                 theta1=e.dxf.start_angle,
+                                 theta2=e.dxf.end_angle, color='g'))
+
+    def _draw_tunnel(self, g: TunnelGeometry):
+        p, ax = g.p, self.ax
+        a_left, a_right = p.r1_angles
+        draw_arc(ax, g.center_top, p.R1, a_right, a_left, color='r')
+        draw_arc(ax, g.left_center, p.R2, a_left, a_left + p.r2_angle, color='b')
+        draw_arc(ax, g.right_center, p.R2, a_right - p.r2_angle, a_right, color='g')
+
+    def _draw_haunch_bottom(self, g: TunnelGeometry):
+        """좌/우 하단 수직+수평 라인."""
+        p, ax = g.p, self.ax
+        for end, side, sign in ((g.left_end, p.sideL, +1),
+                                (g.right_end, p.sideR, -1)):
+            x = [end[0], end[0] + sign * side, end[0] + sign * side, 0]
+            y = [end[1], end[1], end[1] - p.fl_to_culvert, end[1] - p.fl_to_culvert]
+            ax.plot(x, y, 'k-', lw=1)
+
+    def _draw_centerlines(self, p: TunnelParams, g: TunnelGeometry):
+        ax = self.ax
+        y_text = g.top_of_tunnel + LABEL_Y_MARGIN
+        for x, label in ((-p.D / 2, 'CL of 하선'), (0, 'CL of 터널'), (p.D / 2, 'CL of 상선')):
+            ax.axvline(x, color='gray', linestyle='--', linewidth=1)
+            ax.text(x, y_text, label, ha='center')
+
+    def _draw_dimension_lines(self, g: TunnelGeometry):
+        p, ax = g.p, self.ax
+        for center, end in ((g.center_top, g.top_end), (g.center_top, g.top_start)):
+            draw_line(ax, center, end, linestyle='-', color='gray')
+        draw_line(ax, g.left_center, g.left_end, linestyle='-', color='gray')
+        draw_line(ax, g.right_center, g.right_end, linestyle='-', color='gray')
+
+        a_left, a_right = p.r1_angles
+        for center, end, ang in ((g.center_top, g.top_end, a_right),
+                                 (g.center_top, g.top_start, a_left)):
+            m = _mid(center, end)
+            ax.text(m[0] - 0.25, m[1] + 0.25, f'R1 = {p.R1 * 1000:.0f}',
+                    rotation=ang, fontsize=9)
+
+        for center, end in ((g.left_center, g.left_end),
+                            (g.right_center, g.right_end)):
+            m = _mid(center, end)
+            ax.text(m[0], m[1], f'R2 = {p.R2 * 1000:.0f}',
+                    rotation=_bearing(center, end), fontsize=9)
+
+    def _draw_angles(self, g: TunnelGeometry):
+        draw_angle_annotation(self.ax, g.top_start, g.center_top, g.top_end)
+        draw_angle_annotation(self.ax, g.left_end, g.left_center, g.top_start)
+        draw_angle_annotation(self.ax, g.top_end, g.right_center, g.right_end)
+
+    def _draw_safe_box(self, g: TunnelGeometry):
+        """좌/우 안전박스(X표시) — 좌표 오타 수정 버전."""
+        p, ax = g.p, self.ax
+        h = p.safeheight
+        for end, side, sign in ((g.left_end, p.sideL, +1),
+                                (g.right_end, p.sideR, -1)):
+            x0, y0 = end
+            x1 = x0 + sign * side
+            # 외곽 박스
+            ax.plot([x0, x0, x1, x1], [y0, y0 + h, y0 + h, y0],
+                    color='gray', linestyle='--', lw=0.8)
+            # X 표시
+            ax.plot([x0, x1], [y0 + h, y0], color='gray', linestyle='--', lw=0.8)
+            ax.plot([x1, x0], [y0 + h, y0], color='gray', linestyle='--', lw=0.8)
+
+    def _draw_sl_line(self, g: TunnelGeometry):
+        ax = self.ax
+        ax.axhline(y=g.SL, color='gray', linestyle='--', linewidth=1)
+        ax.text(g.left_end[0] - 0.5, g.SL, 'SL', fontsize=9)
+
+    # ----- 콘솔 스펙 --------------------------------------------------------
+    def _print_spec(self, g: TunnelGeometry):
+        p = g.p
+        new_FL = g.left_end[1] - p.fl_to_culvert
+
+        print('------------------ 터널 제원 출력 ----------------')
+        print(f'내공단면적 {g.area:.2f} m²')
+        print(f'R1 : {p.R1:.2f}')
+        print(f'Top Angle : {p.top_angle}')
+        print(f'R2 : {p.R2}')
+        print(f'R2 Angle : {p.r2_angle}')
+        print(f'A : {g.A:.2f}')
+        print(f'SL : {g.SL:.2f}')
+        print(f'R2/R1 비 : {p.R2 / p.R1:.2f}')          # ← 슬라이더 값 반영
+        print(f'편평률 : {g.top_of_tunnel / (g.A * 2):.2f}')
+        print(f'현재 FL 값 : {new_FL:.2f}')
+        if abs(new_FL - p.FL) <= FL_TOLERANCE:
+            print('검토결과 : OK')
+        elif new_FL > p.FL:
+            print('검토결과 : 미달 FL을 내려야 함.')
+        else:
+            print('검토결과 : 미달 FL을 올려야 함.')
+        print('------------------------------------------------')
+
+    # ----- DXF 저장 ---------------------------------------------------------
+    def save_dxf(self):
+        path = filedialog.asksaveasfilename(
+            title="DXF 저장", defaultextension=".dxf",
+            initialfile="TUNNEL_output.dxf",
+            filetypes=[("DXF", "*.dxf")])
+        if not path:
+            return
+        try:
+            self._write_dxf(path)
+            messagebox.showinfo("저장 완료", path)
+        except Exception as e:
+            messagebox.showerror("저장 실패", str(e))
+
+    def _write_dxf(self, path: str):
+        doc = ezdxf.new()
+        msp = doc.modelspace()
+
+        for line in self.ax.lines:
+            xs, ys = line.get_data()
+            for i in range(len(xs) - 1):
+                msp.add_line(start=(xs[i], ys[i]), end=(xs[i + 1], ys[i + 1]))
+
+        for patch in self.ax.patches:
+            if isinstance(patch, Circle):
+                msp.add_circle(center=patch.center, radius=patch.radius)
+            elif isinstance(patch, Arc):
+                r = patch.width / 2
+                s, e = patch.theta1 % 360, patch.theta2 % 360
+                if e <= s:
+                    e += 360
+                msp.add_arc(center=patch.center, radius=r,
+                            start_angle=s, end_angle=e)
+
+        doc.saveas(path)
+
+    # ----- 종료 ------------------------------------------------------------
+    def close(self):
+        self.root.destroy()
+
+    def run(self):
+        self.root.mainloop()
+
+
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    TunnelApp().run()
