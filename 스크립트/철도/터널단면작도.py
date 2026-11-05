@@ -21,7 +21,7 @@ from matplotlib.patches import Arc, Circle
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox, simpledialog, ttk
 import ezdxf
 from shapely.geometry import LineString, Polygon
 from scipy.optimize import minimize
@@ -82,6 +82,59 @@ class TunnelGeometry:
     A: float
     top_of_tunnel: float
 
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+import csv
+
+@dataclass
+class FitHistoryEntry:
+    timestamp: str
+    target_FL: float
+    achieved_FL: float
+    R1_Y: float
+    dR1_Y: float           # 이전 R1_Y 대비 변화량
+    R1: float
+    top_angle: float
+    R2: float
+    r2_angle: float
+    D: float
+    success: bool
+
+    @property
+    def is_ok(self) -> bool:
+        return abs(self.achieved_FL - self.target_FL) <= FL_TOLERANCE
+
+class FitHistory:
+    def __init__(self, max_size: int = 100):
+        self.entries: list[FitHistoryEntry] = []
+        self.max_size = max_size
+
+    def add(self, p: TunnelParams, R1_Y_prev: float,
+            achieved_FL: float, success: bool) -> FitHistoryEntry:
+        entry = FitHistoryEntry(
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            target_FL=p.FL,
+            achieved_FL=achieved_FL,
+            R1_Y=p.R1_Y,
+            dR1_Y=p.R1_Y - R1_Y_prev,
+            R1=p.R1, top_angle=p.top_angle,
+            R2=p.R2, r2_angle=p.r2_angle,
+            D=p.D,
+            success=success,
+        )
+        self.entries.append(entry)
+        if len(self.entries) > self.max_size:
+            self.entries.pop(0)
+        return entry
+
+    def to_csv(self, path: str):
+        if not self.entries:
+            raise ValueError("저장할 이력이 없습니다.")
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.DictWriter(f, fieldnames=list(asdict(self.entries[0]).keys()))
+            w.writeheader()
+            for e in self.entries:
+                w.writerow(asdict(e))
 
 # ---------------------------------------------------------------------------
 # 기하 유틸
@@ -306,6 +359,7 @@ class TunnelApp:
         self.params = TunnelParams()
         self.dxf = DxfCache()
         self.dxf_path = DXF_DEFAULT_IN
+        self.history = FitHistory()
 
         self._build_ui()
         self.update_plot()
@@ -357,6 +411,15 @@ class TunnelApp:
         tk.Button(btn_frame, text="DXF 열기", command=self.open_dxf).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="종료", command=self.close).pack(side=tk.LEFT, padx=5)
 
+        btn_frame2 = tk.Frame(self.root)
+        btn_frame2.pack(fill=tk.X, pady=5)
+        tk.Button(btn_frame2, text="이력 보기",
+                  command=self.show_history).pack(side=tk.LEFT, padx=3)
+        tk.Button(btn_frame2, text="이력 CSV 저장",
+                  command=self.save_history_csv).pack(side=tk.LEFT, padx=3)
+        tk.Button(btn_frame2, text="이력 초기화",
+                  command=self.clear_history).pack(side=tk.LEFT, padx=3)
+
     # ----- 이벤트 -----------------------------------------------------------
     def _on_slider(self, attr: str):
         setattr(self.params, attr, self.scales[attr].get())
@@ -391,6 +454,7 @@ class TunnelApp:
         self._draw_angles(geom)
         self._draw_safe_box(geom)
         self._draw_sl_line(geom)
+        self._draw_history_overlay(geom)  # ← 추가
         self._print_spec(geom)
 
         self.canvas.draw()
@@ -508,6 +572,10 @@ class TunnelApp:
             print('검토결과 : FL을 내려야 함 (→ R1_Y 감소)')
         else:
             print('검토결과 : FL을 올려야 함 (→ R1_Y 증가)')
+        print(f'자동 맞춤 이력: {len(self.history.entries)}건')
+        if self.history.entries:
+            last = self.history.entries[-1]
+            print(f'  최근: {last.timestamp}  ΔR1_Y={last.dR1_Y:+.4f}')
         print('------------------------------------------------')
 
     # ----- DXF 저장 ---------------------------------------------------------
@@ -554,10 +622,7 @@ class TunnelApp:
         self.root.mainloop()
 
     def auto_fit_fl(self):
-        """R1_Y를 조정해 FL 조건을 자동으로 만족시킨다."""
         p = self.params
-
-        # 사용자에게 목표 FL을 물어보기 (선택 사항)
         target = simpledialog.askfloat(
             "FL 자동 맞춤",
             f"목표 FL 값을 입력하세요 (현재 {p.FL}):",
@@ -567,27 +632,108 @@ class TunnelApp:
             return
 
         p_target = replace(p, FL=target)
+        r1_y_prev = p.R1_Y
         r1_y_opt, ok = fit_R1_Y_to_FL(p_target)
 
         if not ok:
+            self.history.add(p_target, r1_y_prev, achieved_FL=float('nan'), success=False)
             messagebox.showwarning(
                 "자동 맞춤 실패",
-                f"FL={target}을 만족하는 R1_Y를 찾을 수 없습니다.\n"
-                f"R1/R2/각도 조합을 확인하세요.")
+                f"FL={target}을 만족하는 R1_Y를 찾을 수 없습니다.")
             return
 
-        # 파라미터와 슬라이더 동기화
         p.FL = target
         p.R1_Y = r1_y_opt
-        self.scales["R1_Y"].set(r1_y_opt)  # → _on_slider 자동 호출 → update_plot
-        self.update_plot()  # 슬라이더 set이 trigger 안 될 경우 대비
+        self.scales["R1_Y"].set(r1_y_opt)
+        self.update_plot()
 
-        # 결과 안내
-        new_fl = compute_fl(p, r1_y_opt)
+        achieved = compute_fl(p, r1_y_opt)
+        entry = self.history.add(p, r1_y_prev, achieved, success=True)
+
         messagebox.showinfo(
             "자동 맞춤 완료",
-            f"R1_Y = {r1_y_opt:.4f}\n"
-            f"FL    = {new_fl:.4f}  (목표 {target})")
+            f"R1_Y = {r1_y_opt:.4f}  (Δ {entry.dR1_Y:+.4f})\n"
+            f"FL    = {achieved:.4f}  (목표 {target})\n"
+            f"이력 {len(self.history.entries)}건 저장됨")
+
+    def show_history(self):
+        if not self.history.entries:
+            messagebox.showinfo("이력", "저장된 이력이 없습니다.")
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(f"자동 맞춤 이력 ({len(self.history.entries)}건)")
+        win.geometry("900x400")
+
+        cols = ("timestamp", "target_FL", "achieved_FL", "R1_Y", "dR1_Y",
+                "R1", "top_angle", "R2", "r2_angle", "D", "status")
+        tree = ttk.Treeview(win, columns=cols, show="headings", height=15)
+        headers = {
+            "timestamp": "시각", "target_FL": "목표 FL", "achieved_FL": "달성 FL",
+            "R1_Y": "R1_Y", "dR1_Y": "ΔR1_Y",
+            "R1": "R1", "top_angle": "Top°",
+            "R2": "R2", "r2_angle": "R2°", "D": "D",
+            "status": "상태",
+        }
+        widths = {"timestamp": 140, "status": 60}
+        for c in cols:
+            tree.heading(c, text=headers[c])
+            tree.column(c, width=widths.get(c, 70), anchor="center")
+
+        for e in self.history.entries:
+            status = "✅" if e.is_ok else ("⚠️" if e.success else "❌")
+            tree.insert("", "end", values=(
+                e.timestamp,
+                f"{e.target_FL:.4f}",
+                f"{e.achieved_FL:.4f}" if e.success else "-",
+                f"{e.R1_Y:.4f}", f"{e.dR1_Y:+.4f}",
+                f"{e.R1:.2f}", f"{e.top_angle:.0f}",
+                f"{e.R2:.2f}", f"{e.r2_angle:.0f}", f"{e.D:.1f}",
+                status,
+            ))
+
+
+        sb = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
+        tree.configure(yscroll=sb.set)
+        tree.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        sb.pack(side="right", fill="y", pady=5)
+
+    def save_history_csv(self):
+        if not self.history.entries:
+            messagebox.showinfo("이력", "저장할 이력이 없습니다.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="이력 CSV 저장", defaultextension=".csv",
+            initialfile=f"fit_history_{datetime.now():%Y%m%d_%H%M%S}.csv",
+            filetypes=[("CSV", "*.csv")])
+        if not path:
+            return
+        try:
+            self.history.to_csv(path)
+            messagebox.showinfo("저장 완료", path)
+        except Exception as e:
+            messagebox.showerror("저장 실패", str(e))
+
+    def clear_history(self):
+        if not self.history.entries:
+            return
+        if messagebox.askyesno("이력 초기화",
+                               f"{len(self.history.entries)}건을 삭제할까요?"):
+            self.history.entries.clear()
+
+    def _draw_history_overlay(self, g: TunnelGeometry):
+        if not self.history.entries:
+            return
+        ax = self.ax
+        recent = self.history.entries[-3:]
+        x0, y0 = g.right_end[0] + 1.5, g.top_of_tunnel
+        lines = ["최근 자동 맞춤:"]
+        for e in recent:
+            mark = "✅" if e.is_ok else ("⚠️" if e.success else "❌")
+            lines.append(f"{mark} FL={e.target_FL:.3f} → R1_Y={e.R1_Y:.3f}")
+        ax.text(x0, y0, "\n".join(lines), fontsize=8, va="top",
+                bbox=dict(boxstyle="round", facecolor="white",
+                          edgecolor="gray", alpha=0.85))
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     TunnelApp().run()
