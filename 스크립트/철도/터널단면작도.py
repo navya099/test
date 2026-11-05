@@ -1,12 +1,14 @@
 """
-터널 단면 작도기 (Tunnel Section Designer) — 통합본
-====================================================
-- NATM (아치형) 및 개착 Box형 지원
-- Box 상/하단 모서리 필렛
-- FL 자동 맞춤 (brentq)
+터널 단면 작도기 (Tunnel Section Designer) — 완전 통합본
+========================================================
+- NATM (단일 아치)
+- 2-Arch (분기부, 중앙 필러)
+- 3-Arch (정거장, 중앙 대아치 + 좌우 소아치)
+- 개착 Box형 (상/하단 필렛)
+- FL 자동 맞춤 (단일 NATM, brentq)
 - 자동 맞춤 이력 (CSV, 더블클릭 복원)
 - DXF 입출력 (캐시)
-- ttk 기반 현대적 UI, 실시간 스펙 패널
+- ttk 기반 UI, 아치별 서브 탭
 
 요구사항:
     pip install matplotlib numpy scipy shapely ezdxf
@@ -15,7 +17,7 @@ from __future__ import annotations
 
 import csv
 import math
-from dataclasses import dataclass, asdict, replace
+from dataclasses import dataclass, asdict, field, replace
 from datetime import datetime
 from enum import Enum
 from typing import Optional, Union
@@ -23,7 +25,7 @@ from typing import Optional, Union
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.patches import Arc, Circle
+from matplotlib.patches import Arc, Circle, Rectangle as MplRect
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 import tkinter as tk
@@ -47,17 +49,38 @@ DXF_DEFAULT_IN = "c:/temp/건축한계.dxf"
 
 
 # =============================================================================
-# 열거형 / 데이터 모델
+# 열거형
 # =============================================================================
 class TunnelType(str, Enum):
     NATM = "NATM (아치형)"
+    NATM_2ARCH = "2-Arch (분기부)"
+    NATM_3ARCH = "3-Arch (정거장)"
     BOX = "개착 Box형"
+
+
+# =============================================================================
+# 데이터 모델
+# =============================================================================
+@dataclass
+class ArchParams:
+    R1: float = 7.166
+    top_angle: float = 90.0
+    R2: float = 5.54
+    r2_angle: float = 69.0
+    R1_Y: float = 1.572
+    cx: float = 0.0
+    label: str = "본선"
+
+    @property
+    def r1_angles(self) -> tuple[float, float]:
+        half = self.top_angle / 2.0
+        return (90.0 + half, 90.0 - half)
 
 
 @dataclass
 class TunnelParams:
-    # 공통
     kind: TunnelType = TunnelType.NATM
+
     FL: float = 0.0
     RL: float = 0.472
     fl_to_culvert: float = 0.472
@@ -66,19 +89,25 @@ class TunnelParams:
     safeheight: float = 2.1
     D: float = 4.4
 
-    # NATM 전용
+    # 단일 NATM 호환
     R1: float = 7.166
     top_angle: float = 90.0
     R2: float = 5.54
     r2_angle: float = 69.0
     R1_Y: float = 1.572
 
-    # Box 전용
+    # 다중 아치
+    arches: list[ArchParams] = field(default_factory=list)
+    pillar_w: float = 1.0
+    gap_L: float = 0.5
+    gap_R: float = 0.5
+
+    # Box
     box_width: float = 8.0
     box_height: float = 6.5
     box_wall_t: float = 0.4
     box_slab_t: float = 0.4
-    box_fillet_top_r: float = 0.5
+    box_fillet_top_r: float = 0.0
     box_fillet_bot_r: float = 0.0
 
     @property
@@ -89,7 +118,8 @@ class TunnelParams:
 
 @dataclass
 class TunnelGeometry:
-    p: TunnelParams
+    """단일 아치 기하."""
+    a: ArchParams
     center_top: tuple[float, float]
     left_center: tuple[float, float]
     right_center: tuple[float, float]
@@ -102,6 +132,14 @@ class TunnelGeometry:
     SL: float
     A: float
     top_of_tunnel: float
+
+
+@dataclass
+class MultiArchGeometry:
+    arches: list[TunnelGeometry]
+    total_area: float
+    bbox: tuple[float, float, float, float]
+    layout: list[ArchParams]
 
 
 @dataclass
@@ -143,7 +181,7 @@ class FitHistoryEntry:
 
 
 # =============================================================================
-# 기하 유틸 (공통)
+# 기하 유틸
 # =============================================================================
 def _polar(center, radius, deg):
     rad = math.radians(deg)
@@ -189,53 +227,61 @@ def find_extreme_x_on_arc(center, radius, start_deg, end_deg):
     angs = np.radians(np.linspace(start_deg, end_deg, ARC_SAMPLES))
     xs = center[0] + radius * np.cos(angs)
     ys = center[1] + radius * np.sin(angs)
-    return (xs.max(), ys[xs.argmax()]), (xs.min(), ys[xs.argmin()])
+    return (xs.max(), ys[xs.argmax()]), (xs.min(), ys[ys.argmin()] if False else ys[xs.argmin()])
 
 
 # =============================================================================
-# NATM 계산
+# 단일 아치 기하
 # =============================================================================
-def compute_geometry(p: TunnelParams) -> TunnelGeometry:
-    center_top = (0.0, p.R1_Y)
-    a_left, a_right = p.r1_angles
+def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0) -> TunnelGeometry:
+    center_top = (a.cx, a.R1_Y)
+    a_left, a_right = a.r1_angles
 
     left_center, right_center = find_side_center(
-        center_top, p.R1, a_left, a_right, p.R2)
+        center_top, a.R1, a_left, a_right, a.R2)
 
-    top_start = _polar(center_top, p.R1, a_left)
-    top_end = _polar(center_top, p.R1, a_right)
-    left_end = find_end_point(left_center, p.R2, top_start, p.r2_angle)
-    right_end = find_end_point(right_center, p.R2, top_end, -p.r2_angle)
+    top_start = _polar(center_top, a.R1, a_left)
+    top_end = _polar(center_top, a.R1, a_right)
+    left_end = find_end_point(left_center, a.R2, top_start, a.r2_angle)
+    right_end = find_end_point(right_center, a.R2, top_end, -a.r2_angle)
 
-    left_arc = arc_to_linestring(left_center, p.R2, a_left, a_left + p.r2_angle)
-    top_arc = arc_to_linestring(center_top, p.R1, a_left, a_right)
-    right_arc = arc_to_linestring(right_center, p.R2, a_right, a_right - p.r2_angle)
+    left_arc = arc_to_linestring(left_center, a.R2, a_left, a_left + a.r2_angle)
+    top_arc = arc_to_linestring(center_top, a.R1, a_left, a_right)
+    right_arc = arc_to_linestring(right_center, a.R2, a_right, a_right - a.r2_angle)
     bottom = LineString([left_arc.coords[-1], right_arc.coords[-1]])
 
     coords = (list(left_arc.coords[::-1]) + list(top_arc.coords)
               + list(right_arc.coords) + list(bottom.coords[::-1]))
     polygon = Polygon(coords)
 
-    _, sl_pt = find_extreme_x_on_arc(left_center, p.R2, a_left, a_left + p.r2_angle)
+    _, sl_pt = find_extreme_x_on_arc(left_center, a.R2, a_left, a_left + a.r2_angle)
 
     return TunnelGeometry(
-        p=p, center_top=center_top,
+        a=a, center_top=center_top,
         left_center=left_center, right_center=right_center,
         top_start=top_start, top_end=top_end,
         left_end=left_end, right_end=right_end,
         polygon=polygon, area=polygon.area,
-        SL=sl_pt[1], A=abs(left_end[0]),
-        top_of_tunnel=p.R1_Y + p.R1 - p.FL,
+        SL=sl_pt[1], A=abs(left_end[0] - a.cx),
+        top_of_tunnel=a.R1_Y + a.R1 - FL,
     )
 
 
+def compute_fl_for_arch(a: ArchParams) -> float:
+    """좌측 하단 수평부의 y (FL에서 fl_to_culvert를 뺀 값)."""
+    a_left, a_right = a.r1_angles
+    center_top = (a.cx, a.R1_Y)
+    left_center, _ = find_side_center(center_top, a.R1, a_left, a_right, a.R2)
+    top_start = _polar(center_top, a.R1, a_left)
+    left_end = find_end_point(left_center, a.R2, top_start, a.r2_angle)
+    return left_end[1]
+
+
 def compute_fl(p: TunnelParams, R1_Y: float) -> float:
-    a_left, a_right = p.r1_angles
-    center_top = (0.0, R1_Y)
-    left_center, _ = find_side_center(center_top, p.R1, a_left, a_right, p.R2)
-    top_start = _polar(center_top, p.R1, a_left)
-    left_end = find_end_point(left_center, p.R2, top_start, p.r2_angle)
-    return left_end[1] - p.fl_to_culvert
+    """단일 NATM 자동 맞춤용."""
+    a = ArchParams(R1=p.R1, top_angle=p.top_angle, R2=p.R2,
+                   r2_angle=p.r2_angle, R1_Y=R1_Y, cx=0.0)
+    return compute_fl_for_arch(a) - p.fl_to_culvert
 
 
 def fit_R1_Y_to_FL(p: TunnelParams,
@@ -258,6 +304,60 @@ def fit_R1_Y_to_FL(p: TunnelParams,
 
 
 # =============================================================================
+# 다중 아치 배치 / 계산
+# =============================================================================
+def arch_half_width(a: ArchParams) -> float:
+    g = compute_geometry_from_arch(a)
+    return max(abs(g.left_end[0] - a.cx), abs(g.right_end[0] - a.cx))
+
+
+def layout_2arch(arches: list[ArchParams], pillar_w: float) -> list[ArchParams]:
+    assert len(arches) == 2
+    hw = arch_half_width(arches[0])
+    offset = hw + pillar_w / 2
+    return [
+        replace(arches[0], cx=-offset, label="좌선"),
+        replace(arches[1], cx=+offset, label="우선"),
+    ]
+
+
+def layout_3arch(central: ArchParams, left: ArchParams, right: ArchParams,
+                 gap_L: float, gap_R: float) -> list[ArchParams]:
+    hw_c = arch_half_width(central)
+    hw_l = arch_half_width(left)
+    hw_r = arch_half_width(right)
+    left_cx = -(hw_c + gap_L + hw_l)
+    right_cx = +(hw_c + gap_R + hw_r)
+    return [
+        replace(central, cx=0.0, label="중앙"),
+        replace(left, cx=left_cx, label="좌선"),
+        replace(right, cx=right_cx, label="우선"),
+    ]
+
+
+def compute_multi_arch(p: TunnelParams) -> MultiArchGeometry:
+    if p.kind == TunnelType.NATM_2ARCH:
+        layout = layout_2arch(p.arches, p.pillar_w)
+    elif p.kind == TunnelType.NATM_3ARCH:
+        assert len(p.arches) == 3
+        layout = layout_3arch(p.arches[0], p.arches[1], p.arches[2],
+                              p.gap_L, p.gap_R)
+    else:
+        raise ValueError("NATM_2ARCH 또는 NATM_3ARCH만 지원")
+
+    geoms = [compute_geometry_from_arch(a, FL=p.FL) for a in layout]
+    total = sum(g.area for g in geoms)
+    xs, ys = [], []
+    for g in geoms:
+        minx, miny, maxx, maxy = g.polygon.bounds
+        xs.extend([minx, maxx])
+        ys.extend([miny, maxy])
+    bbox = (min(xs), min(ys), max(xs), max(ys))
+    return MultiArchGeometry(arches=geoms, total_area=total,
+                             bbox=bbox, layout=layout)
+
+
+# =============================================================================
 # Box 계산 (필렛)
 # =============================================================================
 def _clamp_fillet(p: TunnelParams) -> TunnelParams:
@@ -270,36 +370,23 @@ def _clamp_fillet(p: TunnelParams) -> TunnelParams:
     return replace(p, box_fillet_top_r=r_top, box_fillet_bot_r=r_bot)
 
 
-def _fillet_corner(
-    corner: tuple[float, float],
-    prev: tuple[float, float],
-    nxt: tuple[float, float],
-    r: float,
-    num_pts: int = 20,
-) -> tuple[list[tuple[float, float]], tuple[float, float], tuple[float, float]]:
-    """corner에서 prev→corner→nxt로 꺾이는 모서리에 반경 r의 필렛을 삽입."""
+def _fillet_corner(corner, prev, nxt, r, num_pts=20):
     if r <= 0:
         return [corner], corner, corner
-
     up = _unit(corner, prev)
     un = _unit(corner, nxt)
-
     dot = max(-1.0, min(1.0, up[0] * un[0] + up[1] * un[1]))
     theta = math.acos(dot)
     if theta <= 1e-6 or abs(theta - math.pi) < 1e-6:
         return [corner], corner, corner
-
     t = r / math.tan(theta / 2)
     d = r / math.sin(theta / 2)
-
     p1 = (corner[0] + up[0] * t, corner[1] + up[1] * t)
     p2 = (corner[0] + un[0] * t, corner[1] + un[1] * t)
-
     bx, by = up[0] + un[0], up[1] + un[1]
     bn = math.hypot(bx, by)
     bx, by = bx / bn, by / bn
     center = (corner[0] + bx * d, corner[1] + by * d)
-
     a1 = math.atan2(p1[1] - center[1], p1[0] - center[0])
     a2 = math.atan2(p2[1] - center[1], p2[0] - center[0])
     da = a2 - a1
@@ -307,11 +394,9 @@ def _fillet_corner(
         da -= 2 * math.pi
     while da < -math.pi:
         da += 2 * math.pi
-
     angles = [a1 + da * i / (num_pts - 1) for i in range(num_pts)]
-    arc_pts = [(center[0] + r * math.cos(a), center[1] + r * math.sin(a))
-               for a in angles]
-    return arc_pts, p1, p2
+    return ([(center[0] + r * math.cos(a), center[1] + r * math.sin(a))
+             for a in angles], p1, p2)
 
 
 def _box_inner_polygon(p: TunnelParams) -> list[tuple[float, float]]:
@@ -319,7 +404,6 @@ def _box_inner_polygon(p: TunnelParams) -> list[tuple[float, float]]:
     r_top, r_bot = p.box_fillet_top_r, p.box_fillet_bot_r
     x_L, x_R = -B / 2, B / 2
     y_B, y_T = p.FL, p.FL + H
-
     corners = [
         ((x_L, y_B), (x_R, y_B), (x_L, y_T), r_bot),
         ((x_R, y_B), (x_L, y_B), (x_R, y_T), r_bot),
@@ -344,14 +428,10 @@ def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
     inner_pts = _box_inner_polygon(p)
     inner = Polygon(inner_pts)
 
-    # 외곽: 직각 사각형 (내공 필렛만 표현, 외곽은 시공형상)
     x_OL, x_OR = x_L - tw, x_R + tw
     y_OB, y_OT = y_B - ts, y_T + ts
-    outer = Polygon([
-        (x_OL, y_OB), (x_OR, y_OB), (x_OR, y_OT), (x_OL, y_OT)
-    ])
+    outer = Polygon([(x_OL, y_OB), (x_OR, y_OB), (x_OR, y_OT), (x_OL, y_OT)])
 
-    # 필렛 호 정보
     fillet_arcs = []
     corners = [
         ((x_L, y_B), (x_R, y_B), (x_L, y_T), p.box_fillet_bot_r),
@@ -387,19 +467,7 @@ def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
 
 
 # =============================================================================
-# 통합 계산 진입점
-# =============================================================================
-Geometry = Union[TunnelGeometry, BoxGeometry]
-
-
-def compute_any(p: TunnelParams) -> Geometry:
-    if p.kind == TunnelType.BOX:
-        return compute_box_geometry(p)
-    return compute_geometry(p)
-
-
-# =============================================================================
-# 이력 / DXF 캐시
+# 이력 / DXF
 # =============================================================================
 class FitHistory:
     def __init__(self, max_size: int = 100):
@@ -459,20 +527,18 @@ def setup_style(root: tk.Tk):
         style.theme_use("clam")
     except tk.TclError:
         style.theme_use("default")
-
     base = ("Malgun Gothic", 10)
     bold = ("Malgun Gothic", 10, "bold")
     title = ("Malgun Gothic", 12, "bold")
     root.option_add("*Font", base)
-
     style.configure("TFrame", background="#f5f6f8")
     style.configure("Card.TFrame", background="#ffffff")
     style.configure("TLabel", background="#f5f6f8", font=base)
     style.configure("Card.TLabel", background="#ffffff", font=base)
     style.configure("Unit.TLabel", background="#ffffff",
                     foreground="#888888", font=("Malgun Gothic", 9))
-    style.configure("Title.TLabel", background="#f5f6f8",
-                    font=title, foreground="#1a1a1a")
+    style.configure("Title.TLabel", background="#f5f6f8", font=title,
+                    foreground="#1a1a1a")
     style.configure("Info.TLabel", background="#f5f6f8",
                     foreground="#555555", font=("Malgun Gothic", 9))
     style.configure("Spec.TLabel", background="#eaf1ff", font=bold,
@@ -498,7 +564,7 @@ def setup_style(root: tk.Tk):
 
 
 # =============================================================================
-# 파라미터 위젯 (Scale + Entry)
+# 파라미터 위젯
 # =============================================================================
 class ParamRow:
     def __init__(self, parent, *, label, attr, lo, hi, res, unit,
@@ -509,28 +575,22 @@ class ParamRow:
         self.decimals = decimals
         self.lo = lo
         self.hi = hi
-
         frame = ttk.Frame(parent, style="Card.TFrame")
         frame.columnconfigure(1, weight=1)
-
         ttk.Label(frame, text=label, style="Card.TLabel",
                   width=13).grid(row=0, column=0, sticky="w", padx=(6, 8))
-
         self.var = tk.DoubleVar(value=initial)
         self.scale = ttk.Scale(frame, from_=lo, to=hi, orient="horizontal",
                                variable=self.var, command=self._on_scale)
         self.scale.grid(row=0, column=1, sticky="ew", padx=(0, 8))
-
         self.entry_var = tk.StringVar(value=f"{initial:.{decimals}f}")
         entry = ttk.Entry(frame, textvariable=self.entry_var,
                           width=9, justify="right")
         entry.grid(row=0, column=2, sticky="e")
         entry.bind("<Return>", self._on_entry)
         entry.bind("<FocusOut>", self._on_entry)
-
         ttk.Label(frame, text=unit, style="Unit.TLabel",
                   width=3).grid(row=0, column=3, sticky="w", padx=(4, 6))
-
         self.frame = frame
 
     def _on_scale(self, _val):
@@ -564,12 +624,13 @@ class TunnelApp:
         self.dxf_path = DXF_DEFAULT_IN
         self.history = FitHistory()
         self.rows: dict[str, ParamRow] = {}
+        self.arch_rows: list[dict[str, ParamRow]] = []
         self._suspend = False
 
         self.root = tk.Tk()
         self.root.title("터널 단면 작도기")
-        self.root.geometry("1320x860")
-        self.root.minsize(1120, 720)
+        self.root.geometry("1360x900")
+        self.root.minsize(1160, 760)
         setup_style(self.root)
 
         paned = ttk.PanedWindow(self.root, orient="horizontal")
@@ -596,7 +657,6 @@ class TunnelApp:
         ttk.Label(header, text="슬라이더 또는 값을 직접 입력하세요.",
                   style="Info.TLabel").pack(anchor="w")
 
-        # 타입 선택
         type_frame = ttk.Frame(parent)
         type_frame.pack(fill="x", pady=(0, 8))
         self.type_var = tk.StringVar(value=self.params.kind.value)
@@ -604,9 +664,8 @@ class TunnelApp:
             ttk.Radiobutton(
                 type_frame, text=tt.value, value=tt.value,
                 variable=self.type_var, command=self._on_type_change
-            ).pack(side="left", padx=(0, 12))
+            ).pack(side="left", padx=(0, 8))
 
-        # 그룹 (동적)
         self.shape_group = ttk.LabelFrame(parent, text="  단면 형상  ", padding=8)
         self.shape_group.pack(fill="x", pady=(0, 8))
         self.shape_group.columnconfigure(0, weight=1)
@@ -617,12 +676,10 @@ class TunnelApp:
 
         self._populate_param_rows()
 
-        # 실시간 스펙
         self.spec_label = ttk.Label(parent, text="", style="Spec.TLabel",
                                     anchor="w", justify="left")
         self.spec_label.pack(fill="x", pady=(0, 8))
 
-        # 액션
         act = ttk.Frame(parent)
         act.pack(fill="x", pady=(0, 6))
         act.columnconfigure((0, 1), weight=1)
@@ -654,33 +711,27 @@ class TunnelApp:
         for w in self.dim_group.winfo_children():
             w.destroy()
         self.rows.clear()
+        self.arch_rows.clear()
 
         if self.params.kind == TunnelType.BOX:
-            shape = [
-                ("내공 폭 B",     "box_width",        2.0, 25.0, 0.01, "m", 2),
-                ("내공 높이 H",   "box_height",       2.0, 20.0, 0.01, "m", 2),
-                ("벽체 두께 tw",  "box_wall_t",       0.1,  2.0, 0.01, "m", 3),
-                ("슬래브 두께 ts", "box_slab_t",       0.1,  2.0, 0.01, "m", 3),
-                ("상단 필렛 R",   "box_fillet_top_r", 0.0,  3.0, 0.01, "m", 3),
-                ("하단 필렛 R",   "box_fillet_bot_r", 0.0,  3.0, 0.01, "m", 3),
-            ]
-            dim = [
-                ("선로 중심간격", "D",  0.0, 30.0, 0.01, "m", 2),
-                ("바닥 FL",       "FL", -5.0, 10.0, 0.01, "m", 3),
-            ]
+            self._build_box_editor()
+        elif self.params.kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            self._build_multi_arch_editor()
         else:
-            shape = [
-                ("R1",         "R1",        1.0,  20.0, 0.01, "m", 3),
-                ("상단 각도",   "top_angle",  0.0, 180.0, 0.5,  "°", 1),
-                ("R2",         "R2",        1.0,  20.0, 0.01, "m", 3),
-                ("R2 각도",    "r2_angle",   0.0, 180.0, 0.5,  "°", 1),
-            ]
-            dim = [
-                ("선로 중심간격", "D",    0.0,  30.0, 0.01, "m", 2),
-                ("R1 중심 Y",    "R1_Y", -10.0, 10.0, 0.01, "m", 3),
-                ("목표 FL",      "FL",   -5.0,  5.0,  0.01, "m", 3),
-            ]
+            self._build_single_natm_editor()
 
+    def _build_single_natm_editor(self):
+        shape = [
+            ("R1",         "R1",        1.0, 20.0, 0.01, "m", 3),
+            ("상단 각도",   "top_angle",  0.0, 180.0, 0.5,  "°", 1),
+            ("R2",         "R2",        1.0, 20.0, 0.01, "m", 3),
+            ("R2 각도",    "r2_angle",   0.0, 180.0, 0.5,  "°", 1),
+        ]
+        dim = [
+            ("선로 중심간격", "D",    0.0,  30.0, 0.01, "m", 2),
+            ("R1 중심 Y",    "R1_Y", -10.0, 10.0, 0.01, "m", 3),
+            ("목표 FL",      "FL",   -5.0,  5.0,  0.01, "m", 3),
+        ]
         for i, (label, attr, lo, hi, res, unit, dec) in enumerate(shape):
             row = ParamRow(self.shape_group, label=label, attr=attr,
                            lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
@@ -688,7 +739,6 @@ class TunnelApp:
                            initial=getattr(self.params, attr))
             row.frame.grid(row=i, column=0, sticky="ew", pady=2)
             self.rows[attr] = row
-
         for i, (label, attr, lo, hi, res, unit, dec) in enumerate(dim):
             row = ParamRow(self.dim_group, label=label, attr=attr,
                            lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
@@ -697,18 +747,111 @@ class TunnelApp:
             row.frame.grid(row=i, column=0, sticky="ew", pady=2)
             self.rows[attr] = row
 
+    def _build_box_editor(self):
+        shape = [
+            ("내공 폭 B",     "box_width",        2.0, 25.0, 0.01, "m", 2),
+            ("내공 높이 H",   "box_height",       2.0, 20.0, 0.01, "m", 2),
+            ("벽체 두께 tw",  "box_wall_t",       0.1,  2.0, 0.01, "m", 3),
+            ("슬래브 두께 ts", "box_slab_t",       0.1,  2.0, 0.01, "m", 3),
+            ("상단 필렛 R",   "box_fillet_top_r", 0.0,  3.0, 0.01, "m", 3),
+            ("하단 필렛 R",   "box_fillet_bot_r", 0.0,  3.0, 0.01, "m", 3),
+        ]
+        dim = [
+            ("선로 중심간격", "D",  0.0, 30.0, 0.01, "m", 2),
+            ("바닥 FL",       "FL", -5.0, 10.0, 0.01, "m", 3),
+        ]
+        for i, (label, attr, lo, hi, res, unit, dec) in enumerate(shape):
+            row = ParamRow(self.shape_group, label=label, attr=attr,
+                           lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                           on_change=self._on_param_change,
+                           initial=getattr(self.params, attr))
+            row.frame.grid(row=i, column=0, sticky="ew", pady=2)
+            self.rows[attr] = row
+        for i, (label, attr, lo, hi, res, unit, dec) in enumerate(dim):
+            row = ParamRow(self.dim_group, label=label, attr=attr,
+                           lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                           on_change=self._on_param_change,
+                           initial=getattr(self.params, attr))
+            row.frame.grid(row=i, column=0, sticky="ew", pady=2)
+            self.rows[attr] = row
+
+    def _build_multi_arch_editor(self):
+        nb = ttk.Notebook(self.shape_group)
+        nb.pack(fill="both", expand=True)
+        self.arch_notebook = nb
+
+        labels = (["좌선", "우선"]
+                  if self.params.kind == TunnelType.NATM_2ARCH
+                  else ["중앙", "좌선", "우선"])
+        specs = [
+            ("R1",         "R1",        1.0, 25.0, 0.01, "m", 3),
+            ("상단 각도",   "top_angle",  0.0, 180.0, 0.5, "°", 1),
+            ("R2",         "R2",        1.0, 25.0, 0.01, "m", 3),
+            ("R2 각도",    "r2_angle",   0.0, 180.0, 0.5, "°", 1),
+            ("R1 중심 Y",  "R1_Y",     -5.0, 15.0, 0.01, "m", 3),
+        ]
+        for i, label in enumerate(labels):
+            tab = ttk.Frame(nb)
+            nb.add(tab, text=f"  {label}  ")
+            rows_i: dict[str, ParamRow] = {}
+            a = self.params.arches[i]
+            for j, (lab, attr, lo, hi, res, unit, dec) in enumerate(specs):
+                row = ParamRow(tab, label=lab, attr=f"arch{i}.{attr}",
+                               lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                               on_change=self._on_arch_param_change,
+                               initial=getattr(a, attr))
+                row.frame.grid(row=j, column=0, sticky="ew", pady=2)
+                rows_i[attr] = row
+            tab.columnconfigure(0, weight=1)
+            self.arch_rows.append(rows_i)
+
+        extra = ([("중벽 폭", "pillar_w", 0.3, 5.0, 0.01, "m", 2)]
+                 if self.params.kind == TunnelType.NATM_2ARCH
+                 else [("좌측 이격", "gap_L", 0.0, 5.0, 0.01, "m", 2),
+                       ("우측 이격", "gap_R", 0.0, 5.0, 0.01, "m", 2)])
+        for j, (lab, attr, lo, hi, res, unit, dec) in enumerate(extra):
+            row = ParamRow(self.dim_group, label=lab, attr=attr,
+                           lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                           on_change=self._on_param_change,
+                           initial=getattr(self.params, attr))
+            row.frame.grid(row=j, column=0, sticky="ew", pady=2)
+            self.rows[attr] = row
+
+    def _on_arch_param_change(self, key: str, value: float):
+        if self._suspend:
+            return
+        i_str, attr = key.split(".", 1)
+        idx = int(i_str.replace("arch", ""))
+        setattr(self.params.arches[idx], attr, value)
+        self.update_plot()
+
+    # ---------------------------------------------------------------
     def _on_type_change(self):
         new_kind = TunnelType(self.type_var.get())
         if new_kind == self.params.kind:
             return
         self.params.kind = new_kind
+
+        if new_kind == TunnelType.NATM_2ARCH and len(self.params.arches) != 2:
+            a = ArchParams(R1=self.params.R1, top_angle=self.params.top_angle,
+                           R2=self.params.R2, r2_angle=self.params.r2_angle,
+                           R1_Y=self.params.R1_Y)
+            self.params.arches = [replace(a, label="좌선"),
+                                  replace(a, label="우선")]
+        elif new_kind == TunnelType.NATM_3ARCH and len(self.params.arches) != 3:
+            central = ArchParams(R1=9.0, top_angle=100.0, R2=7.0,
+                                 r2_angle=70.0, R1_Y=2.0, label="중앙")
+            side = ArchParams(R1=5.5, top_angle=85.0, R2=4.5,
+                              r2_angle=65.0, R1_Y=1.5, label="측선")
+            self.params.arches = [central,
+                                  replace(side, label="좌선"),
+                                  replace(side, label="우선")]
+
         self._populate_param_rows()
-
-        if new_kind == TunnelType.BOX:
-            self.btn_auto_fit.grid_remove()
-        else:
+        if new_kind == TunnelType.NATM:
             self.btn_auto_fit.grid()
-
+        else:
+            self.btn_auto_fit.grid_remove()
         self.update_plot()
 
     # ---------------------------------------------------------------
@@ -793,23 +936,34 @@ class TunnelApp:
         if not messagebox.askyesno("초기값 복원",
                                    "모든 파라미터를 초기값으로 되돌릴까요?"):
             return
-        d = TunnelParams(kind=self.params.kind)
-        self._suspend = True
-        try:
-            for k in list(self.rows.keys()):
-                setattr(self.params, k, getattr(d, k))
-                self.rows[k].set_value(getattr(d, k))
-        finally:
-            self._suspend = False
+        kind = self.params.kind
+        d = TunnelParams(kind=kind)
+        if kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            if kind == TunnelType.NATM_2ARCH:
+                a = ArchParams()
+                d.arches = [replace(a, label="좌선"), replace(a, label="우선")]
+            else:
+                central = ArchParams(R1=9.0, top_angle=100.0, R2=7.0,
+                                     r2_angle=70.0, R1_Y=2.0, label="중앙")
+                side = ArchParams(R1=5.5, top_angle=85.0, R2=4.5,
+                                  r2_angle=65.0, R1_Y=1.5, label="측선")
+                d.arches = [central, replace(side, label="좌선"),
+                            replace(side, label="우선")]
+        self.params = d
+        self._populate_param_rows()
         self.update_plot()
 
     # ---------------------------------------------------------------
     def auto_fit_fl(self):
-        if self.params.kind == TunnelType.BOX:
-            messagebox.showinfo(
-                "FL 자동 맞춤",
-                "개착 Box형은 H(내공 높이)가 FL을 직접 결정하므로\n"
-                "자동 맞춤이 필요하지 않습니다.\nH 값을 조정하세요.")
+        if self.params.kind != TunnelType.NATM:
+            if self.params.kind == TunnelType.BOX:
+                messagebox.showinfo("FL 자동 맞춤",
+                                    "개착 Box형은 H가 FL을 직접 결정합니다.")
+            else:
+                messagebox.showinfo(
+                    "FL 자동 맞춤",
+                    "2-Arch / 3-Arch는 각 아치의 R1_Y를 개별 조정하세요.\n"
+                    "각 아치 탭에서 R1 중심 Y 값을 변경할 수 있습니다.")
             return
 
         p = self.params
@@ -878,6 +1032,12 @@ class TunnelApp:
                 "이력 복원",
                 f"{e.timestamp} 값으로 파라미터를 복원할까요?"):
             return
+        # NATM으로 강제 전환 후 복원
+        if self.params.kind != TunnelType.NATM:
+            self.type_var.set(TunnelType.NATM.value)
+            self.params.kind = TunnelType.NATM
+            self._populate_param_rows()
+            self.btn_auto_fit.grid()
         self._apply_params(R1=e.R1, top_angle=e.top_angle, R2=e.R2,
                            r2_angle=e.r2_angle, D=e.D,
                            R1_Y=e.R1_Y, FL=e.target_FL)
@@ -923,16 +1083,23 @@ class TunnelApp:
             g = compute_box_geometry(p)
             self._draw_box_section(g)
             self._update_box_spec_panel(g)
+        elif p.kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            mg = compute_multi_arch(p)
+            self._draw_multi_arch(mg, p)
+            self._update_multi_arch_spec_panel(mg, p)
         else:
-            g = compute_geometry(p)
-            self._draw_tunnel(g)
-            self._draw_haunch_bottom(g)
+            a = ArchParams(R1=p.R1, top_angle=p.top_angle, R2=p.R2,
+                           r2_angle=p.r2_angle, R1_Y=p.R1_Y,
+                           cx=0.0, label="본선")
+            g = compute_geometry_from_arch(a, FL=p.FL)
+            self._draw_tunnel(g, p)
+            self._draw_haunch_bottom(g, p)
             self._draw_centerlines(p, g)
-            self._draw_dimension_lines(g)
+            self._draw_dimension_lines(g, p)
             self._draw_angles(g)
-            self._draw_safe_box(g)
+            self._draw_safe_box(g, p)
             self._draw_sl_line(g)
-            self._update_spec_panel(g)
+            self._update_spec_panel(g, p)
 
         self.canvas.draw_idle()
 
@@ -958,10 +1125,10 @@ class TunnelApp:
                                  theta1=e.dxf.start_angle,
                                  theta2=e.dxf.end_angle, color='g'))
 
-    # ---------- NATM ----------
-    def _draw_tunnel(self, g: TunnelGeometry):
-        p, ax = g.p, self.ax
-        a_left, a_right = p.r1_angles
+    # ---------- 단일 NATM ----------
+    def _draw_tunnel(self, g: TunnelGeometry, p: TunnelParams):
+        ax = self.ax
+        a_left, a_right = g.a.r1_angles
 
         def arc(c, r, s, e, color):
             if e < s:
@@ -969,16 +1136,18 @@ class TunnelApp:
             ax.add_patch(Arc(c, 2 * r, 2 * r, angle=0,
                              theta1=s, theta2=e, color=color, lw=1.8))
 
-        arc(g.center_top, p.R1, a_right, a_left, '#d64545')
-        arc(g.left_center, p.R2, a_left, a_left + p.r2_angle, '#2f6fed')
-        arc(g.right_center, p.R2, a_right - p.r2_angle, a_right, '#2b8a3e')
+        arc(g.center_top, g.a.R1, a_right, a_left, '#d64545')
+        arc(g.left_center, g.a.R2, a_left, a_left + g.a.r2_angle, '#2f6fed')
+        arc(g.right_center, g.a.R2, a_right - g.a.r2_angle, a_right, '#2b8a3e')
 
-    def _draw_haunch_bottom(self, g: TunnelGeometry):
-        p, ax = g.p, self.ax
+    def _draw_haunch_bottom(self, g: TunnelGeometry, p: TunnelParams):
+        ax = self.ax
         for end, side, sign in ((g.left_end, p.sideL, +1),
                                 (g.right_end, p.sideR, -1)):
-            x = [end[0], end[0] + sign * side, end[0] + sign * side, 0]
-            y = [end[1], end[1], end[1] - p.fl_to_culvert, end[1] - p.fl_to_culvert]
+            x = [end[0], end[0] + sign * side,
+                 end[0] + sign * side, 0]
+            y = [end[1], end[1],
+                 end[1] - p.fl_to_culvert, end[1] - p.fl_to_culvert]
             ax.plot(x, y, 'k-', lw=1.2)
 
     def _draw_centerlines(self, p: TunnelParams, g: TunnelGeometry):
@@ -990,8 +1159,8 @@ class TunnelApp:
             ax.axvline(x, color='gray', linestyle='--', linewidth=0.9)
             ax.text(x, y_text, label, ha='center', fontsize=9, color='#555555')
 
-    def _draw_dimension_lines(self, g: TunnelGeometry):
-        p, ax = g.p, self.ax
+    def _draw_dimension_lines(self, g: TunnelGeometry, p: TunnelParams):
+        ax = self.ax
         for c, e in ((g.center_top, g.top_end),
                      (g.center_top, g.top_start),
                      (g.left_center, g.left_end),
@@ -999,17 +1168,17 @@ class TunnelApp:
             ax.plot([c[0], e[0]], [c[1], e[1]],
                     linestyle='--', color='#888888', lw=0.8)
 
-        a_left, a_right = p.r1_angles
+        a_left, a_right = g.a.r1_angles
         for c, e, ang in ((g.center_top, g.top_end, a_right),
                           (g.center_top, g.top_start, a_left)):
             m = ((c[0] + e[0]) / 2, (c[1] + e[1]) / 2)
-            ax.text(m[0] - 0.25, m[1] + 0.25, f'R1={p.R1 * 1000:.0f}',
+            ax.text(m[0] - 0.25, m[1] + 0.25, f'R1={g.a.R1 * 1000:.0f}',
                     rotation=ang, fontsize=9)
         for c, e in ((g.left_center, g.left_end),
                      (g.right_center, g.right_end)):
             m = ((c[0] + e[0]) / 2, (c[1] + e[1]) / 2)
             rot = math.degrees(math.atan2(e[1] - c[1], e[0] - c[0]))
-            ax.text(m[0], m[1], f'R2={p.R2 * 1000:.0f}',
+            ax.text(m[0], m[1], f'R2={g.a.R2 * 1000:.0f}',
                     rotation=rot, fontsize=9)
 
     def _draw_angles(self, g: TunnelGeometry):
@@ -1034,8 +1203,8 @@ class TunnelApp:
                      f'{angle_deg:.1f}°', fontsize=11, ha='center',
                      color='#333333')
 
-    def _draw_safe_box(self, g: TunnelGeometry):
-        p, ax = g.p, self.ax
+    def _draw_safe_box(self, g: TunnelGeometry, p: TunnelParams):
+        ax = self.ax
         h = p.safeheight
         for end, side, sign in ((g.left_end, p.sideL, +1),
                                 (g.right_end, p.sideR, -1)):
@@ -1054,32 +1223,118 @@ class TunnelApp:
         ax.text(g.left_end[0] - 0.6, g.SL, 'SL',
                 fontsize=9, color='#555555', va='center')
 
-    def _update_spec_panel(self, g: TunnelGeometry):
-        p = g.p
-        new_fl = compute_fl(p, p.R1_Y)
+    def _update_spec_panel(self, g: TunnelGeometry, p: TunnelParams):
+        new_fl = compute_fl(p, g.a.R1_Y)
         ok = abs(new_fl - p.FL) <= FL_TOLERANCE
         mark = "✅" if ok else "⚠️"
         self.spec_label.config(text=(
             f"면적 {g.area:.2f}㎡   |   A {g.A:.2f}m   |   "
             f"SL {g.SL:.2f}m   |   편평률 {g.top_of_tunnel / (g.A * 2):.2f}\n"
-            f"R2/R1 {p.R2 / p.R1:.2f}   |   "
+            f"R2/R1 {g.a.R2 / g.a.R1:.2f}   |   "
             f"FL {new_fl:.3f}m (목표 {p.FL:.3f}m)   {mark}"))
+
+    # ---------- 다중 아치 ----------
+    def _draw_multi_arch(self, mg: MultiArchGeometry, p: TunnelParams):
+        palette = ['#2f6fed', '#2b8a3e', '#d64545']
+        for i, (g, a) in enumerate(zip(mg.arches, mg.layout)):
+            color = palette[i % len(palette)]
+            self._draw_single_arch(g, a, color)
+
+        ax = self.ax
+        ax.axvline(0, color='gray', linestyle='--', lw=0.9)
+        ax.text(0, max(g.top_of_tunnel for g in mg.arches) + 1.2,
+                'CL', ha='center', fontsize=9)
+
+        # FL 라인
+        ax.axhline(p.FL, color='#d64545', linestyle=':', lw=1)
+
+        if p.kind == TunnelType.NATM_2ARCH:
+            self._draw_pillar(mg, p)
+        else:
+            self._draw_gaps(mg, p)
+
+    def _draw_single_arch(self, g: TunnelGeometry, a: ArchParams, color: str):
+        ax = self.ax
+
+        def arc(c, r, s, e):
+            if e < s:
+                e += 360
+            ax.add_patch(Arc(c, 2 * r, 2 * r, angle=0,
+                             theta1=s, theta2=e, color=color, lw=1.8))
+
+        a_left, a_right = a.r1_angles
+        arc(g.center_top, a.R1, a_right, a_left)
+        arc(g.left_center, a.R2, a_left, a_left + a.r2_angle)
+        arc(g.right_center, a.R2, a_right - a.r2_angle, a_right)
+
+        # 하단 수평
+        ax.plot([g.left_end[0], g.right_end[0]],
+                [g.left_end[1], g.right_end[1]], 'k-', lw=1.2)
+
+        # 아치 라벨
+        ax.text(a.cx, g.top_of_tunnel + 0.4, a.label,
+                ha='center', fontsize=10, color=color, fontweight='bold')
+
+    def _draw_pillar(self, mg: MultiArchGeometry, p: TunnelParams):
+        left_g, right_g = mg.arches[0], mg.arches[1]
+        x_l, x_r = left_g.right_end[0], right_g.left_end[0]
+        y_b = max(left_g.right_end[1], right_g.left_end[1])
+        y_t = max(left_g.top_of_tunnel, right_g.top_of_tunnel)
+
+        self.ax.add_patch(MplRect(
+            (x_l, y_b), x_r - x_l, y_t - y_b,
+            facecolor='#f0f0f0', edgecolor='#888888',
+            hatch='///', alpha=0.6, linewidth=0.8))
+        self.ax.text((x_l + x_r) / 2, y_b - 0.6,
+                     f'중벽 {p.pillar_w * 1000:.0f}',
+                     ha='center', fontsize=9, color='#666666')
+
+    def _draw_gaps(self, mg: MultiArchGeometry, p: TunnelParams):
+        central = mg.arches[0]
+        left = mg.arches[1]
+        right = mg.arches[2]
+
+        def gap_arrow(x1, x2, y, label):
+            self.ax.annotate('', xy=(x1, y), xytext=(x2, y),
+                             arrowprops=dict(arrowstyle='<->',
+                                             color='#333333', lw=1))
+            self.ax.text((x1 + x2) / 2, y + 0.25, label,
+                         ha='center', fontsize=8)
+
+        y_arrow = p.FL + 0.3
+        gap_arrow(left.top_end[0], central.left_end[0],
+                  y_arrow, f'{p.gap_L * 1000:.0f}')
+        gap_arrow(central.right_end[0], right.top_start[0],
+                  y_arrow, f'{p.gap_R * 1000:.0f}')
+
+    def _update_multi_arch_spec_panel(self, mg: MultiArchGeometry,
+                                       p: TunnelParams):
+        if p.kind == TunnelType.NATM_2ARCH:
+            left, right = mg.arches
+            lines = [
+                f"총 내공면적 {mg.total_area:.2f}㎡  |  중벽 {p.pillar_w * 1000:.0f}mm",
+                f"좌 아치 {left.area:.2f}㎡  |  우 아치 {right.area:.2f}㎡",
+            ]
+        else:
+            c, l, r = mg.arches
+            lines = [
+                f"총 내공면적 {mg.total_area:.2f}㎡  |  이격 L{p.gap_L * 1000:.0f} R{p.gap_R * 1000:.0f}",
+                f"중앙 {c.area:.2f}㎡  |  좌 {l.area:.2f}㎡  |  우 {r.area:.2f}㎡",
+            ]
+        self.spec_label.config(text="\n".join(lines))
 
     # ---------- Box ----------
     def _draw_box_section(self, g: BoxGeometry):
         p, ax = g.p, self.ax
         tw, ts = p.box_wall_t, p.box_slab_t
 
-        # 외곽
         oxs, oys = g.outer.exterior.xy
         ax.plot(oxs, oys, color='#555555', lw=1.6)
 
-        # 내공
         xs = [pt[0] for pt in g.inner_pts]
         ys = [pt[1] for pt in g.inner_pts]
         ax.plot(xs, ys, color='#2f6fed', lw=2.0)
 
-        # 벽체 해칭 (외곽 − 내공)
         try:
             wall_poly = g.outer.difference(g.inner)
             geoms = [wall_poly] if wall_poly.geom_type == 'Polygon' else list(wall_poly.geoms)
@@ -1088,15 +1343,12 @@ class TunnelApp:
         except Exception:
             pass
 
-        # 필렛 호 강조
         for center, r, a1, a2 in g.fillet_arcs:
             if a2 < a1:
                 a2 += 360
             ax.add_patch(Arc(center, 2 * r, 2 * r, angle=0,
-                             theta1=a1, theta2=a2,
-                             color='#d64545', lw=1.2))
+                             theta1=a1, theta2=a2, color='#d64545', lw=1.2))
 
-        # 필렛 반경 라벨
         if p.box_fillet_top_r > 0:
             ax.text(g.cx_right - p.box_fillet_top_r - 0.35,
                     g.ceiling_y - p.box_fillet_top_r - 0.35,
@@ -1108,7 +1360,6 @@ class TunnelApp:
                     f'R{p.box_fillet_bot_r * 1000:.0f}',
                     fontsize=8, color='#d64545')
 
-        # 치수 B, H
         y_dim = g.top_of_tunnel + 0.5
         ax.annotate('', xy=(g.cx_left, y_dim), xytext=(g.cx_right, y_dim),
                     arrowprops=dict(arrowstyle='<->', color='#333333', lw=1))
@@ -1122,7 +1373,6 @@ class TunnelApp:
                 f'H = {p.box_height * 1000:.0f}',
                 rotation=90, va='center', fontsize=9)
 
-        # 벽두께 라벨
         ax.text(g.cx_left - tw / 2, g.floor_y + 0.2,
                 f'tw={tw * 1000:.0f}', rotation=90,
                 ha='center', fontsize=8, color='#666666')
@@ -1130,7 +1380,6 @@ class TunnelApp:
                 f'ts={ts * 1000:.0f}', va='center', fontsize=8,
                 color='#666666')
 
-        # CL / FL / SL
         ax.axvline(0, color='gray', linestyle='--', lw=0.9)
         ax.text(0, g.top_of_tunnel + 1.0, 'CL', ha='center', fontsize=9)
 
@@ -1142,15 +1391,16 @@ class TunnelApp:
         ax.text(g.cx_left - tw - 0.9, g.SL, 'SL',
                 fontsize=9, color='#555555', va='center')
 
-        # 안전박스
         h = p.safeheight
         for x0, sign in ((g.cx_left, +1), (g.cx_right, -1)):
             x1 = x0 + sign * min(p.sideL, p.box_width / 2 - 0.1)
             y0 = g.floor_y
             ax.plot([x0, x0, x1, x1], [y0, y0 + h, y0 + h, y0],
                     color='#9aa0a6', linestyle='--', lw=0.8)
-            ax.plot([x0, x1], [y0 + h, y0], color='#9aa0a6', linestyle='--', lw=0.8)
-            ax.plot([x1, x0], [y0 + h, y0], color='#9aa0a6', linestyle='--', lw=0.8)
+            ax.plot([x0, x1], [y0 + h, y0], color='#9aa0a6',
+                    linestyle='--', lw=0.8)
+            ax.plot([x1, x0], [y0 + h, y0], color='#9aa0a6',
+                    linestyle='--', lw=0.8)
 
     def _update_box_spec_panel(self, g: BoxGeometry):
         p = g.p
@@ -1190,7 +1440,6 @@ class TunnelApp:
             messagebox.showerror("저장 실패", str(e))
 
     def _write_dxf(self, path: str):
-        from matplotlib.patches import Rectangle as MplRect
         doc = ezdxf.new()
         msp = doc.modelspace()
 
