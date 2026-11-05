@@ -232,7 +232,50 @@ def _mid(p1, p2):
 def _bearing(p1, p2):
     return math.degrees(math.atan2(p2[1] - p1[1], p2[0] - p1[0]))
 
+def compute_fl(p: TunnelParams, R1_Y: float) -> float:
+    """주어진 R1_Y에 대해 좌측 하단 수평부(FL)의 Y좌표를 계산."""
+    a_left, a_right = p.r1_angles
+    center_top = (0.0, R1_Y)
 
+    left_center, _ = find_side_center(
+        center_top, p.R1, a_left, a_right, p.R2)
+    top_start = _polar(center_top, p.R1, a_left)
+    left_end = find_end_point(left_center, p.R2, top_start, p.r2_angle)
+
+    return left_end[1] - p.fl_to_culvert
+
+from scipy.optimize import minimize_scalar, brentq
+
+def fit_R1_Y_to_FL(p: TunnelParams,
+                   tol: float = 1e-4,
+                   bounds: tuple[float, float] = (-20.0, 20.0)
+                   ) -> tuple[float, bool]:
+    """
+    FL 조건을 만족하는 R1_Y를 찾는다.
+
+    Returns:
+        (R1_Y_opt, success)
+    """
+    target = p.FL
+
+    def f(R1_Y):
+        return compute_fl(p, R1_Y) - target
+
+    lo, hi = bounds
+    f_lo, f_hi = f(lo), f(hi)
+
+    # 해가 범위 안에 있는지 확인 (단조 증가 가정)
+    if f_lo > 0 or f_hi < 0:
+        return p.R1_Y, False
+
+    try:
+        r1_y = brentq(f, lo, hi, xtol=tol, maxiter=100)
+        return r1_y, True
+    except (ValueError, RuntimeError):
+        # fallback: |f| 최소화
+        res = minimize_scalar(lambda y: abs(f(y)),
+                              bounds=(lo, hi), method='bounded')
+        return float(res.x), res.success
 # ---------------------------------------------------------------------------
 # DXF 캐시
 # ---------------------------------------------------------------------------
@@ -307,6 +350,9 @@ class TunnelApp:
 
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(fill=tk.X, pady=5)
+        tk.Button(btn_frame, text="FL 자동 맞춤",
+                  command=self.auto_fit_fl,
+                  bg="#d0e8ff").pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="도면 저장", command=self.save_dxf).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="DXF 열기", command=self.open_dxf).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="종료", command=self.close).pack(side=tk.LEFT, padx=5)
@@ -443,7 +489,7 @@ class TunnelApp:
     # ----- 콘솔 스펙 --------------------------------------------------------
     def _print_spec(self, g: TunnelGeometry):
         p = g.p
-        new_FL = g.left_end[1] - p.fl_to_culvert
+        new_FL = compute_fl(p, p.R1_Y)
 
         print('------------------ 터널 제원 출력 ----------------')
         print(f'내공단면적 {g.area:.2f} m²')
@@ -453,15 +499,15 @@ class TunnelApp:
         print(f'R2 Angle : {p.r2_angle}')
         print(f'A : {g.A:.2f}')
         print(f'SL : {g.SL:.2f}')
-        print(f'R2/R1 비 : {p.R2 / p.R1:.2f}')          # ← 슬라이더 값 반영
+        print(f'R2/R1 비 : {p.R2 / p.R1:.2f}')
         print(f'편평률 : {g.top_of_tunnel / (g.A * 2):.2f}')
-        print(f'현재 FL 값 : {new_FL:.2f}')
+        print(f'현재 FL : {new_FL:.4f}  (목표 {p.FL})')
         if abs(new_FL - p.FL) <= FL_TOLERANCE:
-            print('검토결과 : OK')
+            print('검토결과 : OK  ✅')
         elif new_FL > p.FL:
-            print('검토결과 : 미달 FL을 내려야 함.')
+            print('검토결과 : FL을 내려야 함 (→ R1_Y 감소)')
         else:
-            print('검토결과 : 미달 FL을 올려야 함.')
+            print('검토결과 : FL을 올려야 함 (→ R1_Y 증가)')
         print('------------------------------------------------')
 
     # ----- DXF 저장 ---------------------------------------------------------
@@ -507,7 +553,41 @@ class TunnelApp:
     def run(self):
         self.root.mainloop()
 
+    def auto_fit_fl(self):
+        """R1_Y를 조정해 FL 조건을 자동으로 만족시킨다."""
+        p = self.params
 
+        # 사용자에게 목표 FL을 물어보기 (선택 사항)
+        target = simpledialog.askfloat(
+            "FL 자동 맞춤",
+            f"목표 FL 값을 입력하세요 (현재 {p.FL}):",
+            initialvalue=p.FL,
+        )
+        if target is None:
+            return
+
+        p_target = replace(p, FL=target)
+        r1_y_opt, ok = fit_R1_Y_to_FL(p_target)
+
+        if not ok:
+            messagebox.showwarning(
+                "자동 맞춤 실패",
+                f"FL={target}을 만족하는 R1_Y를 찾을 수 없습니다.\n"
+                f"R1/R2/각도 조합을 확인하세요.")
+            return
+
+        # 파라미터와 슬라이더 동기화
+        p.FL = target
+        p.R1_Y = r1_y_opt
+        self.scales["R1_Y"].set(r1_y_opt)  # → _on_slider 자동 호출 → update_plot
+        self.update_plot()  # 슬라이더 set이 trigger 안 될 경우 대비
+
+        # 결과 안내
+        new_fl = compute_fl(p, r1_y_opt)
+        messagebox.showinfo(
+            "자동 맞춤 완료",
+            f"R1_Y = {r1_y_opt:.4f}\n"
+            f"FL    = {new_fl:.4f}  (목표 {target})")
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     TunnelApp().run()
