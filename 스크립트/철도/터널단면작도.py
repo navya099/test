@@ -1,13 +1,13 @@
 """
-터널 단면 작도기 (Tunnel Section Designer) — 완전 통합본 v5
+터널 단면 작도기 (Tunnel Section Designer) — 완전 통합본 v6
 =============================================================
 - NATM 단일 / 2-Arch (분기부) / 3-Arch (정거장) / 개착 Box형
-- Box 상/하단 필렛
+- Box 모서리: 없음 / 필렛(R) / 사선 헌치(/) 선택
 - NATM FL 자동 맞춤 (brentq)
 - 다중 아치 FL 통일 (기준 선택 + 미리보기)
 - FL 자동 맞춤 이력 (CSV, 더블클릭 복원)
 - 제원 스냅샷 (JSON, 더블클릭 복원)
-- 아치 겹침 검사 (실시간 경고 + 도면 강조 + 저장 방어 + 자동 방지 토글)
+- 아치 겹침 검사 (실시간 경고 + 도면 강조 + 저장 방어 + 자동 방지)
 - DXF HATCH 겹침 내보내기 (단색 / ANSI31 / 둘 다)
 
 요구사항:
@@ -54,7 +54,7 @@ HATCH_STYLE_BOTH = "both"
 
 
 # =============================================================================
-# 열거형 / 데이터 모델
+# 열거형
 # =============================================================================
 class TunnelType(str, Enum):
     NATM = "NATM (아치형)"
@@ -63,6 +63,15 @@ class TunnelType(str, Enum):
     BOX = "개착 Box형"
 
 
+class CornerStyle(str, Enum):
+    NONE = "없음"
+    FILLET = "필렛 (R)"
+    CHAMFER = "사선 (/)"
+
+
+# =============================================================================
+# 데이터 모델
+# =============================================================================
 @dataclass
 class ArchParams:
     R1: float = 7.166
@@ -102,12 +111,22 @@ class TunnelParams:
     gap_L: float = 0.5
     gap_R: float = 0.5
 
+    # Box
     box_width: float = 8.0
     box_height: float = 6.5
     box_wall_t: float = 0.4
     box_slab_t: float = 0.4
+
+    box_style_top: CornerStyle = CornerStyle.FILLET
+    box_style_bot: CornerStyle = CornerStyle.NONE
+
     box_fillet_top_r: float = 0.0
     box_fillet_bot_r: float = 0.0
+
+    box_chamfer_top_dx: float = 0.4
+    box_chamfer_top_dy: float = 0.4
+    box_chamfer_bot_dx: float = 0.0
+    box_chamfer_bot_dy: float = 0.0
 
     @property
     def r1_angles(self) -> tuple[float, float]:
@@ -258,7 +277,7 @@ def find_extreme_x_on_arc(center, radius, start_deg, end_deg):
 
 
 # =============================================================================
-# 단일 아치 기하
+# 단일 아치
 # =============================================================================
 def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0) -> TunnelGeometry:
     center_top = (a.cx, a.R1_Y)
@@ -336,7 +355,7 @@ def arch_half_width(a: ArchParams) -> float:
     return max(abs(g.left_end[0] - a.cx), abs(g.right_end[0] - a.cx))
 
 
-def layout_2arch(arches: list[ArchParams], pillar_w: float) -> list[ArchParams]:
+def layout_2arch(arches, pillar_w):
     assert len(arches) == 2
     hw = arch_half_width(arches[0])
     offset = hw + pillar_w / 2
@@ -346,8 +365,7 @@ def layout_2arch(arches: list[ArchParams], pillar_w: float) -> list[ArchParams]:
     ]
 
 
-def layout_3arch(central: ArchParams, left: ArchParams, right: ArchParams,
-                 gap_L: float, gap_R: float) -> list[ArchParams]:
+def layout_3arch(central, left, right, gap_L, gap_R):
     hw_c = arch_half_width(central)
     hw_l = arch_half_width(left)
     hw_r = arch_half_width(right)
@@ -418,8 +436,7 @@ def fit_arch_R1_Y_to_FL(a: ArchParams, target_floor_y: float,
     target_left_end_y = target_floor_y + fl_to_culvert
 
     def f(R1_Y):
-        a_try = replace(a, R1_Y=R1_Y)
-        return compute_fl_for_arch(a_try) - target_left_end_y
+        return compute_fl_for_arch(replace(a, R1_Y=R1_Y)) - target_left_end_y
 
     lo, hi = bounds
     if f(lo) > 0 or f(hi) < 0:
@@ -453,16 +470,27 @@ def align_multi_arch_fl(p: TunnelParams,
 
 
 # =============================================================================
-# Box 계산
+# Box (필렛 / 사선 / 없음)
 # =============================================================================
-def _clamp_fillet(p: TunnelParams) -> TunnelParams:
-    max_r = min(p.box_width, p.box_height) / 2 - 0.05
-    max_r = max(0.0, max_r)
+def _clamp_box_corners(p: TunnelParams) -> TunnelParams:
+    B, H = p.box_width, p.box_height
+    max_r = max(0.0, min(B, H) / 2 - 0.05)
     r_top = min(p.box_fillet_top_r, max_r)
     r_bot = min(p.box_fillet_bot_r, max_r)
-    if r_top == p.box_fillet_top_r and r_bot == p.box_fillet_bot_r:
-        return p
-    return replace(p, box_fillet_top_r=r_top, box_fillet_bot_r=r_bot)
+
+    max_dx = max(0.0, B / 2 - 0.05)
+    max_dy = max(0.0, H / 2 - 0.05)
+    cht_dx = min(p.box_chamfer_top_dx, max_dx)
+    cht_dy = min(p.box_chamfer_top_dy, max_dy)
+    chb_dx = min(p.box_chamfer_bot_dx, max_dx)
+    chb_dy = min(p.box_chamfer_bot_dy, max_dy)
+
+    return replace(
+        p,
+        box_fillet_top_r=r_top, box_fillet_bot_r=r_bot,
+        box_chamfer_top_dx=cht_dx, box_chamfer_top_dy=cht_dy,
+        box_chamfer_bot_dx=chb_dx, box_chamfer_bot_dy=chb_dy,
+    )
 
 
 def _fillet_corner(corner, prev, nxt, r, num_pts=20):
@@ -494,27 +522,116 @@ def _fillet_corner(corner, prev, nxt, r, num_pts=20):
              for a in angles], p1, p2)
 
 
+def _chamfer_corner_signed(corner,
+                           sx_x: int, sx_y: int,
+                           sy_x: int, sy_y: int,
+                           dx: float, dy: float):
+    """
+    corner에서 'x축 방향으로 dx, y축 방향으로 dy' 만큼 절단.
+    - (sx_x, sx_y) : 첫 번째 절단점의 부호 (예: 우측이면 (1, 0), 하단이면 (0, -1))
+    - (sy_x, sy_y) : 두 번째 절단점의 부호
+    - dx, dy       : 각 축 방향 절단 거리 (항상 양수)
+
+    반환: (p1, p2) — 코너를 대체할 두 점
+    """
+    if dx <= 0 or dy <= 0:
+        return None
+
+    cx, cy = corner
+
+    # 첫 번째 절단점: (sx_x, sx_y) 방향으로
+    if sx_x != 0:
+        p1 = (cx + sx_x * dx, cy)
+    else:
+        p1 = (cx, cy + sx_y * dy)
+
+    # 두 번째 절단점: (sy_x, sy_y) 방향으로
+    if sy_x != 0:
+        p2 = (cx + sy_x * dx, cy)
+    else:
+        p2 = (cx, cy + sy_y * dy)
+
+    return p1, p2
+
+
 def _box_inner_polygon(p: TunnelParams) -> list[tuple[float, float]]:
     B, H = p.box_width, p.box_height
-    r_top, r_bot = p.box_fillet_top_r, p.box_fillet_bot_r
     x_L, x_R = -B / 2, B / 2
     y_B, y_T = p.FL, p.FL + H
-    corners = [
-        ((x_L, y_B), (x_R, y_B), (x_L, y_T), r_bot),
-        ((x_R, y_B), (x_L, y_B), (x_R, y_T), r_bot),
-        ((x_R, y_T), (x_R, y_B), (x_L, y_T), r_top),
-        ((x_L, y_T), (x_L, y_B), (x_R, y_T), r_top),
-    ]
+
     pts: list[tuple[float, float]] = []
-    for corner, prev, nxt, r in corners:
-        arc_pts, _, _ = _fillet_corner(corner, prev, nxt, r)
+
+    # ==========================================
+    # 1. LB (좌하단) : 위에서 내려와서 오른쪽으로 나감
+    # ==========================================
+    if p.box_style_bot == CornerStyle.CHAMFER:
+        dx, dy = p.box_chamfer_bot_dx, p.box_chamfer_bot_dy
+        if dx > 0 and dy > 0:
+            pts.extend([(x_L, y_B + dy), (x_L + dx, y_B)])  # ⬆️ -> ➡️
+        else:
+            pts.append((x_L, y_B))
+    elif p.box_style_bot == CornerStyle.FILLET:
+        arc_pts, _, _ = _fillet_corner(
+            (x_L, y_B), (x_R, y_B), (x_L, y_T), p.box_fillet_bot_r)
         pts.extend(arc_pts)
+    else:
+        pts.append((x_L, y_B))
+
+    # ==========================================
+    # 2. RB (우하단) : 왼쪽에서 들어와서 위로 올라감
+    # ==========================================
+    if p.box_style_bot == CornerStyle.CHAMFER:
+        dx, dy = p.box_chamfer_bot_dx, p.box_chamfer_bot_dy
+        if dx > 0 and dy > 0:
+            pts.extend([(x_R - dx, y_B), (x_R, y_B + dy)])  # ⬅️ -> ⬆️
+        else:
+            pts.append((x_R, y_B))
+    elif p.box_style_bot == CornerStyle.FILLET:
+        arc_pts, _, _ = _fillet_corner(
+            (x_R, y_B), (x_L, y_B), (x_R, y_T), p.box_fillet_bot_r)
+        pts.extend(arc_pts)
+    else:
+        pts.append((x_R, y_B))
+
+    # ==========================================
+    # 3. RT (우상단) : 아래에서 올라와서 왼쪽으로 나감
+    # ==========================================
+    if p.box_style_top == CornerStyle.CHAMFER:
+        dx, dy = p.box_chamfer_top_dx, p.box_chamfer_top_dy
+        if dx > 0 and dy > 0:
+            pts.extend([(x_R, y_T - dy), (x_R - dx, y_T)])  # ⬇️ -> ⬅️
+        else:
+            pts.append((x_R, y_T))
+    elif p.box_style_top == CornerStyle.FILLET:
+        arc_pts, _, _ = _fillet_corner(
+            (x_R, y_T), (x_R, y_B), (x_L, y_T), p.box_fillet_top_r)
+        pts.extend(arc_pts)
+    else:
+        pts.append((x_R, y_T))
+
+    # ==========================================
+    # 4. LT (좌상단) : 오른쪽에서 들어와서 아래로 내려감
+    # ==========================================
+    if p.box_style_top == CornerStyle.CHAMFER:
+        dx, dy = p.box_chamfer_top_dx, p.box_chamfer_top_dy
+        if dx > 0 and dy > 0:
+            pts.extend([(x_L + dx, y_T), (x_L, y_T - dy)])  # ➡️ -> ⬇️
+        else:
+            pts.append((x_L, y_T))
+    elif p.box_style_top == CornerStyle.FILLET:
+        arc_pts, _, _ = _fillet_corner(
+            (x_L, y_T), (x_L, y_B), (x_R, y_T), p.box_fillet_top_r)
+        pts.extend(arc_arcs if 'arc_arcs' in locals() else arc_pts)
+    else:
+        pts.append((x_L, y_T))
+
+    # 폴리곤 닫기
     pts.append(pts[0])
     return pts
 
 
 def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
-    p = _clamp_fillet(p)
+    p = _clamp_box_corners(p)
     B, H = p.box_width, p.box_height
     tw, ts = p.box_wall_t, p.box_slab_t
     x_L, x_R = -B / 2, B / 2
@@ -529,13 +646,17 @@ def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
 
     fillet_arcs = []
     corners = [
-        ((x_L, y_B), (x_R, y_B), (x_L, y_T), p.box_fillet_bot_r),
-        ((x_R, y_B), (x_L, y_B), (x_R, y_T), p.box_fillet_bot_r),
-        ((x_R, y_T), (x_R, y_B), (x_L, y_T), p.box_fillet_top_r),
-        ((x_L, y_T), (x_L, y_B), (x_R, y_T), p.box_fillet_top_r),
+        ((x_L, y_B), (x_R, y_B), (x_L, y_T),
+         p.box_style_bot, p.box_fillet_bot_r),
+        ((x_R, y_B), (x_L, y_B), (x_R, y_T),
+         p.box_style_bot, p.box_fillet_bot_r),
+        ((x_R, y_T), (x_R, y_B), (x_L, y_T),
+         p.box_style_top, p.box_fillet_top_r),
+        ((x_L, y_T), (x_L, y_B), (x_R, y_T),
+         p.box_style_top, p.box_fillet_top_r),
     ]
-    for corner, prev, nxt, r in corners:
-        if r <= 0:
+    for corner, prev, nxt, style, r in corners:
+        if style != CornerStyle.FILLET or r <= 0:
             continue
         _, p1, p2 = _fillet_corner(corner, prev, nxt, r)
         up = _unit(corner, prev)
@@ -562,7 +683,7 @@ def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
 
 
 # =============================================================================
-# DXF HATCH 헬퍼
+# DXF HATCH
 # =============================================================================
 def add_hatch_for_polygon(msp, poly: Polygon, *,
                           color: int = 1,
@@ -571,7 +692,6 @@ def add_hatch_for_polygon(msp, poly: Polygon, *,
                           scale: float = 0.3,
                           alpha: int = 70,
                           layer: str = OVERLAP_LAYER):
-    """shapely Polygon을 DXF HATCH로 추가 (exterior + interiors)."""
     if poly.is_empty:
         return
     if poly.geom_type != "Polygon":
@@ -617,8 +737,7 @@ class FitHistory:
         self.entries: list[FitHistoryEntry] = []
         self.max_size = max_size
 
-    def add(self, p: TunnelParams, R1_Y_prev: float,
-            achieved_FL: float, success: bool) -> FitHistoryEntry:
+    def add(self, p, R1_Y_prev, achieved_FL, success):
         e = FitHistoryEntry(
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             target_FL=p.FL, achieved_FL=achieved_FL,
@@ -632,7 +751,7 @@ class FitHistory:
             self.entries.pop(0)
         return e
 
-    def to_csv(self, path: str):
+    def to_csv(self, path):
         if not self.entries:
             raise ValueError("저장할 이력이 없습니다.")
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
@@ -647,8 +766,7 @@ class SnapshotStore:
         self.entries: list[SnapshotEntry] = []
         self.max_size = max_size
 
-    def add(self, p: TunnelParams, total_area: float,
-            note: str = "") -> SnapshotEntry:
+    def add(self, p, total_area, note=""):
         e = SnapshotEntry(
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             kind=p.kind.value, total_area=total_area, note=note,
@@ -663,22 +781,28 @@ class SnapshotStore:
     def _serialize(p: TunnelParams) -> dict:
         d = asdict(p)
         d["kind"] = p.kind.value
+        d["box_style_top"] = p.box_style_top.value
+        d["box_style_bot"] = p.box_style_bot.value
         return d
 
     @staticmethod
     def deserialize(payload: dict) -> TunnelParams:
         data = dict(payload)
         data["kind"] = TunnelType(data["kind"])
+        if "box_style_top" in data and isinstance(data["box_style_top"], str):
+            data["box_style_top"] = CornerStyle(data["box_style_top"])
+        if "box_style_bot" in data and isinstance(data["box_style_bot"], str):
+            data["box_style_bot"] = CornerStyle(data["box_style_bot"])
         arches = data.get("arches") or []
         data["arches"] = [ArchParams(**a) for a in arches]
         return TunnelParams(**data)
 
-    def to_json(self, path: str):
+    def to_json(self, path):
         with open(path, "w", encoding="utf-8") as f:
             json.dump([asdict(e) for e in self.entries], f,
                       ensure_ascii=False, indent=2)
 
-    def from_json(self, path: str):
+    def from_json(self, path):
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         self.entries = [SnapshotEntry(**r) for r in raw]
@@ -819,12 +943,11 @@ class TunnelApp:
         self._suspend = False
 
         self.root = tk.Tk()
-        self.root.title("터널 단면 작도기")
-        self.root.geometry("1380x940")
-        self.root.minsize(1180, 800)
+        self.root.title("터널 단면 작도기 v6")
+        self.root.geometry("1380x960")
+        self.root.minsize(1180, 820)
         setup_style(self.root)
 
-        # 옵션 상태
         self.auto_avoid_overlap = tk.BooleanVar(value=False)
         self.hatch_style = tk.StringVar(value=HATCH_STYLE_SOLID)
 
@@ -877,7 +1000,6 @@ class TunnelApp:
                                     anchor="w", justify="left")
         self.spec_label.pack(fill="x", pady=(0, 8))
 
-        # ---- 옵션 그룹 ----
         opts = ttk.LabelFrame(parent, text="  옵션  ", padding=8)
         opts.pack(fill="x", pady=(0, 8))
         ttk.Checkbutton(opts, text="겹침 자동 방지 (슬라이더 조작 시)",
@@ -895,7 +1017,6 @@ class TunnelApp:
                             variable=self.hatch_style
                             ).pack(side="left", padx=(0, 6))
 
-        # ---- 액션 ----
         act = ttk.Frame(parent)
         act.pack(fill="x", pady=(0, 6))
         act.columnconfigure((0, 1), weight=1)
@@ -975,19 +1096,17 @@ class TunnelApp:
             self.rows[attr] = row
 
     def _build_box_editor(self):
-        shape = [
-            ("내공 폭 B",     "box_width",        2.0, 25.0, 0.01, "m", 2),
-            ("내공 높이 H",   "box_height",       2.0, 20.0, 0.01, "m", 2),
-            ("벽체 두께 tw",  "box_wall_t",       0.1,  2.0, 0.01, "m", 3),
-            ("슬래브 두께 ts", "box_slab_t",       0.1,  2.0, 0.01, "m", 3),
-            ("상단 필렛 R",   "box_fillet_top_r", 0.0,  3.0, 0.01, "m", 3),
-            ("하단 필렛 R",   "box_fillet_bot_r", 0.0,  3.0, 0.01, "m", 3),
+        base = [
+            ("내공 폭 B",     "box_width",   2.0, 25.0, 0.01, "m", 2),
+            ("내공 높이 H",   "box_height",  2.0, 20.0, 0.01, "m", 2),
+            ("벽체 두께 tw",  "box_wall_t",  0.1,  2.0, 0.01, "m", 3),
+            ("슬래브 두께 ts", "box_slab_t",  0.1,  2.0, 0.01, "m", 3),
         ]
         dim = [
             ("선로 중심간격", "D",  0.0, 30.0, 0.01, "m", 2),
             ("바닥 FL",       "FL", -5.0, 10.0, 0.01, "m", 3),
         ]
-        for i, (label, attr, lo, hi, res, unit, dec) in enumerate(shape):
+        for i, (label, attr, lo, hi, res, unit, dec) in enumerate(base):
             row = ParamRow(self.shape_group, label=label, attr=attr,
                            lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
                            on_change=self._on_param_change,
@@ -1000,6 +1119,74 @@ class TunnelApp:
                            on_change=self._on_param_change,
                            initial=getattr(self.params, attr))
             row.frame.grid(row=i, column=0, sticky="ew", pady=2)
+            self.rows[attr] = row
+
+        # 상단 모서리
+        top_box = ttk.LabelFrame(self.shape_group,
+                                 text="  상단 모서리  ", padding=6)
+        top_box.grid(row=len(base), column=0, sticky="ew", pady=(6, 2))
+        top_box.columnconfigure(0, weight=1)
+
+        self.style_top_var = tk.StringVar(value=self.params.box_style_top.value)
+        style_row_t = ttk.Frame(top_box, style="Card.TFrame")
+        style_row_t.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        for cs in CornerStyle:
+            ttk.Radiobutton(style_row_t, text=cs.value, value=cs.value,
+                            variable=self.style_top_var,
+                            command=self._on_box_style_change
+                            ).pack(side="left", padx=(0, 8))
+
+        row_r_t = ParamRow(top_box, label="필렛 R",
+                           attr="box_fillet_top_r",
+                           lo=0.0, hi=3.0, res=0.01, unit="m", decimals=3,
+                           on_change=self._on_param_change,
+                           initial=self.params.box_fillet_top_r)
+        row_r_t.frame.grid(row=1, column=0, sticky="ew")
+        self.rows["box_fillet_top_r"] = row_r_t
+
+        ch_row_t = ttk.Frame(top_box, style="Card.TFrame")
+        ch_row_t.grid(row=2, column=0, sticky="ew")
+        for label, attr, init in (
+                ("사선 dx", "box_chamfer_top_dx", self.params.box_chamfer_top_dx),
+                ("사선 dy", "box_chamfer_top_dy", self.params.box_chamfer_top_dy)):
+            row = ParamRow(ch_row_t, label=label, attr=attr,
+                           lo=0.0, hi=3.0, res=0.01, unit="m", decimals=3,
+                           on_change=self._on_param_change, initial=init)
+            row.frame.pack(fill="x", pady=1)
+            self.rows[attr] = row
+
+        # 하단 모서리
+        bot_box = ttk.LabelFrame(self.shape_group,
+                                 text="  하단 모서리  ", padding=6)
+        bot_box.grid(row=len(base) + 1, column=0, sticky="ew", pady=(6, 2))
+        bot_box.columnconfigure(0, weight=1)
+
+        self.style_bot_var = tk.StringVar(value=self.params.box_style_bot.value)
+        style_row_b = ttk.Frame(bot_box, style="Card.TFrame")
+        style_row_b.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        for cs in CornerStyle:
+            ttk.Radiobutton(style_row_b, text=cs.value, value=cs.value,
+                            variable=self.style_bot_var,
+                            command=self._on_box_style_change
+                            ).pack(side="left", padx=(0, 8))
+
+        row_r_b = ParamRow(bot_box, label="필렛 R",
+                           attr="box_fillet_bot_r",
+                           lo=0.0, hi=3.0, res=0.01, unit="m", decimals=3,
+                           on_change=self._on_param_change,
+                           initial=self.params.box_fillet_bot_r)
+        row_r_b.frame.grid(row=1, column=0, sticky="ew")
+        self.rows["box_fillet_bot_r"] = row_r_b
+
+        ch_row_b = ttk.Frame(bot_box, style="Card.TFrame")
+        ch_row_b.grid(row=2, column=0, sticky="ew")
+        for label, attr, init in (
+                ("사선 dx", "box_chamfer_bot_dx", self.params.box_chamfer_bot_dx),
+                ("사선 dy", "box_chamfer_bot_dy", self.params.box_chamfer_bot_dy)):
+            row = ParamRow(ch_row_b, label=label, attr=attr,
+                           lo=0.0, hi=3.0, res=0.01, unit="m", decimals=3,
+                           on_change=self._on_param_change, initial=init)
+            row.frame.pack(fill="x", pady=1)
             self.rows[attr] = row
 
     def _build_multi_arch_editor(self):
@@ -1054,6 +1241,11 @@ class TunnelApp:
             return
         self.update_plot()
 
+    def _on_box_style_change(self):
+        self.params.box_style_top = CornerStyle(self.style_top_var.get())
+        self.params.box_style_bot = CornerStyle(self.style_bot_var.get())
+        self.update_plot()
+
     # ---------------------------------------------------------------
     def _on_type_change(self):
         new_kind = TunnelType(self.type_var.get())
@@ -1080,7 +1272,7 @@ class TunnelApp:
         self._update_action_buttons(new_kind)
         self.update_plot()
 
-    def _update_action_buttons(self, kind: TunnelType):
+    def _update_action_buttons(self, kind):
         if kind == TunnelType.NATM:
             self.btn_auto_fit.grid()
         else:
@@ -1209,9 +1401,9 @@ class TunnelApp:
         self.update_plot()
 
     def _maybe_auto_avoid(self) -> bool:
-        """auto_avoid_overlap가 켜져 있고 겹침 있으면 보정 후 True."""
         if (not self.auto_avoid_overlap.get()
-                or self.params.kind not in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH)):
+                or self.params.kind not in (TunnelType.NATM_2ARCH,
+                                            TunnelType.NATM_3ARCH)):
             return False
         return self._auto_fix_overlap()
 
@@ -1222,16 +1414,15 @@ class TunnelApp:
             info = check_multi_arch_overlap(mg)
             if not info.has_overlap:
                 break
-            margin = 0.01
-            need = -info.min_gap + margin
+            need = -info.min_gap + 0.01
             if self.params.kind == TunnelType.NATM_2ARCH:
                 self.params.pillar_w += need
-                if "pillar_w" in self.rows:
-                    self._suspend = True
-                    try:
+                self._suspend = True
+                try:
+                    if "pillar_w" in self.rows:
                         self.rows["pillar_w"].set_value(self.params.pillar_w)
-                    finally:
-                        self._suspend = False
+                finally:
+                    self._suspend = False
             else:
                 self.params.gap_L += need / 2
                 self.params.gap_R += need / 2
@@ -1335,7 +1526,8 @@ class TunnelApp:
             "자동 맞춤 완료",
             f"R1_Y  = {r1_y_opt:.4f}  (Δ {entry.dR1_Y:+.4f})\n"
             f"FL     = {achieved:.4f}  (목표 {target})\n"
-            f"이력 {len(self.history.entries)}건 / 스냅샷 {len(self.snapshots.entries)}건")
+            f"이력 {len(self.history.entries)}건 / "
+            f"스냅샷 {len(self.snapshots.entries)}건")
 
     # ---------------------------------------------------------------
     def _on_shortcut_align(self):
@@ -1373,7 +1565,8 @@ class TunnelApp:
         self._suspend = True
         try:
             for i, new_y in enumerate(result.new_R1Y):
-                self.params.arches[i] = replace(self.params.arches[i], R1_Y=new_y)
+                self.params.arches[i] = replace(self.params.arches[i],
+                                                R1_Y=new_y)
             for i, rows in enumerate(self.arch_rows):
                 if "R1_Y" in rows:
                     rows["R1_Y"].set_value(result.new_R1Y[i])
@@ -1390,7 +1583,8 @@ class TunnelApp:
             f"기준: {labels[ref_idx]}  (FL = {result.target_FL:.4f} m)\n"
             + "\n".join(
                 f"  {result.labels[i]}: R1_Y {result.old_R1Y[i]:.3f} → "
-                f"{result.new_R1Y[i]:.3f}  (Δ {result.new_R1Y[i] - result.old_R1Y[i]:+.3f})"
+                f"{result.new_R1Y[i]:.3f}  "
+                f"(Δ {result.new_R1Y[i] - result.old_R1Y[i]:+.3f})"
                 for i in range(len(result.labels))))
 
     def _ask_reference_arch(self, labels, default_idx=0) -> Optional[int]:
@@ -1419,13 +1613,16 @@ class TunnelApp:
 
         btns = ttk.Frame(win, padding=(16, 8, 16, 12))
         btns.pack(fill="x")
-        ttk.Button(btns, text="취소", command=win.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="취소",
+                   command=win.destroy).pack(side="right", padx=(6, 0))
         ttk.Button(btns, text="확인", style="Accent.TButton",
                    command=on_ok).pack(side="right")
 
         win.update_idletasks()
-        x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - win.winfo_width() // 2
-        y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - win.winfo_height() // 2
+        x = (self.root.winfo_rootx() + self.root.winfo_width() // 2
+             - win.winfo_width() // 2)
+        y = (self.root.winfo_rooty() + self.root.winfo_height() // 2
+             - win.winfo_height() // 2)
         win.geometry(f"+{x}+{y}")
         self.root.wait_window(win)
         return result["idx"]
@@ -1462,14 +1659,17 @@ class TunnelApp:
         result = {"ok": False}
         btns = ttk.Frame(win, padding=(12, 0, 12, 12))
         btns.pack(fill="x", side="bottom")
-        ttk.Button(btns, text="취소", command=win.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="취소",
+                   command=win.destroy).pack(side="right", padx=(6, 0))
         ttk.Button(btns, text="적용", style="Accent.TButton",
                    command=lambda: (result.update(ok=True), win.destroy())
                    ).pack(side="right")
 
         win.update_idletasks()
-        x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - win.winfo_width() // 2
-        y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - win.winfo_height() // 2
+        x = (self.root.winfo_rootx() + self.root.winfo_width() // 2
+             - win.winfo_width() // 2)
+        y = (self.root.winfo_rooty() + self.root.winfo_height() // 2
+             - win.winfo_height() // 2)
         win.geometry(f"+{x}+{y}")
         self.root.wait_window(win)
         return result["ok"]
@@ -1490,8 +1690,6 @@ class TunnelApp:
             f"겹침 면적 합: {total:.2f}㎡\n\n"
             f"그래도 {action_name}을(를) 계속할까요?")
 
-    # ---------------------------------------------------------------
-    # FL 이력
     # ---------------------------------------------------------------
     def _refresh_history_view(self):
         for i in self.hist_tree.get_children():
@@ -1549,8 +1747,6 @@ class TunnelApp:
             self.history.entries.clear()
             self._refresh_history_view()
 
-    # ---------------------------------------------------------------
-    # 제원 스냅샷
     # ---------------------------------------------------------------
     def take_snapshot(self, auto: bool = False, note: str = ""):
         if not auto and not self._guard_overlap("스냅샷 저장"):
@@ -1721,7 +1917,7 @@ class TunnelApp:
                                  theta2=e.dxf.end_angle, color='g'))
 
     # ---------- 단일 NATM ----------
-    def _draw_tunnel(self, g: TunnelGeometry, p: TunnelParams):
+    def _draw_tunnel(self, g, p):
         ax = self.ax
         a_left, a_right = g.a.r1_angles
 
@@ -1998,15 +2194,32 @@ class TunnelApp:
             ax.add_patch(Arc(center, 2 * r, 2 * r, angle=0,
                              theta1=a1, theta2=a2, color='#d64545', lw=1.2))
 
-        if p.box_fillet_top_r > 0:
+        # 필렛 라벨
+        if (p.box_style_top == CornerStyle.FILLET
+                and p.box_fillet_top_r > 0):
             ax.text(g.cx_right - p.box_fillet_top_r - 0.35,
                     g.ceiling_y - p.box_fillet_top_r - 0.35,
                     f'R{p.box_fillet_top_r * 1000:.0f}',
                     fontsize=8, color='#d64545')
-        if p.box_fillet_bot_r > 0:
+        if (p.box_style_bot == CornerStyle.FILLET
+                and p.box_fillet_bot_r > 0):
             ax.text(g.cx_right - p.box_fillet_bot_r - 0.35,
                     g.floor_y + p.box_fillet_bot_r + 0.15,
                     f'R{p.box_fillet_bot_r * 1000:.0f}',
+                    fontsize=8, color='#d64545')
+
+        # 사선 라벨
+        if p.box_style_top == CornerStyle.CHAMFER:
+            ax.text(g.cx_right - p.box_chamfer_top_dx - 0.2,
+                    g.ceiling_y - p.box_chamfer_top_dy - 0.2,
+                    f'{p.box_chamfer_top_dx * 1000:.0f}×'
+                    f'{p.box_chamfer_top_dy * 1000:.0f}',
+                    fontsize=8, color='#d64545')
+        if p.box_style_bot == CornerStyle.CHAMFER:
+            ax.text(g.cx_right - p.box_chamfer_bot_dx - 0.2,
+                    g.floor_y + p.box_chamfer_bot_dy + 0.15,
+                    f'{p.box_chamfer_bot_dx * 1000:.0f}×'
+                    f'{p.box_chamfer_bot_dy * 1000:.0f}',
                     fontsize=8, color='#d64545')
 
         y_dim = g.top_of_tunnel + 0.5
@@ -2054,14 +2267,25 @@ class TunnelApp:
     def _update_box_spec_panel(self, g):
         p = g.p
         concrete = g.outer_area - g.inner_area
-        fillet_txt = (f"R_top {p.box_fillet_top_r * 1000:.0f}mm"
-                      if p.box_fillet_top_r > 0 else "상단 필렛 없음")
+
+        def style_txt(style, r, dx, dy):
+            if style == CornerStyle.FILLET and r > 0:
+                return f"R{r * 1000:.0f}"
+            if style == CornerStyle.CHAMFER and dx > 0 and dy > 0:
+                return f"{dx * 1000:.0f}×{dy * 1000:.0f}"
+            return "직각"
+
+        top_txt = style_txt(p.box_style_top, p.box_fillet_top_r,
+                            p.box_chamfer_top_dx, p.box_chamfer_top_dy)
+        bot_txt = style_txt(p.box_style_bot, p.box_fillet_bot_r,
+                            p.box_chamfer_bot_dx, p.box_chamfer_bot_dy)
+
         self.spec_label.config(text=(
             f"내공면적 {g.inner_area:.2f}㎡  |  콘크리트 {concrete:.2f}㎡  |  "
             f"B {p.box_width:.2f} × H {p.box_height:.2f}m\n"
             f"tw {p.box_wall_t * 1000:.0f}mm  |  "
             f"ts {p.box_slab_t * 1000:.0f}mm  |  "
-            f"{fillet_txt}  |  SL {g.SL:.2f}m"))
+            f"상단 {top_txt}  |  하단 {bot_txt}  |  SL {g.SL:.2f}m"))
 
     # ---------------------------------------------------------------
     # DXF
@@ -2163,7 +2387,6 @@ class TunnelApp:
                                       scale=0.3, alpha=70,
                                       layer=OVERLAP_LAYER)
 
-            # 외곽선 폴리라인
             polys = ([inter] if inter.geom_type == "Polygon"
                      else list(getattr(inter, "geoms", [])))
             for poly in polys:
