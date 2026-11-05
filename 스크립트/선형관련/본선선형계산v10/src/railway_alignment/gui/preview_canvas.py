@@ -112,18 +112,18 @@ class PreviewCanvas(ttk.Frame):
 
         # 1) 선형 본체
         if element_points and len(element_points) >= 2:
-            xs = [p[0] for p in element_points]
-            ys = [p[1] for p in element_points]
+            xs = [p[1] for p in element_points]
+            ys = [p[0] for p in element_points]
             self.ax.plot(xs, ys, "-", color="tab:blue", lw=1.5, label="선형")
         elif ip_points and len(ip_points) >= 2:
-            xs = [p[0] for p in ip_points]
-            ys = [p[1] for p in ip_points]
+            xs = [p[1] for p in ip_points]
+            ys = [p[0] for p in ip_points]
             self.ax.plot(
                 xs, ys, "--", color="tab:gray", lw=1.0, label="IP 연결(참고)"
             )
 
         # 2) IP 마커 + 라벨
-        for idx, (x, y) in enumerate(ip_points):
+        for idx, (y, x) in enumerate(ip_points):
             marker, = self.ax.plot(
                 x, y, "o", color="tab:red", markersize=7
             )
