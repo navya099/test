@@ -581,10 +581,15 @@ class AlignmentService:
             alignment[i + 1][2] = r
 
         # 4) 궤도별 파라미터: M/V/Z는 CL 상속
-        parameters = [[c.m, c.z, c.v] for c in result.curves]
-
-        # 5) 타입 override 상속
+        # _calc_one_track 내부
         type_overrides = dict(input_data.type_overrides) if input_data.type_overrides else {}
+        # ✅ CL straight IP → 궤도에서도 straight 유지
+        for curve in result.curves:
+            if curve.curve_type == "straight":
+                type_overrides[curve.ip_no] = "straight"
+
+        parameters = [[c.m, c.z, c.v] for c in result.curves]  # CL 상속
+
 
         # 6) 계산
         linestring = create_linestring(alignment)

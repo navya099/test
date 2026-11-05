@@ -248,8 +248,18 @@ def calculate_curve(
 
         rc = radius_list[i]
         m, z, v = parameters[i]
-        # ✅ R=0: 직선 IP (곡선 없음, 꺾임만)
-        if rc == 0:
+
+        # ✅ type_overrides 우선 체크 → dictionary_cubicparabola 스킵
+        if ip_no in type_overrides:
+            curve_type = type_overrides[ip_no]
+        elif rc == 0:
+            curve_type = "straight"
+        else:
+            not_spiral_min = dictionary_cubicparabola(v) if v > 0 else 0.0
+            curve_type = "simplecurve" if rc >= not_spiral_min else "cubic"
+
+        # ✅ R=0 또는 type_overrides="straight"인 IP는 곡선 없이 처리
+        if curve_type == "straight":
             direction = find_direction(rc, h1, h2)
             curvedir = "RIGHT CURVE" if direction == 1 else "LEFT CURVE"
 
@@ -264,8 +274,8 @@ def calculate_curve(
                 m=0, z=0, v=0, params=[0.0],
                 o_pc_bearing=h1, sp_pc_bearing=h1,
                 theta_pc=0.0, ip_sta=ip_sta,
-                ps_xy=ep_xy if is_last_ip else ip_xy,  # ✅ 여기에 EP 저장!
-                ep_xy=ep_xy if is_last_ip else None,  # ✅ 이 줄 추가
+                ps_xy=ep_xy if is_last_ip else ip_xy,
+                ep_xy=ep_xy if is_last_ip else None,
             )
             curves.append(curve)
 
@@ -287,13 +297,6 @@ def calculate_curve(
             prev_end_xy = ip_xy
             prev_tl = 0.0
             continue
-        not_spiral_min = dictionary_cubicparabola(v)
-
-        # 곡선 타입 결정 (오버라이드 우선)
-        if ip_no in type_overrides:
-            curve_type = type_overrides[ip_no]
-        else:
-            curve_type = "simplecurve" if rc >= not_spiral_min else "cubic"
 
         direction = find_direction(rc, h1, h2)
         curvedir = "RIGHT CURVE" if direction == 1 else "LEFT CURVE"
