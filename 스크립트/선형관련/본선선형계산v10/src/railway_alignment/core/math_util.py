@@ -81,7 +81,10 @@ def get_station_label(
     eps: float = 1e-6,
 ) -> str:
     if curve_type == "straight":
-        return ""  # ✅ 직선 IP는 PI
+        # ✅ EP 지점이면 "EP"
+        if abs(station - ep) < eps:
+            return "EP"
+        return ""
     checks = [
         (sp, "BC" if curve_type == "simplecurve" else "SP"),
         (pc, "BC" if curve_type == "simplecurve" else "PC"),

@@ -122,11 +122,19 @@ class CubicStationListBuilder(StationListBuilder):
 
         return self._finalize(stations)
 
+
 class StraightStationListBuilder(StationListBuilder):
-    """직선 IP: bp_sta, unit 배수, end_sta만"""
+    """직선 IP: 곡선 주요 지점 없음. BP + unit 배수 + IP sta."""
 
     def build(self) -> list[float]:
-        return self._finalize(self._base_stations())
+        stations = self._base_stations()
+
+        # ✅ [핵심 수정] 마지막 IP의 EP 지점(end_sta)이 부동소수점 오차나
+        # unit 배수 조건 때문에 누락되는 것을 방지하기 위해 무조건 강제 추가
+        if not stations or abs(stations[-1] - self.end_sta) > 1e-6:
+            stations.append(self.end_sta)
+
+        return self._finalize(stations)
 
 def create_station_list_builder(curve, bp_sta, end_sta, unit):
     if curve.curve_type == "simplecurve":
