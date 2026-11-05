@@ -79,7 +79,11 @@ class StationListBuilder(ABC):
         # 3) end_sta가 마지막 unit 배수 이후면 직접 포함
         if end_unit < self.end_sta - 1e-6:
             stations.append(self.end_sta)
-
+            # ✅ 디버그용 (임시)
+        import logging
+        if self.curve.curve_type == "straight" and getattr(self.curve, 'ip_no', 0) == 6:
+            logging.warning(
+                f"[DEBUG IP6] bp_sta={self.bp_sta}, end_sta={self.end_sta}, last_sta={stations[-1] if stations else None}")
         return stations
 
     def _finalize(self, stations: list[float]) -> list[float]:
@@ -124,14 +128,17 @@ class CubicStationListBuilder(StationListBuilder):
 
 
 class StraightStationListBuilder(StationListBuilder):
-    """직선 IP: 곡선 주요 지점 없음. BP + unit 배수 + IP sta."""
+    """직선 IP: 곡선 주요 지점 없음. BP + unit 배수 + IP sta + EP sta."""
 
     def build(self) -> list[float]:
         stations = self._base_stations()
 
-        # ✅ [핵심 수정] 마지막 IP의 EP 지점(end_sta)이 부동소수점 오차나
-        # unit 배수 조건 때문에 누락되는 것을 방지하기 위해 무조건 강제 추가
-        if not stations or abs(stations[-1] - self.end_sta) > 1e-6:
+        # ✅ 1. IP 지점(꺾이는 교점)을 무조건 포함시켜야 폴리라인이 정확히 꺾임
+        if not any(abs(s - self.curve.ip_sta) < 1e-6 for s in stations):
+            stations.append(self.curve.ip_sta)
+
+        # ✅ 2. EP 지점(마지막 측점)도 무조건 포함
+        if not any(abs(s - self.end_sta) < 1e-6 for s in stations):
             stations.append(self.end_sta)
 
         return self._finalize(stations)
@@ -318,9 +325,12 @@ def build_station_group(
         if abs(sta - bp_sta) < 1e-6:
             label = "BP"
             offset = 0.0
-        else:
+        else:# ✅ 직선(straight)인 경우 단순 거리 계산
             label = get_station_label(curve.curve_type, sta, *boundaries)
-            offset = calculate_station_offset(sta, *boundaries[:4], bp_sta)
+            if curve.curve_type == "straight":
+                offset = sta - bp_sta
+            else:
+                offset = calculate_station_offset(sta, *boundaries[:4], bp_sta)
 
         # 이정량
         shift = shift_calc.compute(sta, offset)
@@ -335,5 +345,12 @@ def _curve_boundaries(curve, end_sta):
     if curve.curve_type == "simplecurve":
         return (curve.bc_sta, curve.bc_sta, curve.ec_sta, curve.ec_sta, end_sta)
     if curve.curve_type == "straight":
-        return (end_sta, end_sta, end_sta, end_sta, end_sta)   # ✅
+        # ✅ 직선은 sp, pc, cp, ps를 모두 시작점(bp)과 동일하게 두지 않고,
+        # 그냥 IP 지점을 기준으로 잡습니다. (라벨 계산용)
+        # ep는 마지막 IP일 때만 end_sta, 아니면 None
+        is_last = end_sta > curve.ip_sta + 1e-6
+        ep = end_sta if is_last else None
+
+        # 경계값은 curve.ip_sta로 통일 (offset 계산 시 사용 안 함)
+        return (curve.ip_sta, curve.ip_sta, curve.ip_sta, curve.ip_sta, ep)
     return (curve.sp_sta, curve.pc_sta, curve.cp_sta, curve.ps_sta, end_sta)

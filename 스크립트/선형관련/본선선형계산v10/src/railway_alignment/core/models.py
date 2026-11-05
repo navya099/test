@@ -46,6 +46,9 @@ class CurveParams:
     bc_xy: Optional[tuple[float, float]] = None
     ec_xy: Optional[tuple[float, float]] = None
 
+    # ... 기존 필드 ...
+    ep_xy: tuple[float, float] | None = None  # ✅ 직선 IP의 EP 좌표용
+
     # 편의 프로퍼티
     @property
     def tl(self) -> float:

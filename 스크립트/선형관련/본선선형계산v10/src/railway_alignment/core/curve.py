@@ -264,6 +264,8 @@ def calculate_curve(
                 m=0, z=0, v=0, params=[0.0],
                 o_pc_bearing=h1, sp_pc_bearing=h1,
                 theta_pc=0.0, ip_sta=ip_sta,
+                ps_xy=ep_xy if is_last_ip else ip_xy,  # ✅ 여기에 EP 저장!
+                ep_xy=ep_xy if is_last_ip else None,  # ✅ 이 줄 추가
             )
             curves.append(curve)
 

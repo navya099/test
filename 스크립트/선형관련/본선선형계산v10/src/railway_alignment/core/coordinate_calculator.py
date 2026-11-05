@@ -128,17 +128,38 @@ class SimpleCurveCoordinateCalculator(CoordinateCalculator):
 # 직선 IP (R=0): BP~IP는 h1, IP~EP는 h2
 # ============================================================
 class StraightCoordinateCalculator(CoordinateCalculator):
-    """직선 IP: BP~IP 구간 h1, IP~EP 구간 h2."""
+    """직선 IP: BP~IP는 h1 방향, IP~EP는 h2 방향 (선형 보간 방식)."""
 
     def compute(self, sta: float, offset: float, geometry: CurveGeometry) -> CoordinateResult:
-        ip_sta = geometry.sp_sta   # straight에서 sp_sta = ip_sta
+        ip_sta = geometry.sp_sta
+        bp_sta = geometry.bp_sta
 
-        if sta <= ip_sta + 1e-6:
-            # BP ~ IP (h1, BP 기준)
-            return self._straight_from_bp(geometry.h1, offset, geometry.bp_xy)
-        # IP ~ EP (h2, IP 기준)
-        ip_offset = sta - ip_sta
-        return self._straight_from_bp(geometry.h2, ip_offset, geometry.sp_xy)
+        # 1. IP 교점과 정확히 일치하는 경우
+        if abs(sta - ip_sta) < 1e-4:
+            return CoordinateResult(x=geometry.sp_xy[0], y=geometry.sp_xy[1])
+
+        # 2. BP ~ IP 구간 (교점 이전)
+        if sta < ip_sta:
+            total_len = ip_sta - bp_sta
+            if total_len < 1e-6:
+                return CoordinateResult(x=geometry.sp_xy[0], y=geometry.sp_xy[1])
+            ratio = (sta - bp_sta) / total_len
+            x = geometry.bp_xy[0] + (geometry.sp_xy[0] - geometry.bp_xy[0]) * ratio
+            y = geometry.bp_xy[1] + (geometry.sp_xy[1] - geometry.bp_xy[1]) * ratio
+            return CoordinateResult(x=x, y=y)
+
+        # 3. IP ~ EP 구간 (교점 이후)
+        else:
+            ep_xy = geometry.ps_xy  # build_geometry_from_curve에서 마지막 IP일 때 EP 좌표가 들어감
+            import math
+            dist_ip_ep = math.hypot(ep_xy[0] - geometry.sp_xy[0], ep_xy[1] - geometry.sp_xy[1])
+            ip_offset = sta - ip_sta
+            if dist_ip_ep < 1e-6:
+                return CoordinateResult(x=ep_xy[0], y=ep_xy[1])
+            ratio = ip_offset / dist_ip_ep
+            x = geometry.sp_xy[0] + (ep_xy[0] - geometry.sp_xy[0]) * ratio
+            y = geometry.sp_xy[1] + (ep_xy[1] - geometry.sp_xy[1]) * ratio
+            return CoordinateResult(x=x, y=y)
 
 
 # ============================================================
@@ -190,6 +211,7 @@ def build_geometry_from_curve(
     curve, bp_xy, shiftx: float = 0.0, shifty: float = 0.0, bp_sta: float = 0.0,
 ) -> CurveGeometry:
     if curve.curve_type == "straight":
+        ep_xy = getattr(curve, "ep_xy", None) or curve.ip_xy
         return CurveGeometry(
             h1=curve.h1, h2=curve.h2,
             sp_pc_bearing=curve.h1,
@@ -199,7 +221,7 @@ def build_geometry_from_curve(
             bp_xy=bp_xy,
             sp_xy=curve.ip_xy,
             center_xy=(math.nan, math.nan),
-            ps_xy=curve.ip_xy,
+            ps_xy=ep_xy,  # ✅ 여기에 EP 좌표를 넣어야 IP~EP 보간 가능
             bp_sta=bp_sta,
         )
 

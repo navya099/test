@@ -77,14 +77,15 @@ def find_direction(radius: float, h1: float, h2: float) -> int:
 
 def get_station_label(
     curve_type: str, station: float,
-    sp: float, pc: float, cp: float, ps: float, ep: float,
+    sp: float, pc: float, cp: float, ps: float, ep: float | None,
     eps: float = 1e-6,
 ) -> str:
     if curve_type == "straight":
-        # ✅ EP 지점이면 "EP"
-        if abs(station - ep) < eps:
+        # ep가 None이면 중간 직선 IP이므로 EP를 반환하지 않음
+        if ep is not None and abs(station - ep) < eps:
             return "EP"
         return ""
+
     checks = [
         (sp, "BC" if curve_type == "simplecurve" else "SP"),
         (pc, "BC" if curve_type == "simplecurve" else "PC"),
@@ -93,7 +94,7 @@ def get_station_label(
         (ep, "EP"),
     ]
     for target, label in checks:
-        if abs(station - target) < eps:
+        if target is not None and abs(station - target) < eps: # ✅ target None 체크 추가
             return label
     return ""
 
