@@ -81,7 +81,7 @@ def get_station_label(
     eps: float = 1e-6,
 ) -> str:
     if curve_type == "straight":
-        return "PI"  # ✅ 직선 IP는 PI
+        return ""  # ✅ 직선 IP는 PI
     checks = [
         (sp, "BC" if curve_type == "simplecurve" else "SP"),
         (pc, "BC" if curve_type == "simplecurve" else "PC"),
