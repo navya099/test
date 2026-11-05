@@ -77,6 +77,14 @@ class DXFConfig:
     layer_curve_leader: LayerStyle = field(default_factory=lambda: LayerStyle("곡선인출선", 1))
     layer_curve_text: LayerStyle = field(default_factory=lambda: LayerStyle("곡선제원문자", 1))
 
+    # ✅ 복선 궤도 레이어
+    layer_upper_track: LayerStyle = field(
+        default_factory=lambda: LayerStyle("FL_하선", 3)  # 초록
+    )
+    layer_lower_track: LayerStyle = field(
+        default_factory=lambda: LayerStyle("FL_상선", 5)  # 파랑
+    )
+
     # ── 크기 (m, 절대값) ──
     text_height: float = 3.0
     km_symbol_radius: float = 2.0

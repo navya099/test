@@ -52,6 +52,10 @@ class ProjectData:
     # 도면 설정
     dxf_config: dict = field(default_factory=dict)
 
+    # 복선 옵션
+    double_track: bool = False
+    track_gauge: float = 4.3
+    track_swap_direction: bool = False
 
 def save_project(path: Path | str, data: ProjectData) -> Path:
     """프로젝트 저장"""
@@ -118,6 +122,9 @@ def load_project(path: Path | str) -> ProjectData:
                 for k, vv in (raw.get("parameter_overrides") or {}).items()
             },
             dxf_config=raw.get("dxf_config") or {},
+            double_track=bool(raw.get("double_track", False)),
+            track_gauge=float(raw.get("track_gauge", 4.3)),
+            track_swap_direction=bool(raw.get("track_swap_direction", False)),
         )
     except (KeyError, ValueError, TypeError) as e:
         raise ProjectIOError(f"프로젝트 스키마 오류: {e}") from e

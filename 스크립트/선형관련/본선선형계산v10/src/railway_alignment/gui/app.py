@@ -92,6 +92,29 @@ class MainWindow:
         ttk.Button(params, text="계산+저장", command=self._on_calculate_and_save).grid(
             row=0, column=11, padx=4
         )
+        ttk.Separator(params, orient="vertical").grid(row=0, column=13, sticky="ns", padx=8)
+
+        ttk.Label(params, text="복선").grid(row=0, column=14, padx=(4, 2))
+        self.double_track_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            params, text="지원",
+            variable=self.double_track_var,
+            command=self._on_double_track_toggle,
+        ).grid(row=0, column=15, padx=(0, 4))
+
+        ttk.Label(params, text="궤도 간격(m)").grid(row=0, column=16, padx=(4, 2))
+        self.entry_track_gauge = ttk.Entry(params, width=6)
+        self.entry_track_gauge.insert(0, "4.3")
+        self.entry_track_gauge.grid(row=0, column=17, padx=(0, 4))
+
+        ttk.Label(params, text="방향").grid(row=0, column=18, padx=(4, 2))
+        self.track_swap_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            params, text="좌/우 스왑",
+            variable=self.track_swap_var,
+            command=self._on_double_track_toggle,
+        ).grid(row=0, column=19, padx=(0, 4))
+
         ttk.Button(params, text="도면 설정", command=self._on_open_dxf_settings).grid(
             row=0, column=13, padx=(12, 4)
         )
@@ -207,12 +230,21 @@ class MainWindow:
             except (ValueError, tk.TclError):
                 return default
 
+        try:
+            track_gauge = float(self.entry_track_gauge.get())
+        except (ValueError, tk.TclError):
+            track_gauge = 4.3
+
         return AlignmentInput(
             raw_lines=self._raw_lines or [],
             unit=_int(self.entry_unit, Config.DEFAULT_UNIT),
             start_sta=_float(self.entry_start, Config.DEFAULT_START_STA),
             design_speed=_int(self.entry_speed, Config.DEFAULT_DESIGN_SPEED),
             ballast="자갈도상" if self.ballast_var.get() == 0 else "콘크리트도상",
+            # ✅ 아래 3줄이 반드시 있어야 합니다
+            double_track=self.double_track_var.get(),
+            track_gauge=track_gauge,
+            track_swap_direction=self.track_swap_var.get(),
             parameter_overrides=self.ip_table.get_parameter_overrides(),  # ✅
             type_overrides=self.ip_table.get_type_overrides(),
         )
@@ -478,10 +510,21 @@ class MainWindow:
             base = Config.DXF_FILENAME.rsplit(".", 1)[0]
             filename = f"{base}.dxf"  # ✅ scale 태그 없음
 
+            upper_track = (
+                self._result.upper_track_polycurve
+                if self._result and self._result.upper_track_polycurve else None
+            )
+            lower_track = (
+                self._result.lower_track_polycurve
+                if self._result and self._result.lower_track_polycurve else None
+            )
+
             path = self.service.export_dxf(
                 config=cfg,
                 unit=effective_unit,
                 filename=filename,
+                upper_track=upper_track,
+                lower_track=lower_track,
             )
             messagebox.showinfo("Success", f"도면 생성 완료:\n{path}")
         except NotImplementedError as e:
@@ -607,6 +650,9 @@ class MainWindow:
             type_overrides=dict(self.ip_table._type_overrides),
             parameter_overrides=self.ip_table.get_parameter_overrides(),
             dxf_config=self.service.dxf_config.to_dict(),
+            double_track=self.double_track_var.get(),
+            track_gauge=float(self.entry_track_gauge.get() or 4.3),
+            track_swap_direction=self.track_swap_var.get(),
         )
 
     def _apply_project_state(self, data: ProjectData) -> None:
@@ -644,6 +690,10 @@ class MainWindow:
         # 6) M/V/Z 오버라이드 복원
         self._restore_parameter_overrides(data.parameter_overrides)
         self._recalculate(save=False)
+
+        self.double_track_var.set(data.double_track)
+        self._set_entry(self.entry_track_gauge, str(data.track_gauge))
+        self.track_swap_var.set(data.track_swap_direction)
 
     def _set_entry(self, entry, value):
         entry.delete(0, "end")
@@ -738,3 +788,8 @@ class MainWindow:
     def _on_clear_recent(self):
         clear_recent_projects()
         self._refresh_recent_menu()
+
+    def _on_double_track_toggle(self) -> None:
+        """복선 체크/오프셋/스왑 변경 시 재계산."""
+        if self._raw_lines:
+            self._recalculate(save=False)

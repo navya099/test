@@ -64,6 +64,11 @@ class DxfStyle:
     @property
     def layer_curve_text(self): return self.config.layer_curve_text
 
+    @property
+    def layer_upper_track(self): return self.config.layer_upper_track
+
+    @property
+    def layer_lower_track(self): return self.config.layer_lower_track
 
 class PolylineBuilder:
     def __init__(self, msp, style: DxfStyle):
@@ -367,6 +372,8 @@ class DxfDocument:
             self.config.layer_sub_symbol, self.config.layer_km_text,
             self.config.layer_sub_text, self.config.layer_aux_station,
             self.config.layer_curve_leader, self.config.layer_curve_text,
+            self.config.layer_upper_track,
+            self.config.layer_lower_track,
         ):
             if lyr.name and lyr.name not in self.doc.layers:
                 self.doc.layers.new(
@@ -374,12 +381,25 @@ class DxfDocument:
                     dxfattribs={"color": lyr.color, "linetype": lyr.linetype},
                 )
 
-    def build(self, coordinates, linestring, curves, station_groups, unit):
+    def build(self, coordinates, linestring, curves, station_groups, unit, upper_track=None, lower_track=None):
         PolylineBuilder(self.msp, self.style).build(coordinates, linestring)
         IPBlockWriter(self.doc, self.msp, self.style).write(curves)
         StationSymbolWriter(self.msp, self.style, unit).write(station_groups, curves)
         linestring_math = CoordTransform.linestring_to_math(linestring)
         IPJunctionWriter(self.msp, self.style).write(linestring_math)
+
+        # ✅ 복선 궤도 폴리라인
+        if upper_track:
+            self._add_track_polyline(upper_track, self.config.layer_upper_track)
+        if lower_track:
+            self._add_track_polyline(lower_track, self.config.layer_lower_track)
+
+    def _add_track_polyline(self, track, lyr):
+        """궤도 폴리라인 추가 (토목 → 수학 좌표 변환)."""
+        track_math = [(y, x) for x, y in track]
+        poly = self.msp.add_lwpolyline(track_math)
+        poly.dxf.layer = lyr.name
+        poly.dxf.color = lyr.color
 
     def save(self, filename):
         return dxf_save_with_retry(self.doc, filename)
@@ -389,10 +409,15 @@ def create_dxf(
     coordinates, linestring, curves, station_groups, unit,
     filename: str = Config.DXF_FILENAME,
     config: DXFConfig | None = None,
+# ✅ 복선 궤도
+    upper_track: list[tuple[float, float]] | None = None,
+    lower_track: list[tuple[float, float]] | None = None,
     # ✅ scale 인자 완전 삭제
 ) -> None:
     doc = DxfDocument(config)
-    doc.build(coordinates, linestring, curves, station_groups, unit)
+    doc.build(coordinates, linestring, curves, station_groups, unit,
+              upper_track=upper_track, lower_track=lower_track,
+              )
     if not doc.save(filename):
         logger.error("DXF 저장 실패: %s", filename)
         raise IOError(f"DXF 저장 실패: {filename}")

@@ -52,6 +52,11 @@ class AlignmentInput:
     design_speed: int = Config.DEFAULT_DESIGN_SPEED
     ballast: str = "자갈도상"           # '자갈도상' | '콘크리트도상'
 
+    # ✅ 복선 옵션
+    double_track: bool = False
+    track_gauge: float = 4.3  # 궤도 간격 (m) — 내부에서 D/2 계산
+    track_swap_direction: bool = False  # 좌/우 스왑
+
     # ip_no(1-based) → {"m": mm아님 그대로, "v": int, "z": **mm**}
     # Z는 내부 계산 단위인 mm로 전달 (테이블에서 변환)
     parameter_overrides: dict[int, dict[str, float]] = field(default_factory=dict)
@@ -70,6 +75,13 @@ class AlignmentResult:
     curves: list = field(default_factory=list)             # list[CurveParams]
     station_groups: list = field(default_factory=list)     # list[list[list[StationRow]]]
     polycurve: list[tuple[float, float]] = field(default_factory=list)
+
+    # ✅ 복선 궤도 (오프셋 계산 결과)
+    track_gauge: float = 0.0
+    upper_track_polycurve: list[tuple[float, float]] = field(default_factory=list)  # 상선 (우측)
+    lower_track_polycurve: list[tuple[float, float]] = field(default_factory=list)  # 하선 (좌측)
+    upper_track_stations: list = field(default_factory=list)
+    lower_track_stations: list = field(default_factory=list)
 
     # 출력 파일 경로
     report_path: Optional[Path] = None
@@ -166,7 +178,7 @@ class AlignmentService:
         self.result = result
         return result
 
-    def export_dxf(self, filename=None, config=None, unit=None) -> Path:
+    def export_dxf(self, filename=None, config=None, unit=None, upper_track=None, lower_track=None) -> Path:
         """DXF 출력 (scale 인자 없음)."""
         if self.result.is_empty:
             raise AlignmentServiceError("먼저 선형 계산을 실행하세요.")
@@ -182,6 +194,8 @@ class AlignmentService:
             unit=unit or cfg.sub_tick,  # ✅ 서비스에서도 기본값 sub_tick
             filename=filename,
             config=cfg,
+            upper_track=upper_track,
+            lower_track=lower_track,
         )
         path = Config.ensure_output_dir() / filename
         self.result.dxf_path = path
@@ -330,7 +344,7 @@ class AlignmentService:
 
         issues = validate_curves(curves)
 
-        return AlignmentResult(
+        result = AlignmentResult(
             linestring=linestring,
             curves=curves,
             station_groups=station_groups,
@@ -341,6 +355,26 @@ class AlignmentService:
             design_speed=input_data.design_speed,
             ballast=input_data.ballast,
         )
+        # ✅ 복선 궤도 계산
+        logger.warning(
+            "[DEBUG _run_calculation] double_track=%s, track_gauge=%.2f",
+            input_data.double_track, input_data.track_gauge,
+        )
+        # ✅ 여기로 이동! (result 생성 직후)
+        if input_data.double_track and input_data.track_gauge > 0:
+            self._compute_track_offsets(
+                result,
+                gauge=input_data.track_gauge,
+                swap=input_data.track_swap_direction,
+            )
+            logger.warning(
+                "[DEBUG] 궤도 계산 후: upper=%d, lower=%d",
+                len(result.upper_track_polycurve),
+                len(result.lower_track_polycurve),
+            )
+        else:
+            logger.warning("[DEBUG] 복선 조건 미충족 → 궤도 계산 스킵")
+        return result
     # --------------------------------------------------------
     # 내부: 결과물 저장
     # --------------------------------------------------------
@@ -374,6 +408,74 @@ class AlignmentService:
             raise AlignmentServiceError(f"결과물 저장 실패: {e}") from e
 
 
+    def _compute_track_offsets(
+        self, result: AlignmentResult, gauge: float, swap: bool = False,
+    ) -> None:
+        """CL 측점에서 상선/하선 궤도 좌표 계산 (단순 오프셋).
+
+        - 하선: CL 진행 방향 기준 좌측 (ta + 90°)
+        - 상선: CL 진행 방향 기준 우측 (ta - 90°)
+        - 오프셋 = gauge / 2
+        """
+        import math
+        from src.railway_alignment.core.models import StationRow
+
+        offset = gauge / 2.0
+        upper_poly: list[tuple[float, float]] = []
+        lower_poly: list[tuple[float, float]] = []
+        upper_stations: list[StationRow] = []
+        lower_stations: list[StationRow] = []
+
+        for group in result.station_groups:
+            for subgroup in group:
+                for row in subgroup:
+                    x, y = row.coord
+                    ta_deg = row.ta
+
+                    # 하선(좌측): ta + 90°
+                    # 상선(우측): ta - 90°
+                    bearing_lower = math.radians(ta_deg + 90)
+                    bearing_upper = math.radians(ta_deg - 90)
+
+                    x_lower = x + offset * math.cos(bearing_lower)
+                    y_lower = y + offset * math.sin(bearing_lower)
+                    x_upper = x + offset * math.cos(bearing_upper)
+                    y_upper = y + offset * math.sin(bearing_upper)
+
+                    if swap:
+                        x_lower, x_upper = x_upper, x_lower
+                        y_lower, y_upper = y_upper, y_lower
+
+                    lower_poly.append((x_lower, y_lower))
+                    upper_poly.append((x_upper, y_upper))
+
+                    lower_stations.append(StationRow(
+                        label=row.label, sta=row.sta,
+                        station_offset=row.station_offset,
+                        coord=(x_lower, y_lower),
+                        shiftx=row.shiftx, shifty=row.shifty,
+                        ta=row.ta, chord_length=row.chord_length,
+                        q=row.q, t=row.t, azimuth=row.azimuth,
+                    ))
+                    upper_stations.append(StationRow(
+                        label=row.label, sta=row.sta,
+                        station_offset=row.station_offset,
+                        coord=(x_upper, y_upper),
+                        shiftx=row.shiftx, shifty=row.shifty,
+                        ta=row.ta, chord_length=row.chord_length,
+                        q=row.q, t=row.t, azimuth=row.azimuth,
+                    ))
+
+        result.track_gauge = gauge
+        result.upper_track_polycurve = upper_poly
+        result.lower_track_polycurve = lower_poly
+        result.upper_track_stations = upper_stations
+        result.lower_track_stations = lower_stations
+
+        logger.info(
+            "복선 궤도 계산 완료: 궤도간격=%.3fm (오프셋 %.3fm), 상선 %d점, 하선 %d점",
+            gauge, offset, len(upper_poly), len(lower_poly),
+        )
 # ============================================================
 # 편의 함수 (CLI/테스트용)
 # ============================================================
