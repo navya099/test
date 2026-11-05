@@ -203,13 +203,56 @@ class CubicSheetWriter(BaseSheetWriter):
         h.write_coord("D18", "F18", c.cp_xy)
         h.write_coord("D19", "F19", c.ps_xy)
 
+# ============================================================
+# 직선 IP Sheet Writer (R=0)
+# ============================================================
+class StraightSheetWriter(BaseSheetWriter):
+    """직선 IP 시트 작성기 (R=0, 곡선 파라미터 없음)"""
 
+    def _write_header(self) -> None:
+        c = self.curve
+        h = self.helper
+
+        h.write("A3", f"'===================〈 IP  NO. {c.ip_no} >====================")
+        h.write("A4", f"I P [ X ]  = {c.ip_xy[0]:.4f}")
+        h.write("D4", f"I P [ Y ]  = {c.ip_xy[1]:.4f}")
+
+        h.write("G6", "직선")
+        h.write("E6", f"({c.direction})")
+
+        h.write("A5", f"방위각 1  = {degrees_to_dms(c.h1)}")
+        h.write("E5", f"방위각 2  = {degrees_to_dms(c.h2)}")
+        h.write("A6", f"교각(IA)  = {degrees_to_dms(c.ia_degree)}")
+
+        h.write("A8", f"R  = {c.radius:.3f}")
+        h.write("C8", f"IP 연장1  = {c.ip_distance1:.3f}")
+
+    def _write_body(self) -> None:
+        c = self.curve
+        h = self.helper
+
+        h.write("A9", "M  = 0.000")
+        h.write("C9", "V  = 0.000")
+        h.write("F9", "Z  = 0.000")
+
+        h.write("A10", "TL  = 0.000")
+        h.write("C10", "CL  = 0.000")
+        h.write("A11", "LC  = 0.000")
+        h.write("A12", "X1  = 0.000")
+        h.write("C11", "L  = 0.000")
+        h.write("C12", "Y1  = 0.000")
+        h.write("F10", "SL  = 0.000")
+
+        h.write("A15", f"IP 정측점  = {format_distance(c.ip_sta, Config.KM_PRECISION)}")
+        h.write("D15", f"IP 역측점  = {format_distance(c.ip_sta, Config.KM_PRECISION)}")
 # ============================================================
 # 팩토리
 # ============================================================
 def create_sheet_writer(curve: "CurveParams") -> BaseSheetWriter:
     if curve.curve_type == "simplecurve":
         return SimpleCurveSheetWriter(curve)
+    if curve.curve_type == "straight":
+        return StraightSheetWriter(curve)   # ✅
     return CubicSheetWriter(curve)
 
 
