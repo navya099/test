@@ -1,14 +1,14 @@
 """
-터널 단면 작도기 (Tunnel Section Designer) — 완전 통합본
-========================================================
+터널 단면 작도기 (Tunnel Section Designer) — 완전 통합본 v3
+=============================================================
 - NATM (단일 아치)
 - 2-Arch (분기부, 중앙 필러)
 - 3-Arch (정거장, 중앙 대아치 + 좌우 소아치)
 - 개착 Box형 (상/하단 필렛)
-- FL 자동 맞춤 (단일 NATM, brentq)
+- NATM FL 자동 맞춤 (brentq)
+- 다중 아치 FL 통일 (기준 선택 + 미리보기)
 - 자동 맞춤 이력 (CSV, 더블클릭 복원)
 - DXF 입출력 (캐시)
-- ttk 기반 UI, 아치별 서브 탭
 
 요구사항:
     pip install matplotlib numpy scipy shapely ezdxf
@@ -20,11 +20,10 @@ import math
 from dataclasses import dataclass, asdict, field, replace
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from matplotlib.patches import Arc, Circle, Rectangle as MplRect
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
@@ -49,7 +48,7 @@ DXF_DEFAULT_IN = "c:/temp/건축한계.dxf"
 
 
 # =============================================================================
-# 열거형
+# 열거형 / 데이터 모델
 # =============================================================================
 class TunnelType(str, Enum):
     NATM = "NATM (아치형)"
@@ -58,9 +57,6 @@ class TunnelType(str, Enum):
     BOX = "개착 Box형"
 
 
-# =============================================================================
-# 데이터 모델
-# =============================================================================
 @dataclass
 class ArchParams:
     R1: float = 7.166
@@ -118,7 +114,6 @@ class TunnelParams:
 
 @dataclass
 class TunnelGeometry:
-    """단일 아치 기하."""
     a: ArchParams
     center_top: tuple[float, float]
     left_center: tuple[float, float]
@@ -180,6 +175,17 @@ class FitHistoryEntry:
                 and abs(self.achieved_FL - self.target_FL) <= FL_TOLERANCE)
 
 
+@dataclass
+class AlignResult:
+    labels: list[str]
+    old_R1Y: list[float]
+    new_R1Y: list[float]
+    old_FL: list[float]
+    new_FL: list[float]
+    success: list[bool]
+    target_FL: float
+
+
 # =============================================================================
 # 기하 유틸
 # =============================================================================
@@ -227,7 +233,7 @@ def find_extreme_x_on_arc(center, radius, start_deg, end_deg):
     angs = np.radians(np.linspace(start_deg, end_deg, ARC_SAMPLES))
     xs = center[0] + radius * np.cos(angs)
     ys = center[1] + radius * np.sin(angs)
-    return (xs.max(), ys[xs.argmax()]), (xs.min(), ys[ys.argmin()] if False else ys[xs.argmin()])
+    return (xs.max(), ys[xs.argmax()]), (xs.min(), ys[xs.argmin()])
 
 
 # =============================================================================
@@ -268,7 +274,7 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0) -> TunnelGeometry
 
 
 def compute_fl_for_arch(a: ArchParams) -> float:
-    """좌측 하단 수평부의 y (FL에서 fl_to_culvert를 뺀 값)."""
+    """아치의 좌측 하단 수평부 y."""
     a_left, a_right = a.r1_angles
     center_top = (a.cx, a.R1_Y)
     left_center, _ = find_side_center(center_top, a.R1, a_left, a_right, a.R2)
@@ -278,7 +284,7 @@ def compute_fl_for_arch(a: ArchParams) -> float:
 
 
 def compute_fl(p: TunnelParams, R1_Y: float) -> float:
-    """단일 NATM 자동 맞춤용."""
+    """단일 NATM 자동 맞춤용 FL."""
     a = ArchParams(R1=p.R1, top_angle=p.top_angle, R2=p.R2,
                    r2_angle=p.r2_angle, R1_Y=R1_Y, cx=0.0)
     return compute_fl_for_arch(a) - p.fl_to_culvert
@@ -304,7 +310,7 @@ def fit_R1_Y_to_FL(p: TunnelParams,
 
 
 # =============================================================================
-# 다중 아치 배치 / 계산
+# 다중 아치 배치 / 계산 / FL 통일
 # =============================================================================
 def arch_half_width(a: ArchParams) -> float:
     g = compute_geometry_from_arch(a)
@@ -355,6 +361,49 @@ def compute_multi_arch(p: TunnelParams) -> MultiArchGeometry:
     bbox = (min(xs), min(ys), max(xs), max(ys))
     return MultiArchGeometry(arches=geoms, total_area=total,
                              bbox=bbox, layout=layout)
+
+
+def fit_arch_R1_Y_to_FL(a: ArchParams, target_floor_y: float,
+                        fl_to_culvert: float,
+                        tol: float = 1e-4,
+                        bounds: tuple[float, float] = (-20.0, 30.0)
+                        ) -> tuple[float, bool]:
+    """아치 a의 R1_Y를 조정해 하단 수평부가 target_floor_y + fl_to_culvert가 되도록."""
+    target_left_end_y = target_floor_y + fl_to_culvert
+
+    def f(R1_Y):
+        a_try = replace(a, R1_Y=R1_Y)
+        return compute_fl_for_arch(a_try) - target_left_end_y
+
+    lo, hi = bounds
+    if f(lo) > 0 or f(hi) < 0:
+        return a.R1_Y, False
+    try:
+        return float(brentq(f, lo, hi, xtol=tol, maxiter=100)), True
+    except (ValueError, RuntimeError):
+        res = minimize_scalar(lambda y: abs(f(y)),
+                              bounds=(lo, hi), method='bounded')
+        return float(res.x), bool(res.success)
+
+
+def align_multi_arch_fl(p: TunnelParams,
+                        reference_idx: int = 0) -> AlignResult:
+    ref = p.arches[reference_idx]
+    target_FL = compute_fl_for_arch(ref) - p.fl_to_culvert
+
+    labels, old_R1Y, new_R1Y, old_FL, new_FL, success = [], [], [], [], [], []
+    for a in p.arches:
+        labels.append(a.label)
+        old_R1Y.append(a.R1_Y)
+        old_FL.append(compute_fl_for_arch(a) - p.fl_to_culvert)
+        new_y, ok = fit_arch_R1_Y_to_FL(a, target_FL, p.fl_to_culvert)
+        new_R1Y.append(new_y)
+        success.append(ok)
+        new_FL.append(compute_fl_for_arch(replace(a, R1_Y=new_y)) - p.fl_to_culvert)
+
+    return AlignResult(labels=labels, old_R1Y=old_R1Y, new_R1Y=new_R1Y,
+                       old_FL=old_FL, new_FL=new_FL,
+                       success=success, target_FL=target_FL)
 
 
 # =============================================================================
@@ -554,6 +603,10 @@ def setup_style(root: tk.Tk):
                     background="#2f6fed")
     style.map("Accent.TButton",
               background=[("active", "#1e5ad6"), ("disabled", "#a9bce8")])
+    style.configure("Link.TButton", font=bold, foreground="white",
+                    background="#2b8a3e")
+    style.map("Link.TButton",
+              background=[("active", "#226c31"), ("disabled", "#a9d0b3")])
     style.configure("Danger.TButton", foreground="#b00020")
     style.configure("Treeview", rowheight=26, font=base)
     style.configure("Treeview.Heading", font=bold)
@@ -629,8 +682,8 @@ class TunnelApp:
 
         self.root = tk.Tk()
         self.root.title("터널 단면 작도기")
-        self.root.geometry("1360x900")
-        self.root.minsize(1160, 760)
+        self.root.geometry("1360x920")
+        self.root.minsize(1160, 780)
         setup_style(self.root)
 
         paned = ttk.PanedWindow(self.root, orient="horizontal")
@@ -647,6 +700,7 @@ class TunnelApp:
         self.root.bind("<Control-s>", lambda e: self.save_dxf())
         self.root.bind("<Control-o>", lambda e: self.open_dxf())
         self.root.bind("<Control-f>", lambda e: self.auto_fit_fl())
+        self.root.bind("<Control-Shift-F>", lambda e: self._on_shortcut_align())
 
     # ---------------------------------------------------------------
     def _build_controls(self, parent):
@@ -684,25 +738,35 @@ class TunnelApp:
         act.pack(fill="x", pady=(0, 6))
         act.columnconfigure((0, 1), weight=1)
 
+        # 자동 맞춤 (NATM 전용)
         self.btn_auto_fit = ttk.Button(
             act, text="⚡  FL 자동 맞춤  (Ctrl+F)",
             style="Accent.TButton", command=self.auto_fit_fl)
         self.btn_auto_fit.grid(row=0, column=0, columnspan=2,
                                sticky="ew", pady=(0, 6))
 
+        # 다중 아치 FL 통일
+        self.btn_align_fl = ttk.Button(
+            act, text="🔗  아치 FL 통일  (Ctrl+Shift+F)",
+            style="Link.TButton", command=self.align_multi_arch_fl_ui)
+        self.btn_align_fl.grid(row=1, column=0, columnspan=2,
+                               sticky="ew", pady=(0, 6))
+        self.btn_align_fl.grid_remove()
+
+        # 도면/DXF
         ttk.Button(act, text="도면 저장  (Ctrl+S)",
                    command=self.save_dxf
-                   ).grid(row=1, column=0, sticky="ew", padx=(0, 3))
+                   ).grid(row=2, column=0, sticky="ew", padx=(0, 3))
         ttk.Button(act, text="DXF 열기  (Ctrl+O)",
                    command=self.open_dxf
-                   ).grid(row=1, column=1, sticky="ew", padx=(3, 0))
+                   ).grid(row=2, column=1, sticky="ew", padx=(3, 0))
 
         ttk.Button(act, text="초기값 복원",
                    command=self.reset_params
-                   ).grid(row=2, column=0, sticky="ew", padx=(0, 3), pady=(6, 0))
+                   ).grid(row=3, column=0, sticky="ew", padx=(0, 3), pady=(6, 0))
         ttk.Button(act, text="종료", style="Danger.TButton",
                    command=self.close
-                   ).grid(row=2, column=1, sticky="ew", padx=(3, 0), pady=(6, 0))
+                   ).grid(row=3, column=1, sticky="ew", padx=(3, 0), pady=(6, 0))
 
     # ---------------------------------------------------------------
     def _populate_param_rows(self):
@@ -848,10 +912,17 @@ class TunnelApp:
                                   replace(side, label="우선")]
 
         self._populate_param_rows()
+
         if new_kind == TunnelType.NATM:
             self.btn_auto_fit.grid()
         else:
             self.btn_auto_fit.grid_remove()
+
+        if new_kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            self.btn_align_fl.grid()
+        else:
+            self.btn_align_fl.grid_remove()
+
         self.update_plot()
 
     # ---------------------------------------------------------------
@@ -938,17 +1009,16 @@ class TunnelApp:
             return
         kind = self.params.kind
         d = TunnelParams(kind=kind)
-        if kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
-            if kind == TunnelType.NATM_2ARCH:
-                a = ArchParams()
-                d.arches = [replace(a, label="좌선"), replace(a, label="우선")]
-            else:
-                central = ArchParams(R1=9.0, top_angle=100.0, R2=7.0,
-                                     r2_angle=70.0, R1_Y=2.0, label="중앙")
-                side = ArchParams(R1=5.5, top_angle=85.0, R2=4.5,
-                                  r2_angle=65.0, R1_Y=1.5, label="측선")
-                d.arches = [central, replace(side, label="좌선"),
-                            replace(side, label="우선")]
+        if kind == TunnelType.NATM_2ARCH:
+            a = ArchParams()
+            d.arches = [replace(a, label="좌선"), replace(a, label="우선")]
+        elif kind == TunnelType.NATM_3ARCH:
+            central = ArchParams(R1=9.0, top_angle=100.0, R2=7.0,
+                                 r2_angle=70.0, R1_Y=2.0, label="중앙")
+            side = ArchParams(R1=5.5, top_angle=85.0, R2=4.5,
+                              r2_angle=65.0, R1_Y=1.5, label="측선")
+            d.arches = [central, replace(side, label="좌선"),
+                        replace(side, label="우선")]
         self.params = d
         self._populate_param_rows()
         self.update_plot()
@@ -962,8 +1032,8 @@ class TunnelApp:
             else:
                 messagebox.showinfo(
                     "FL 자동 맞춤",
-                    "2-Arch / 3-Arch는 각 아치의 R1_Y를 개별 조정하세요.\n"
-                    "각 아치 탭에서 R1 중심 Y 값을 변경할 수 있습니다.")
+                    "2-Arch / 3-Arch는 '아치 FL 통일'을 사용하세요.\n"
+                    "(Ctrl+Shift+F)")
             return
 
         p = self.params
@@ -1007,6 +1077,148 @@ class TunnelApp:
             f"이력 {len(self.history.entries)}건")
 
     # ---------------------------------------------------------------
+    # 다중 아치 FL 통일
+    # ---------------------------------------------------------------
+    def _on_shortcut_align(self):
+        if self.params.kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            self.align_multi_arch_fl_ui()
+        else:
+            messagebox.showinfo("FL 통일",
+                                "다중 아치(2-Arch / 3-Arch)에서만 사용할 수 있습니다.")
+
+    def align_multi_arch_fl_ui(self):
+        if self.params.kind not in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            return
+
+        p = self.params
+        labels = [a.label for a in p.arches]
+
+        ref_idx = self._ask_reference_arch(labels, 0)
+        if ref_idx is None:
+            return
+
+        result = align_multi_arch_fl(p, reference_idx=ref_idx)
+
+        if not all(result.success):
+            fails = [labels[i] for i, ok in enumerate(result.success) if not ok]
+            messagebox.showwarning(
+                "FL 통일 실패",
+                f"다음 아치의 FL을 맞출 수 없습니다: {', '.join(fails)}\n"
+                f"R1/R2/각도 조합을 확인하세요.")
+            return
+
+        if not self._confirm_align_dialog(result, labels[ref_idx]):
+            return
+
+        self._suspend = True
+        try:
+            for i, new_y in enumerate(result.new_R1Y):
+                self.params.arches[i] = replace(self.params.arches[i], R1_Y=new_y)
+            for i, rows in enumerate(self.arch_rows):
+                if "R1_Y" in rows:
+                    rows["R1_Y"].set_value(result.new_R1Y[i])
+        finally:
+            self._suspend = False
+
+        self.update_plot()
+
+        messagebox.showinfo(
+            "FL 통일 완료",
+            f"기준: {labels[ref_idx]}  (FL = {result.target_FL:.4f} m)\n"
+            + "\n".join(
+                f"  {result.labels[i]}: R1_Y {result.old_R1Y[i]:.3f} → "
+                f"{result.new_R1Y[i]:.3f}  (Δ {result.new_R1Y[i] - result.old_R1Y[i]:+.3f})"
+                for i in range(len(result.labels))))
+
+    def _ask_reference_arch(self, labels: list[str],
+                            default_idx: int = 0) -> Optional[int]:
+        win = tk.Toplevel(self.root)
+        win.title("FL 통일 기준")
+        win.transient(self.root)
+        win.grab_set()
+        win.resizable(False, False)
+
+        ttk.Label(win, text="기준이 될 아치를 선택하세요.\n"
+                            "(다른 아치들이 이 FL에 맞춰집니다)",
+                  padding=12).pack()
+
+        var = tk.IntVar(value=default_idx)
+        frame = ttk.Frame(win, padding=(16, 0, 16, 8))
+        frame.pack(fill="x")
+        for i, label in enumerate(labels):
+            ttk.Radiobutton(frame, text=label, value=i,
+                            variable=var).pack(anchor="w", pady=2)
+
+        result = {"idx": None}
+
+        def on_ok():
+            result["idx"] = var.get()
+            win.destroy()
+
+        btns = ttk.Frame(win, padding=(16, 8, 16, 12))
+        btns.pack(fill="x")
+        ttk.Button(btns, text="취소", command=win.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="확인", style="Accent.TButton",
+                   command=on_ok).pack(side="right")
+
+        win.update_idletasks()
+        x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - win.winfo_width() // 2
+        y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - win.winfo_height() // 2
+        win.geometry(f"+{x}+{y}")
+
+        self.root.wait_window(win)
+        return result["idx"]
+
+    def _confirm_align_dialog(self, r: AlignResult, ref_label: str) -> bool:
+        win = tk.Toplevel(self.root)
+        win.title("FL 통일 미리보기")
+        win.transient(self.root)
+        win.grab_set()
+
+        ttk.Label(win, text=f"기준 아치: {ref_label}   (FL = {r.target_FL:.4f} m)",
+                  style="Title.TLabel", padding=(12, 12, 12, 6)).pack(anchor="w")
+
+        cols = ("label", "old_R1Y", "new_R1Y", "delta", "old_FL", "new_FL")
+        heads = {
+            "label": "아치", "old_R1Y": "이전 R1_Y", "new_R1Y": "변경 R1_Y",
+            "delta": "ΔR1_Y", "old_FL": "이전 FL", "new_FL": "변경 FL",
+        }
+        frame = ttk.Frame(win, padding=(12, 0, 12, 8))
+        frame.pack(fill="both", expand=True)
+        tree = ttk.Treeview(frame, columns=cols, show="headings",
+                            height=len(r.labels))
+        for c in cols:
+            tree.heading(c, text=heads[c])
+            tree.column(c, width=100, anchor="center")
+        for i, label in enumerate(r.labels):
+            tree.insert("", "end", values=(
+                label,
+                f"{r.old_R1Y[i]:.4f}",
+                f"{r.new_R1Y[i]:.4f}",
+                f"{r.new_R1Y[i] - r.old_R1Y[i]:+.4f}",
+                f"{r.old_FL[i]:.4f}",
+                f"{r.new_FL[i]:.4f}",
+            ))
+        tree.pack(side="left", fill="both", expand=True)
+
+        result = {"ok": False}
+        btns = ttk.Frame(win, padding=(12, 0, 12, 12))
+        btns.pack(fill="x", side="bottom")
+        ttk.Button(btns, text="취소",
+                   command=win.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="적용", style="Accent.TButton",
+                   command=lambda: (result.update(ok=True), win.destroy())
+                   ).pack(side="right")
+
+        win.update_idletasks()
+        x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - win.winfo_width() // 2
+        y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - win.winfo_height() // 2
+        win.geometry(f"+{x}+{y}")
+
+        self.root.wait_window(win)
+        return result["ok"]
+
+    # ---------------------------------------------------------------
     def _refresh_history_view(self):
         for i in self.hist_tree.get_children():
             self.hist_tree.delete(i)
@@ -1032,12 +1244,12 @@ class TunnelApp:
                 "이력 복원",
                 f"{e.timestamp} 값으로 파라미터를 복원할까요?"):
             return
-        # NATM으로 강제 전환 후 복원
         if self.params.kind != TunnelType.NATM:
             self.type_var.set(TunnelType.NATM.value)
             self.params.kind = TunnelType.NATM
             self._populate_param_rows()
             self.btn_auto_fit.grid()
+            self.btn_align_fl.grid_remove()
         self._apply_params(R1=e.R1, top_angle=e.top_angle, R2=e.R2,
                            r2_angle=e.r2_angle, D=e.D,
                            R1_Y=e.R1_Y, FL=e.target_FL)
@@ -1245,7 +1457,6 @@ class TunnelApp:
         ax.text(0, max(g.top_of_tunnel for g in mg.arches) + 1.2,
                 'CL', ha='center', fontsize=9)
 
-        # FL 라인
         ax.axhline(p.FL, color='#d64545', linestyle=':', lw=1)
 
         if p.kind == TunnelType.NATM_2ARCH:
@@ -1267,11 +1478,9 @@ class TunnelApp:
         arc(g.left_center, a.R2, a_left, a_left + a.r2_angle)
         arc(g.right_center, a.R2, a_right - a.r2_angle, a_right)
 
-        # 하단 수평
         ax.plot([g.left_end[0], g.right_end[0]],
                 [g.left_end[1], g.right_end[1]], 'k-', lw=1.2)
 
-        # 아치 라벨
         ax.text(a.cx, g.top_of_tunnel + 0.4, a.label,
                 ha='center', fontsize=10, color=color, fontweight='bold')
 
@@ -1309,17 +1518,26 @@ class TunnelApp:
 
     def _update_multi_arch_spec_panel(self, mg: MultiArchGeometry,
                                        p: TunnelParams):
+        fls = [compute_fl_for_arch(a) - p.fl_to_culvert for a in mg.layout]
+        fl_spread = max(fls) - min(fls)
+        unified = "✅ 통일" if fl_spread < FL_TOLERANCE else f"⚠️ 편차 {fl_spread * 1000:.0f}mm"
+
         if p.kind == TunnelType.NATM_2ARCH:
             left, right = mg.arches
             lines = [
                 f"총 내공면적 {mg.total_area:.2f}㎡  |  중벽 {p.pillar_w * 1000:.0f}mm",
-                f"좌 아치 {left.area:.2f}㎡  |  우 아치 {right.area:.2f}㎡",
+                f"좌 {left.area:.2f}㎡ (FL {fls[0]:.3f})  |  "
+                f"우 {right.area:.2f}㎡ (FL {fls[1]:.3f})",
+                f"FL 상태: {unified}",
             ]
         else:
             c, l, r = mg.arches
             lines = [
                 f"총 내공면적 {mg.total_area:.2f}㎡  |  이격 L{p.gap_L * 1000:.0f} R{p.gap_R * 1000:.0f}",
-                f"중앙 {c.area:.2f}㎡  |  좌 {l.area:.2f}㎡  |  우 {r.area:.2f}㎡",
+                f"중앙 {c.area:.2f}㎡ (FL {fls[0]:.3f})  |  "
+                f"좌 {l.area:.2f}㎡ (FL {fls[1]:.3f})  |  "
+                f"우 {r.area:.2f}㎡ (FL {fls[2]:.3f})",
+                f"FL 상태: {unified}",
             ]
         self.spec_label.config(text="\n".join(lines))
 
