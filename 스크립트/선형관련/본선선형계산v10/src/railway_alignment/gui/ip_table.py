@@ -76,6 +76,8 @@ class IPTableEditor(ttk.Frame):
         self._edit_entry: Optional[tk.Entry] = None
         self._auto_flags: dict[int, bool] = {}
         self._type_overrides: dict[int, str] = {}
+        self._pending_auto_flags: dict[int, bool] = {}
+        self._pending_type_overrides: dict[int, str] = {}
 
         self._build()
         self._bind_events()
@@ -149,7 +151,7 @@ class IPTableEditor(ttk.Frame):
 
         self._update_status()
 
-    def load_raw(self, raw_lines: list[list[str]]) -> None:
+    def load_raw(self, raw_lines):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._auto_flags.clear()
@@ -158,17 +160,35 @@ class IPTableEditor(ttk.Frame):
         ips = raw_lines[1:-1] if len(raw_lines) >= 2 else raw_lines
         for i, row in enumerate(ips, start=1):
             try:
-                y = float(row[0]); x = float(row[1])
+                y = float(row[0]);
+                x = float(row[1])
                 r = float(row[2]) if len(row) > 2 else 0.0
             except (ValueError, IndexError):
                 continue
 
-            self._auto_flags[i] = True
+            # ✅ pending 상태 우선
+            auto = self._pending_auto_flags.get(i, True)
+            self._auto_flags[i] = auto
+            if i in self._pending_type_overrides:
+                self._type_overrides[i] = self._pending_type_overrides[i]
+
+            type_text = "(자동)" if auto else (
+                "직선" if r == 0 else "3차포물선"
+            )
             self.tree.insert(
                 "", "end", iid=str(i),
-                values=["✓", f"IP{i}", f"{x:.4f}", f"{y:.4f}", f"{r:.2f}", "—",
-                        "—", "—", "—", "(자동)", "—", "—"],
-                tags=("ok", "auto_row"),
+                values=[
+                    "✓" if auto else "",
+                    f"IP{i}",
+                    f"{x:.4f}", f"{y:.4f}", f"{r:.2f}", "—",
+                    "—" if auto else "0",
+                    "—" if auto else "0",
+                    "—" if auto else "0",
+                    type_text,
+                    "—",
+                    "—",
+                ],
+                tags=("ok", "auto_row" if auto else "manual_row"),
             )
         self._update_status()
 
@@ -523,3 +543,23 @@ class IPTableEditor(ttk.Frame):
             return
         if self._on_delete is not None:
             self._on_delete(ip_no)
+
+    def get_state(self) -> dict:
+        """현재 테이블 상태 (저장용)"""
+        return {
+            "auto_flags": dict(self._auto_flags),
+            "type_overrides": dict(self._type_overrides),
+        }
+
+    def set_state(self, state: dict) -> None:
+        """상태 복원 (재계산 전 호출).
+
+        load_raw/load_curves가 내부 상태를 리셋하므로,
+        복원은 load_raw 직전에 호출 후 load_raw가 보존하도록 처리.
+        """
+        self._pending_auto_flags = {
+            int(k): bool(v) for k, v in (state.get("auto_flags") or {}).items()
+        }
+        self._pending_type_overrides = {
+            int(k): str(v) for k, v in (state.get("type_overrides") or {}).items()
+        }

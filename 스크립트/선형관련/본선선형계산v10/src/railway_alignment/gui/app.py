@@ -16,13 +16,15 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 from typing import Optional
 
 from src.railway_alignment.core.constants import Config
 from src.railway_alignment.core.math_util import format_station
 from src.railway_alignment.core.validator import issues_by_ip as group_issues_by_ip
 from src.railway_alignment.io.parsers import read_alignment_file
+from src.railway_alignment.io.project_io import PROJECT_EXTENSION, PROJECT_FILETYPES, save_project, add_recent_project, \
+    ProjectIOError, load_recent_projects, clear_recent_projects, load_project, ProjectData
 from src.railway_alignment.service.alignment_service import (
     AlignmentInput,
     AlignmentResult,
@@ -56,12 +58,16 @@ class MainWindow:
         self._build_ui()
         self.root.after(100, self._on_open_file)
 
+        self._current_project: Optional[str] = None  # 현재 프로젝트 파일
+        self._auto_save_job = None  # after() id
+        self._menu_recent = None  # 최근 메뉴 참조
+
     # ------------------------------------------------------------------
     # UI
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
         root = self.root
-
+        self._build_menubar()
         params = ttk.LabelFrame(root, text="계산 파라미터")
         params.pack(side="top", fill="x", padx=6, pady=(6, 2))
 
@@ -152,6 +158,31 @@ class MainWindow:
             side="right"
         )
 
+    def _build_menubar(self):
+        menubar = tk.Menu(self.root)
+
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="프로젝트 열기...", command=self._on_open_project, accelerator="Ctrl+O")
+        file_menu.add_command(label="프로젝트 저장", command=self._on_save_project, accelerator="Ctrl+S")
+        file_menu.add_command(label="프로젝트 다른 이름으로 저장...", command=self._on_save_project_as)
+        file_menu.add_separator()
+
+        self._menu_recent = tk.Menu(file_menu, tearoff=0)
+        file_menu.add_cascade(label="최근 프로젝트", menu=self._menu_recent)
+        self._refresh_recent_menu()
+        file_menu.add_command(label="최근 목록 지우기", command=self._on_clear_recent)
+        file_menu.add_separator()
+
+        file_menu.add_command(label="TXT 데이터 열기...", command=self._on_open_file)
+        file_menu.add_separator()
+        file_menu.add_command(label="종료", command=self._on_close)
+
+        menubar.add_cascade(label="파일", menu=file_menu)
+        self.root.config(menu=menubar)
+
+        self.root.bind("<Control-o>", lambda e: self._on_open_project())
+        self.root.bind("<Control-s>", lambda e: self._on_save_project())
+
     def _labeled_entry(
         self, parent: ttk.Widget, label: str, default: str, col: int
     ) -> ttk.Entry:
@@ -198,6 +229,7 @@ class MainWindow:
 
         self._raw_lines = lines
         self._current_file = "(선택된 파일)"
+        self._current_project = None  # ✅ TXT 열면 새 프로젝트
         self.status_var.set(f"파일 로드 완료: {len(lines)}행")
 
         self.ip_table.load_raw(lines)
@@ -464,3 +496,192 @@ class MainWindow:
         """도면 설정 적용 콜백."""
         self.service.dxf_config = config
         self.status_var.set("도면 설정이 적용되었습니다.")
+
+    AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000  # 5분
+
+    def _schedule_auto_save(self):
+        """자동 저장 스케줄러 (재귀)"""
+        if self._auto_save_job is not None:
+            self.root.after_cancel(self._auto_save_job)
+        self._auto_save_job = self.root.after(
+            self.AUTO_SAVE_INTERVAL_MS, self._auto_save_tick,
+        )
+
+    def _auto_save_tick(self):
+        """5분마다 자동 저장. 프로젝트 파일이 있으면 덮어쓰기, 없으면 스킵."""
+        try:
+            from pathlib import Path
+            if (self._current_project and self._raw_lines
+                    and Path(self._current_project).exists()):
+                self._save_project_to(self._current_project, silent=True)
+        except Exception:
+            logger.exception("자동 저장 실패")
+        finally:
+            self._schedule_auto_save()  # 재귀 스케줄
+
+    def _on_close(self):
+        """앱 종료 시 자동 저장 + 종료"""
+        if self._auto_save_job is not None:
+            self.root.after_cancel(self._auto_save_job)
+            self._auto_save_job = None
+        try:
+            if self._current_project and self._raw_lines:
+                self._save_project_to(self._current_project, silent=True)
+        except Exception:
+            logger.exception("종료 시 저장 실패")
+        self.root.destroy()
+
+    def _collect_project_state(self) -> ProjectData:
+        """현재 GUI 상태 → ProjectData"""
+
+        def _int(entry, default):
+            try:
+                return int(entry.get())
+            except (ValueError, tk.TclError):
+                return default
+
+        def _float(entry, default):
+            try:
+                return float(entry.get())
+            except (ValueError, tk.TclError):
+                return default
+
+        return ProjectData(
+            raw_lines=self._raw_lines or [],
+            source_file=self._current_file or "",
+            unit=_int(self.entry_unit, Config.DEFAULT_UNIT),
+            start_sta=_float(self.entry_start, Config.DEFAULT_START_STA),
+            design_speed=_int(self.entry_speed, Config.DEFAULT_DESIGN_SPEED),
+            ballast="자갈도상" if self.ballast_var.get() == 0 else "콘크리트도상",
+            auto_flags=dict(self.ip_table._auto_flags),
+            type_overrides=dict(self.ip_table._type_overrides),
+            parameter_overrides=self.ip_table.get_parameter_overrides(),
+            dxf_config=self.service.dxf_config.to_dict(),
+        )
+
+    def _apply_project_state(self, data: ProjectData) -> None:
+        """ProjectData → GUI 복원 + 재계산"""
+        # 1) 입력 데이터
+        self._raw_lines = data.raw_lines
+        self._current_file = data.source_file
+
+        # 2) 계산 파라미터
+        self._set_entry(self.entry_unit, str(data.unit))
+        self._set_entry(self.entry_start, str(data.start_sta))
+        self._set_entry(self.entry_speed, str(data.design_speed))
+        self.ballast_var.set(0 if data.ballast == "자갈도상" else 1)
+
+        # 3) 도면 설정
+        try:
+            from src.railway_alignment.io.dxf_config import DXFConfig
+            self.service.dxf_config = DXFConfig.from_dict(data.dxf_config)
+        except Exception:
+            logger.exception("도면 설정 복원 실패 (기본값 유지)")
+
+        # 4) IP 테이블 상태 (pending)
+        self.ip_table.set_state({
+            "auto_flags": data.auto_flags,
+            "type_overrides": data.type_overrides,
+        })
+
+        # 5) raw 로드 + 재계산
+        self.ip_table.load_raw(data.raw_lines)
+        self._recalculate(save=False)
+
+        # 6) M/V/Z 오버라이드 복원
+        self._restore_parameter_overrides(data.parameter_overrides)
+        self._recalculate(save=False)
+
+    def _set_entry(self, entry, value):
+        entry.delete(0, "end")
+        entry.insert(0, value)
+
+    def _restore_parameter_overrides(self, overrides: dict) -> None:
+        """수동 M/V/Z 값을 IP 테이블에 반영"""
+        for ip_no, params in (overrides or {}).items():
+            iid = str(ip_no)
+            if not self.ip_table.tree.exists(iid):
+                continue
+            self.ip_table._auto_flags[ip_no] = False
+            self.ip_table.tree.set(iid, "auto", "")
+            self.ip_table.tree.set(iid, "m", f"{params['m']:.1f}")
+            self.ip_table.tree.set(iid, "v", f"{params['v']:.0f}")
+            self.ip_table.tree.set(iid, "z", f"{params['z']:.4f}")
+            self.ip_table._apply_row_style(ip_no)
+
+    # ---------- 프로젝트 열기/저장 ----------
+    def _on_open_project(self, path: Optional[str] = None):
+        if path is None:
+            path = filedialog.askopenfilename(
+                title="프로젝트 열기", filetypes=PROJECT_FILETYPES,
+            )
+        if not path:
+            return
+        try:
+            data = load_project(path)
+        except ProjectIOError as e:
+            messagebox.showerror("오류", str(e))
+            return
+
+        self._apply_project_state(data)
+        from pathlib import Path
+        self._current_project = str(Path(path).resolve())
+        add_recent_project(self._current_project)
+        self._refresh_recent_menu()
+        self.status_var.set(f"프로젝트 로드: {Path(path).name}")
+
+    def _on_save_project(self):
+        if not self._raw_lines:
+            messagebox.showwarning("안내", "먼저 데이터를 열어주세요.")
+            return
+        if not self._current_project:
+            return self._on_save_project_as()
+        self._save_project_to(self._current_project)
+
+    def _on_save_project_as(self):
+        if not self._raw_lines:
+            messagebox.showwarning("안내", "먼저 데이터를 열어주세요.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="프로젝트 저장",
+            defaultextension=PROJECT_EXTENSION,
+            filetypes=PROJECT_FILETYPES,
+        )
+        if not path:
+            return
+        self._save_project_to(path)
+
+    def _save_project_to(self, path: str, silent: bool = False):
+        try:
+            data = self._collect_project_state()
+            saved = save_project(path, data)
+            self._current_project = str(saved)
+            add_recent_project(saved)
+            self._refresh_recent_menu()
+            if not silent:
+                messagebox.showinfo("완료", f"프로젝트 저장:\n{saved}")
+            from pathlib import Path
+            self.status_var.set(f"프로젝트 저장: {Path(saved).name}")
+        except ProjectIOError as e:
+            if not silent:
+                messagebox.showerror("오류", str(e))
+
+    # ---------- 최근 파일 ----------
+    def _refresh_recent_menu(self):
+        if self._menu_recent is None:
+            return
+        self._menu_recent.delete(0, "end")
+        recent = load_recent_projects()
+        if not recent:
+            self._menu_recent.add_command(label="(없음)", state="disabled")
+            return
+        for p in recent:
+            from pathlib import Path
+            self._menu_recent.add_command(
+                label=Path(p).name,
+                command=lambda pp=p: self._on_open_project(pp),
+            )
+
+    def _on_clear_recent(self):
+        clear_recent_projects()
+        self._refresh_recent_menu()
