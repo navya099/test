@@ -56,7 +56,6 @@ class MainWindow:
         self._current_file: Optional[str] = None
 
         self._build_ui()
-        self.root.after(100, self._on_open_file)
 
         self._current_project: Optional[str] = None  # 현재 프로젝트 파일
         self._auto_save_job = None  # after() id
