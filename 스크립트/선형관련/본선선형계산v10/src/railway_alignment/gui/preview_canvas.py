@@ -193,14 +193,8 @@ class PreviewCanvas(ttk.Frame):
         self._init_axes()
 
     def _marker_label(self, idx: int, total: int) -> str:
-        """마커 라벨. BP/IP/EP 표시."""
-        if total <= 1:
-            return "IP"
-        if idx == 0:
-            return "BP"
-        if idx == total - 1:
-            return "EP"
-        return f"IP{idx}"
+        """마커 라벨. 미리보기는 IP만 표시 (BP/EP 미포함)."""
+        return f"IP{idx + 1}"
 
     def _apply_highlight(self, ip_index: int) -> None:
         marker = self._ip_markers.get(ip_index)
