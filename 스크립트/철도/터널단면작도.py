@@ -1,14 +1,14 @@
 """
-터널 단면 작도기 (Tunnel Section Designer) — 완전 통합본 v3
+터널 단면 작도기 (Tunnel Section Designer) — 완전 통합본 v5
 =============================================================
-- NATM (단일 아치)
-- 2-Arch (분기부, 중앙 필러)
-- 3-Arch (정거장, 중앙 대아치 + 좌우 소아치)
-- 개착 Box형 (상/하단 필렛)
+- NATM 단일 / 2-Arch (분기부) / 3-Arch (정거장) / 개착 Box형
+- Box 상/하단 필렛
 - NATM FL 자동 맞춤 (brentq)
 - 다중 아치 FL 통일 (기준 선택 + 미리보기)
-- 자동 맞춤 이력 (CSV, 더블클릭 복원)
-- DXF 입출력 (캐시)
+- FL 자동 맞춤 이력 (CSV, 더블클릭 복원)
+- 제원 스냅샷 (JSON, 더블클릭 복원)
+- 아치 겹침 검사 (실시간 경고 + 도면 강조 + 저장 방어 + 자동 방지 토글)
+- DXF HATCH 겹침 내보내기 (단색 / ANSI31 / 둘 다)
 
 요구사항:
     pip install matplotlib numpy scipy shapely ezdxf
@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from dataclasses import dataclass, asdict, field, replace
 from datetime import datetime
@@ -45,6 +46,11 @@ ARC_SAMPLES = 1000
 POLYGON_ARC_POINTS = 100
 LABEL_Y_MARGIN = 0.5
 DXF_DEFAULT_IN = "c:/temp/건축한계.dxf"
+MIN_PILLAR_W = 0.3
+OVERLAP_LAYER = "OVERLAP"
+HATCH_STYLE_SOLID = "solid"
+HATCH_STYLE_PATTERN = "ANSI31"
+HATCH_STYLE_BOTH = "both"
 
 
 # =============================================================================
@@ -85,20 +91,17 @@ class TunnelParams:
     safeheight: float = 2.1
     D: float = 4.4
 
-    # 단일 NATM 호환
     R1: float = 7.166
     top_angle: float = 90.0
     R2: float = 5.54
     r2_angle: float = 69.0
     R1_Y: float = 1.572
 
-    # 다중 아치
     arches: list[ArchParams] = field(default_factory=list)
     pillar_w: float = 1.0
     gap_L: float = 0.5
     gap_R: float = 0.5
 
-    # Box
     box_width: float = 8.0
     box_height: float = 6.5
     box_wall_t: float = 0.4
@@ -184,6 +187,24 @@ class AlignResult:
     new_FL: list[float]
     success: list[bool]
     target_FL: float
+
+
+@dataclass
+class SnapshotEntry:
+    timestamp: str
+    kind: str
+    total_area: float
+    note: str
+    payload: dict
+
+
+@dataclass
+class OverlapInfo:
+    has_overlap: bool
+    pairs: list[tuple[int, int]]
+    overlap_areas: list[float]
+    min_gap: float
+    gap_details: list[tuple[int, int, float]]
 
 
 # =============================================================================
@@ -274,7 +295,6 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0) -> TunnelGeometry
 
 
 def compute_fl_for_arch(a: ArchParams) -> float:
-    """아치의 좌측 하단 수평부 y."""
     a_left, a_right = a.r1_angles
     center_top = (a.cx, a.R1_Y)
     left_center, _ = find_side_center(center_top, a.R1, a_left, a_right, a.R2)
@@ -284,7 +304,6 @@ def compute_fl_for_arch(a: ArchParams) -> float:
 
 
 def compute_fl(p: TunnelParams, R1_Y: float) -> float:
-    """단일 NATM 자동 맞춤용 FL."""
     a = ArchParams(R1=p.R1, top_angle=p.top_angle, R2=p.R2,
                    r2_angle=p.r2_angle, R1_Y=R1_Y, cx=0.0)
     return compute_fl_for_arch(a) - p.fl_to_culvert
@@ -310,7 +329,7 @@ def fit_R1_Y_to_FL(p: TunnelParams,
 
 
 # =============================================================================
-# 다중 아치 배치 / 계산 / FL 통일
+# 다중 아치
 # =============================================================================
 def arch_half_width(a: ArchParams) -> float:
     g = compute_geometry_from_arch(a)
@@ -363,12 +382,39 @@ def compute_multi_arch(p: TunnelParams) -> MultiArchGeometry:
                              bbox=bbox, layout=layout)
 
 
+def check_multi_arch_overlap(mg: MultiArchGeometry,
+                              tol: float = 0.0) -> OverlapInfo:
+    geoms = [g.polygon for g in mg.arches]
+    n = len(geoms)
+    pairs, areas = [], []
+    for i in range(n):
+        for j in range(i + 1, n):
+            inter = geoms[i].intersection(geoms[j])
+            if inter.area > tol:
+                pairs.append((i, j))
+                areas.append(inter.area)
+
+    order = sorted(range(n), key=lambda k: mg.arches[k].a.cx)
+    gaps = []
+    for a, b in zip(order, order[1:]):
+        gi, gj = mg.arches[a], mg.arches[b]
+        gap = min(gj.polygon.bounds[0] - gi.polygon.bounds[2],
+                  gj.left_end[0] - gi.right_end[0])
+        gaps.append((a, b, gap))
+
+    return OverlapInfo(
+        has_overlap=bool(pairs),
+        pairs=pairs, overlap_areas=areas,
+        min_gap=min((g for _, _, g in gaps), default=float('inf')),
+        gap_details=gaps,
+    )
+
+
 def fit_arch_R1_Y_to_FL(a: ArchParams, target_floor_y: float,
                         fl_to_culvert: float,
                         tol: float = 1e-4,
                         bounds: tuple[float, float] = (-20.0, 30.0)
                         ) -> tuple[float, bool]:
-    """아치 a의 R1_Y를 조정해 하단 수평부가 target_floor_y + fl_to_culvert가 되도록."""
     target_left_end_y = target_floor_y + fl_to_culvert
 
     def f(R1_Y):
@@ -407,7 +453,7 @@ def align_multi_arch_fl(p: TunnelParams,
 
 
 # =============================================================================
-# Box 계산 (필렛)
+# Box 계산
 # =============================================================================
 def _clamp_fillet(p: TunnelParams) -> TunnelParams:
     max_r = min(p.box_width, p.box_height) / 2 - 0.05
@@ -516,7 +562,55 @@ def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
 
 
 # =============================================================================
-# 이력 / DXF
+# DXF HATCH 헬퍼
+# =============================================================================
+def add_hatch_for_polygon(msp, poly: Polygon, *,
+                          color: int = 1,
+                          solid: bool = True,
+                          pattern: str = HATCH_STYLE_PATTERN,
+                          scale: float = 0.3,
+                          alpha: int = 70,
+                          layer: str = OVERLAP_LAYER):
+    """shapely Polygon을 DXF HATCH로 추가 (exterior + interiors)."""
+    if poly.is_empty:
+        return
+    if poly.geom_type != "Polygon":
+        for g in getattr(poly, "geoms", []):
+            add_hatch_for_polygon(msp, g, color=color, solid=solid,
+                                  pattern=pattern, scale=scale,
+                                  alpha=alpha, layer=layer)
+        return
+
+    hatch = msp.add_hatch(color=color, dxfattribs={"layer": layer})
+    if solid:
+        hatch.set_solid_fill(color=color)
+    else:
+        try:
+            hatch.set_pattern_fill(pattern, color=color, scale=scale)
+        except Exception:
+            hatch.set_solid_fill(color=color)
+
+    ext = [(x, y) for x, y in poly.exterior.coords]
+    if ext and ext[0] != ext[-1]:
+        ext.append(ext[0])
+    if ext:
+        hatch.paths.add_polyline_path(ext, is_closed=True)
+
+    for interior in poly.interiors:
+        hole = [(x, y) for x, y in interior.coords]
+        if hole and hole[0] != hole[-1]:
+            hole.append(hole[0])
+        if hole:
+            hatch.paths.add_polyline_path(hole, is_closed=True)
+
+    try:
+        hatch.transparency = alpha / 100.0
+    except AttributeError:
+        pass
+
+
+# =============================================================================
+# 이력 / 스냅샷 / DXF 캐시
 # =============================================================================
 class FitHistory:
     def __init__(self, max_size: int = 100):
@@ -546,6 +640,48 @@ class FitHistory:
             w.writeheader()
             for e in self.entries:
                 w.writerow(asdict(e))
+
+
+class SnapshotStore:
+    def __init__(self, max_size: int = 200):
+        self.entries: list[SnapshotEntry] = []
+        self.max_size = max_size
+
+    def add(self, p: TunnelParams, total_area: float,
+            note: str = "") -> SnapshotEntry:
+        e = SnapshotEntry(
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            kind=p.kind.value, total_area=total_area, note=note,
+            payload=self._serialize(p),
+        )
+        self.entries.append(e)
+        if len(self.entries) > self.max_size:
+            self.entries.pop(0)
+        return e
+
+    @staticmethod
+    def _serialize(p: TunnelParams) -> dict:
+        d = asdict(p)
+        d["kind"] = p.kind.value
+        return d
+
+    @staticmethod
+    def deserialize(payload: dict) -> TunnelParams:
+        data = dict(payload)
+        data["kind"] = TunnelType(data["kind"])
+        arches = data.get("arches") or []
+        data["arches"] = [ArchParams(**a) for a in arches]
+        return TunnelParams(**data)
+
+    def to_json(self, path: str):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([asdict(e) for e in self.entries], f,
+                      ensure_ascii=False, indent=2)
+
+    def from_json(self, path: str):
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        self.entries = [SnapshotEntry(**r) for r in raw]
 
 
 class DxfCache:
@@ -614,6 +750,7 @@ def setup_style(root: tk.Tk):
     style.configure("TNotebook.Tab", padding=(14, 8), font=base)
     style.map("TNotebook.Tab",
               background=[("selected", "#ffffff"), ("!selected", "#e6e9ee")])
+    style.configure("TCheckbutton", background="#f5f6f8", font=base)
 
 
 # =============================================================================
@@ -676,15 +813,20 @@ class TunnelApp:
         self.dxf = DxfCache()
         self.dxf_path = DXF_DEFAULT_IN
         self.history = FitHistory()
+        self.snapshots = SnapshotStore()
         self.rows: dict[str, ParamRow] = {}
         self.arch_rows: list[dict[str, ParamRow]] = []
         self._suspend = False
 
         self.root = tk.Tk()
         self.root.title("터널 단면 작도기")
-        self.root.geometry("1360x920")
-        self.root.minsize(1160, 780)
+        self.root.geometry("1380x940")
+        self.root.minsize(1180, 800)
         setup_style(self.root)
+
+        # 옵션 상태
+        self.auto_avoid_overlap = tk.BooleanVar(value=False)
+        self.hatch_style = tk.StringVar(value=HATCH_STYLE_SOLID)
 
         paned = ttk.PanedWindow(self.root, orient="horizontal")
         paned.pack(fill="both", expand=True, padx=8, pady=8)
@@ -701,6 +843,7 @@ class TunnelApp:
         self.root.bind("<Control-o>", lambda e: self.open_dxf())
         self.root.bind("<Control-f>", lambda e: self.auto_fit_fl())
         self.root.bind("<Control-Shift-F>", lambda e: self._on_shortcut_align())
+        self.root.bind("<Control-Shift-S>", lambda e: self.take_snapshot())
 
     # ---------------------------------------------------------------
     def _build_controls(self, parent):
@@ -734,18 +877,35 @@ class TunnelApp:
                                     anchor="w", justify="left")
         self.spec_label.pack(fill="x", pady=(0, 8))
 
+        # ---- 옵션 그룹 ----
+        opts = ttk.LabelFrame(parent, text="  옵션  ", padding=8)
+        opts.pack(fill="x", pady=(0, 8))
+        ttk.Checkbutton(opts, text="겹침 자동 방지 (슬라이더 조작 시)",
+                        variable=self.auto_avoid_overlap
+                        ).pack(anchor="w")
+
+        hatch_row = ttk.Frame(opts)
+        hatch_row.pack(fill="x", pady=(6, 0))
+        ttk.Label(hatch_row, text="DXF HATCH 스타일:",
+                  style="Info.TLabel").pack(side="left", padx=(0, 8))
+        for label, value in (("단색", HATCH_STYLE_SOLID),
+                             ("ANSI31", HATCH_STYLE_PATTERN),
+                             ("둘 다", HATCH_STYLE_BOTH)):
+            ttk.Radiobutton(hatch_row, text=label, value=value,
+                            variable=self.hatch_style
+                            ).pack(side="left", padx=(0, 6))
+
+        # ---- 액션 ----
         act = ttk.Frame(parent)
         act.pack(fill="x", pady=(0, 6))
         act.columnconfigure((0, 1), weight=1)
 
-        # 자동 맞춤 (NATM 전용)
         self.btn_auto_fit = ttk.Button(
             act, text="⚡  FL 자동 맞춤  (Ctrl+F)",
             style="Accent.TButton", command=self.auto_fit_fl)
         self.btn_auto_fit.grid(row=0, column=0, columnspan=2,
                                sticky="ew", pady=(0, 6))
 
-        # 다중 아치 FL 통일
         self.btn_align_fl = ttk.Button(
             act, text="🔗  아치 FL 통일  (Ctrl+Shift+F)",
             style="Link.TButton", command=self.align_multi_arch_fl_ui)
@@ -753,7 +913,6 @@ class TunnelApp:
                                sticky="ew", pady=(0, 6))
         self.btn_align_fl.grid_remove()
 
-        # 도면/DXF
         ttk.Button(act, text="도면 저장  (Ctrl+S)",
                    command=self.save_dxf
                    ).grid(row=2, column=0, sticky="ew", padx=(0, 3))
@@ -761,12 +920,16 @@ class TunnelApp:
                    command=self.open_dxf
                    ).grid(row=2, column=1, sticky="ew", padx=(3, 0))
 
+        ttk.Button(act, text="스냅샷 저장  (Ctrl+Shift+S)",
+                   command=self.take_snapshot
+                   ).grid(row=3, column=0, columnspan=2, sticky="ew",
+                          pady=(6, 0))
         ttk.Button(act, text="초기값 복원",
                    command=self.reset_params
-                   ).grid(row=3, column=0, sticky="ew", padx=(0, 3), pady=(6, 0))
+                   ).grid(row=4, column=0, sticky="ew", padx=(0, 3), pady=(6, 0))
         ttk.Button(act, text="종료", style="Danger.TButton",
                    command=self.close
-                   ).grid(row=3, column=1, sticky="ew", padx=(3, 0), pady=(6, 0))
+                   ).grid(row=4, column=1, sticky="ew", padx=(3, 0), pady=(6, 0))
 
     # ---------------------------------------------------------------
     def _populate_param_rows(self):
@@ -887,6 +1050,8 @@ class TunnelApp:
         i_str, attr = key.split(".", 1)
         idx = int(i_str.replace("arch", ""))
         setattr(self.params.arches[idx], attr, value)
+        if self._maybe_auto_avoid():
+            return
         self.update_plot()
 
     # ---------------------------------------------------------------
@@ -912,18 +1077,18 @@ class TunnelApp:
                                   replace(side, label="우선")]
 
         self._populate_param_rows()
+        self._update_action_buttons(new_kind)
+        self.update_plot()
 
-        if new_kind == TunnelType.NATM:
+    def _update_action_buttons(self, kind: TunnelType):
+        if kind == TunnelType.NATM:
             self.btn_auto_fit.grid()
         else:
             self.btn_auto_fit.grid_remove()
-
-        if new_kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+        if kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
             self.btn_align_fl.grid()
         else:
             self.btn_align_fl.grid_remove()
-
-        self.update_plot()
 
     # ---------------------------------------------------------------
     def _build_canvas(self, parent):
@@ -947,10 +1112,22 @@ class TunnelApp:
         self.toolbar.pack(side="left")
 
         tab_hist = ttk.Frame(nb)
-        nb.add(tab_hist, text="  자동 맞춤 이력  ")
+        nb.add(tab_hist, text="  이력  ")
         self._build_history_tab(tab_hist)
 
     def _build_history_tab(self, parent):
+        nb = ttk.Notebook(parent)
+        nb.pack(fill="both", expand=True, padx=4, pady=4)
+
+        fit_tab = ttk.Frame(nb)
+        nb.add(fit_tab, text="  FL 자동 맞춤  ")
+        self._build_fit_history_subtab(fit_tab)
+
+        snap_tab = ttk.Frame(nb)
+        nb.add(snap_tab, text="  제원 스냅샷  ")
+        self._build_snapshot_subtab(snap_tab)
+
+    def _build_fit_history_subtab(self, parent):
         bar = ttk.Frame(parent)
         bar.pack(fill="x", padx=8, pady=6)
         ttk.Button(bar, text="CSV 저장",
@@ -983,12 +1160,92 @@ class TunnelApp:
         self.hist_tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
 
+    def _build_snapshot_subtab(self, parent):
+        bar = ttk.Frame(parent)
+        bar.pack(fill="x", padx=8, pady=6)
+        ttk.Button(bar, text="현재 제원 저장",
+                   style="Accent.TButton",
+                   command=self.take_snapshot).pack(side="left", padx=(0, 6))
+        ttk.Button(bar, text="JSON 저장",
+                   command=self.save_snapshots_json).pack(side="left", padx=(0, 6))
+        ttk.Button(bar, text="JSON 불러오기",
+                   command=self.load_snapshots_json).pack(side="left", padx=(0, 6))
+        ttk.Button(bar, text="선택 삭제",
+                   command=self.delete_snapshot).pack(side="left", padx=(0, 6))
+        ttk.Button(bar, text="초기화",
+                   command=self.clear_snapshots).pack(side="left", padx=(0, 6))
+        self.snap_count = ttk.Label(bar, text="0건")
+        self.snap_count.pack(side="right")
+
+        ttk.Label(parent, text="더블클릭으로 해당 제원 복원",
+                  style="Info.TLabel").pack(anchor="w", padx=12)
+
+        cols = ("timestamp", "kind", "total_area", "note")
+        heads = {
+            "timestamp": "시각", "kind": "타입",
+            "total_area": "총 내공면적(㎡)", "note": "메모",
+        }
+        widths = {"timestamp": 140, "kind": 130, "total_area": 120, "note": 220}
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.snap_tree = ttk.Treeview(frame, columns=cols, show="headings")
+        for c in cols:
+            self.snap_tree.heading(c, text=heads[c])
+            self.snap_tree.column(c, width=widths.get(c, 100),
+                                  anchor="center" if c != "note" else "w")
+        self.snap_tree.bind("<Double-1>", self._on_snapshot_dblclick)
+        sb = ttk.Scrollbar(frame, orient="vertical", command=self.snap_tree.yview)
+        self.snap_tree.configure(yscroll=sb.set)
+        self.snap_tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
     # ---------------------------------------------------------------
     def _on_param_change(self, attr: str, value: float):
         if self._suspend:
             return
         setattr(self.params, attr, value)
+        if self._maybe_auto_avoid():
+            return
         self.update_plot()
+
+    def _maybe_auto_avoid(self) -> bool:
+        """auto_avoid_overlap가 켜져 있고 겹침 있으면 보정 후 True."""
+        if (not self.auto_avoid_overlap.get()
+                or self.params.kind not in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH)):
+            return False
+        return self._auto_fix_overlap()
+
+    def _auto_fix_overlap(self) -> bool:
+        fixed = False
+        for _ in range(10):
+            mg = compute_multi_arch(self.params)
+            info = check_multi_arch_overlap(mg)
+            if not info.has_overlap:
+                break
+            margin = 0.01
+            need = -info.min_gap + margin
+            if self.params.kind == TunnelType.NATM_2ARCH:
+                self.params.pillar_w += need
+                if "pillar_w" in self.rows:
+                    self._suspend = True
+                    try:
+                        self.rows["pillar_w"].set_value(self.params.pillar_w)
+                    finally:
+                        self._suspend = False
+            else:
+                self.params.gap_L += need / 2
+                self.params.gap_R += need / 2
+                self._suspend = True
+                try:
+                    for k in ("gap_L", "gap_R"):
+                        if k in self.rows:
+                            self.rows[k].set_value(getattr(self.params, k))
+                finally:
+                    self._suspend = False
+            fixed = True
+        if fixed:
+            self.update_plot()
+        return fixed
 
     def _apply_params(self, **kwargs):
         self._suspend = True
@@ -1020,7 +1277,9 @@ class TunnelApp:
             d.arches = [central, replace(side, label="좌선"),
                         replace(side, label="우선")]
         self.params = d
+        self.type_var.set(kind.value)
         self._populate_param_rows()
+        self._update_action_buttons(kind)
         self.update_plot()
 
     # ---------------------------------------------------------------
@@ -1069,15 +1328,15 @@ class TunnelApp:
         achieved = compute_fl(self.params, r1_y_opt)
         entry = self.history.add(self.params, r1_y_prev, achieved, success=True)
         self._refresh_history_view()
+        self.take_snapshot(auto=True,
+                           note=f"NATM FL 자동 맞춤 (목표 {target:.3f})")
 
         messagebox.showinfo(
             "자동 맞춤 완료",
             f"R1_Y  = {r1_y_opt:.4f}  (Δ {entry.dR1_Y:+.4f})\n"
             f"FL     = {achieved:.4f}  (목표 {target})\n"
-            f"이력 {len(self.history.entries)}건")
+            f"이력 {len(self.history.entries)}건 / 스냅샷 {len(self.snapshots.entries)}건")
 
-    # ---------------------------------------------------------------
-    # 다중 아치 FL 통일
     # ---------------------------------------------------------------
     def _on_shortcut_align(self):
         if self.params.kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
@@ -1098,7 +1357,6 @@ class TunnelApp:
             return
 
         result = align_multi_arch_fl(p, reference_idx=ref_idx)
-
         if not all(result.success):
             fails = [labels[i] for i, ok in enumerate(result.success) if not ok]
             messagebox.showwarning(
@@ -1108,6 +1366,8 @@ class TunnelApp:
             return
 
         if not self._confirm_align_dialog(result, labels[ref_idx]):
+            return
+        if not self._guard_overlap("FL 통일 적용"):
             return
 
         self._suspend = True
@@ -1121,6 +1381,9 @@ class TunnelApp:
             self._suspend = False
 
         self.update_plot()
+        self.take_snapshot(auto=True,
+                           note=f"FL 통일 후 (기준: {labels[ref_idx]}, "
+                                f"FL={result.target_FL:.3f})")
 
         messagebox.showinfo(
             "FL 통일 완료",
@@ -1130,8 +1393,7 @@ class TunnelApp:
                 f"{result.new_R1Y[i]:.3f}  (Δ {result.new_R1Y[i] - result.old_R1Y[i]:+.3f})"
                 for i in range(len(result.labels))))
 
-    def _ask_reference_arch(self, labels: list[str],
-                            default_idx: int = 0) -> Optional[int]:
+    def _ask_reference_arch(self, labels, default_idx=0) -> Optional[int]:
         win = tk.Toplevel(self.root)
         win.title("FL 통일 기준")
         win.transient(self.root)
@@ -1165,7 +1427,6 @@ class TunnelApp:
         x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - win.winfo_width() // 2
         y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - win.winfo_height() // 2
         win.geometry(f"+{x}+{y}")
-
         self.root.wait_window(win)
         return result["idx"]
 
@@ -1193,19 +1454,15 @@ class TunnelApp:
         for i, label in enumerate(r.labels):
             tree.insert("", "end", values=(
                 label,
-                f"{r.old_R1Y[i]:.4f}",
-                f"{r.new_R1Y[i]:.4f}",
+                f"{r.old_R1Y[i]:.4f}", f"{r.new_R1Y[i]:.4f}",
                 f"{r.new_R1Y[i] - r.old_R1Y[i]:+.4f}",
-                f"{r.old_FL[i]:.4f}",
-                f"{r.new_FL[i]:.4f}",
-            ))
+                f"{r.old_FL[i]:.4f}", f"{r.new_FL[i]:.4f}"))
         tree.pack(side="left", fill="both", expand=True)
 
         result = {"ok": False}
         btns = ttk.Frame(win, padding=(12, 0, 12, 12))
         btns.pack(fill="x", side="bottom")
-        ttk.Button(btns, text="취소",
-                   command=win.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="취소", command=win.destroy).pack(side="right", padx=(6, 0))
         ttk.Button(btns, text="적용", style="Accent.TButton",
                    command=lambda: (result.update(ok=True), win.destroy())
                    ).pack(side="right")
@@ -1214,10 +1471,27 @@ class TunnelApp:
         x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - win.winfo_width() // 2
         y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - win.winfo_height() // 2
         win.geometry(f"+{x}+{y}")
-
         self.root.wait_window(win)
         return result["ok"]
 
+    def _guard_overlap(self, action_name: str) -> bool:
+        if self.params.kind not in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            return True
+        mg = compute_multi_arch(self.params)
+        info = check_multi_arch_overlap(mg)
+        if not info.has_overlap:
+            return True
+        names = [f"{mg.layout[i].label}↔{mg.layout[j].label}"
+                 for i, j in info.pairs]
+        total = sum(info.overlap_areas)
+        return messagebox.askyesno(
+            "아치 겹침 경고",
+            f"다음 아치가 겹쳐 있습니다:\n  {', '.join(names)}\n"
+            f"겹침 면적 합: {total:.2f}㎡\n\n"
+            f"그래도 {action_name}을(를) 계속할까요?")
+
+    # ---------------------------------------------------------------
+    # FL 이력
     # ---------------------------------------------------------------
     def _refresh_history_view(self):
         for i in self.hist_tree.get_children():
@@ -1225,8 +1499,7 @@ class TunnelApp:
         for e in self.history.entries:
             status = "✅" if e.is_ok else ("⚠️" if e.success else "❌")
             self.hist_tree.insert("", "end", values=(
-                e.timestamp,
-                f"{e.target_FL:.4f}",
+                e.timestamp, f"{e.target_FL:.4f}",
                 f"{e.achieved_FL:.4f}" if e.success else "-",
                 f"{e.R1_Y:.4f}", f"{e.dR1_Y:+.4f}",
                 f"{e.R1:.2f}", f"{e.top_angle:.1f}",
@@ -1240,16 +1513,14 @@ class TunnelApp:
             return
         idx = self.hist_tree.index(sel[0])
         e = self.history.entries[idx]
-        if not messagebox.askyesno(
-                "이력 복원",
-                f"{e.timestamp} 값으로 파라미터를 복원할까요?"):
+        if not messagebox.askyesno("이력 복원",
+                                   f"{e.timestamp} 값으로 파라미터를 복원할까요?"):
             return
         if self.params.kind != TunnelType.NATM:
             self.type_var.set(TunnelType.NATM.value)
             self.params.kind = TunnelType.NATM
             self._populate_param_rows()
-            self.btn_auto_fit.grid()
-            self.btn_align_fl.grid_remove()
+            self._update_action_buttons(TunnelType.NATM)
         self._apply_params(R1=e.R1, top_angle=e.top_angle, R2=e.R2,
                            r2_angle=e.r2_angle, D=e.D,
                            R1_Y=e.R1_Y, FL=e.target_FL)
@@ -1277,6 +1548,118 @@ class TunnelApp:
                                f"{len(self.history.entries)}건을 삭제할까요?"):
             self.history.entries.clear()
             self._refresh_history_view()
+
+    # ---------------------------------------------------------------
+    # 제원 스냅샷
+    # ---------------------------------------------------------------
+    def take_snapshot(self, auto: bool = False, note: str = ""):
+        if not auto and not self._guard_overlap("스냅샷 저장"):
+            return
+
+        p = self.params
+        if p.kind == TunnelType.BOX:
+            total = compute_box_geometry(p).inner_area
+        elif p.kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            total = compute_multi_arch(p).total_area
+        else:
+            a = ArchParams(R1=p.R1, top_angle=p.top_angle, R2=p.R2,
+                           r2_angle=p.r2_angle, R1_Y=p.R1_Y, cx=0.0)
+            total = compute_geometry_from_arch(a, FL=p.FL).area
+
+        if not auto:
+            note = simpledialog.askstring(
+                "제원 스냅샷", "메모를 입력하세요 (선택):",
+                initialvalue=note or p.kind.value) or ""
+
+        self.snapshots.add(p, total_area=total, note=note)
+        self._refresh_snapshot_view()
+        if not auto:
+            messagebox.showinfo(
+                "스냅샷 저장",
+                f"제원 스냅샷이 저장되었습니다 "
+                f"({len(self.snapshots.entries)}건).")
+
+    def _refresh_snapshot_view(self):
+        for i in self.snap_tree.get_children():
+            self.snap_tree.delete(i)
+        for e in self.snapshots.entries:
+            self.snap_tree.insert("", "end", values=(
+                e.timestamp, e.kind, f"{e.total_area:.2f}", e.note))
+        self.snap_count.config(text=f"{len(self.snapshots.entries)}건")
+
+    def _on_snapshot_dblclick(self, _evt):
+        sel = self.snap_tree.selection()
+        if not sel:
+            return
+        idx = self.snap_tree.index(sel[0])
+        e = self.snapshots.entries[idx]
+        if not messagebox.askyesno(
+                "스냅샷 복원",
+                f"{e.timestamp}\n{e.kind}\n{e.note or '(메모 없음)'}\n\n"
+                f"이 제원으로 복원할까요?"):
+            return
+        self._restore_snapshot(e)
+
+    def _restore_snapshot(self, e: SnapshotEntry):
+        try:
+            new_p = SnapshotStore.deserialize(e.payload)
+        except Exception as ex:
+            messagebox.showerror("복원 실패", str(ex))
+            return
+        self.params = new_p
+        self.type_var.set(new_p.kind.value)
+        self._populate_param_rows()
+        self._update_action_buttons(new_p.kind)
+        self.update_plot()
+
+    def delete_snapshot(self):
+        sel = self.snap_tree.selection()
+        if not sel:
+            return
+        idxs = sorted((self.snap_tree.index(i) for i in sel), reverse=True)
+        if not messagebox.askyesno("삭제", f"{len(idxs)}건을 삭제할까요?"):
+            return
+        for i in idxs:
+            self.snapshots.entries.pop(i)
+        self._refresh_snapshot_view()
+
+    def clear_snapshots(self):
+        if not self.snapshots.entries:
+            return
+        if messagebox.askyesno("스냅샷 초기화",
+                               f"{len(self.snapshots.entries)}건을 삭제할까요?"):
+            self.snapshots.entries.clear()
+            self._refresh_snapshot_view()
+
+    def save_snapshots_json(self):
+        if not self.snapshots.entries:
+            messagebox.showinfo("스냅샷", "저장할 스냅샷이 없습니다.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="스냅샷 JSON 저장", defaultextension=".json",
+            initialfile=f"snapshots_{datetime.now():%Y%m%d_%H%M%S}.json",
+            filetypes=[("JSON", "*.json")])
+        if not path:
+            return
+        try:
+            self.snapshots.to_json(path)
+            messagebox.showinfo("저장 완료", path)
+        except Exception as ex:
+            messagebox.showerror("저장 실패", str(ex))
+
+    def load_snapshots_json(self):
+        path = filedialog.askopenfilename(
+            title="스냅샷 JSON 불러오기",
+            filetypes=[("JSON", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            self.snapshots.from_json(path)
+            self._refresh_snapshot_view()
+            messagebox.showinfo("불러오기 완료",
+                                f"{len(self.snapshots.entries)}건 로드됨.")
+        except Exception as ex:
+            messagebox.showerror("불러오기 실패", str(ex))
 
     # ---------------------------------------------------------------
     # 렌더링
@@ -1352,17 +1735,16 @@ class TunnelApp:
         arc(g.left_center, g.a.R2, a_left, a_left + g.a.r2_angle, '#2f6fed')
         arc(g.right_center, g.a.R2, a_right - g.a.r2_angle, a_right, '#2b8a3e')
 
-    def _draw_haunch_bottom(self, g: TunnelGeometry, p: TunnelParams):
+    def _draw_haunch_bottom(self, g, p):
         ax = self.ax
         for end, side, sign in ((g.left_end, p.sideL, +1),
                                 (g.right_end, p.sideR, -1)):
-            x = [end[0], end[0] + sign * side,
-                 end[0] + sign * side, 0]
-            y = [end[1], end[1],
-                 end[1] - p.fl_to_culvert, end[1] - p.fl_to_culvert]
+            x = [end[0], end[0] + sign * side, end[0] + sign * side, 0]
+            y = [end[1], end[1], end[1] - p.fl_to_culvert,
+                 end[1] - p.fl_to_culvert]
             ax.plot(x, y, 'k-', lw=1.2)
 
-    def _draw_centerlines(self, p: TunnelParams, g: TunnelGeometry):
+    def _draw_centerlines(self, p, g):
         ax = self.ax
         y_text = g.top_of_tunnel + LABEL_Y_MARGIN
         for x, label in ((-p.D / 2, 'CL of 하선'),
@@ -1371,7 +1753,7 @@ class TunnelApp:
             ax.axvline(x, color='gray', linestyle='--', linewidth=0.9)
             ax.text(x, y_text, label, ha='center', fontsize=9, color='#555555')
 
-    def _draw_dimension_lines(self, g: TunnelGeometry, p: TunnelParams):
+    def _draw_dimension_lines(self, g, p):
         ax = self.ax
         for c, e in ((g.center_top, g.top_end),
                      (g.center_top, g.top_start),
@@ -1393,7 +1775,7 @@ class TunnelApp:
             ax.text(m[0], m[1], f'R2={g.a.R2 * 1000:.0f}',
                     rotation=rot, fontsize=9)
 
-    def _draw_angles(self, g: TunnelGeometry):
+    def _draw_angles(self, g):
         self._draw_angle_annotation(g.top_start, g.center_top, g.top_end)
         self._draw_angle_annotation(g.left_end, g.left_center, g.top_start)
         self._draw_angle_annotation(g.top_end, g.right_center, g.right_end)
@@ -1415,7 +1797,7 @@ class TunnelApp:
                      f'{angle_deg:.1f}°', fontsize=11, ha='center',
                      color='#333333')
 
-    def _draw_safe_box(self, g: TunnelGeometry, p: TunnelParams):
+    def _draw_safe_box(self, g, p):
         ax = self.ax
         h = p.safeheight
         for end, side, sign in ((g.left_end, p.sideL, +1),
@@ -1424,18 +1806,18 @@ class TunnelApp:
             x1 = x0 + sign * side
             ax.plot([x0, x0, x1, x1], [y0, y0 + h, y0 + h, y0],
                     color='#9aa0a6', linestyle='--', lw=0.9)
-            ax.plot([x0, x1], [y0 + h, y0],
-                    color='#9aa0a6', linestyle='--', lw=0.9)
-            ax.plot([x1, x0], [y0 + h, y0],
-                    color='#9aa0a6', linestyle='--', lw=0.9)
+            ax.plot([x0, x1], [y0 + h, y0], color='#9aa0a6',
+                    linestyle='--', lw=0.9)
+            ax.plot([x1, x0], [y0 + h, y0], color='#9aa0a6',
+                    linestyle='--', lw=0.9)
 
-    def _draw_sl_line(self, g: TunnelGeometry):
+    def _draw_sl_line(self, g):
         ax = self.ax
         ax.axhline(g.SL, color='#9aa0a6', linestyle='--', linewidth=0.9)
         ax.text(g.left_end[0] - 0.6, g.SL, 'SL',
                 fontsize=9, color='#555555', va='center')
 
-    def _update_spec_panel(self, g: TunnelGeometry, p: TunnelParams):
+    def _update_spec_panel(self, g, p):
         new_fl = compute_fl(p, g.a.R1_Y)
         ok = abs(new_fl - p.FL) <= FL_TOLERANCE
         mark = "✅" if ok else "⚠️"
@@ -1446,7 +1828,7 @@ class TunnelApp:
             f"FL {new_fl:.3f}m (목표 {p.FL:.3f}m)   {mark}"))
 
     # ---------- 다중 아치 ----------
-    def _draw_multi_arch(self, mg: MultiArchGeometry, p: TunnelParams):
+    def _draw_multi_arch(self, mg, p):
         palette = ['#2f6fed', '#2b8a3e', '#d64545']
         for i, (g, a) in enumerate(zip(mg.arches, mg.layout)):
             color = palette[i % len(palette)]
@@ -1463,8 +1845,9 @@ class TunnelApp:
             self._draw_pillar(mg, p)
         else:
             self._draw_gaps(mg, p)
+        self._draw_overlap_highlight(mg)
 
-    def _draw_single_arch(self, g: TunnelGeometry, a: ArchParams, color: str):
+    def _draw_single_arch(self, g, a, color):
         ax = self.ax
 
         def arc(c, r, s, e):
@@ -1484,7 +1867,7 @@ class TunnelApp:
         ax.text(a.cx, g.top_of_tunnel + 0.4, a.label,
                 ha='center', fontsize=10, color=color, fontweight='bold')
 
-    def _draw_pillar(self, mg: MultiArchGeometry, p: TunnelParams):
+    def _draw_pillar(self, mg, p):
         left_g, right_g = mg.arches[0], mg.arches[1]
         x_l, x_r = left_g.right_end[0], right_g.left_end[0]
         y_b = max(left_g.right_end[1], right_g.left_end[1])
@@ -1498,7 +1881,7 @@ class TunnelApp:
                      f'중벽 {p.pillar_w * 1000:.0f}',
                      ha='center', fontsize=9, color='#666666')
 
-    def _draw_gaps(self, mg: MultiArchGeometry, p: TunnelParams):
+    def _draw_gaps(self, mg, p):
         central = mg.arches[0]
         left = mg.arches[1]
         right = mg.arches[2]
@@ -1516,11 +1899,51 @@ class TunnelApp:
         gap_arrow(central.right_end[0], right.top_start[0],
                   y_arrow, f'{p.gap_R * 1000:.0f}')
 
-    def _update_multi_arch_spec_panel(self, mg: MultiArchGeometry,
-                                       p: TunnelParams):
+    def _draw_overlap_highlight(self, mg):
+        info = check_multi_arch_overlap(mg)
+        if not info.has_overlap:
+            return
+        geoms = [g.polygon for g in mg.arches]
+        for (i, j), area in zip(info.pairs, info.overlap_areas):
+            inter = geoms[i].intersection(geoms[j])
+            polys = ([inter] if inter.geom_type == "Polygon"
+                     else list(getattr(inter, "geoms", [])))
+            for poly in polys:
+                if poly.is_empty:
+                    continue
+                xs, ys = poly.exterior.xy
+                self.ax.fill(xs, ys, facecolor='red', alpha=0.25,
+                             edgecolor='red', linestyle='-', linewidth=1.2)
+                cx, cy = poly.centroid.x, poly.centroid.y
+                self.ax.text(cx, cy, f"겹침 {area:.2f}㎡",
+                             ha='center', va='center', fontsize=9,
+                             color='white', fontweight='bold',
+                             bbox=dict(boxstyle="round,pad=0.2",
+                                       facecolor="red", edgecolor="none",
+                                       alpha=0.85))
+        names = [f"{mg.layout[i].label}↔{mg.layout[j].label}"
+                 for i, j in info.pairs]
+        y_top = max(g.top_of_tunnel for g in mg.arches) + 1.8
+        self.ax.text(0, y_top, f"⚠ 아치 겹침: {', '.join(names)}",
+                     ha='center', fontsize=10, color='white',
+                     bbox=dict(boxstyle="round,pad=0.4",
+                               facecolor="#d64545", edgecolor="none"))
+
+    def _update_multi_arch_spec_panel(self, mg, p):
         fls = [compute_fl_for_arch(a) - p.fl_to_culvert for a in mg.layout]
         fl_spread = max(fls) - min(fls)
-        unified = "✅ 통일" if fl_spread < FL_TOLERANCE else f"⚠️ 편차 {fl_spread * 1000:.0f}mm"
+        unified = ("✅ 통일" if fl_spread < FL_TOLERANCE
+                   else f"⚠️ 편차 {fl_spread * 1000:.0f}mm")
+
+        overlap = check_multi_arch_overlap(mg)
+        if overlap.has_overlap:
+            names = [f"{mg.layout[i].label}↔{mg.layout[j].label}"
+                     for i, j in overlap.pairs]
+            overlap_txt = f"❌ 겹침: {', '.join(names)}"
+        elif overlap.min_gap < 0.05:
+            overlap_txt = f"⚠️ 인접 (최소 간격 {overlap.min_gap * 1000:.0f}mm)"
+        else:
+            overlap_txt = f"✅ 분리 (최소 간격 {overlap.min_gap * 1000:.0f}mm)"
 
         if p.kind == TunnelType.NATM_2ARCH:
             left, right = mg.arches
@@ -1529,20 +1952,27 @@ class TunnelApp:
                 f"좌 {left.area:.2f}㎡ (FL {fls[0]:.3f})  |  "
                 f"우 {right.area:.2f}㎡ (FL {fls[1]:.3f})",
                 f"FL 상태: {unified}",
+                f"겹침 검사: {overlap_txt}",
             ]
+            if p.pillar_w < MIN_PILLAR_W:
+                lines.append(
+                    f"⚠️ 중벽 폭 {p.pillar_w * 1000:.0f}mm < "
+                    f"최소 {MIN_PILLAR_W * 1000:.0f}mm")
         else:
             c, l, r = mg.arches
             lines = [
-                f"총 내공면적 {mg.total_area:.2f}㎡  |  이격 L{p.gap_L * 1000:.0f} R{p.gap_R * 1000:.0f}",
+                f"총 내공면적 {mg.total_area:.2f}㎡  |  "
+                f"이격 L{p.gap_L * 1000:.0f} R{p.gap_R * 1000:.0f}",
                 f"중앙 {c.area:.2f}㎡ (FL {fls[0]:.3f})  |  "
                 f"좌 {l.area:.2f}㎡ (FL {fls[1]:.3f})  |  "
                 f"우 {r.area:.2f}㎡ (FL {fls[2]:.3f})",
                 f"FL 상태: {unified}",
+                f"겹침 검사: {overlap_txt}",
             ]
         self.spec_label.config(text="\n".join(lines))
 
     # ---------- Box ----------
-    def _draw_box_section(self, g: BoxGeometry):
+    def _draw_box_section(self, g):
         p, ax = g.p, self.ax
         tw, ts = p.box_wall_t, p.box_slab_t
 
@@ -1555,7 +1985,8 @@ class TunnelApp:
 
         try:
             wall_poly = g.outer.difference(g.inner)
-            geoms = [wall_poly] if wall_poly.geom_type == 'Polygon' else list(wall_poly.geoms)
+            geoms = ([wall_poly] if wall_poly.geom_type == 'Polygon'
+                     else list(wall_poly.geoms))
             for poly in geoms:
                 _fill_polygon(ax, poly, color='#d0d4da', alpha=0.55)
         except Exception:
@@ -1620,7 +2051,7 @@ class TunnelApp:
             ax.plot([x1, x0], [y0 + h, y0], color='#9aa0a6',
                     linestyle='--', lw=0.8)
 
-    def _update_box_spec_panel(self, g: BoxGeometry):
+    def _update_box_spec_panel(self, g):
         p = g.p
         concrete = g.outer_area - g.inner_area
         fillet_txt = (f"R_top {p.box_fillet_top_r * 1000:.0f}mm"
@@ -1628,7 +2059,8 @@ class TunnelApp:
         self.spec_label.config(text=(
             f"내공면적 {g.inner_area:.2f}㎡  |  콘크리트 {concrete:.2f}㎡  |  "
             f"B {p.box_width:.2f} × H {p.box_height:.2f}m\n"
-            f"tw {p.box_wall_t * 1000:.0f}mm  |  ts {p.box_slab_t * 1000:.0f}mm  |  "
+            f"tw {p.box_wall_t * 1000:.0f}mm  |  "
+            f"ts {p.box_slab_t * 1000:.0f}mm  |  "
             f"{fillet_txt}  |  SL {g.SL:.2f}m"))
 
     # ---------------------------------------------------------------
@@ -1645,6 +2077,8 @@ class TunnelApp:
             self.update_plot()
 
     def save_dxf(self):
+        if not self._guard_overlap("DXF 저장"):
+            return
         path = filedialog.asksaveasfilename(
             title="DXF 저장", defaultextension=".dxf",
             initialfile="TUNNEL_output.dxf",
@@ -1653,13 +2087,31 @@ class TunnelApp:
             return
         try:
             self._write_dxf(path)
-            messagebox.showinfo("저장 완료", path)
         except Exception as e:
             messagebox.showerror("저장 실패", str(e))
+            return
+
+        overlap_note = ""
+        if self.params.kind in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            mg = compute_multi_arch(self.params)
+            info = check_multi_arch_overlap(mg)
+            if info.has_overlap:
+                n = len(info.pairs)
+                style = self.hatch_style.get()
+                style_txt = {"solid": "단색",
+                             HATCH_STYLE_PATTERN: "ANSI31",
+                             HATCH_STYLE_BOTH: "단색+ANSI31"}.get(style, style)
+                overlap_note = (f"\n\n⚠ 겹침 {n}개소가 OVERLAP 레이어의 "
+                                f"HATCH({style_txt})로 포함되었습니다.")
+
+        messagebox.showinfo("저장 완료", path + overlap_note)
 
     def _write_dxf(self, path: str):
-        doc = ezdxf.new()
+        doc = ezdxf.new(dxfversion="R2018")
         msp = doc.modelspace()
+
+        if OVERLAP_LAYER not in doc.layers:
+            doc.layers.add(OVERLAP_LAYER, color=1)
 
         for line in self.ax.lines:
             xs, ys = line.get_data()
@@ -1683,7 +2135,45 @@ class TunnelApp:
                 pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
                 msp.add_lwpolyline(pts, close=True)
 
+        self._write_overlap_hatches(msp)
         doc.saveas(path)
+
+    def _write_overlap_hatches(self, msp):
+        if self.params.kind not in (TunnelType.NATM_2ARCH, TunnelType.NATM_3ARCH):
+            return
+        mg = compute_multi_arch(self.params)
+        info = check_multi_arch_overlap(mg)
+        if not info.has_overlap:
+            return
+
+        geoms = [g.polygon for g in mg.arches]
+        style = self.hatch_style.get()
+
+        for (i, j) in info.pairs:
+            inter = geoms[i].intersection(geoms[j])
+            if inter.is_empty:
+                continue
+
+            if style in (HATCH_STYLE_SOLID, HATCH_STYLE_BOTH):
+                add_hatch_for_polygon(msp, inter, color=1, solid=True,
+                                      alpha=70, layer=OVERLAP_LAYER)
+            if style in (HATCH_STYLE_PATTERN, HATCH_STYLE_BOTH):
+                add_hatch_for_polygon(msp, inter, color=1, solid=False,
+                                      pattern=HATCH_STYLE_PATTERN,
+                                      scale=0.3, alpha=70,
+                                      layer=OVERLAP_LAYER)
+
+            # 외곽선 폴리라인
+            polys = ([inter] if inter.geom_type == "Polygon"
+                     else list(getattr(inter, "geoms", [])))
+            for poly in polys:
+                if poly.is_empty:
+                    continue
+                pts = [(x, y) for x, y in poly.exterior.coords]
+                if pts and pts[0] != pts[-1]:
+                    pts.append(pts[0])
+                msp.add_lwpolyline(pts, close=True,
+                                   dxfattribs={"layer": OVERLAP_LAYER})
 
     # ---------------------------------------------------------------
     def close(self):
@@ -1694,7 +2184,7 @@ class TunnelApp:
 
 
 # =============================================================================
-def _fill_polygon(ax, poly: Polygon, color='#d0d4da', alpha=0.5):
+def _fill_polygon(ax, poly, color='#d0d4da', alpha=0.5):
     xs, ys = poly.exterior.xy
     ax.fill(xs, ys, facecolor=color, edgecolor='none', alpha=alpha)
 
