@@ -226,11 +226,13 @@ class StationRowFactory:
         coord_calc: CoordinateCalculator,
         tangent_calc: TangentCalculator,
         bp_xy: tuple[float, float],
+        bp_sta: float,  # ✅ 신규
     ):
         self.curve = curve
         self.coord_calc = coord_calc
         self.tangent_calc = tangent_calc
         self.bp_xy = bp_xy
+        self.bp_sta = bp_sta  # ✅
 
     def create(
         self,
@@ -245,6 +247,7 @@ class StationRowFactory:
             bp_xy=self.bp_xy,
             shiftx=shift.x,
             shifty=shift.y,
+            bp_sta=self.bp_sta,  # ✅
         )
         coord = self.coord_calc.compute(sta, offset, geometry).as_tuple()
         fields = self.tangent_calc.compute(sta, offset)
@@ -292,7 +295,7 @@ def build_station_group(
     shift_calc = create_shift_calculator(curve)
     coord_calc = create_coordinate_calculator(curve)
     tangent_calc = create_tangent_calculator(curve)
-    row_factory = StationRowFactory(curve, coord_calc, tangent_calc, bp_xy)
+    row_factory = StationRowFactory(curve, coord_calc, tangent_calc, bp_xy, bp_sta)
 
     # 2) 측점 리스트
     stations = station_builder.build()

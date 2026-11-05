@@ -202,8 +202,12 @@ class AlignmentService:
                 continue
 
             bp_xy = flat[0].coord
-
-            if curve.curve_type == "simplecurve":
+            bp_sta = flat[0].sta  # ✅ 신규
+            if curve.curve_type == "straight":
+                # ✅ 직선 IP: 단순 offset
+                offset = sta - bp_sta
+                shiftx = shifty = 0.0
+            elif curve.curve_type == "simplecurve":
                 offset = calculate_station_offset(
                     sta, curve.bc_sta, curve.bc_sta,
                     curve.ec_sta, curve.ec_sta, flat[0].sta,
@@ -225,6 +229,7 @@ class AlignmentService:
 
             geometry = build_geometry_from_curve(
                 curve, bp_xy=bp_xy, shiftx=shiftx, shifty=shifty,
+                bp_sta=bp_sta,  # ✅
             )
             calc = create_coordinate_calculator(curve)
             return calc.compute(sta, offset, geometry).as_tuple()
