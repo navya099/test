@@ -76,12 +76,19 @@ class AlignmentResult:
     station_groups: list = field(default_factory=list)     # list[list[list[StationRow]]]
     polycurve: list[tuple[float, float]] = field(default_factory=list)
 
-    # ✅ 복선 궤도 (오프셋 계산 결과)
+    # ✅ 복선 궤도 (독립 계산)
     track_gauge: float = 0.0
-    upper_track_polycurve: list[tuple[float, float]] = field(default_factory=list)  # 상선 (우측)
-    lower_track_polycurve: list[tuple[float, float]] = field(default_factory=list)  # 하선 (좌측)
-    upper_track_stations: list = field(default_factory=list)
-    lower_track_stations: list = field(default_factory=list)
+    upper_track_curves: list = field(default_factory=list)
+    upper_track_station_groups: list = field(default_factory=list)
+    upper_track_polycurve: list[tuple[float, float]] = field(default_factory=list)
+    upper_track_linestring: Optional[LineString] = None
+    upper_track_issues: list = field(default_factory=list)
+
+    lower_track_curves: list = field(default_factory=list)
+    lower_track_station_groups: list = field(default_factory=list)
+    lower_track_polycurve: list[tuple[float, float]] = field(default_factory=list)
+    lower_track_linestring: Optional[LineString] = None
+    lower_track_issues: list = field(default_factory=list)
 
     # 출력 파일 경로
     report_path: Optional[Path] = None
@@ -185,6 +192,28 @@ class AlignmentService:
 
         filename = filename or Config.DXF_FILENAME
         cfg = config or self.dxf_config
+
+        # 궤도별 dict 준비
+        upper_track = None
+        lower_track = None
+        if self.result.upper_track_curves:
+            upper_track = {
+                "polycurve": self.result.upper_track_polycurve,
+                "curves": self.result.upper_track_curves,
+                "station_groups": self.result.upper_track_station_groups,
+                "linestring": self.result.upper_track_linestring,
+                "layer": cfg.layer_upper_track,
+                "suffix": "_상선",
+            }
+        if self.result.lower_track_curves:
+            lower_track = {
+                "polycurve": self.result.lower_track_polycurve,
+                "curves": self.result.lower_track_curves,
+                "station_groups": self.result.lower_track_station_groups,
+                "linestring": self.result.lower_track_linestring,
+                "layer": cfg.layer_lower_track,
+                "suffix": "_하선",
+            }
 
         create_dxf(
             coordinates=self.result.polycurve,
@@ -355,23 +384,9 @@ class AlignmentService:
             design_speed=input_data.design_speed,
             ballast=input_data.ballast,
         )
-        # ✅ 복선 궤도 계산
-        logger.warning(
-            "[DEBUG _run_calculation] double_track=%s, track_gauge=%.2f",
-            input_data.double_track, input_data.track_gauge,
-        )
-        # ✅ 여기로 이동! (result 생성 직후)
+        # ✅ 2단계: 궤도별 독립 계산
         if input_data.double_track and input_data.track_gauge > 0:
-            self._compute_track_offsets(
-                result,
-                gauge=input_data.track_gauge,
-                swap=input_data.track_swap_direction,
-            )
-            logger.warning(
-                "[DEBUG] 궤도 계산 후: upper=%d, lower=%d",
-                len(result.upper_track_polycurve),
-                len(result.lower_track_polycurve),
-            )
+            self._compute_track_alignments(result, input_data)
         else:
             logger.warning("[DEBUG] 복선 조건 미충족 → 궤도 계산 스킵")
         return result
@@ -475,6 +490,127 @@ class AlignmentService:
         logger.info(
             "복선 궤도 계산 완료: 궤도간격=%.3fm (오프셋 %.3fm), 상선 %d점, 하선 %d점",
             gauge, offset, len(upper_poly), len(lower_poly),
+        )
+
+    def _compute_track_alignments(
+            self, result: AlignmentResult, input_data: AlignmentInput,
+    ) -> None:
+        """복선 궤도: CL IP 오프셋 → 궤도별 독립 선형 계산.
+
+        - 궤도별 IP 좌표: LWPOLYLINE OFFSET (교점 계산)
+        - 궤도별 반경: R ± D/2
+        - 궤도별 M/V/Z: CL 상속
+        - 궤도별 STA: 독립 계산
+        """
+        from src.railway_alignment.core.geometry import offset_polyline_ips
+        from src.railway_alignment.core.linestring import create_linestring
+        from src.railway_alignment.core.math_util import calculate_angles
+        from src.railway_alignment.core.curve import calculate_curve
+        from src.railway_alignment.core.validator import validate_curves
+
+        gauge = input_data.track_gauge
+        offset = gauge / 2.0
+
+        if not result.linestring:
+            logger.warning("복선 궤도 계산 스킵: linestring 없음")
+            return
+
+        # CL 폴리라인 (BP, IP1, ..., IPN, EP)
+        linestring_coords = list(result.linestring.coords)
+        cl_polyline = [(p[0], p[1]) for p in linestring_coords]
+        # cl_polyline[0] = BP, cl_polyline[-1] = EP
+        # result.curves 는 IP1..IPN
+
+        swap = input_data.track_swap_direction
+        # 좌/우 정의: 진행방향 기준 좌측=하선, 우측=상선
+        # offset_polyline_ips의 side: +1 = 좌측, -1 = 우측
+        upper_side = -1 if not swap else +1  # 상선: 우측
+        lower_side = +1 if not swap else -1  # 하선: 좌측
+
+        # 궤도별 IP 좌표
+        upper_ips = offset_polyline_ips(cl_polyline, offset, upper_side)
+        lower_ips = offset_polyline_ips(cl_polyline, offset, lower_side)
+
+        for name, ips, radius_sign, prefix in (
+                ("상선", upper_ips, +1, "upper"),
+                ("하선", lower_ips, -1, "lower"),
+        ):
+            try:
+                self._calc_one_track(
+                    result, name, ips, radius_sign, offset, input_data, prefix,
+                )
+            except Exception:
+                logger.exception("복선 %s 계산 실패", name)
+
+        result.track_gauge = gauge
+
+    def _calc_one_track(
+            self, result: AlignmentResult, name: str,
+            ips: list[tuple[float, float]], radius_sign: int, offset: float,
+            input_data: AlignmentInput, prefix: str,
+    ) -> None:
+        """궤도 하나의 독립 선형 계산."""
+        from src.railway_alignment.core.linestring import create_linestring
+        from src.railway_alignment.core.math_util import calculate_angles
+        from src.railway_alignment.core.curve import calculate_curve
+        from src.railway_alignment.core.validator import validate_curves
+
+        logger.warning(
+            "[%s] 시작: IP 개수=%d, radius_sign=%d, offset=%.3f",
+            name, len(ips), radius_sign, offset,
+        )
+        logger.warning(
+            "[%s] 첫 IP: (%.3f, %.3f), 마지막: (%.3f, %.3f)",
+            name, ips[0][0], ips[0][1], ips[-1][0], ips[-1][1],
+        )
+
+        # 1) 궤도 IP 좌표 → alignment (토목좌표 [X_North, Y_East, R])
+        alignment = []
+        for ip in ips:
+            x_north, y_east = ip
+            alignment.append([x_north, y_east, 0.0])
+
+        # 2) 궤도별 반경: R_upper = R + D/2, R_lower = R - D/2
+        radius_list = []
+        for curve in result.curves:
+            r_track = curve.radius + radius_sign * offset
+            radius_list.append(max(r_track, 0.0))
+
+        # 3) alignment의 IP 부분에 반경 반영 (BP, EP 제외)
+        for i, r in enumerate(radius_list):
+            alignment[i + 1][2] = r
+
+        # 4) 궤도별 파라미터: M/V/Z는 CL 상속
+        parameters = [[c.m, c.z, c.v] for c in result.curves]
+
+        # 5) 타입 override 상속
+        type_overrides = dict(input_data.type_overrides) if input_data.type_overrides else {}
+
+        # 6) 계산
+        linestring = create_linestring(alignment)
+        angles = calculate_angles(linestring)
+        station_groups, curves, polycurve = calculate_curve(
+            linestring, radius_list, angles, parameters,
+            input_data.unit, input_data.start_sta,
+            type_overrides=type_overrides,
+        )
+        # 계산 직후
+        logger.warning(
+            "[%s] 계산 후: curves=%d, station_groups=%d, polycurve=%d",
+            name, len(curves),
+            sum(len(sg[0]) for sg in station_groups),
+            len(polycurve),
+        )
+        # 7) 결과 저장
+        setattr(result, f"{prefix}_track_linestring", linestring)
+        setattr(result, f"{prefix}_track_curves", curves)
+        setattr(result, f"{prefix}_track_station_groups", station_groups)
+        setattr(result, f"{prefix}_track_polycurve", polycurve)
+        setattr(result, f"{prefix}_track_issues", validate_curves(curves))
+
+        logger.info(
+            "복선 %s 계산 완료: IP %d개, 측점 %d개",
+            name, len(curves), sum(len(sg[0]) for sg in station_groups),
         )
 # ============================================================
 # 편의 함수 (CLI/테스트용)

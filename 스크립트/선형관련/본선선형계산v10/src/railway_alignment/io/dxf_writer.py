@@ -153,11 +153,15 @@ class IPBlockWriter:
 
 
 class StationSymbolWriter:
-    def __init__(self, msp, style: DxfStyle, unit: int):
+    def __init__(self, msp, style: DxfStyle, unit: int, layer_suffix: str = ""):
         self.msp = msp
         self.style = style
         self.unit = unit
         self.cfg = style.config
+        self.layer_suffix = layer_suffix  # "" | "_상선" | "_하선"
+
+    def _layer_name(self, base: LayerStyle) -> str:
+        return base.name + self.layer_suffix if self.layer_suffix else base.name
 
     def write(self, station_groups, curves):
         for i, group in enumerate(station_groups):
@@ -201,12 +205,12 @@ class StationSymbolWriter:
 
         self.msp.add_circle(
             coord_math, radius=cfg.km_symbol_radius,           # ✅ 절대값
-            dxfattribs={"layer": cfg.layer_km_symbol.name,
+            dxfattribs={"layer": self._layer_name(cfg.layer_km_symbol),
                         "color": cfg.layer_km_symbol.color},
         )
         self.msp.add_circle(
             coord_math, radius=cfg.sub_symbol_radius,
-            dxfattribs={"layer": cfg.layer_sub_symbol.name,
+            dxfattribs={"layer": self._layer_name(cfg.layer_sub_symbol),
                         "color": cfg.layer_sub_symbol.color},
         )
 
@@ -215,7 +219,7 @@ class StationSymbolWriter:
             self.msp.add_text(
                 f"{km_value}km",
                 dxfattribs={
-                    "layer": cfg.layer_km_text.name,
+                    "layer": self._layer_name(cfg.layer_km_text),
                     "insert": coord_math,
                     "height": cfg.text_height,
                     "color": cfg.layer_km_text.color,
@@ -231,7 +235,7 @@ class StationSymbolWriter:
 
         self.msp.add_circle(
             coord_math, radius=cfg.sub_symbol_radius,
-            dxfattribs={"layer": cfg.layer_sub_symbol.name,
+            dxfattribs={"layer": self._layer_name(cfg.layer_sub_symbol),
                         "color": cfg.layer_sub_symbol.color},
         )
 
@@ -240,7 +244,7 @@ class StationSymbolWriter:
             self.msp.add_text(
                 str(meter),
                 dxfattribs={
-                    "layer": cfg.layer_sub_text.name,
+                    "layer": self._layer_name(cfg.layer_sub_text),
                     "insert": coord_math,
                     "height": cfg.text_height,
                     "color": cfg.layer_sub_text.color,
@@ -257,7 +261,7 @@ class StationSymbolWriter:
         start = calculate_destination_coordinates(y, x, ta_math + 90, half)
         end = calculate_destination_coordinates(y, x, ta_math + 90, -half)
         self.msp.add_line(start, end,
-                          dxfattribs={"layer": lyr.name, "color": lyr.color})
+                          dxfattribs={"layer": self._layer_name(lyr), "color": lyr.color})
 
     def _write_curve_leader(self, row, curve):
         if not row.label:
@@ -275,7 +279,7 @@ class StationSymbolWriter:
             y, x, leader_bearing, cfg.leader_length,       # ✅ 절대값
         )
         self.msp.add_line(coord_math, end_point,
-                          dxfattribs={"layer": leader_lyr.name, "color": leader_lyr.color})
+                          dxfattribs={"layer": self._layer_name(leader_lyr), "color": leader_lyr.color})
 
         if cfg.curve_label_mode == "label_only":
             text = row.label
@@ -286,7 +290,7 @@ class StationSymbolWriter:
         insert_pos = self._text_insert_point(row, curve, ta_math, end_point)
 
         self.msp.add_text(text, dxfattribs={
-            "layer": text_lyr.name,
+            "layer": self._layer_name(text_lyr),
             "insert": insert_pos,
             "height": cfg.text_height,
             "color": text_lyr.color,
@@ -364,22 +368,36 @@ class DxfDocument:
         self.style = DxfStyle(config=self.config)
         self._register_layers()
 
-    def _register_layers(self):
-        for lyr in (
+    def _register_layers(self) -> None:
+        base_layers = [
             self.config.layer_fl, self.config.layer_ip_line,
             self.config.layer_ip_intersect, self.config.layer_ip_text,
             self.config.layer_ip_table, self.config.layer_km_symbol,
             self.config.layer_sub_symbol, self.config.layer_km_text,
             self.config.layer_sub_text, self.config.layer_aux_station,
             self.config.layer_curve_leader, self.config.layer_curve_text,
-            self.config.layer_upper_track,
-            self.config.layer_lower_track,
-        ):
+            self.config.layer_upper_track, self.config.layer_lower_track,
+        ]
+        for lyr in base_layers:
             if lyr.name and lyr.name not in self.doc.layers:
-                self.doc.layers.new(
-                    name=lyr.name,
-                    dxfattribs={"color": lyr.color, "linetype": lyr.linetype},
-                )
+                self.doc.layers.new(name=lyr.name, dxfattribs={
+                    "color": lyr.color, "linetype": lyr.linetype,
+                })
+
+        # ✅ 궤도별 측점 심볼 레이어 접미사 등록
+        symbol_layers = [
+            self.config.layer_km_symbol, self.config.layer_sub_symbol,
+            self.config.layer_km_text, self.config.layer_sub_text,
+            self.config.layer_aux_station, self.config.layer_curve_leader,
+            self.config.layer_curve_text,
+        ]
+        for suffix in ("_상선", "_하선"):
+            for base in symbol_layers:
+                name = base.name + suffix
+                if name not in self.doc.layers:
+                    self.doc.layers.new(name=name, dxfattribs={
+                        "color": base.color, "linetype": base.linetype,
+                    })
 
     def build(self, coordinates, linestring, curves, station_groups, unit, upper_track=None, lower_track=None):
         PolylineBuilder(self.msp, self.style).build(coordinates, linestring)
@@ -388,11 +406,28 @@ class DxfDocument:
         linestring_math = CoordTransform.linestring_to_math(linestring)
         IPJunctionWriter(self.msp, self.style).write(linestring_math)
 
-        # ✅ 복선 궤도 폴리라인
+        # ✅ 궤도별 독립 출력 (폴리라인 + 측점 심볼 + 곡선제원문자)
         if upper_track:
-            self._add_track_polyline(upper_track, self.config.layer_upper_track)
+            self._build_track(upper_track, unit)
         if lower_track:
-            self._add_track_polyline(lower_track, self.config.layer_lower_track)
+            self._build_track(lower_track, unit)
+
+    def _build_track(self, track: dict, unit: int) -> None:
+        """궤도 하나 출력 (폴리라인 + 측점 심볼)."""
+        layer: LayerStyle = track["layer"]
+        suffix: str = track["suffix"]
+
+        # 1) 폴리라인
+        poly_math = [(y, x) for x, y in track["polycurve"]]
+        poly = self.msp.add_lwpolyline(poly_math)
+        poly.dxf.layer = layer.name
+        poly.dxf.color = layer.color
+
+        # 2) 측점 심볼 (궤도 레이어 접미사)
+        writer = StationSymbolWriter(
+            self.msp, self.style, unit, layer_suffix=suffix,
+        )
+        writer.write(track["station_groups"], track["curves"])
 
     def _add_track_polyline(self, track, lyr):
         """궤도 폴리라인 추가 (토목 → 수학 좌표 변환)."""
@@ -407,18 +442,16 @@ class DxfDocument:
 
 def create_dxf(
     coordinates, linestring, curves, station_groups, unit,
-    filename: str = Config.DXF_FILENAME,
+    filename=Config.DXF_FILENAME,
     config: DXFConfig | None = None,
-# ✅ 복선 궤도
-    upper_track: list[tuple[float, float]] | None = None,
-    lower_track: list[tuple[float, float]] | None = None,
-    # ✅ scale 인자 완전 삭제
+    upper_track: dict | None = None,
+    lower_track: dict | None = None,
 ) -> None:
     doc = DxfDocument(config)
-    doc.build(coordinates, linestring, curves, station_groups, unit,
-              upper_track=upper_track, lower_track=lower_track,
-              )
+    doc.build(
+        coordinates, linestring, curves, station_groups, unit,
+        upper_track=upper_track, lower_track=lower_track,
+    )
     if not doc.save(filename):
-        logger.error("DXF 저장 실패: %s", filename)
         raise IOError(f"DXF 저장 실패: {filename}")
     logger.info("DXF 저장 완료: %s", filename)
