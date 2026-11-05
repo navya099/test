@@ -256,9 +256,13 @@ class StraightTangentCalculator(TangentCalculator):
 
     def __init__(self, curve: "CurveParams"):
         self.h1 = curve.h1
+        self.h2 = curve.h2
+        self.ip_sta = curve.ip_sta  # ✅ 저장
 
-    def compute(self, sta: float, offset: float) -> TangentFields:
-        return TangentFields.zero(self.h1)
+    def compute(self, sta, offset):
+        if sta <= self.ip_sta + 1e-6:
+            return TangentFields.zero(self.h1)
+        return TangentFields.zero(self.h2)
 
 # ============================================================
 # 팩토리
