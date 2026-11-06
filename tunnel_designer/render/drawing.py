@@ -296,21 +296,38 @@ def draw_box(ax, g: BoxGeometry):
     p = g.p
     tw, ts = p.box_wall_t, p.box_slab_t
 
+    # 1. 외곽선
     oxs, oys = g.outer.exterior.xy
     ax.plot(oxs, oys, color='#555555', lw=1.6)
 
-    xs = [pt[0] for pt in g.inner_pts]
-    ys = [pt[1] for pt in g.inner_pts]
-    ax.plot(xs, ys, color='#2f6fed', lw=2.0)
+    # 2. 내공 및 기둥 그리기 (MultiPolygon 대응)
+    # g.inner는 Polygon 또는 MultiPolygon일 수 있음
+    polygons = [g.inner] if g.inner.geom_type == 'Polygon' else list(g.inner.geoms)
+    for poly in polygons:
+        xs, ys = poly.exterior.xy
+        ax.plot(xs, ys, color='#2f6fed', lw=2.0)
+        # 내부에 구멍(interiors)이 있다면(기둥 제외 등) 구멍도 그려줌
+        for interior in poly.interiors:
+            hxs, hys = interior.xy
+            ax.plot(hxs, hys, color='#2f6fed', lw=2.0)
 
+    # 3. 해칭 (외곽 - 내공)
     try:
         wall_poly = g.outer.difference(g.inner)
         geoms = ([wall_poly] if wall_poly.geom_type == 'Polygon'
                  else list(wall_poly.geoms))
         for poly in geoms:
-            _fill_polygon(ax, poly, color='#d0d4da', alpha=0.55)
-    except Exception:
-        pass
+            if poly.is_empty or not poly.is_valid:
+                continue
+            xs, ys = poly.exterior.xy
+            ax.fill(xs, ys, facecolor='#d0d4da', edgecolor='none', alpha=0.55)
+            for interior in poly.interiors:
+                hxs, hys = interior.xy
+                ax.fill(hxs, hys, facecolor='white', edgecolor='none')  # 내부 뚫기
+    except Exception as e:
+        print(f"[box fill error] {e}")
+
+    # ... (필렛 라벨, 치수선 등 기존 코드 유지) ...
 
     for center, r, a1, a2 in g.fillet_arcs:
         if a2 < a1:
@@ -384,6 +401,10 @@ def draw_box(ax, g: BoxGeometry):
         ax.plot([x0, x1], [y0 + h, y0], color='#9aa0a6', linestyle='--', lw=0.8)
         ax.plot([x1, x0], [y0 + h, y0], color='#9aa0a6', linestyle='--', lw=0.8)
 
+    # ★ 중앙 기둥 치수선 (선택)
+    if p.box_columns > 0 and p.box_col_width > 0:
+        # 기둥 간격에 대한 치수 표시 예시 (필요시 구현)
+        pass
 
 # ── 스펙 텍스트 (사이드 패널용) ──────────────────────
 def spec_single_natm(g: TunnelGeometry, p: TunnelParams) -> str:

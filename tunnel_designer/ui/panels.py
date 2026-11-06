@@ -269,6 +269,43 @@ class ControlsPanel:
                 row.frame.pack(fill="x", pady=1)
                 self.rows[attr] = row
 
+        # ★ 신규: 기둥 및 코핑부 그룹
+        col_group = ttk.LabelFrame(self.shape_group, text="  중앙 기둥 / 코핑부  ", padding=6)
+        col_group.grid(row=len(base) + 2, column=0, sticky="ew", pady=(6, 2))
+        col_group.columnconfigure(0, weight=1)
+
+        col_specs = [
+            ("기둥 개수", "box_columns", 0, 5, 1, "개", 0),
+            ("기둥 폭", "box_col_width", 0.1, 2.0, 0.01, "m", 3),
+            ("코핑 폭", "box_coping_w", 0.0, 2.0, 0.01, "m", 3),
+            ("코핑 높이", "box_coping_h", 0.1, 2.0, 0.01, "m", 3),
+        ]
+        for i, (label, attr, lo, hi, res, unit, dec) in enumerate(col_specs):
+            row = ParamRow(col_group, label=label, attr=attr,
+                           lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                           on_change=self.app.on_param_change,
+                           initial=getattr(p, attr))
+            row.frame.pack(fill="x", pady=2)
+            self.rows[attr] = row
+
+        # ★ 신규: 배수구(측구) 그룹
+        drain_group = ttk.LabelFrame(self.shape_group, text="  배수구(측구)  ", padding=6)
+        drain_group.grid(row=len(base) + 3, column=0, sticky="ew", pady=(6, 2))
+        drain_group.columnconfigure(0, weight=1)
+
+        drain_specs = [
+            ("배수구 폭", "box_drain_w", 0.0, 1.5, 0.01, "m", 3),
+            ("배수구 깊이", "box_drain_h", 0.0, 1.5, 0.01, "m", 3),
+        ]
+        for i, (label, attr, lo, hi, res, unit, dec) in enumerate(drain_specs):
+            row = ParamRow(drain_group, label=label, attr=attr,
+                           lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                           on_change=self.app.on_param_change,
+                           initial=getattr(p, attr))
+            row.frame.pack(fill="x", pady=2)
+            self.rows[attr] = row
+
+            
     def _build_multi_arch_editor(self):
         p = self.app.params
         nb = ttk.Notebook(self.shape_group)

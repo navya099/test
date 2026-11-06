@@ -532,26 +532,90 @@ def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
     x_L, x_R = -B / 2, B / 2
     y_B, y_T = p.FL, p.FL + H
 
-    inner_pts = _box_inner_polygon(p)
-    inner = Polygon(inner_pts)
+    # 1. 기본 사각형 내공 폴리곤 (코너 스타일 적용)
+    base_pts = _box_inner_polygon(p)
+    base_poly = Polygon(base_pts)
 
-    outer = Polygon([(x_L - tw, y_B - ts), (x_R + tw, y_B - ts),
-                     (x_R + tw, y_T + ts), (x_L - tw, y_T + ts)])
+    # 2. 좌/우 배수구(측구) 파내기
+    drain_polys = []
+    if p.box_drain_w > 0 and p.box_drain_h > 0:
+        from shapely.geometry import box
+        # 좌측 배수구
+        drain_polys.append(box(x_L, y_B, x_L + p.box_drain_w, y_B + p.box_drain_h))
+        # 우측 배수구
+        drain_polys.append(box(x_R - p.box_drain_w, y_B, x_R, y_B + p.box_drain_h))
 
+    if drain_polys:
+        from shapely.ops import unary_union
+        base_poly = base_poly.difference(unary_union(drain_polys))
+
+    # 3. 중앙 기둥 생성 (코핑부 포함)
+    columns = []
+    if p.box_columns > 0 and p.box_col_width > 0:
+        # 기둥 배치 간격 계산 (기둥 사이 간격이 동일하도록)
+        usable_w = B - (p.box_columns * p.box_col_width)
+        spacing = usable_w / (p.box_columns + 1)
+
+        cw = p.box_col_width
+        cw_cop = cw + 2 * p.box_coping_w  # 코핑부 전체 폭
+
+        for i in range(p.box_columns):
+            # 기둥 중심 X 좌표
+            cx = x_L + spacing * (i + 1) + cw * i + cw / 2
+
+            # 기둥 본체 (상하단 코핑부 제외한 중간 영역)
+            col_body = box(
+                cx - cw / 2, y_B + p.box_coping_h,
+                cx + cw / 2, y_T - p.box_coping_h
+            )
+            # 하단 코핑부
+            col_cop_bot = box(
+                cx - cw_cop / 2, y_B,
+                cx + cw_cop / 2, y_B + p.box_coping_h
+            )
+            # 상단 코핑부
+            col_cop_top = box(
+                cx - cw_cop / 2, y_T - p.box_coping_h,
+                cx + cw_cop / 2, y_T
+            )
+
+            # 기둥 전체 형상 합치기
+            columns.append(unary_union([col_body, col_cop_bot, col_cop_top]))
+
+    # 4. 내공에서 기둥 제외
+    if columns:
+        from shapely.ops import unary_union
+        inner_poly = base_poly.difference(unary_union(columns))
+    else:
+        inner_poly = base_poly
+
+    # 5. 외곽 폴리곤 생성 (기존과 동일하게 단순 사각형 유지)
+    x_OL, x_OR = x_L - tw, x_R + tw
+    y_OB, y_OT = y_B - ts, y_T + ts
+    outer = Polygon([(x_OL, y_OB), (x_OR, y_OB), (x_OR, y_OT), (x_OL, y_OT)])
+
+    # 6. 폴리곤이 여러 개(MultiPolygon)일 수 있으므로 하나로 정리
+    if inner_poly.geom_type == 'MultiPolygon':
+        # 내공 영역이 여러 개로 쪼개진 경우(기둥으로 인해) 대표 면적만 유지
+        inner_area = sum(g.area for g in inner_poly.geoms)
+        # 렌더링을 위해 가장 큰 폴리곤(혹은 각각)을 저장할 수 있도록 조치 필요
+        inner_pts = []  # multi-polygon은 내부적으로 처리 필요
+    else:
+        inner_area = inner_poly.area
+        inner_pts = list(inner_poly.exterior.coords)
+
+    # 필렛 호 정보 수집 (기존과 동일)
     fillet_arcs = []
     corners = [
-        ((x_L, y_B), (x_R, y_B), (x_L, y_T),
-         p.box_style_bot, p.box_fillet_bot_r),
-        ((x_R, y_B), (x_L, y_B), (x_R, y_T),
-         p.box_style_bot, p.box_fillet_bot_r),
-        ((x_R, y_T), (x_R, y_B), (x_L, y_T),
-         p.box_style_top, p.box_fillet_top_r),
-        ((x_L, y_T), (x_L, y_B), (x_R, y_T),
-         p.box_style_top, p.box_fillet_top_r),
+        ((x_L, y_B), (x_R, y_B), (x_L, y_T), p.box_style_bot, p.box_fillet_bot_r),
+        ((x_R, y_B), (x_L, y_B), (x_R, y_T), p.box_style_bot, p.box_fillet_bot_r),
+        ((x_R, y_T), (x_R, y_B), (x_L, y_T), p.box_style_top, p.box_fillet_top_r),
+        ((x_L, y_T), (x_L, y_B), (x_R, y_T), p.box_style_top, p.box_fillet_top_r),
     ]
     for corner, prev, nxt, style, r in corners:
         if style != CornerStyle.FILLET or r <= 0:
             continue
+
         _, p1, p2 = _fillet_corner(corner, prev, nxt, r)
         up = _unit(corner, prev)
         un = _unit(corner, nxt)
@@ -566,11 +630,11 @@ def compute_box_geometry(p: TunnelParams) -> BoxGeometry:
         fillet_arcs.append((center, r, a1, a2))
 
     return BoxGeometry(
-        p=p, inner=inner, inner_area=inner.area, inner_pts=inner_pts,
+        p=p, inner=inner_poly, inner_area=inner_area, inner_pts=inner_pts,
         outer=outer, outer_area=outer.area,
         cx_left=x_L, cx_right=x_R,
         floor_y=y_B, ceiling_y=y_T,
-        top_of_tunnel=y_T + ts,
+        top_of_tunnel=y_OT,
         SL=y_B + p.safeheight, A=B / 2,
         fillet_arcs=fillet_arcs,
     )

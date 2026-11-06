@@ -78,6 +78,16 @@ class TunnelParams:
     ts: float = 0.4  # 라이닝 두께 (m)
     ts_slab: float = 1.0  # 슬래브 두께 (m)
 
+    # ★ 신규: Box 다중 기둥 및 코핑부
+    box_columns: int = 1  # 기둥 개수 (N개)
+    box_col_width: float = 0.4  # 기둥 폭 (m)
+    box_coping_w: float = 0.3  # 코핑부 돌출 폭 (m)
+    box_coping_h: float = 0.6  # 코핑부 높이 (m)
+
+    # ★ 신규: 좌우 배수구 (측구)
+    box_drain_w: float = 0.4  # 배수구 폭 (m)
+    box_drain_h: float = 0.5  # 배수구 깊이 (m)
+
     @property
     def r1_angles(self) -> tuple[float, float]:
         half = self.top_angle / 2.0
