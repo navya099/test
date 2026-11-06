@@ -143,15 +143,6 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0,
         p_bot_R = _polar(rc_off, rr_off, ang_end_R)
         lining_bottom_line = (p_bot_L, p_bot_R)
 
-        print(
-            "LEFT SWEEP =",
-            (ang_end_L - ang_start_L) % 360
-        )
-
-        print(
-            "RIGHT SWEEP =",
-            (ang_end_R - ang_start_R) % 360
-        )
     return TunnelGeometry(
         a=a, center_top=center_top,
         left_center=left_center, right_center=right_center,
@@ -254,16 +245,32 @@ def compute_multi_arch(p: TunnelParams) -> MultiArchGeometry:
 
 
 def check_multi_arch_overlap(mg: MultiArchGeometry,
-                              tol: float = 0.0) -> OverlapInfo:
-    geoms = [g.polygon for g in mg.arches]
+                             tol: float = 0.0) -> OverlapInfo:
+    geoms = []
+    for g in mg.arches:
+        poly = g.polygon
+        # ★ 폴리곤 유효성 검사 후 복구
+        if not poly.is_valid:
+            poly = poly.buffer(0)  # self-intersection 등 자동 복구
+        geoms.append(poly)
+
     n = len(geoms)
     pairs, areas = [], []
     for i in range(n):
+        if geoms[i].is_empty:
+            continue
         for j in range(i + 1, n):
-            inter = geoms[i].intersection(geoms[j])
-            if inter.area > tol:
+            if geoms[j].is_empty:
+                continue
+            try:
+                inter = geoms[i].intersection(geoms[j])
+                if inter.area > tol:
+                    pairs.append((i, j))
+                    areas.append(inter.area)
+            except Exception:
+                # 예외 발생 시 "겹침 있음"으로 보수적 처리
                 pairs.append((i, j))
-                areas.append(inter.area)
+                areas.append(0.0)
 
     order = sorted(range(n), key=lambda k: mg.arches[k].a.cx)
     gaps = []
@@ -278,7 +285,6 @@ def check_multi_arch_overlap(mg: MultiArchGeometry,
         min_gap=min((g for _, _, g in gaps), default=float('inf')),
         gap_details=gaps,
     )
-
 
 def fit_arch_R1_Y_to_FL(a: ArchParams, target_floor_y: float,
                         fl_to_culvert: float, tol: float = 1e-4,
