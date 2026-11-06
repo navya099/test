@@ -20,6 +20,11 @@ class ArchParams:
     cx: float = 0.0
     label: str = "본선"
 
+    # ★ 신규: NATM 외곽선(라이닝) 관련
+    show_lining: bool = True
+    ts: float = 0.4  # 라이닝 두께 (m)
+    ts_slab: float = 0.4  # 슬래브 두께 (m)
+
     @property
     def r1_angles(self) -> tuple[float, float]:
         half = self.top_angle / 2.0
@@ -68,6 +73,11 @@ class TunnelParams:
     box_chamfer_bot_dx: float = 0.3
     box_chamfer_bot_dy: float = 0.3
 
+    # ★ 신규: NATM 외곽선(라이닝) 관련
+    show_lining: bool = True
+    ts: float = 0.4  # 라이닝 두께 (m)
+    ts_slab: float = 0.4  # 슬래브 두께 (m)
+
     @property
     def r1_angles(self) -> tuple[float, float]:
         half = self.top_angle / 2.0
@@ -89,6 +99,12 @@ class TunnelGeometry:
     SL: float
     A: float
     top_of_tunnel: float
+
+    # ★ 신규: 외곽선(Lining) 기하 정보 (NATM 전용)
+    lining_top_arc: Optional[tuple] = None  # (center, radius, start_deg, end_deg)
+    lining_left_arc: Optional[tuple] = None
+    lining_right_arc: Optional[tuple] = None
+    lining_bottom_line: Optional[tuple] = None  # (start_point, end_point)
 
 
 @dataclass

@@ -554,7 +554,11 @@ class TunnelApp:
             a = ArchParams(R1=p.R1, top_angle=p.top_angle, R2=p.R2,
                             r2_angle=p.r2_angle, R1_Y=p.R1_Y,
                             cx=0.0, label="본선")
-            g = compute_geometry_from_arch(a, FL=p.FL)
+            # ★ 라이닝 파라미터 전달
+            g = compute_geometry_from_arch(
+                a, FL=p.FL,
+                ts=p.ts, ts_slab=p.ts_slab, show_lining=p.show_lining
+            )
             draw_single_natm(ax, g, p)
             self.controls.spec_label.config(text=spec_single_natm(g, p))
 

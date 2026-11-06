@@ -48,15 +48,82 @@ def draw_cad(ax, entities, translate_x=0, translate_y=0):
 def draw_single_natm(ax, g: TunnelGeometry, p: TunnelParams):
     a_left, a_right = g.a.r1_angles
 
-    def arc(c, r, s, e, color):
+    # (1) 내공 아치 그리기 (기존 유지)
+    def arc_inner(c, r, s, e, color):
         if e < s:
             e += 360.0
         ax.add_patch(Arc(c, 2 * r, 2 * r, angle=0,
                          theta1=s, theta2=e, color=color, lw=1.8))
 
-    arc(g.center_top, g.a.R1, a_left, a_right, '#d64545')
-    arc(g.left_center, g.a.R2, a_left, a_left + g.a.r2_angle, '#2f6fed')
-    arc(g.right_center, g.a.R2, a_right - g.a.r2_angle, a_right, '#2b8a3e')
+    arc_inner(g.center_top, g.a.R1, a_right, a_left, '#d64545')
+    arc_inner(g.left_center, g.a.R2, a_left, a_left + g.a.r2_angle, '#2f6fed')
+    arc_inner(g.right_center, g.a.R2, a_right - g.a.r2_angle, a_right, '#2b8a3e')
+
+    # (2) ★ 외곽선(Lining) 그리기
+    if p.show_lining and g.lining_top_arc:
+        def arc_outer(c, r, s, e):
+
+            sweep = (e - s) % 360
+
+            if sweep > 180:
+                s, e = e, s
+
+            if e < s:
+                e += 360
+
+            ax.add_patch(
+                Arc(
+                    c,
+                    2 * r,
+                    2 * r,
+                    theta1=s,
+                    theta2=e,
+                    color='#333333',
+                    lw=1.5
+                )
+            )
+        # 상단 외곽 아치
+        arc_outer(*g.lining_top_arc)
+        # 좌측 외곽 아치
+        arc_outer(*g.lining_left_arc)
+        # 우측 외곽 아치
+        arc_outer(*g.lining_right_arc)
+
+        # 하단 외곽선
+        if g.lining_bottom_line:
+            pL, pR = g.lining_bottom_line
+            ax.plot([pL[0], pR[0]], [pL[1], pR[1]], color='#333333', lw=1.5)
+
+            # (선택) 라이닝 두께 영역을 회색 해칭으로 채우기
+            # 폴리곤을 직접 만들어 칠하면 시각적으로 매우 좋습니다.
+            try:
+                from shapely.geometry import Polygon
+                # 내공 점들 + 외곽 점들을 조합해 라이닝 영역 폴리곤 생성
+                import numpy as np
+                # 내공 폴리곤 좌표
+                inner_coords = list(g.polygon.exterior.coords)
+                # 외곽 폴리곤 좌표 (아치를 따라 근사)
+                outer_pts = []
+                for (c, r, s, e) in [g.lining_top_arc, g.lining_left_arc, g.lining_right_arc]:
+                    if e < s: e += 360
+                    angs = np.linspace(np.radians(s), np.radians(e), 30)
+                    outer_pts.extend([(c[0] + r * np.cos(a), c[1] + r * np.sin(a)) for a in angs])
+                if g.lining_bottom_line:
+                    outer_pts.append(g.lining_bottom_line[0])
+                    outer_pts.append(g.lining_bottom_line[1])
+
+                lining_poly = Polygon(outer_pts).difference(Polygon(inner_coords))
+                if not lining_poly.is_empty:
+                    geoms = [lining_poly] if lining_poly.geom_type == 'Polygon' else list(lining_poly.geoms)
+                    for poly in geoms:
+                        xs, ys = poly.exterior.xy
+                        ax.fill(xs, ys, facecolor='#d0d4da', edgecolor='none', alpha=0.6)
+            except Exception:
+                pass
+
+            # 바닥 오프셋 연장 라인 표시 (선택사항 - 좌우 끝점에서 수직으로 내려오는 선)
+            # ax.plot([g.left_end[0], pL[0]], [g.left_end[1], pL[1]], color='#333333', lw=1.5, ls=':')
+            # ax.plot([g.right_end[0], pR[0]], [g.right_end[1], pR[1]], color='#333333', lw=1.5, ls=':')
 
     # 하단
     for end, side, sign in ((g.left_end, p.sideL, +1),
@@ -154,10 +221,28 @@ def draw_multi_arch(ax, mg: MultiArchGeometry, p: TunnelParams):
 
 def _draw_single_arch(ax, g: TunnelGeometry, a, color: str):
     def arc(c, r, s, e):
+
+        sweep = (e - s) % 360
+
+        # 항상 짧은 호 선택
+        if sweep > 180:
+            s, e = e, s
+
         if e < s:
             e += 360
-        ax.add_patch(Arc(c, 2 * r, 2 * r, angle=0,
-                         theta1=s, theta2=e, color=color, lw=1.8))
+
+        ax.add_patch(
+            Arc(
+                c,
+                2 * r,
+                2 * r,
+                angle=0,
+                theta1=s,
+                theta2=e,
+                color=color,
+                lw=1.8
+            )
+        )
 
     a_left, a_right = a.r1_angles
     arc(g.center_top, a.R1, a_left, a_right)

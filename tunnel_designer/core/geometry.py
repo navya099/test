@@ -68,7 +68,9 @@ def find_extreme_x_on_arc(center, radius, start_deg, end_deg):
 
 
 # ── 단일 아치 ────────────────────────────────────────
-def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0) -> TunnelGeometry:
+def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0,
+                               ts: float = 0.4, ts_slab: float = 0.4,
+                               show_lining: bool = False) -> TunnelGeometry:
     center_top = (a.cx, a.R1_Y)
     a_left, a_right = a.r1_angles
 
@@ -93,6 +95,63 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0) -> TunnelGeometry
     _, sl_pt = find_extreme_x_on_arc(left_center, a.R2,
                                       a_left, a_left + a.r2_angle)
 
+    # 외곽선 기본값
+    lining_top_arc = None
+    lining_left_arc = None
+    lining_right_arc = None
+    lining_bottom_line = None
+
+    if show_lining and ts > 0:
+        # 1. 바닥선 오프셋 (target_y)
+        target_y = left_end[1] - ts_slab
+
+        # 2. 상단 아치 오프셋 (중심 동일, 반지름 +ts)
+        lining_top_arc = (center_top, a.R1 + ts, a_right, a_left)
+
+        # 3. 좌측 아치 오프셋 (중심 동일, 반지름 +ts)
+        lc_off = left_center
+        lr_off = a.R2 + ts
+
+        # 좌측 아치의 시작 각도는 상단 아치와의 접점 방향
+        ang_start_L = math.degrees(math.atan2(top_start[1] - lc_off[1], top_start[0] - lc_off[0]))
+
+        # 바닥선과의 교점을 구해 끝 각도(End Angle) 연장
+        dy = target_y - lc_off[1]
+        if abs(dy) <= lr_off:
+            dx = math.sqrt(lr_off ** 2 - dy ** 2)
+            ang_end_L = math.degrees(math.atan2(dy, -dx))  # 우측(x+) 방향 교점
+        else:
+            ang_end_L = ang_start_L + a.r2_angle  # 범위 초과 시 기본값
+        lining_left_arc = (lc_off, lr_off, ang_start_L, ang_end_L)
+
+        # 4. 우측 아치 오프셋
+        rc_off = right_center
+        rr_off = a.R2 + ts
+
+        ang_start_R = math.degrees(math.atan2(top_end[1] - rc_off[1], top_end[0] - rc_off[0]))
+
+        dy_r = target_y - rc_off[1]
+        if abs(dy_r) <= rr_off:
+            dx_r = math.sqrt(rr_off ** 2 - dy_r ** 2)
+            ang_end_R = math.degrees(math.atan2(dy_r, dx_r))  # 좌측(x-) 방향 교점
+        else:
+            ang_end_R = ang_start_R - a.r2_angle
+        lining_right_arc = (rc_off, rr_off, ang_start_R, ang_end_R)
+
+        # 5. 바닥 오프셋선 (좌우 연장된 아치의 끝점을 연결)
+        p_bot_L = _polar(lc_off, lr_off, ang_end_L)
+        p_bot_R = _polar(rc_off, rr_off, ang_end_R)
+        lining_bottom_line = (p_bot_L, p_bot_R)
+
+        print(
+            "LEFT SWEEP =",
+            (ang_end_L - ang_start_L) % 360
+        )
+
+        print(
+            "RIGHT SWEEP =",
+            (ang_end_R - ang_start_R) % 360
+        )
     return TunnelGeometry(
         a=a, center_top=center_top,
         left_center=left_center, right_center=right_center,
@@ -101,6 +160,10 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0) -> TunnelGeometry
         polygon=polygon, area=polygon.area,
         SL=sl_pt[1], A=abs(left_end[0] - a.cx),
         top_of_tunnel=a.R1_Y + a.R1 - FL,
+        lining_top_arc=lining_top_arc,
+        lining_left_arc=lining_left_arc,
+        lining_right_arc=lining_right_arc,
+        lining_bottom_line=lining_bottom_line,
     )
 
 

@@ -159,6 +159,33 @@ class ControlsPanel:
             ("R1 중심 Y",    "R1_Y", -10.0, 10.0, 0.01, "m", 3),
             ("목표 FL",      "FL",   -5.0,  5.0,  0.01, "m", 3),
         ]
+        # ★ 신규: 라이닝(외곽선) 그룹
+        lining_group = ttk.LabelFrame(self.shape_group, text="  라이닝(외곽선)  ", padding=6)
+        lining_group.grid(row=len(shape), column=0, sticky="ew", pady=(6, 2))
+        lining_group.columnconfigure(0, weight=1)
+
+        # 체크박스 (표시 여부)
+        def toggle_lining():
+            self.app.params.show_lining = self.app.show_lining_var.get()
+            self.app.update_plot()
+
+        self.app.show_lining_var = tk.BooleanVar(value=p.show_lining)
+        ttk.Checkbutton(lining_group, text="외곽선 표시", variable=self.app.show_lining_var,
+                        command=toggle_lining).pack(anchor="w", pady=(0, 4))
+
+        # 라이닝 두께 (ts) & 슬래브 두께 (ts_slab)
+        specs_lining = [
+            ("라이닝 두께 ts", "ts", 0.1, 2.0, 0.01, "m", 3),
+            ("슬래브 두께 sb", "ts_slab", 0.1, 2.0, 0.01, "m", 3),
+        ]
+        for i, (label, attr, lo, hi, res, unit, dec) in enumerate(specs_lining):
+            row = ParamRow(lining_group, label=label, attr=attr,
+                           lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                           on_change=self.app.on_param_change,
+                           initial=getattr(p, attr))
+            row.frame.pack(fill="x", pady=2)
+            self.rows[attr] = row
+
         for i, (label, attr, lo, hi, res, unit, dec) in enumerate(shape):
             row = ParamRow(self.shape_group, label=label, attr=attr,
                            lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
