@@ -64,9 +64,9 @@ class TunnelParams:
     box_height: float = 6.5
     box_wall_t: float = 0.4
     box_slab_t: float = 0.4
-    box_style_top: CornerStyle = CornerStyle.FILLET
+    box_style_top: CornerStyle = CornerStyle.CHAMFER
     box_style_bot: CornerStyle = CornerStyle.NONE
-    box_fillet_top_r: float = 0.5
+    box_fillet_top_r: float = 0.0
     box_fillet_bot_r: float = 0.0
     box_chamfer_top_dx: float = 0.6
     box_chamfer_top_dy: float = 0.6
@@ -76,7 +76,7 @@ class TunnelParams:
     # ★ 신규: NATM 외곽선(라이닝) 관련
     show_lining: bool = True
     ts: float = 0.4  # 라이닝 두께 (m)
-    ts_slab: float = 0.4  # 슬래브 두께 (m)
+    ts_slab: float = 1.0  # 슬래브 두께 (m)
 
     @property
     def r1_angles(self) -> tuple[float, float]:
@@ -106,6 +106,8 @@ class TunnelGeometry:
     lining_right_arc: Optional[tuple] = None
     lining_bottom_line: Optional[tuple] = None  # (start_point, end_point)
 
+    outer_polygon: Polygon | None = None
+    lining_polygon: Polygon | None = None
 
 @dataclass
 class MultiArchGeometry:

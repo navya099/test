@@ -6,6 +6,7 @@ from dataclasses import replace
 import numpy as np
 from shapely.geometry import LineString, Polygon
 from scipy.optimize import brentq, minimize_scalar
+from shapely.validation import explain_validity
 
 from .constants import (
     ARC_SAMPLES, POLYGON_ARC_POINTS,
@@ -51,12 +52,46 @@ def find_start_point(center, radius, end_point, angle_deg):
     return _polar(center, radius, ea - angle_deg)
 
 
-def arc_to_linestring(center, radius, start_deg, end_deg,
-                      num_points=POLYGON_ARC_POINTS):
-    angs = np.linspace(math.radians(start_deg), math.radians(end_deg), num_points)
-    return LineString([(center[0] + radius * math.cos(a),
-                        center[1] + radius * math.sin(a)) for a in angs])
+def arc_to_linestring(
+        center,
+        radius,
+        start_deg,
+        end_deg,
+        num_points=POLYGON_ARC_POINTS
+):
 
+    start_deg, end_deg = normalize_arc(
+        start_deg,
+        end_deg
+    )
+
+    angs = np.linspace(
+        math.radians(start_deg),
+        math.radians(end_deg),
+        num_points
+    )
+
+    return LineString(
+        [
+            (
+                center[0] + radius * np.cos(a),
+                center[1] + radius * np.sin(a)
+            )
+            for a in angs
+        ]
+    )
+
+def normalize_arc(start_deg, end_deg):
+
+    sweep = (end_deg - start_deg) % 360
+
+    if sweep > 180:
+        start_deg, end_deg = end_deg, start_deg
+
+    if end_deg < start_deg:
+        end_deg += 360
+
+    return start_deg, end_deg
 
 def find_extreme_x_on_arc(center, radius, start_deg, end_deg):
     if end_deg < start_deg:
@@ -88,8 +123,12 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0,
                                   a_right - a.r2_angle, a_right)
     bottom = LineString([left_arc.coords[-1], right_arc.coords[-1]])
 
-    coords = (list(left_arc.coords[::-1]) + list(top_arc.coords)
-              + list(right_arc.coords) + list(bottom.coords[::-1]))
+    coords = (
+            list(left_arc.coords[::-1])  # 좌하 → 좌상
+            + list(top_arc.coords[::-1])[1:]  # 좌상 → 우상
+            + list(right_arc.coords[::-1])[1:]  # 우상 → 우하
+            + list(bottom.coords[::-1])[1:]  # 우하 → 좌하
+    )
     polygon = Polygon(coords)
 
     _, sl_pt = find_extreme_x_on_arc(left_center, a.R2,
@@ -100,6 +139,9 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0,
     lining_left_arc = None
     lining_right_arc = None
     lining_bottom_line = None
+
+    outer_polygon = None
+    lining_polygon = None
 
     if show_lining and ts > 0:
         # 1. 바닥선 오프셋 (target_y)
@@ -143,6 +185,46 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0,
         p_bot_R = _polar(rc_off, rr_off, ang_end_R)
         lining_bottom_line = (p_bot_L, p_bot_R)
 
+        #해칭용내공 폴리곤
+        # 좌측 외곽 아치
+        left_outer_arc = arc_to_linestring(
+            lc_off,
+            lr_off,
+            ang_start_L,
+            ang_end_L
+        )
+
+        # 상부 외곽 아치
+        top_outer_arc = arc_to_linestring(
+            center_top,
+            a.R1 + ts,
+            a_right,
+            a_left
+        )
+
+        # 우측 외곽 아치
+        right_outer_arc = arc_to_linestring(
+            rc_off,
+            rr_off,
+            ang_start_R,
+            ang_end_R
+        )
+
+        # 바닥 외곽선
+        bottom_outer = LineString(
+            [p_bot_L, p_bot_R]
+        )
+        outer_coords = (
+                list(left_outer_arc.coords[::-1])
+                + list(top_outer_arc.coords[::-1])[1:]
+                + list(right_outer_arc.coords[::-1])[1:]
+                + list(bottom_outer.coords[::-1])[1:]
+        )
+        outer_polygon = Polygon(outer_coords)
+
+        if outer_polygon.is_valid and polygon.is_valid:
+            lining_polygon = outer_polygon.difference(polygon)
+
     return TunnelGeometry(
         a=a, center_top=center_top,
         left_center=left_center, right_center=right_center,
@@ -155,6 +237,8 @@ def compute_geometry_from_arch(a: ArchParams, FL: float = 0.0,
         lining_left_arc=lining_left_arc,
         lining_right_arc=lining_right_arc,
         lining_bottom_line=lining_bottom_line,
+        outer_polygon=outer_polygon,
+        lining_polygon=lining_polygon
     )
 
 

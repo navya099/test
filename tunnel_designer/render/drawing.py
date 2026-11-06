@@ -94,33 +94,7 @@ def draw_single_natm(ax, g: TunnelGeometry, p: TunnelParams):
             pL, pR = g.lining_bottom_line
             ax.plot([pL[0], pR[0]], [pL[1], pR[1]], color='#333333', lw=1.5)
 
-            # (선택) 라이닝 두께 영역을 회색 해칭으로 채우기
-            # 폴리곤을 직접 만들어 칠하면 시각적으로 매우 좋습니다.
-            try:
-                from shapely.geometry import Polygon
-                # 내공 점들 + 외곽 점들을 조합해 라이닝 영역 폴리곤 생성
-                import numpy as np
-                # 내공 폴리곤 좌표
-                inner_coords = list(g.polygon.exterior.coords)
-                # 외곽 폴리곤 좌표 (아치를 따라 근사)
-                outer_pts = []
-                for (c, r, s, e) in [g.lining_top_arc, g.lining_left_arc, g.lining_right_arc]:
-                    if e < s: e += 360
-                    angs = np.linspace(np.radians(s), np.radians(e), 30)
-                    outer_pts.extend([(c[0] + r * np.cos(a), c[1] + r * np.sin(a)) for a in angs])
-                if g.lining_bottom_line:
-                    outer_pts.append(g.lining_bottom_line[0])
-                    outer_pts.append(g.lining_bottom_line[1])
-
-                lining_poly = Polygon(outer_pts).difference(Polygon(inner_coords))
-                if not lining_poly.is_empty:
-                    geoms = [lining_poly] if lining_poly.geom_type == 'Polygon' else list(lining_poly.geoms)
-                    for poly in geoms:
-                        xs, ys = poly.exterior.xy
-                        ax.fill(xs, ys, facecolor='#d0d4da', edgecolor='none', alpha=0.6)
-            except Exception:
-                pass
-
+            
             # 바닥 오프셋 연장 라인 표시 (선택사항 - 좌우 끝점에서 수직으로 내려오는 선)
             # ax.plot([g.left_end[0], pL[0]], [g.left_end[1], pL[1]], color='#333333', lw=1.5, ls=':')
             # ax.plot([g.right_end[0], pR[0]], [g.right_end[1], pR[1]], color='#333333', lw=1.5, ls=':')
