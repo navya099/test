@@ -3,6 +3,10 @@ from __future__ import annotations
 from enum import Enum
 
 
+# ── UI 상수 ────────────────────────────────────────
+LEFT_PANEL_WIDTH = 500   # 좌측 컨트롤 패널 폭 (px)
+
+
 # ── 수치 상수 ────────────────────────────────────────
 FL_TOLERANCE = 0.02
 ARC_SAMPLES = 1000

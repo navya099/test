@@ -22,19 +22,87 @@ class ControlsPanel:
         self.app = app
         self.rows: dict[str, ParamRow] = {}
         self.arch_rows: list[dict[str, ParamRow]] = []
+
+        # ★ 스크롤 컨테이너 생성
+        self._build_scroll_container()
         self._build()
+
+    # ── 스크롤 컨테이너 ─────────────────────────────
+    def _build_scroll_container(self):
+        """
+        parent 안에 Canvas + Scrollbar + 내부 Frame 구조 생성.
+        self.scroll_frame 이 실제 컨트롤이 배치될 프레임.
+        """
+        outer = ttk.Frame(self.parent)
+        outer.pack(fill="both", expand=True)
+        outer.configure(width=300)  # 최소 폭 힌트
+
+        # Canvas + Scrollbar
+        canvas = tk.Canvas(outer, highlightthickness=0, bg="#f5f6f8")
+        vbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vbar.set)
+
+        vbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        # 내부 프레임 (컨트롤이 여기에 배치됨)
+        self.scroll_frame = ttk.Frame(canvas)
+        canvas_window = canvas.create_window((0, 0), window=self.scroll_frame,
+                                             anchor="nw")
+
+        # 내부 프레임 크기가 변하면 스크롤 영역 갱신
+        def _on_frame_configure(_evt=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        # Canvas 폭에 맞춰 내부 프레임 폭 조정 (가로 스크롤 방지)
+        def _on_canvas_configure(evt):
+            canvas.itemconfigure(canvas_window, width=evt.width)
+
+        self.scroll_frame.bind("<Configure>", _on_frame_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # 마우스 휠 바인딩 (Windows / macOS / Linux)
+        def _on_mousewheel(evt):
+            canvas.yview_scroll(int(-1 * (evt.delta / 120)), "units")
+
+        def _on_mousewheel_linux(evt):
+            if evt.num == 4:
+                canvas.yview_scroll(-1, "units")
+            elif evt.num == 5:
+                canvas.yview_scroll(1, "units")
+
+        # ★ 마우스가 캔버스 위에 있을 때만 스크롤
+        def _bind_wheel(_evt):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            canvas.bind_all("<Button-4>", _on_mousewheel_linux)
+            canvas.bind_all("<Button-5>", _on_mousewheel_linux)
+
+        def _unbind_wheel(_evt):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        canvas.bind("<Enter>", _bind_wheel)
+        canvas.bind("<Leave>", _unbind_wheel)
+
+        self._canvas = canvas
+        self._vbar = vbar
 
     # ── 헤더 + 타입 라디오 ─────────────────────────
     def _build(self):
+        parent = self.scroll_frame  # ★ 중요: scroll_frame 사용
         p = self.app.params
-        header = ttk.Frame(self.parent)
+
+        #헤더
+        header = ttk.Frame(parent)
         header.pack(fill="x", pady=(0, 8))
         ttk.Label(header, text="터널 단면 제원",
                   style="Title.TLabel").pack(anchor="w")
         ttk.Label(header, text="슬라이더 또는 값을 직접 입력하세요.",
                   style="Info.TLabel").pack(anchor="w")
 
-        tf = ttk.Frame(self.parent)
+        #타입 라디오
+        tf = ttk.Frame(parent)
         tf.pack(fill="x", pady=(0, 8))
         self.app.type_var = tk.StringVar(value=p.kind.value)
         for tt in TunnelType:
@@ -43,29 +111,31 @@ class ControlsPanel:
                             command=self.app.on_type_change
                             ).pack(side="left", padx=(0, 8))
 
-        self.shape_group = ttk.LabelFrame(self.parent, text="  단면 형상  ",
+        #그룹 3개
+        self.shape_group = ttk.LabelFrame(parent, text="  단면 형상  ",
                                            padding=8)
         self.shape_group.pack(fill="x", pady=(0, 8))
         self.shape_group.columnconfigure(0, weight=1)
 
-        self.dim_group = ttk.LabelFrame(self.parent, text="  위치 · 치수  ",
+        self.dim_group = ttk.LabelFrame(parent, text="  위치 · 치수  ",
                                          padding=8)
         self.dim_group.pack(fill="x", pady=(0, 8))
         self.dim_group.columnconfigure(0, weight=1)
 
         # ★ 안전박스 그룹
-        self.safety_group = ttk.LabelFrame(self.parent, text="  안전박스  ",
+        self.safety_group = ttk.LabelFrame(parent, text="  안전박스  ",
                                             padding=8)
         self.safety_group.pack(fill="x", pady=(0, 8))
         self.safety_group.columnconfigure(0, weight=1)
 
-        self.spec_label = ttk.Label(self.parent, text="",
+        #스펙
+        self.spec_label = ttk.Label(parent, text="",
                                      style="Spec.TLabel",
                                      anchor="w", justify="left")
         self.spec_label.pack(fill="x", pady=(0, 8))
 
         # 옵션
-        opts = ttk.LabelFrame(self.parent, text="  옵션  ", padding=8)
+        opts = ttk.LabelFrame(parent, text="  옵션  ", padding=8)
         opts.pack(fill="x", pady=(0, 8))
         ttk.Checkbutton(opts, text="겹침 자동 방지 (슬라이더 조작 시)",
                         variable=self.app.auto_avoid_overlap
@@ -81,12 +151,12 @@ class ControlsPanel:
                             variable=self.app.hatch_style
                             ).pack(side="left", padx=(0, 6))
 
-        self._build_action_buttons()
+        self._build_action_buttons(parent)
         self.populate()
 
     # ── 액션 ───────────────────────────────────────
-    def _build_action_buttons(self):
-        act = ttk.Frame(self.parent)
+    def _build_action_buttons(self, parent):
+        act = ttk.Frame(parent)
         act.pack(fill="x", pady=(0, 6))
         act.columnconfigure((0, 1), weight=1)
 
@@ -145,6 +215,10 @@ class ControlsPanel:
 
         # ★ 안전박스는 모든 타입에 공통
         self._build_safety_editor()
+
+        # ★ populate 후 스크롤 영역 갱신
+        self.scroll_frame.update_idletasks()
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
     def _build_single_natm_editor(self):
         p = self.app.params
@@ -305,7 +379,7 @@ class ControlsPanel:
             row.frame.pack(fill="x", pady=2)
             self.rows[attr] = row
 
-            
+
     def _build_multi_arch_editor(self):
         p = self.app.params
         nb = ttk.Notebook(self.shape_group)

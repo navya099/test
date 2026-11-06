@@ -10,7 +10,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from core.constants import (
     TunnelType, CornerStyle,
     DXF_DEFAULT_IN, MIN_PILLAR_W,
-    HATCH_STYLE_SOLID,
+    HATCH_STYLE_SOLID, LEFT_PANEL_WIDTH,
 )
 from core.models import (
     TunnelParams, ArchParams, FitHistoryEntry, SnapshotEntry,
@@ -50,12 +50,16 @@ class TunnelApp:
         self.auto_avoid_overlap = tk.BooleanVar(value=False)
         self.hatch_style = tk.StringVar(value=HATCH_STYLE_SOLID)
 
-        paned = ttk.PanedWindow(self.root, orient="horizontal")
-        paned.pack(fill="both", expand=True, padx=8, pady=8)
-        left = ttk.Frame(paned, padding=(4, 4))
-        right = ttk.Frame(paned, padding=(4, 4))
-        paned.add(left, weight=0)
-        paned.add(right, weight=1)
+        # ✅ 교체: Frame + pack으로 폭 완전 고정
+        main = ttk.Frame(self.root)
+        main.pack(fill="both", expand=True, padx=8, pady=8)
+
+        left = ttk.Frame(main, padding=(4, 4), width=LEFT_PANEL_WIDTH)
+        left.pack(side="left", fill="y")
+        left.pack_propagate(False)  # ★ 자식이 폭 강제 확장하지 못하게 함
+
+        right = ttk.Frame(main, padding=(4, 4))
+        right.pack(side="left", fill="both", expand=True)
 
         self.controls = ControlsPanel(left, self)
         self.canvas_panel = CanvasPanel(right, self)
