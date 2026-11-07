@@ -1,12 +1,17 @@
+# alignment/rail.py
+from dataclasses import dataclass, field
 from vector3 import Vector3
 from vector2 import Vector2
 
+@dataclass
 class Rail:
-    def __init__(self, station: float, railindex: int, rail_x: float, rail_y: float, object_index: int):
-        self.station = station
-        self.railindex = railindex
-        self.rail_x = rail_x
-        self.rail_y = rail_y
-        self.object_index = object_index
-        self.coord = Vector3(x=0, y=0, z=0)
-        self.direction = Vector2(x=0, y=0)
+    station: float
+    railindex: int
+    rail_x: float
+    rail_y: float
+    object_index: int
+    coord: Vector3 = field(default_factory=lambda: Vector3(x=0.0, y=0.0, z=0.0))
+    direction: Vector2 = field(default_factory=lambda: Vector2(x=0.0, y=0.0))
+
+    def __repr__(self):
+        return f"Rail(sta={self.station}, idx={self.railindex}, x={self.rail_x}, y={self.rail_y})"
