@@ -83,6 +83,8 @@ def _type_label(params: TunnelParams) -> str:
 # ═══════════════════════════════════════════════════════════
 # 치수 헬퍼 (표준 DIMENSION 엔티티)
 # ═══════════════════════════════════════════════════════════
+# services/dxf2/engine.py
+
 def dim_horizontal(
     msp,
     x1: float, x2: float, y: float,
@@ -93,19 +95,18 @@ def dim_horizontal(
 ):
     """
     수평 치수 (DIMENSION 엔티티).
-    offset은 치수선이 대상선에서 얼마나 떨어질지 (mm).
+    ★ add_linear_dim()은 DimStyleOverride 반환 → .set_text()로 텍스트 오버라이드.
     """
-    dim = msp.add_linear_dim(
+    dim_override = msp.add_linear_dim(
         base=(x1, y + offset),
         p1=(x1, y),
         p2=(x2, y),
         dimstyle=dimstyle,
-        override={"dimtad": 1},
     )
     if override_text:
-        dim.dxf.text = override_text
-    dim.render()
-    return dim
+        dim_override.set_text(override_text)   # ★ .dxf 대신 .set_text()
+    dim_override.render()
+    return dim_override.dimension               # 실제 DIMENSION 엔티티 반환
 
 
 def dim_vertical(
@@ -116,19 +117,18 @@ def dim_vertical(
     override_text: str | None = None,
     dimstyle: str = DIMSTYLE_1_100,
 ):
-    """수직 치수 (DIMENSION 엔티티, angle=90)."""
-    dim = msp.add_linear_dim(
+    """수직 치수 (DIMENSION 엔티티)."""
+    dim_override = msp.add_linear_dim(
         base=(x + offset, y1),
         p1=(x, y1),
         p2=(x, y2),
         angle=90,
         dimstyle=dimstyle,
-        override={"dimtad": 1},
     )
     if override_text:
-        dim.dxf.text = override_text
-    dim.render()
-    return dim
+        dim_override.set_text(override_text)
+    dim_override.render()
+    return dim_override.dimension
 
 
 # ═══════════════════════════════════════════════════════════
