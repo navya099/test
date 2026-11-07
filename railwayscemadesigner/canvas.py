@@ -101,8 +101,14 @@ class EdgeItem(QGraphicsItem):
 class StationScene(QGraphicsScene):
     """정거장 장면. 노드 이동 시 연결 엣지 갱신 + 시그널 발생."""
 
-    node_moved = pyqtSignal(object)   # node_id
-    node_selected = pyqtSignal(object)  # NodeItem or None
+    node_moved = pyqtSignal(object)
+    node_selected = pyqtSignal(object)
+    edge_requested = pyqtSignal(object, object)
+    node_add_requested = pyqtSignal(float, float)
+
+    MODE_SELECT = "select"
+    MODE_ADD_NODE = "add_node"
+    MODE_ADD_EDGE = "add_edge"
 
     def __init__(self, data, parent=None):
         super().__init__(parent)
@@ -110,6 +116,8 @@ class StationScene(QGraphicsScene):
         self.tracks_by_id = data.tracks_by_id()
         self.node_items = {}    # node_id → NodeItem
         self.edge_items = []    # EdgeItem 리스트
+        self.mode = self.MODE_SELECT
+        self._edge_start = None  # 엣지 추가 모드에서 첫 클릭 노드
         self._build()
 
     def _build(self):
@@ -138,6 +146,54 @@ class StationScene(QGraphicsScene):
             edge_item = EdgeItem(e, na, nb, self.tracks_by_id[e.track_id])
             self.addItem(edge_item)
             self.edge_items.append(edge_item)
+
+    def set_mode(self, mode: str):
+        self.mode = mode
+        self._edge_start = None
+        # 모드별 드래그 허용 제어
+        movable = (mode == self.MODE_SELECT)
+        for item in self.node_items.values():
+            item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, movable)
+
+    def mousePressEvent(self, event):
+        # 선택 모드는 기본 동작
+        if self.mode == self.MODE_SELECT:
+            super().mousePressEvent(event)
+            return
+
+        # 좌클릭만 처리
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+
+        scene_pos = event.scenePos()
+        item = self.itemAt(scene_pos, self.views()[0].transform() if self.views() else None)
+
+        if self.mode == self.MODE_ADD_NODE:
+            # 빈 곳 클릭일 때만 노드 생성 신호
+            if not isinstance(item, NodeItem):
+                self.node_add_requested.emit(scene_pos.x(), scene_pos.y())
+            event.accept()
+            return
+
+        if self.mode == self.MODE_ADD_EDGE:
+            if isinstance(item, NodeItem):
+                if self._edge_start is None:
+                    self._edge_start = item
+                    item.setSelected(True)
+                elif item is not self._edge_start:
+                    self.edge_requested.emit(self._edge_start, item)
+                    self._edge_start.setSelected(False)
+                    self._edge_start = None
+            else:
+                # 빈 곳 클릭 → 선택 해제
+                if self._edge_start:
+                    self._edge_start.setSelected(False)
+                    self._edge_start = None
+            event.accept()
+            return
+
+        super().mousePressEvent(event)
 
     def on_node_moved(self, node_item: NodeItem):
         # 이 노드에 연결된 엣지 갱신
