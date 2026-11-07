@@ -671,7 +671,7 @@ class TunnelApp:
     def reset_tracks_to_D(self):
         """D 기반 2트랙(하선/상선)으로 초기화."""
         if not messagebox.askyesno("초기화",
-                                   "선로를 D 기반 2트랙으로 되돌릴까요?"):
+                                   "선로를 기본 2트랙으로 되돌릴까요?"):
             return
         self.params.tracks.clear()
         self.controls.populate()

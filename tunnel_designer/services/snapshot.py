@@ -33,6 +33,8 @@ class SnapshotStore:
         d["box_style_bot"] = p.box_style_bot.value
         return d
 
+    # services/snapshot.py의 deserialize 수정
+
     @staticmethod
     def deserialize(payload: dict) -> TunnelParams:
         data = dict(payload)
@@ -42,7 +44,10 @@ class SnapshotStore:
         if "box_style_bot" in data and isinstance(data["box_style_bot"], str):
             data["box_style_bot"] = CornerStyle(data["box_style_bot"])
 
-        # ★ 트랙 복원 (구버전 호환)
+        # ★ D 필드 제거 (구버전 호환)
+        legacy_D = data.pop("D", None)
+
+        # 트랙 복원
         tracks_raw = data.get("tracks") or []
         tracks = []
         for t in tracks_raw:
@@ -51,6 +56,15 @@ class SnapshotStore:
                 label=t.get("label", ""),
                 show_clearance=t.get("show_clearance", True)
             ))
+
+        # ★ tracks가 비어있고 D가 있으면 D 기반 2트랙 생성
+        if not tracks and legacy_D is not None:
+            half = float(legacy_D) / 2
+            tracks = [
+                TrackParams(offset_x=-half, label="하선"),
+                TrackParams(offset_x=+half, label="상선"),
+            ]
+
         data["tracks"] = tracks
 
         arches = data.get("arches") or []

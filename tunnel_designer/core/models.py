@@ -91,15 +91,14 @@ class TunnelParams:
     # ★ 신규: 다중 트랙
     tracks: list[TrackParams] = field(default_factory=list)
 
-    # 편의: tracks 가 비어있으면 D 기반 2트랙 자동 생성
     def get_tracks(self) -> list[TrackParams]:
+        """트랙이 비어있으면 기본 2트랙 생성 (D 의존 없음)."""
         if self.tracks:
             return self.tracks
-        # 기존 D 기반 (하선/상선)
-        half = self.D / 2
+        # 기본 2트랙 (표준 궤간 4.4m 대신 임의 기본값)
         return [
-            TrackParams(offset_x=-half, label="하선"),
-            TrackParams(offset_x=+half, label="상선"),
+            TrackParams(offset_x=-2.2, label="하선"),
+            TrackParams(offset_x=+2.2, label="상선"),
         ]
 
     @property

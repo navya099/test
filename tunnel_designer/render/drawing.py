@@ -124,6 +124,11 @@ def draw_single_natm(ax, g: TunnelGeometry, p: TunnelParams):
     # 터널 중심 CL도 함께 표시 (옵션)
     ax.axvline(0, color='darkgray', linestyle=':', lw=0.8, alpha=0.6)
     ax.text(0, y_text, TUNNEL_CL_LABEL, ha='center', fontsize=9, color='#555555')
+
+    # ★ 트랙 사이 중심간격 치수선 (터널 상단 바깥)
+    draw_track_spacings(ax, p, y_position=g.top_of_tunnel + LABEL_Y_MARGIN + 1.2)
+
+
     # 치수선
     for c, e in ((g.center_top, g.top_end),
                  (g.center_top, g.top_start),
@@ -205,6 +210,9 @@ def draw_multi_arch(ax, mg: MultiArchGeometry, p: TunnelParams):
     tops = [arch.top_of_tunnel for arch in mg.arches]
     y_dim = max(tops) + LABEL_Y_MARGIN
     draw_tracks(ax, p, y_dim)
+
+    # ★ 트랙 사이 중심간격 치수선 (터널 상단 바깥)
+    draw_track_spacings(ax, p, y_position=y_dim + 1.2)
 
 def _draw_single_arch(ax, g: TunnelGeometry, a, color: str):
     def arc(c, r, s, e):
@@ -510,3 +518,44 @@ def draw_clearance_overlay(ax, entities, p: TunnelParams):
         if not t.show_clearance:
             continue
         draw_cad(ax, entities, translate_x=t.offset_x, translate_y=p.RL)
+
+# render/drawing.py에 추가
+
+def draw_track_spacings(ax, p, y_position, color='#2f6fed', fontsize=8):
+    """
+    트랙 사이의 중심간격을 치수선으로 표시.
+    - y_position: 치수선이 그려질 Y 좌표
+    - 인접 트랙끼리 수평거리를 이중화살표로 표시
+    """
+    tracks = p.get_tracks()
+    if len(tracks) < 2:
+        return
+
+    # X 좌표 정렬 (왼쪽부터)
+    sorted_tracks = sorted(tracks, key=lambda t: t.offset_x)
+
+    for i in range(len(sorted_tracks) - 1):
+        t1 = sorted_tracks[i]
+        t2 = sorted_tracks[i + 1]
+        x1 = t1.offset_x
+        x2 = t2.offset_x
+        gap = x2 - x1
+
+        if gap <= 0:
+            continue
+
+        # ★ 이중 화살표
+        ax.annotate('', xy=(x2, y_position), xytext=(x1, y_position),
+                    arrowprops=dict(arrowstyle='<->', color=color, lw=1.2))
+
+        # ★ 중심간격 값 (미터 단위, 소수점 2자리)
+        ax.text((x1 + x2) / 2, y_position + 0.15,
+                f'{gap:.2f}',
+                ha='center', va='bottom',
+                fontsize=fontsize, color=color, fontweight='bold')
+
+        # ★ 트랙 라벨 아래 CL 수직 연장선 (치수선과 트랙을 연결)
+        ax.plot([x1, x1], [y_position - 0.1, y_position + 0.05],
+                color=color, lw=0.8, linestyle=':')
+        ax.plot([x2, x2], [y_position - 0.1, y_position + 0.05],
+                color=color, lw=0.8, linestyle=':')
