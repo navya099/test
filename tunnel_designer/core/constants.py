@@ -20,7 +20,7 @@ HATCH_STYLE_SOLID = "solid"
 HATCH_STYLE_PATTERN = "ANSI31"
 HATCH_STYLE_BOTH = "both"
 
-
+TUNNEL_CL_LABEL = 'CL of 터널'
 # ── 열거형 ───────────────────────────────────────────
 class TunnelType(str, Enum):
     NATM = "NATM (아치형)"

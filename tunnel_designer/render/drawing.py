@@ -6,7 +6,7 @@ import numpy as np
 from matplotlib.patches import Arc, Circle, Rectangle as MplRect
 from shapely.geometry import Polygon
 
-from core.constants import TunnelType, CornerStyle, LABEL_Y_MARGIN
+from core.constants import TunnelType, CornerStyle, LABEL_Y_MARGIN, TUNNEL_CL_LABEL
 from core.geometry import (
     compute_multi_arch, check_multi_arch_overlap,
     compute_fl, compute_fl_for_arch,
@@ -16,6 +16,17 @@ from core.models import (
     BoxGeometry,
 )
 
+
+# render/drawing.py 상단 import 근처에 추가
+
+def draw_tracks(ax, p, y_label, color='#555555'):
+    """N개 선로의 CL 수직선과 라벨을 그림."""
+    tracks = p.get_tracks()
+    for t in tracks:
+        x = t.offset_x
+        ax.axvline(x, color='gray', linestyle='--', linewidth=0.9)
+        label = t.label or f"CL {x:+.2f}"
+        ax.text(x, y_label, label, ha='center', fontsize=9, color=color)
 
 def _fill_polygon(ax, poly: Polygon, color='#d0d4da', alpha=0.5):
     xs, ys = poly.exterior.xy
@@ -107,14 +118,12 @@ def draw_single_natm(ax, g: TunnelGeometry, p: TunnelParams):
              end[1] - p.fl_to_culvert]
         ax.plot(x, y, 'k-', lw=1.2)
 
-    # 중심선
+    # v6-F1: 궤도중심선 하드코딩 제거
     y_text = g.top_of_tunnel + LABEL_Y_MARGIN
-    for x, label in ((-p.D / 2, 'CL of 하선'),
-                     (0, 'CL of 터널'),
-                     (p.D / 2, 'CL of 상선')):
-        ax.axvline(x, color='gray', linestyle='--', linewidth=0.9)
-        ax.text(x, y_text, label, ha='center', fontsize=9, color='#555555')
-
+    draw_tracks(ax, p, y_text)
+    # 터널 중심 CL도 함께 표시 (옵션)
+    ax.axvline(0, color='darkgray', linestyle=':', lw=0.8, alpha=0.6)
+    ax.text(0, y_text, TUNNEL_CL_LABEL, ha='center', fontsize=9, color='#555555')
     # 치수선
     for c, e in ((g.center_top, g.top_end),
                  (g.center_top, g.top_start),
@@ -192,6 +201,10 @@ def draw_multi_arch(ax, mg: MultiArchGeometry, p: TunnelParams):
 
     _draw_overlap_highlight(ax, mg)
 
+    # v6-F1: 궤도중심선 하드코딩 제거
+    tops = [arch.top_of_tunnel for arch in mg.arches]
+    y_dim = max(tops) + LABEL_Y_MARGIN
+    draw_tracks(ax, p, y_dim)
 
 def _draw_single_arch(ax, g: TunnelGeometry, a, color: str):
     def arc(c, r, s, e):
@@ -405,6 +418,9 @@ def draw_box(ax, g: BoxGeometry):
     if p.box_columns > 0 and p.box_col_width > 0:
         # 기둥 간격에 대한 치수 표시 예시 (필요시 구현)
         pass
+
+    # v6-F1: 궤도중심선 하드코딩 제거
+    draw_tracks(ax, p, y_dim)
 
 # ── 스펙 텍스트 (사이드 패널용) ──────────────────────
 def spec_single_natm(g: TunnelGeometry, p: TunnelParams) -> str:

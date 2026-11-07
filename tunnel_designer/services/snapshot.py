@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 
 from core.constants import TunnelType, CornerStyle
-from core.models import TunnelParams, SnapshotEntry, ArchParams
+from core.models import TunnelParams, SnapshotEntry, ArchParams, TrackParams
 
 
 class SnapshotStore:
@@ -41,6 +41,11 @@ class SnapshotStore:
             data["box_style_top"] = CornerStyle(data["box_style_top"])
         if "box_style_bot" in data and isinstance(data["box_style_bot"], str):
             data["box_style_bot"] = CornerStyle(data["box_style_bot"])
+
+        # ★ 트랙 복원
+        tracks = data.get("tracks") or []
+        data["tracks"] = [TrackParams(**t) for t in tracks]
+
         arches = data.get("arches") or []
         data["arches"] = [ArchParams(**a) for a in arches]
         return TunnelParams(**data)

@@ -117,6 +117,12 @@ class ControlsPanel:
         self.shape_group.pack(fill="x", pady=(0, 8))
         self.shape_group.columnconfigure(0, weight=1)
 
+        # ★ 신규: 선로 그룹 (단면 형상 다음에)
+        self.track_group = ttk.LabelFrame(parent, text="  선로 (트랙)  ",
+                                          padding=8)
+        self.track_group.pack(fill="x", pady=(0, 8))
+        self.track_group.columnconfigure(0, weight=1)
+
         self.dim_group = ttk.LabelFrame(parent, text="  위치 · 치수  ",
                                          padding=8)
         self.dim_group.pack(fill="x", pady=(0, 8))
@@ -202,8 +208,11 @@ class ControlsPanel:
             w.destroy()
         for w in self.safety_group.winfo_children():
             w.destroy()
+        for w in self.track_group.winfo_children():  # ★ 추가
+            w.destroy()
         self.rows.clear()
         self.arch_rows.clear()
+        self.track_rows = []  # ★ 추가
 
         kind = self.app.params.kind
         if kind == TunnelType.BOX:
@@ -215,6 +224,8 @@ class ControlsPanel:
 
         # ★ 안전박스는 모든 타입에 공통
         self._build_safety_editor()
+
+        self._build_track_editor()  # ★ 추가
 
         # ★ populate 후 스크롤 영역 갱신
         self.scroll_frame.update_idletasks()
@@ -440,6 +451,53 @@ class ControlsPanel:
             row.frame.grid(row=i, column=0, sticky="ew", pady=2)
             self.rows[attr] = row
 
+    def _build_track_editor(self):
+        """★ 다중 트랙 편집: N개 행 + 개별 X 오프셋 + 추가/삭제 버튼."""
+        p = self.app.params
+        tracks = p.get_tracks()
+
+        # 상단: 안내 + 자동 배치 버튼
+        hint = ttk.Frame(self.track_group)
+        hint.pack(fill="x", pady=(0, 6))
+        ttk.Label(hint, text=f"선로 {len(tracks)}개",
+                  style="Info.TLabel").pack(side="left")
+        ttk.Button(hint, text="D 기반 2트랙",
+                   command=self.app.reset_tracks_to_D
+                   ).pack(side="right", padx=(4, 0))
+        ttk.Button(hint, text="+ 추가",
+                   command=self.app.add_track
+                   ).pack(side="right", padx=(4, 0))
+
+        # 각 트랙 행
+        for i, t in enumerate(tracks):
+            row_frame = ttk.Frame(self.track_group, style="Card.TFrame")
+            row_frame.pack(fill="x", pady=2)
+            row_frame.columnconfigure(2, weight=1)
+
+            # 라벨 (편집 가능)
+            label_var = tk.StringVar(value=t.label or f"T{i + 1}")
+            label_entry = ttk.Entry(row_frame, textvariable=label_var, width=6)
+            label_entry.grid(row=0, column=0, sticky="w", padx=(4, 4))
+            label_entry.bind("<FocusOut>",
+                             lambda e, idx=i, v=label_var: self.app.on_track_label_change(idx, v.get()))
+            label_entry.bind("<Return>",
+                             lambda e, idx=i, v=label_var: self.app.on_track_label_change(idx, v.get()))
+
+            # 삭제 버튼 (최소 1개는 남김)
+            del_btn = ttk.Button(row_frame, text="✕", width=2,
+                                 command=lambda idx=i: self.app.remove_track(idx))
+            if len(tracks) <= 1:
+                del_btn.state(["disabled"])
+            del_btn.grid(row=0, column=3, padx=(4, 4))
+
+            # X 오프셋 파라미터
+            row = ParamRow(row_frame, label="X 오프셋",
+                           attr=f"track_{i}.offset_x",
+                           lo=-30.0, hi=30.0, res=0.01, unit="m", decimals=3,
+                           on_change=self.app.on_track_param_change,
+                           initial=t.offset_x)
+            row.frame.grid(row=0, column=1, columnspan=2, sticky="ew")
+            self.track_rows.append({"row": row, "label_var": label_var})
 
 class CanvasPanel:
     """우측 도면 + 이력 탭."""

@@ -13,7 +13,7 @@ from core.constants import (
     HATCH_STYLE_SOLID, LEFT_PANEL_WIDTH,
 )
 from core.models import (
-    TunnelParams, ArchParams, FitHistoryEntry, SnapshotEntry,
+    TunnelParams, ArchParams, FitHistoryEntry, SnapshotEntry, TrackParams,
 )
 from core.geometry import (
     compute_geometry_from_arch, compute_fl, fit_R1_Y_to_FL,
@@ -88,12 +88,37 @@ class TunnelApp:
 
     # ── 파라미터 콜백 ──────────────────────────────
     def on_param_change(self, attr: str, value: float):
+
         if self._suspend:
             return
         setattr(self.params, attr, value)
         if self._maybe_auto_avoid():
             return
         self.update_plot()
+
+    def on_track_param_change(self, key: str, value: float):
+        """key 형식: 'track_0.offset_x'"""
+        if self._suspend:
+            return
+        _, attr = key.split(".", 1)
+        idx = int(key.split("_")[1].split(".")[0])
+        tracks = self.params.get_tracks()
+
+        # ★ tracks를 실체화 (비어있으면 D 기반 2트랙 채움)
+        if not self.params.tracks:
+            self.params.tracks = tracks
+
+        if 0 <= idx < len(self.params.tracks):
+            setattr(self.params.tracks[idx], attr, value)
+            self.update_plot()
+
+    def on_track_label_change(self, idx: int, label: str):
+        tracks = self.params.get_tracks()
+        if not self.params.tracks:
+            self.params.tracks = tracks
+        if 0 <= idx < len(self.params.tracks):
+            self.params.tracks[idx].label = label
+            self.update_plot()
 
     def on_arch_param_change(self, key: str, value: float):
         if self._suspend:
@@ -543,8 +568,6 @@ class TunnelApp:
         ax.grid(True, color="#e5e5e5", linewidth=0.6)
 
         ents = self.dxf.load(self.dxf_path)
-        draw_cad(ax, ents, translate_x=-p.D / 2, translate_y=+p.RL)
-        draw_cad(ax, ents, translate_x=+p.D / 2, translate_y=+p.RL)
 
         if p.kind == TunnelType.BOX:
             g = compute_box_geometry(p)
@@ -611,3 +634,43 @@ class TunnelApp:
 
     def run(self):
         self.root.mainloop()
+
+    def add_track(self):
+        tracks = self.params.get_tracks()
+        if not self.params.tracks:
+            self.params.tracks = tracks
+        # 새 트랙: 마지막 트랙에서 +D/2 또는 +2.0m
+        if len(self.params.tracks) >= 2:
+            last = self.params.tracks[-1].offset_x
+            prev = self.params.tracks[-2].offset_x
+            spacing = last - prev
+        else:
+            spacing = 2.0
+        new_x = (self.params.tracks[-1].offset_x if self.params.tracks
+                 else 0.0) + max(spacing, 1.0)
+        self.params.tracks.append(
+            TrackParams(offset_x=new_x, label=f"T{len(self.params.tracks) + 1}"))
+        self.controls.populate()
+        self.update_plot()
+
+    def remove_track(self, idx: int):
+        tracks = self.params.get_tracks()
+        if not self.params.tracks:
+            self.params.tracks = tracks
+        if len(self.params.tracks) <= 1:
+            return
+        if not messagebox.askyesno("트랙 삭제",
+                                   f"{idx + 1}번 트랙을 삭제할까요?"):
+            return
+        self.params.tracks.pop(idx)
+        self.controls.populate()
+        self.update_plot()
+
+    def reset_tracks_to_D(self):
+        """D 기반 2트랙(하선/상선)으로 초기화."""
+        if not messagebox.askyesno("초기화",
+                                   "선로를 D 기반 2트랙으로 되돌릴까요?"):
+            return
+        self.params.tracks.clear()
+        self.controls.populate()
+        self.update_plot()

@@ -88,6 +88,20 @@ class TunnelParams:
     box_drain_w: float = 0.4  # 배수구 폭 (m)
     box_drain_h: float = 0.5  # 배수구 깊이 (m)
 
+    # ★ 신규: 다중 트랙
+    tracks: list[TrackParams] = field(default_factory=list)
+
+    # 편의: tracks 가 비어있으면 D 기반 2트랙 자동 생성
+    def get_tracks(self) -> list[TrackParams]:
+        if self.tracks:
+            return self.tracks
+        # 기존 D 기반 (하선/상선)
+        half = self.D / 2
+        return [
+            TrackParams(offset_x=-half, label="하선"),
+            TrackParams(offset_x=+half, label="상선"),
+        ]
+
     @property
     def r1_angles(self) -> tuple[float, float]:
         half = self.top_angle / 2.0
@@ -193,3 +207,9 @@ class OverlapInfo:
     overlap_areas: list[float]
     min_gap: float
     gap_details: list[tuple[int, int, float]]
+
+@dataclass
+class TrackParams:
+    """개별 선로 (X 위치, 라벨)."""
+    offset_x: float = 0.0        # 터널 중심(0,0) 기준 X 오프셋 (m)
+    label: str = ""              # 표시용 이름 (예: "하선", "상선", "3선")
