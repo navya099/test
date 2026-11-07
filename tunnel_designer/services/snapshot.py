@@ -42,9 +42,16 @@ class SnapshotStore:
         if "box_style_bot" in data and isinstance(data["box_style_bot"], str):
             data["box_style_bot"] = CornerStyle(data["box_style_bot"])
 
-        # ★ 트랙 복원
-        tracks = data.get("tracks") or []
-        data["tracks"] = [TrackParams(**t) for t in tracks]
+        # ★ 트랙 복원 (구버전 호환)
+        tracks_raw = data.get("tracks") or []
+        tracks = []
+        for t in tracks_raw:
+            tracks.append(TrackParams(
+                offset_x=t.get("offset_x", 0.0),
+                label=t.get("label", ""),
+                show_clearance=t.get("show_clearance", True)
+            ))
+        data["tracks"] = tracks
 
         arches = data.get("arches") or []
         data["arches"] = [ArchParams(**a) for a in arches]

@@ -49,3 +49,13 @@ class ParamRow:
     def set_value(self, v: float):
         self.var.set(v)
         self.entry_var.set(f"{v:.{self.decimals}f}")
+
+    # ui/widgets.py의 ParamRow 클래스에 추가
+    def grid(self, **kwargs):
+        return self.frame.grid(**kwargs)
+
+    def pack(self, **kwargs):
+        return self.frame.pack(**kwargs)
+
+    def place(self, **kwargs):
+        return self.frame.place(**kwargs)

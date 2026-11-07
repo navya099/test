@@ -25,7 +25,7 @@ from services.snapshot import SnapshotStore
 from services.dxf_io import DxfCache, write_dxf
 from render.drawing import (
     draw_cad, draw_single_natm, draw_multi_arch, draw_box,
-    spec_single_natm, spec_multi_arch, spec_box,
+    spec_single_natm, spec_multi_arch, spec_box, draw_clearance_overlay,
 )
 from ui.style import setup_style
 from ui.dialogs import ask_reference_arch, confirm_align_dialog
@@ -567,7 +567,9 @@ class TunnelApp:
         ax.set_aspect("equal", adjustable="box")
         ax.grid(True, color="#e5e5e5", linewidth=0.6)
 
+        # ✅ 트랙별 차량한계선 개별 표시
         ents = self.dxf.load(self.dxf_path)
+        draw_clearance_overlay(ax, ents, p)
 
         if p.kind == TunnelType.BOX:
             g = compute_box_geometry(p)
@@ -639,7 +641,6 @@ class TunnelApp:
         tracks = self.params.get_tracks()
         if not self.params.tracks:
             self.params.tracks = tracks
-        # 새 트랙: 마지막 트랙에서 +D/2 또는 +2.0m
         if len(self.params.tracks) >= 2:
             last = self.params.tracks[-1].offset_x
             prev = self.params.tracks[-2].offset_x
@@ -649,7 +650,8 @@ class TunnelApp:
         new_x = (self.params.tracks[-1].offset_x if self.params.tracks
                  else 0.0) + max(spacing, 1.0)
         self.params.tracks.append(
-            TrackParams(offset_x=new_x, label=f"T{len(self.params.tracks) + 1}"))
+            TrackParams(offset_x=new_x, label=f"T{len(self.params.tracks) + 1}",
+                        show_clearance=True))
         self.controls.populate()
         self.update_plot()
 
@@ -674,3 +676,11 @@ class TunnelApp:
         self.params.tracks.clear()
         self.controls.populate()
         self.update_plot()
+
+    def on_track_clearance_toggle(self, idx: int, enabled: bool):
+        tracks = self.params.get_tracks()
+        if not self.params.tracks:
+            self.params.tracks = tracks
+        if 0 <= idx < len(self.params.tracks):
+            self.params.tracks[idx].show_clearance = enabled
+            self.update_plot()

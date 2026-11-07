@@ -452,11 +452,11 @@ class ControlsPanel:
             self.rows[attr] = row
 
     def _build_track_editor(self):
-        """★ 다중 트랙 편집: N개 행 + 개별 X 오프셋 + 추가/삭제 버튼."""
+        """★ 다중 트랙 편집: 라벨, X오프셋, 차량한계 표시/오프셋, 추가/삭제."""
         p = self.app.params
         tracks = p.get_tracks()
 
-        # 상단: 안내 + 자동 배치 버튼
+        # 상단 안내 + 버튼
         hint = ttk.Frame(self.track_group)
         hint.pack(fill="x", pady=(0, 6))
         ttk.Label(hint, text=f"선로 {len(tracks)}개",
@@ -468,36 +468,62 @@ class ControlsPanel:
                    command=self.app.add_track
                    ).pack(side="right", padx=(4, 0))
 
-        # 각 트랙 행
+        # 각 트랙
         for i, t in enumerate(tracks):
-            row_frame = ttk.Frame(self.track_group, style="Card.TFrame")
-            row_frame.pack(fill="x", pady=2)
-            row_frame.columnconfigure(2, weight=1)
+            # ── 트랙 카드 ────────────────────────────
+            card = ttk.LabelFrame(self.track_group,
+                                  text=f"  트랙 {i + 1}  ", padding=6)
+            card.pack(fill="x", pady=(4, 2))
+            card.columnconfigure(1, weight=1)
 
-            # 라벨 (편집 가능)
+            # 라벨 + 삭제
+            top = ttk.Frame(card, style="Card.TFrame")
+            top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+            top.columnconfigure(1, weight=1)
+
             label_var = tk.StringVar(value=t.label or f"T{i + 1}")
-            label_entry = ttk.Entry(row_frame, textvariable=label_var, width=6)
-            label_entry.grid(row=0, column=0, sticky="w", padx=(4, 4))
+            ttk.Label(top, text="라벨", style="Card.TLabel").pack(side="left", padx=(0, 4))
+            label_entry = ttk.Entry(top, textvariable=label_var, width=8)
+            label_entry.pack(side="left", padx=(0, 8))
             label_entry.bind("<FocusOut>",
                              lambda e, idx=i, v=label_var: self.app.on_track_label_change(idx, v.get()))
             label_entry.bind("<Return>",
                              lambda e, idx=i, v=label_var: self.app.on_track_label_change(idx, v.get()))
 
-            # 삭제 버튼 (최소 1개는 남김)
-            del_btn = ttk.Button(row_frame, text="✕", width=2,
+            # 차량한계 표시 체크박스
+            show_var = tk.BooleanVar(value=t.show_clearance)
+
+            def _toggle(idx=i, var=show_var):
+                self.app.on_track_clearance_toggle(idx, var.get())
+
+            ttk.Checkbutton(top, text="차량한계 표시",
+                            variable=show_var, command=_toggle
+                            ).pack(side="left", padx=(0, 8))
+
+            # 삭제 버튼
+            del_btn = ttk.Button(top, text="✕", width=2,
                                  command=lambda idx=i: self.app.remove_track(idx))
             if len(tracks) <= 1:
                 del_btn.state(["disabled"])
-            del_btn.grid(row=0, column=3, padx=(4, 4))
+            del_btn.pack(side="right")
 
-            # X 오프셋 파라미터
-            row = ParamRow(row_frame, label="X 오프셋",
-                           attr=f"track_{i}.offset_x",
-                           lo=-30.0, hi=30.0, res=0.01, unit="m", decimals=3,
-                           on_change=self.app.on_track_param_change,
-                           initial=t.offset_x)
-            row.frame.grid(row=0, column=1, columnspan=2, sticky="ew")
-            self.track_rows.append({"row": row, "label_var": label_var})
+            # ── 파라미터 3개 ──────────────────────────
+            param_specs = [
+                ("X 오프셋", "offset_x", -30.0, 30.0, 0.01, "m", 3)
+            ]
+            for j, (lab, attr, lo, hi, res, unit, dec) in enumerate(param_specs):
+                row = ParamRow(card, label=lab,
+                               attr=f"track_{i}.{attr}",
+                               lo=lo, hi=hi, res=res, unit=unit, decimals=dec,
+                               on_change=self.app.on_track_param_change,
+                               initial=getattr(t, attr))
+
+                row.grid(row=j + 1, column=0, columnspan=2, sticky="ew", pady=1)
+                self.track_rows.append({"row": row, "label_var": label_var})
+
+        # 좌측 스크롤 갱신
+        self.scroll_frame.update_idletasks()
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
 class CanvasPanel:
     """우측 도면 + 이력 탭."""

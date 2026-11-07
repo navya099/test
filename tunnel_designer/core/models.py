@@ -213,3 +213,6 @@ class TrackParams:
     """개별 선로 (X 위치, 라벨)."""
     offset_x: float = 0.0        # 터널 중심(0,0) 기준 X 오프셋 (m)
     label: str = ""              # 표시용 이름 (예: "하선", "상선", "3선")
+
+    # ★ 신규: 차량한계선개별제어
+    show_clearance: bool = True  # 차량한계 표시 여부

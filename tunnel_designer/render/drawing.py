@@ -34,7 +34,7 @@ def _fill_polygon(ax, poly: Polygon, color='#d0d4da', alpha=0.5):
 
 
 # ── DXF CAD 오버레이 ─────────────────────────────────
-def draw_cad(ax, entities, translate_x=0, translate_y=0):
+def draw_cad(ax, entities, translate_x=0.0, translate_y=0.0):
     if not entities:
         return
     for e in entities:
@@ -324,7 +324,8 @@ def draw_box(ax, g: BoxGeometry):
             hxs, hys = interior.xy
             ax.plot(hxs, hys, color='#2f6fed', lw=2.0)
 
-    # 3. 해칭 (외곽 - 내공)
+    #F2  해칭 제거
+    """
     try:
         wall_poly = g.outer.difference(g.inner)
         geoms = ([wall_poly] if wall_poly.geom_type == 'Polygon'
@@ -339,7 +340,7 @@ def draw_box(ax, g: BoxGeometry):
                 ax.fill(hxs, hys, facecolor='white', edgecolor='none')  # 내부 뚫기
     except Exception as e:
         print(f"[box fill error] {e}")
-
+    """
     # ... (필렛 라벨, 치수선 등 기존 코드 유지) ...
 
     for center, r, a1, a2 in g.fillet_arcs:
@@ -495,3 +496,17 @@ def spec_box(g: BoxGeometry) -> str:
         f"tw {p.box_wall_t * 1000:.0f}mm  |  "
         f"ts {p.box_slab_t * 1000:.0f}mm  |  "
         f"상단 {top_txt}  |  하단 {bot_txt}  |  SL {g.SL:.2f}m")
+
+# render/drawing.py 상단에 추가
+
+def draw_clearance_overlay(ax, entities, p: TunnelParams):
+    """
+    각 트랙의 차량한계선(DXF 오버레이)을 개별 X/Y 오프셋으로 그린다.
+    p.get_tracks()의 show_clearance=False는 스킵.
+    """
+    if not entities:
+        return
+    for t in p.get_tracks():
+        if not t.show_clearance:
+            continue
+        draw_cad(ax, entities, translate_x=t.offset_x, translate_y=p.RL)
