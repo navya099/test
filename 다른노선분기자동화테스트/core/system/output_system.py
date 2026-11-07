@@ -104,3 +104,32 @@ class CsvOutputSystem(BaseOutputSystem):
                 writer.writerow([i, f"{p[0]:.4f}", f"{p[1]:.4f}"])
 
         self.logger.info(f"CSV 파일 저장 완료: {file_path}")
+
+
+try:
+    import ezdxf
+except ImportError:
+    ezdxf = None
+
+
+class DXFOutputSystem(BaseOutputSystem):
+    def execute(self, entities, components):
+        if ezdxf is None:
+            raise ImportError("DXF 출력을 위해 'ezdxf' 라이브러리가 필요합니다. 'pip install ezdxf'를 실행하세요.")
+
+        spec = components[ComponentKey.TURNOUT_SPEC]
+        coords_data = components[ComponentKey.BRANCH_COORDS]
+        config = components[ComponentKey.OUTPUT_CONFIG]
+
+        # ★ 공통 헬퍼 사용
+        file_path = self._get_file_path(config, default_name="output_branch", extension="dxf")
+
+        doc = ezdxf.new(dxfversion="R2018")
+        msp = doc.modelspace()
+        pts = coords_data["points"]
+
+        if len(pts) >= 2:
+            msp.add_lwpolyline(pts, close=False, dxfattribs={"color": 1})
+
+        doc.saveas(file_path)
+        self.logger.info(f"DXF 파일 저장 완료: {file_path}")

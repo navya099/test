@@ -6,7 +6,7 @@ from core.component.output_config import OutputConfig
 from core.system.coord_printer import CoordPrinter
 from core.system.generate_branch_coords import GenerateBranchCoordsSystem
 from core.system.interactive_selector import InteractiveSelectorSystem
-from core.system.output_system import ConsoleOutputSystem, CsvOutputSystem, TxtOutputSystem
+from core.system.output_system import ConsoleOutputSystem, CsvOutputSystem, TxtOutputSystem, DXFOutputSystem
 from core.system.result_summary import ResultSummarySystem
 from core.world.world import World
 from core.constants import EntityKey, ComponentKey
@@ -90,6 +90,8 @@ class Main:
             world.add_system(CsvOutputSystem())
         elif OUTPUT_FORMAT == 'txt':
             world.add_system(TxtOutputSystem())
+        elif OUTPUT_FORMAT == 'dxf':
+            world.add_system(DXFOutputSystem())
         else:
             raise ValueError(f"지원하지 않는 출력 포맷입니다: {OUTPUT_FORMAT}")
 
