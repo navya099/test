@@ -8,6 +8,9 @@ from services.dxf2.engine import (
 from services.dxf2.registry import get_builder, list_registered, register
 from services.dxf2.title_block import build_title_values, fill_title_block
 
+# 빌더 등록 (import 시 자동 실행)
+from services.dxf2.builders.natm import build_natm  # noqa: F401
+
 
 __all__ = [
     "load_standard_template", "is_standard_available", "get_standard_path",

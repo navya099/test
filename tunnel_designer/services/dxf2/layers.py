@@ -59,6 +59,8 @@ LAYER_ROCK_SOFT    = "CC-ROCK-SOFT"   # 연암
 LAYER_ROCK_HARD    = "CC-ROCK-HARD"   # 경암
 LAYER_ROCK_WEATH   = "CC-ROCK-WETH"   # 풍화암
 
+LAYER_SAFE = LAYER_MISC     # ★ 안전박스는 일반선 레이어로
+LAYER_HIDL = LAYER_HIDDEN   # 이미 있음
 
 # ═══════════════════════════════════════════════════════════
 # 표준 문자 스타일 (GulimChe, 크기 계층)
