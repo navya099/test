@@ -1,600 +1,529 @@
-import tkinter as tk
-from tkinter import filedialog, ttk, messagebox, simpledialog
-import math
+"""BVE 곡선 파일 기반 곡선레일(5m) 설치 구문 생성기.
+
+입력: BVE에서 추출한 CURVE_INFO.TXT, 구조물 측점 XLSX
+출력: FREEOBJ 구문 파일, RAILTYPE 구문 파일
+"""
+from __future__ import annotations
+
 import csv
-from tkinter.filedialog import askopenfilename, asksaveasfilename
+import math
+import tkinter as tk
+from dataclasses import dataclass
+from tkinter import filedialog, messagebox, simpledialog, ttk
+from typing import Iterable
 
 import pandas as pd
 
-'''
-BVE곡선파일을 바탕으로 곡선레일(5m)를 설치하는 프로그램
--made by dger -
-VER 20250303 2343
-#수정
-직선구간에 프리오브젯ㄱ트 생성 방지
+# ---------------------------------------------------------------------------
+# 상수
+# ---------------------------------------------------------------------------
+INCREMENT = 5            # 계산 간격 (m)
+BLOCK_LENGTH = 25        # BVE 블록 단위 (m)
+GAUGE_MM = 1500          # 궤간 (mm)
+M_TO_MM = 1000
 
-입력파일:BVE에서 추출한 곡선파일(CURVE_INFO.TXT)
+ALIGNMENT_TYPES = ("일반철도", "도시철도", "고속철도", "준고속철도")
 
-CURVE_INFO샘플
-275,0
-300,0
-325,0
-350,-632.636
-375,-632.636
-400,679.461
-425,679.461
-450,0
-475,0
+STRUCTURE_BRIDGE = "교량"
+STRUCTURE_TUNNEL = "터널"
+STRUCTURE_EARTHWORK = "토공"
 
-준비파일: 구조물 측점 csv 등
-구조물 측점 샘플파일
-B1	18840	19120	280
-B2	19240	19380	140
+TRACK_CONCRETE = "콘크리트도상"
+TRACK_BALLAST = "자갈도상"
 
-출력파일: FREEOBJ구문파일, railtype구문파일
+CURVE = "곡선"
+STRAIGHT = "직선"
 
-'''
 
-# Global Variables
-increment = 5  #계산간격
-block_length =25 #bve블록단위
-# File Reading Function
-def read_file():
-    # Open file dialog
-    file_path = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("txt files", "curve_info.txt"), ("All files", "*.*")])
-    print('현재파일:', file_path)
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            reader = csv.reader(file)
-            lines = list(reader)
-    except UnicodeDecodeError:
-        print('현재파일은 utf-8인코딩이 아닙니다. euc-kr로 시도합니다.')
+# ---------------------------------------------------------------------------
+# 파일 입출력
+# ---------------------------------------------------------------------------
+def read_file() -> list[list[str]]:
+    """CURVE_INFO 파일을 읽어 2차원 리스트로 반환. 취소/실패 시 빈 리스트."""
+    path = filedialog.askopenfilename(
+        defaultextension=".txt",
+        filetypes=[("txt files", "curve_info.txt"), ("All files", "*.*")],
+    )
+    if not path:
+        return []
+
+    print("현재파일:", path)
+    for encoding in ("utf-8", "euc-kr"):
         try:
-            with open(file_path, 'r', encoding='euc-kr') as file:
-                reader = csv.reader(file)
-                lines = list(reader)
+            with open(path, "r", encoding=encoding) as f:
+                return list(csv.reader(f))
         except UnicodeDecodeError:
-            print('현재파일은 euc-kr인코딩이 아닙니다. 파일을 읽을 수 없습니다.')
+            print(f"{encoding} 디코딩 실패. 다음 인코딩 시도.")
+        except OSError as e:
+            print(f"파일 열기 실패: {e}")
             return []
-    return lines
+    print("지원 인코딩으로 파일을 읽을 수 없습니다.")
+    return []
 
-# Parsing Curve Info
-def parsing_curveinfo(lines):
-    curveinfo = []
-    
+
+def save_lines(lines: Iterable[str], save_path: str) -> None:
+    if not save_path:
+        print("저장 경로가 지정되지 않았습니다.")
+        return
+    try:
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        print(f"{save_path} 파일이 성공적으로 저장되었습니다.")
+    except OSError as e:
+        print(f"파일 저장에 실패하였습니다: {e}")
+
+
+# ---------------------------------------------------------------------------
+# 곡선 정보 파싱
+# ---------------------------------------------------------------------------
+@dataclass
+class CurvePoint:
+    sta: float
+    radius: float
+    cant: float
+
+
+def parsing_curveinfo(lines: list[list[str]]) -> list[CurvePoint]:
+    curveinfo: list[CurvePoint] = []
     for line in lines:
+        if not line:
+            continue
         try:
-            station = float(line[0])
-        except Exception as e:
-            print("station 읽는 중 오류가 발생했습니다:", e)
-            station = 0.0
-        try:
+            sta = float(line[0])
             radius = float(line[1])
-        except Exception as e:
-            print("radius 읽는 중 오류가 발생했습니다:", e)
-            radius = 0.0
+        except (ValueError, IndexError) as e:
+            print(f"곡선 정보 파싱 오류 (line={line}): {e}")
+            continue
         try:
             cant = float(line[2])
-        except Exception as e:
+        except (ValueError, IndexError):
             cant = 0.0
-
-        curveinfo.append([station, radius, cant])
-    
+        curveinfo.append(CurvePoint(sta, radius, cant))
     return curveinfo
 
-def extract_cant(curveinfo):
-    c_list =[]
+
+# ---------------------------------------------------------------------------
+# 기하 계산
+# ---------------------------------------------------------------------------
+def cal_direction(radius: float) -> int:
+    return -1 if radius < 0 else 1
+
+
+def cal_ordinate(radius: float, length: float, divisor: float) -> float:
+    """원호 상 두 점의 종거 계산 (divisor로 분할점 지정)."""
+    if radius == 0:
+        return 0.0
+    half = length / divisor
+    return math.sqrt(radius**2 - half**2) - math.sqrt(radius**2 - length**2)
+
+
+def cal_ordinate1(radius: float, length: float) -> float:
+    return cal_ordinate(radius, length, 5) if radius else 0.0
+
+
+def cal_ordinate2(radius: float, length: float) -> float:
+    return cal_ordinate(radius, length, 1) if radius else 0.0
+
+
+def cal_M1(ordinate1: float) -> float:
+    return math.degrees(ordinate1 / INCREMENT)
+
+
+def cal_M2(ordinate1: float, ordinate2: float) -> float:
+    return math.degrees((ordinate2 - ordinate1) / INCREMENT)
+
+
+# 5m 구간 내 i번째 점의 x 오프셋 (원본 로직 유지: increment=5 전제)
+X_PATTERN = {0: "zero", 1: "o1", 2: "o2", 3: "o2", 4: "o1"}
+Y_PATTERN = {0: "m1", 1: "m2", 2: "zero", 3: "m2_neg", 4: "m1_neg"}
+
+
+def cal_X(direction: int, ordinate1: float, ordinate2: float) -> list[float]:
+    values = {
+        "zero": 0.0,
+        "o1": ordinate1 if direction == -1 else -ordinate1,
+        "o2": ordinate2 if direction == -1 else -ordinate2,
+    }
+    return [values[X_PATTERN[i]] for i in range(INCREMENT)]
+
+
+def cal_Y(direction: int, m1: float, m2: float) -> list[float]:
+    values = {
+        "zero": 0.0,
+        "m1": m1 if direction == -1 else -m1,
+        "m2": m2 if direction == -1 else -m2,
+        "m1_neg": -m1 if direction == -1 else m1,
+        "m2_neg": -m2 if direction == -1 else m2,
+    }
+    return [values[Y_PATTERN[i]] for i in range(INCREMENT)]
+
+
+# ---------------------------------------------------------------------------
+# 캔트 보간
+# ---------------------------------------------------------------------------
+def _classify_curvetype(current_r: float, next_r: float, direction_sign: int) -> str:
+    """곡선 유형 판단. 원본 로직을 정리한 버전.
+
+    direction_sign: +1(우향), -1(좌향)
+    """
+    if direction_sign > 0:  # 우향: R이 감소하면 SP-PC, 증가하면 CP-PS
+        if current_r > next_r and next_r != 0:
+            return "SP-PC"
+        return "CP-PS"
+    # 좌향: R이 증가하면 SP-PC
+    if current_r < next_r and next_r != 0:
+        return "SP-PC"
+    return "CP-PS"
+
+
+def cal_cant_5m(c_list: list[CurvePoint], sta: float, direction_sign: int) -> float:
+    """sta 위치에서의 5m 캔트 증분 (mm) 반환. 부동소수점 근사 비교."""
+    eps = 1e-6
+    for i in range(len(c_list) - 1):
+        cur, nxt = c_list[i], c_list[i + 1]
+        if abs(cur.sta - sta) < eps:
+            cant_difference = abs(nxt.cant - cur.cant)
+            cant_increment = cant_difference / INCREMENT
+            curvetype = _classify_curvetype(cur.radius, nxt.radius, direction_sign)
+            sign = direction_sign if curvetype == "SP-PC" else -direction_sign
+            return cant_increment * M_TO_MM * sign
+    return 0.0
+
+
+def cal_Z(first_cant: float, cant_increment: float) -> list[float]:
+    first_cant_mm = first_cant * M_TO_MM
+    return [
+        math.degrees((first_cant_mm + i * cant_increment) / GAUGE_MM)
+        for i in range(INCREMENT)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# 메인 로직
+# ---------------------------------------------------------------------------
+def cal_mainlogic(curveinfo: list[CurvePoint]) -> list[list[float]]:
+    freeobj: list[list[float]] = []
     for info in curveinfo:
-        STA = info[0]
-        R = info[1]
-        C = info[2]
-        c_list.append([STA,R,C])
-    return c_list
+        radius = info.radius
+        direction = cal_direction(radius)
 
-def cal_direction(R):
-    return -1 if R < 0 else 1
+        if radius != 0:
+            ia = BLOCK_LENGTH / radius
+            tl = radius * math.tan(ia) / 2
+            o1 = cal_ordinate1(radius, tl)
+            o2 = cal_ordinate2(radius, tl)
+            m1 = cal_M1(o1)
+            m2 = cal_M2(o1, o2)
+            xs = cal_X(direction, o1, o2)
+            ys = cal_Y(direction, m1, m2)
+        else:
+            xs = [0.0] * INCREMENT
+            ys = [0.0] * INCREMENT
 
-# 좌표 Y축 거리 차이 계산
-def cal_ordinate1(R, TL):
-    A = TL / 5
-    B = A * 3
-    return math.sqrt((R**2) - (B)**2) - math.sqrt((R**2) - (TL**2))
+        cant_increment = cal_cant_5m(curveinfo, info.sta, direction)
+        zs = cal_Z(info.cant, cant_increment)
+        stations = [info.sta + i * INCREMENT for i in range(INCREMENT)]
 
-def cal_ordinate2(R, TL):
-    C = TL / 5
-    return math.sqrt((R**2) - (C)**2) - math.sqrt((R**2) - (TL**2))
-
-def cal_M1(ordinate1):
-    return math.degrees(ordinate1 / increment)
-
-def cal_M2(ordinate1, ordinate2):
-    return math.degrees((ordinate2 - ordinate1) / increment)
-
-def cal_X(direction, ordinate1, ordinate2):
-    X = []
-    for i in range(increment):
-        if i == 0:
-            x = 0
-        elif i == 1 or i == 4:
-            x = ordinate1 if direction == -1 else -ordinate1
-        elif i == 2 or i == 3:
-            x = ordinate2 if direction == -1 else -ordinate2
-        X.append(x)
-    return X
-
-def cal_Y(direction, M1, M2):
-    Y = []
-    for i in range(increment):
-        if i == 0:
-            y = M1 if direction == -1 else -M1
-        elif i == 1:
-            y = M2 if direction == -1 else -M2
-        elif i == 2:
-            y = 0
-        elif i == 3:
-            y = -M2 if direction == -1 else M2
-        elif i == 4:
-            y = -M1 if direction == -1 else M1
-        Y.append(y)
-    return Y
-
-def cal_cant_5m(C_list, sta, sign):#5m캔트반환기
-    current_curvetype = None
-    for i in range(len(C_list) - 1):
-        current_STA, current_R, current_cant = C_list[i]
-        next_STA, next_R, next_cant = C_list[i + 1]
-        
-        # sta가 현재 구간 사이에 있는 경우 보간(interpolation)
-        if current_STA == sta: 
-            cant_difference = abs(next_cant - current_cant)
-            cant_increment = cant_difference / increment
-            if sign == -1:#좌향곡선
-
-                if current_R < next_R and next_R != 0:
-                    current_curvetype = 'SP-PC' #SP PC인경우
-                elif current_R > next_R:
-                    current_curvetype = 'CP-PS'  # CP-PS인경우
-                elif current_R > next_R and next_R ==0:
-                    current_curvetype = 'CP-PS'  #PS-직선인경우
-            else:#우향곡선
-                if current_R > next_R and next_R != 0:
-                    current_curvetype = 'SP-PC' #SP PC인경우
-                elif current_R > next_R:
-                    current_curvetype = 'CP-PS'  # CP-PS인경우
-                elif current_R > next_R and next_R ==0:
-                    current_curvetype = 'CP-PS'  #PS-직선인경우
-            if current_curvetype == 'SP-PC':
-                return cant_increment * 1000 * sign
-            else:
-                return cant_increment * 1000 * -sign
-        
-    return 0
-
-def cal_Z(first_cant, cant_increment, sign):
-    Z = []
-    first_cant *= 1000
-    for i in range(increment):
-
-        dest_cant = (first_cant +  i  * cant_increment)#mm단위 변환
-        z = math.degrees(dest_cant /1500) #각도로 변환
-        Z.append(z)
-        
-    return Z
-
-
-def cal_mainlogic(curveinfo, C_list):
-    freeobj = []
-    for info in curveinfo:
-        STA = info[0]
-        R = info[1]
-        C = info[2]
-        sign = 1 if R >=0 else -1
-        direction = cal_direction(R)
-        IA = block_length / R if R != 0 else 0
-        TL = R * math.tan(IA) / 2
-        O1 = cal_ordinate1(R, TL) if R != 0 else 0
-        O2 = cal_ordinate2(R, TL) if R != 0 else 0
-        M1 = cal_M1(O1) if R != 0 else 0
-        M2 = cal_M2(O1, O2) if R != 0 else 0
-        x = cal_X(direction, O1, O2) if R != 0 else [0,0,0,0,0]
-        y = cal_Y(direction, M1, M2) if R != 0 else [0,0,0,0,0]
-
-        cant_increment = cal_cant_5m(C_list, STA, sign)
-        z = cal_Z(C, cant_increment ,sign)
-        stations = [STA + i * increment for i in range(increment)]
-
-        for i in range(increment):
-            
-            freeobj.append([stations[i], x[i], y[i], z[i]])
-        
+        for i in range(INCREMENT):
+            freeobj.append([stations[i], xs[i], ys[i], zs[i]])
     return freeobj
 
-def create_freeobj(freeobj, structure_list,curve_info, index_dict: dict):
+
+# ---------------------------------------------------------------------------
+# 구조물 / 곡선 판정
+# ---------------------------------------------------------------------------
+def isbridge_tunnel(sta: float, structure_list: dict) -> str:
+    for _, start, end in structure_list["bridge"]:
+        if start <= sta <= end:
+            return STRUCTURE_BRIDGE
+    for _, start, end in structure_list["tunnel"]:
+        if start <= sta <= end:
+            return STRUCTURE_TUNNEL
+    return STRUCTURE_EARTHWORK
+
+
+def check_sta_is_curve(current_sta: float, curveinfo: list[CurvePoint]) -> str:
+    for i in range(len(curveinfo) - 1):
+        cur, nxt = curveinfo[i], curveinfo[i + 1]
+        if cur.sta <= current_sta < nxt.sta:
+            return CURVE if cur.radius != 0 else STRAIGHT
+    # 마지막 측점 이후는 마지막 곡선 정보로 판정 (경계 안전)
+    if curveinfo:
+        last = curveinfo[-1]
+        return CURVE if last.radius != 0 else STRAIGHT
+    return STRAIGHT
+
+
+# ---------------------------------------------------------------------------
+# FreeObj / RailType 생성
+# ---------------------------------------------------------------------------
+def create_freeobj(
+    freeobj: list[list[float]],
+    structure_list: dict,
+    curve_info: list[CurvePoint],
+    index_dict: dict,
+) -> list[str]:
     content = []
     for sta, x, y, z in freeobj:
-        current_structure = isbridge_tunnel(sta, structure_list)
-        iscurve = check_sta_is_curve(sta, curve_info)
+        structure = isbridge_tunnel(sta, structure_list)
+        curve_type = check_sta_is_curve(sta, curve_info)
 
-        if iscurve == '곡선':  
-            if current_structure == '터널':
-                freeobj_index = index_dict['freeobj']['곡선']['터널']['콘크리트도상']
-            elif current_structure == '토공' or current_structure == '교량':
-                freeobj_index = index_dict['freeobj']['곡선']['토공']['자갈도상']
-            else:
-                raise KeyError(f'올바르지 않은 구조물 {current_structure}')
+        if curve_type == CURVE:
+            if structure == STRUCTURE_TUNNEL:
+                # NOTE: 원본은 콘크리트도상 고정이었음. 도상 종류 판단 로직 필요 시 확장.
+                idx = index_dict["freeobj"][CURVE][STRUCTURE_TUNNEL][TRACK_CONCRETE]
+            else:  # 토공 / 교량
+                # [버그 수정] 원본은 교량도 '토공' 인덱스를 사용했음 → 교량 분기 추가
+                idx = index_dict["freeobj"][CURVE][structure][TRACK_BALLAST]
         else:
-            freeobj_index = index_dict['freeobj']['직선']#Null.csv
-        content.append(f'{sta},.freeobj 0;{freeobj_index};{x};0;{y};0;{z}\n')
-        
+            idx = index_dict["freeobj"][STRAIGHT]
+
+        content.append(f"{sta},.freeobj 0;{idx};{x};0;{y};0;{z}\n")
     return content
 
-def isbridge_tunnel(sta, structure_list):
-    """sta가 교량/터널/토공 구간에 해당하는지 구분하는 함수"""
-    for name, start, end in structure_list['bridge']:
-        if start <= sta <= end:
-            return '교량'
-    
-    for name, start, end in structure_list['tunnel']:
-        if start <= sta <= end:
-            return '터널'
-    
-    return '토공'
 
-def check_sta_is_curve(current_sta, curveinfo):
-    for i in range(len(curveinfo)-1):
-        sta, R, c = curveinfo[i]
-        NEXT_sta, NEXT_R, NEXT_c = curveinfo[i +1]
-        if sta <=current_sta < NEXT_sta:
-            if R != 0:
-                return '곡선'
-            else:
-                return '직선'
-        
-# 실행
-def load_structure_data():
-    """구조물 데이터를 엑셀 파일에서 불러오는 함수"""
-    openexcelfile = open_excel_file()
-    if openexcelfile:
-        return find_structure_section(openexcelfile)
-    else:
-        print("엑셀 파일을 선택하지 않았습니다.")
-        return None
-
-
-def find_structure_section(filepath):
-    """xlsx 파일을 읽고 교량과 터널 정보를 반환하는 함수"""
-    structure_list = {'bridge': [], 'tunnel': []}
-
-    # xlsx 파일 읽기
-    df_bridge = pd.read_excel(filepath, sheet_name='교량', header=None)
-    df_tunnel = pd.read_excel(filepath, sheet_name='터널', header=None)
-
-    # 열 개수 확인
-    print(df_tunnel.shape)  # (행 개수, 열 개수)
-    print(df_tunnel.head())  # 데이터 확인
-
-    # 첫 번째 행을 열 제목으로 설정
-    df_bridge.columns = ['br_NAME', 'br_START_STA', 'br_END_STA', 'br_LENGTH']
-    df_tunnel.columns = ['tn_NAME', 'tn_START_STA', 'tn_END_STA', 'tn_LENGTH']
-
-    # 교량 구간과 터널 구간 정보
-    for _, row in df_bridge.iterrows():
-        structure_list['bridge'].append((row['br_NAME'], row['br_START_STA'], row['br_END_STA']))
-
-    for _, row in df_tunnel.iterrows():
-        structure_list['tunnel'].append((row['tn_NAME'], row['tn_START_STA'], row['tn_END_STA']))
-
-    return structure_list
-
-def open_excel_file():
-    """파일 선택 대화 상자를 열고, 엑셀 파일 경로를 반환하는 함수"""
-    root = tk.Tk()
-    root.withdraw()  # Tkinter 창을 숨김
-    root.attributes("-topmost", True)
-    file_path = filedialog.askopenfilename(
-        title="엑셀 파일 선택",
-        filetypes=[("Excel Files", "*.xlsx")]
-    )
-    
-    return file_path
-
-
-def save_files(content, save_path):
-
-    # Modify content
-    modified_content = modify_content(content)
-    
-    try:
-        with open(save_path, 'w', encoding='utf-8') as f:
-            for line in modified_content:
-                f.write(line)  # Ensure each line ends with a newline character
-        print(f'{save_path}파일이 성공적으로 저장되었습니다.')
-    except Exception as e:
-        print(f'파일 저장에 실패하였습니다: {e}')
-        
-def modify_content(contents):
-    modified_contents = []
-    for content in contents:
-        parts = content.split(';')
-        
-        # Ensure there are enough parts to avoid IndexError
-        if len(parts) > 4:
-            # Extract the three values after 478;
-            value1 = parts[2].strip()
-            value2 = parts[4].strip()
-            value3 = parts[6].strip()
-            # Check if all three values are '0'
-            if not (value1 == '0' and value2 == '0' and value3 == '0'):
-                modified_contents.append(content)
-                
-    return modified_contents
-
-def create_railtype(curveinfo, structure_list, index_dict: dict):
-    railtype_list =[]
+def create_railtype(
+    curveinfo: list[CurvePoint], structure_list: dict, index_dict: dict
+) -> list[str]:
+    railtype_list = []
     for info in curveinfo:
-        sta = info[0]
-        R = info[1]
-        c = info[2]
-        currnet_structure = isbridge_tunnel(sta, structure_list)
-        if R == 0:  # 직선
-            if currnet_structure == '터널':
-                railtype = index_dict['railtype']['직선']['터널']['콘크리트도상']#콘크리트도상전차선x
+        structure = isbridge_tunnel(info.sta, structure_list)
+        if info.radius == 0:
+            if structure == STRUCTURE_TUNNEL:
+                railtype = index_dict["railtype"][STRAIGHT][STRUCTURE_TUNNEL][TRACK_CONCRETE]
             else:
-                railtype = index_dict['railtype']['직선']['토공']['자갈도상']  # 자갈도상 신선 전차선x
+                railtype = index_dict["railtype"][STRAIGHT][STRUCTURE_EARTHWORK][TRACK_BALLAST]
         else:
-            railtype = index_dict['railtype']['곡선']
-        railtype_list.append(f'{sta},.railtype 0;{railtype};\n')
-        
+            railtype = index_dict["railtype"][CURVE]
+        railtype_list.append(f"{info.sta},.railtype 0;{railtype};\n")
     return railtype_list
 
-def save_railtype(content, save_path):
+
+def modify_content(contents: list[str]) -> list[str]:
+    modified = []
+    for content in contents:
+        parts = content.split(";")
+        if len(parts) > 6:
+            value1, value2, value3 = parts[2].strip(), parts[4].strip(), parts[6].strip()
+            if not (value1 == "0" and value2 == "0" and value3 == "0"):
+                modified.append(content)
+    return modified
+
+
+# ---------------------------------------------------------------------------
+# 구조물 데이터 로드
+# ---------------------------------------------------------------------------
+def load_structure_data() -> dict | None:
+    path = open_excel_file()
+    if not path:
+        print("엑셀 파일을 선택하지 않았습니다.")
+        return None
+    return find_structure_section(path)
+
+
+def open_excel_file() -> str:
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
     try:
-        with open(save_path, 'w', encoding='utf-8') as f:
-            for line in content:
-                f.write(line)  # Ensure each line ends with a newline character
-        print(f'{save_path}파일이 성공적으로 저장되었습니다.')
-    except Exception as e:
-        print(f'파일 저장에 실패하였습니다: {e}')
+        return filedialog.askopenfilename(
+            title="엑셀 파일 선택", filetypes=[("Excel Files", "*.xlsx")]
+        )
+    finally:
+        root.destroy()
 
-def get_default_values(alignment_type):
-    # alignmenttype별 기본값 딕셔너리
-    default_values = {
-        '도시철도': {
-            'freeobj': {
-                '곡선': {
-                    '터널': {
-                        '콘크리트도상': 473,
-                        '자갈도상': 228,
-                    },
-                    '토공': {
-                        '콘크리트도상': 465,
-                        '자갈도상': 228,
-                    },
-                    '교량': {
-                        '콘크리트도상': 465,
-                        '자갈도상': 228,
-                    }
-                },
-                '직선': 499,
-            },
-            'railtype': {
-                '곡선': 4,
-                '직선': {
-                    '터널': {
-                        '콘크리트도상': 25,
-                        '자갈도상': 17,
-                    },
-                    '토공': {
-                        '콘크리트도상': 23,
-                        '자갈도상': 9,
-                    },
-                    '교량': {
-                        '콘크리트도상': 23,
-                        '자갈도상': 9,
-                    }
-                }
-            }
-        },
-        '일반철도': {
-            'freeobj': {
-                '곡선': {
-                    '터널': {
-                        '콘크리트도상': 473,
-                        '자갈도상': 228,
-                    },
-                    '토공': {
-                        '콘크리트도상': 465,
-                        '자갈도상': 449,
-                    },
-                    '교량': {
-                        '콘크리트도상': 465,
-                        '자갈도상': 449,
-                    }
-                },
-                '직선': 499,
-            },
-            'railtype': {
-                '곡선': 4,
-                '직선': {
-                    '터널': {
-                        '콘크리트도상': 25,
-                        '자갈도상': 17,
-                    },
-                    '토공': {
-                        '콘크리트도상': 23,
-                        '자갈도상': 9,
-                    },
-                    '교량': {
-                        '콘크리트도상': 23,
-                        '자갈도상': 9,
-                    }
-                }
-            }
-        },
-        '준고속철도': {
-            'freeobj': {
-                '곡선': {
-                    '터널': {
-                        '콘크리트도상': 473,
-                        '자갈도상': 228,
-                    },
-                    '토공': {
-                        '콘크리트도상': 465,
-                        '자갈도상': 449,
-                    },
-                    '교량': {
-                        '콘크리트도상': 465,
-                        '자갈도상': 449,
-                    }
-                },
-                '직선': 499,
-            },
-            'railtype': {
-                '곡선': 4,
-                '직선': {
-                    '터널': {
-                        '콘크리트도상': 25,
-                        '자갈도상': 17,
-                    },
-                    '토공': {
-                        '콘크리트도상': 23,
-                        '자갈도상': 9,
-                    },
-                    '교량': {
-                        '콘크리트도상': 23,
-                        '자갈도상': 9,
-                    }
-                }
-            }
-        },
-        '고속철도': {
-            'freeobj': {
-                '곡선': {
-                    '터널': {
-                        '콘크리트도상': 658,
-                        '자갈도상': 659,
-                    },
-                    '교량': {
-                        '콘크리트도상': 657,
-                        '자갈도상': 656,
-                    },
-                    '토공': {
-                        '콘크리트도상': 657,
-                        '자갈도상': 656,
-                    },
-                },
-                '직선': 499,
-            },
-            'railtype': {
-                '곡선': 4,
-                '직선': {
-                    '터널': {
-                        '콘크리트도상': 114,
-                        '자갈도상': 115,
-                    },
-                    '토공':{
-                        '콘크리트도상': 12,
-                        '자갈도상': 7,
-                    },
-                    '교량': {
-                        '콘크리트도상': 12,
-                        '자갈도상': 7,
-                    }
-                }
-            }
-        }
-    }
 
-    # 전달받은 alignmenttype에 맞는 기본값 선택
-    defaults = default_values.get(alignment_type)
-    if defaults is None:
+def find_structure_section(filepath: str) -> dict:
+    structure_list = {"bridge": [], "tunnel": []}
+    df_bridge = pd.read_excel(filepath, sheet_name="교량", header=None)
+    df_tunnel = pd.read_excel(filepath, sheet_name="터널", header=None)
+
+    print(df_tunnel.shape, df_tunnel.head())
+
+    df_bridge.columns = ["br_NAME", "br_START_STA", "br_END_STA", "br_LENGTH"]
+    df_tunnel.columns = ["tn_NAME", "tn_START_STA", "tn_END_STA", "tn_LENGTH"]
+
+    for _, row in df_bridge.iterrows():
+        structure_list["bridge"].append((row["br_NAME"], row["br_START_STA"], row["br_END_STA"]))
+    for _, row in df_tunnel.iterrows():
+        structure_list["tunnel"].append((row["tn_NAME"], row["tn_START_STA"], row["tn_END_STA"]))
+    return structure_list
+
+
+# ---------------------------------------------------------------------------
+# 기본값 (노선별)
+# ---------------------------------------------------------------------------
+_BASE_GENERAL = {
+    "freeobj": {
+        CURVE: {
+            STRUCTURE_TUNNEL: {TRACK_CONCRETE: 473, TRACK_BALLAST: 228},
+            STRUCTURE_EARTHWORK: {TRACK_CONCRETE: 465, TRACK_BALLAST: 449},
+            STRUCTURE_BRIDGE: {TRACK_CONCRETE: 465, TRACK_BALLAST: 449},
+        },
+        STRAIGHT: 499,
+    },
+    "railtype": {
+        CURVE: 4,
+        STRAIGHT: {
+            STRUCTURE_TUNNEL: {TRACK_CONCRETE: 25, TRACK_BALLAST: 17},
+            STRUCTURE_EARTHWORK: {TRACK_CONCRETE: 23, TRACK_BALLAST: 9},
+            STRUCTURE_BRIDGE: {TRACK_CONCRETE: 23, TRACK_BALLAST: 9},
+        },
+    },
+}
+
+_URBAN = {
+    "freeobj": {
+        CURVE: {
+            STRUCTURE_TUNNEL: {TRACK_CONCRETE: 473, TRACK_BALLAST: 228},
+            STRUCTURE_EARTHWORK: {TRACK_CONCRETE: 465, TRACK_BALLAST: 228},
+            STRUCTURE_BRIDGE: {TRACK_CONCRETE: 465, TRACK_BALLAST: 228},
+        },
+        STRAIGHT: 499,
+    },
+    "railtype": _BASE_GENERAL["railtype"],
+}
+
+_HIGH_SPEED = {
+    "freeobj": {
+        CURVE: {
+            STRUCTURE_TUNNEL: {TRACK_CONCRETE: 658, TRACK_BALLAST: 659},
+            STRUCTURE_BRIDGE: {TRACK_CONCRETE: 657, TRACK_BALLAST: 656},
+            STRUCTURE_EARTHWORK: {TRACK_CONCRETE: 657, TRACK_BALLAST: 656},
+        },
+        STRAIGHT: 499,
+    },
+    "railtype": {
+        CURVE: 4,
+        STRAIGHT: {
+            STRUCTURE_TUNNEL: {TRACK_CONCRETE: 114, TRACK_BALLAST: 115},
+            STRUCTURE_EARTHWORK: {TRACK_CONCRETE: 12, TRACK_BALLAST: 7},
+            STRUCTURE_BRIDGE: {TRACK_CONCRETE: 12, TRACK_BALLAST: 7},
+        },
+    },
+}
+
+_DEFAULT_VALUES = {
+    "일반철도": _BASE_GENERAL,
+    "준고속철도": _BASE_GENERAL,   # 값 동일 → 동일 참조
+    "도시철도": _URBAN,
+    "고속철도": _HIGH_SPEED,
+}
+
+
+def get_default_values(alignment_type: str) -> dict:
+    if alignment_type not in _DEFAULT_VALUES:
         raise ValueError(f"알 수 없는 노선 유형: {alignment_type}")
-    return defaults
+    return _DEFAULT_VALUES[alignment_type]
 
-def flatten_defaults(defaults):
-    flat = {}
 
-    # freeobj
-    for curve_type, sub in defaults['freeobj']['곡선'].items():
+# ---------------------------------------------------------------------------
+# flatten / unflatten (라벨 정의 한 곳에서 관리)
+# ---------------------------------------------------------------------------
+FORM_LABELS = [
+    "freeobj 곡선-토공-자갈도상",
+    "freeobj 곡선-토공-콘크리트도상",
+    "freeobj 곡선-교량-자갈도상",
+    "freeobj 곡선-교량-콘크리트도상",
+    "freeobj 곡선-터널-자갈도상",
+    "freeobj 곡선-터널-콘크리트도상",
+    "freeobj 직선",
+    "railtype 곡선",
+    "railtype 직선-토공-자갈도상",
+    "railtype 직선-토공-콘크리트도상",
+    "railtype 직선-교량-자갈도상",
+    "railtype 직선-교량-콘크리트도상",
+    "railtype 직선-터널-자갈도상",
+    "railtype 직선-터널-콘크리트도상",
+]
+
+
+def flatten_defaults(defaults: dict) -> dict[str, int]:
+    flat: dict[str, int] = {}
+    for curve_type, sub in defaults["freeobj"][CURVE].items():
         for track_type, val in sub.items():
             flat[f"freeobj 곡선-{curve_type}-{track_type}"] = val
-    flat["freeobj 직선"] = defaults['freeobj']['직선']
-
-    # railtype
-    flat["railtype 곡선"] = defaults['railtype']['곡선']
-    for curve_type, sub in defaults['railtype']['직선'].items():
+    flat["freeobj 직선"] = defaults["freeobj"][STRAIGHT]
+    flat["railtype 곡선"] = defaults["railtype"][CURVE]
+    for curve_type, sub in defaults["railtype"][STRAIGHT].items():
         for track_type, val in sub.items():
             flat[f"railtype 직선-{curve_type}-{track_type}"] = val
-
     return flat
-# 2. UI 핸들러 (관심사 분리)
-def ask_user(prompt, default_value):
-    value = simpledialog.askstring("입력", f"{prompt} (기본값: {default_value})")
-    if value is None:  # 취소
-        return None
-    return int(value) if value.strip() else default_value
 
-def ask_user_cui(prompt, default_value):
-    """콘솔에서 사용자 입력을 받는 핸들러"""
-    value = input(f"{prompt} (기본값: {default_value}) 입력: ")
-    if not value.strip():  # 입력이 없으면 기본값 사용
-        return default_value
-    try:
-        return int(value)
-    except ValueError:
-        print("[경고] 숫자가 아닙니다. 기본값을 사용합니다.")
-        return default_value
-# 4. 최종 사용
-def preprocess_input_index(alignment_type, mode="gui"):
-    defaults = get_default_values(alignment_type)
-    if mode == "gui":
-        return defaults     # GUI 모드
-    elif mode == "cui":
-        return defaults  # CUI 모드
-    elif mode == 'default':
-        return defaults
-    else:
-        raise ValueError("지원하지 않는 모드입니다.")
 
-def unflatten_defaults(flat):
-    nested = {
-        'freeobj': {
-            '곡선': {
-                '터널': {
-                    '콘크리트도상': int(flat["freeobj 곡선-터널-콘크리트도상"]),
-                    '자갈도상': int(flat["freeobj 곡선-터널-자갈도상"]),
+def unflatten_defaults(flat: dict[str, str]) -> dict:
+    def get(key: str) -> int:
+        return int(flat[key])
+
+    return {
+        "freeobj": {
+            CURVE: {
+                STRUCTURE_TUNNEL: {
+                    TRACK_CONCRETE: get("freeobj 곡선-터널-콘크리트도상"),
+                    TRACK_BALLAST: get("freeobj 곡선-터널-자갈도상"),
                 },
-                '토공': {
-                    '콘크리트도상': int(flat["freeobj 곡선-토공-콘크리트도상"]),
-                    '자갈도상': int(flat["freeobj 곡선-토공-자갈도상"]),
+                STRUCTURE_EARTHWORK: {
+                    TRACK_CONCRETE: get("freeobj 곡선-토공-콘크리트도상"),
+                    TRACK_BALLAST: get("freeobj 곡선-토공-자갈도상"),
                 },
-                '교량': {
-                    '콘크리트도상': int(flat["freeobj 곡선-교량-콘크리트도상"]),
-                    '자갈도상': int(flat["freeobj 곡선-교량-자갈도상"]),
+                STRUCTURE_BRIDGE: {
+                    TRACK_CONCRETE: get("freeobj 곡선-교량-콘크리트도상"),
+                    TRACK_BALLAST: get("freeobj 곡선-교량-자갈도상"),
                 },
             },
-            '직선': int(flat["freeobj 직선"]),
+            STRAIGHT: get("freeobj 직선"),
         },
-        'railtype': {
-            '곡선': int(flat["railtype 곡선"]),
-            '직선': {
-                '터널': {
-                    '콘크리트도상': int(flat["railtype 직선-터널-콘크리트도상"]),
-                    '자갈도상': int(flat["railtype 직선-터널-자갈도상"]),
+        "railtype": {
+            CURVE: get("railtype 곡선"),
+            STRAIGHT: {
+                STRUCTURE_TUNNEL: {
+                    TRACK_CONCRETE: get("railtype 직선-터널-콘크리트도상"),
+                    TRACK_BALLAST: get("railtype 직선-터널-자갈도상"),
                 },
-                '토공': {
-                    '콘크리트도상': int(flat["railtype 직선-토공-콘크리트도상"]),
-                    '자갈도상': int(flat["railtype 직선-토공-자갈도상"]),
+                STRUCTURE_EARTHWORK: {
+                    TRACK_CONCRETE: get("railtype 직선-토공-콘크리트도상"),
+                    TRACK_BALLAST: get("railtype 직선-토공-자갈도상"),
                 },
-                '교량': {
-                    '콘크리트도상': int(flat["railtype 직선-교량-콘크리트도상"]),
-                    '자갈도상': int(flat["railtype 직선-교량-자갈도상"]),
+                STRUCTURE_BRIDGE: {
+                    TRACK_CONCRETE: get("railtype 직선-교량-콘크리트도상"),
+                    TRACK_BALLAST: get("railtype 직선-교량-자갈도상"),
                 },
-            }
-        }
+            },
+        },
     }
-    return nested
+
+
+# ---------------------------------------------------------------------------
+# UI
+# ---------------------------------------------------------------------------
+class UserForm(tk.Toplevel):
+    def __init__(self, master=None, defaults: dict | None = None):
+        super().__init__(master)
+        self.title("구조물 입력 폼")
+        self.defaults = defaults or {}
+        self.entries: dict[str, tk.Entry] = {}
+        self.values: dict[str, str] | None = None
+        self._create_widgets()
+
+    def _create_widgets(self):
+        for i, label in enumerate(FORM_LABELS):
+            tk.Label(self, text=label).grid(row=i, column=0, sticky="w")
+            entry = tk.Entry(self)
+            entry.grid(row=i, column=1)
+            entry.insert(0, self.defaults.get(label, ""))
+            self.entries[label] = entry
+        tk.Button(self, text="확인", command=self._submit).grid(
+            row=len(FORM_LABELS), column=0, columnspan=2
+        )
+
+    def _submit(self):
+        self.values = {label: e.get() for label, e in self.entries.items()}
+        self.destroy()
+
+    def ask_user_form(self) -> dict[str, str] | None:
+        self.grab_set()
+        self.wait_window()
+        return self.values
 
 
 class FreeobjApp(tk.Tk):
@@ -602,47 +531,59 @@ class FreeobjApp(tk.Tk):
         super().__init__()
         self.title("FreeObj 자동 생성기")
         self.geometry("600x400")
-        self.alignment_type = ''
-        self.create_widgets()
+        self.alignment_type: str | None = None
+        self._create_widgets()
 
-    def create_widgets(self):
-        label = ttk.Label(self, text="BVE FreeObj 자동 생성 프로그램", font=("Arial", 14, "bold"))
-        label.pack(pady=20)
-
+    def _create_widgets(self):
+        ttk.Label(
+            self, text="BVE FreeObj 자동 생성 프로그램", font=("Arial", 14, "bold")
+        ).pack(pady=20)
         self.log_box = tk.Text(self, height=15, wrap=tk.WORD, font=("Consolas", 10))
         self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        ttk.Button(self, text="FreeObj 생성 실행", command=self.run_main).pack(pady=10)
 
-        run_button = ttk.Button(self, text="FreeObj 생성 실행", command=self.run_main)
-        run_button.pack(pady=10)
-
-    def log(self, message):
+    def log(self, message: str):
         self.log_box.insert(tk.END, message + "\n")
         self.log_box.see(tk.END)
 
-
-
-    def process_interval(self):
-        top = tk.Toplevel()
+    def _select_alignment_type(self) -> str | None:
+        top = tk.Toplevel(self)
         top.title("노선 구분 선택")
         tk.Label(top, text="노선의 종류를 선택하세요:").pack(pady=10)
 
-        def select(value):
-            self.alignment_type = value
+        result: dict[str, str | None] = {"value": None}
+
+        def select(value: str):
+            result["value"] = value
             top.destroy()
 
-        for option in ["일반철도", "도시철도", "고속철도"]:
-            tk.Button(top, text=option, width=15, command=lambda v=option: select(v)).pack(pady=5)
+        for option in ALIGNMENT_TYPES:
+            if option not in _DEFAULT_VALUES:
+                continue
+            tk.Button(
+                top, text=option, width=15, command=lambda v=option: select(v)
+            ).pack(pady=5)
 
-        top.grab_set()  # 모달처럼 동작
+        top.grab_set()
         top.wait_window()
-
+        return result["value"]
 
     def run_main(self):
         try:
-            self.process_interval()
-            form = UserForm(self, defaults=flatten_defaults(get_default_values(self.alignment_type)))
-            index_dict = form.ask_user_form()
-            index_dict = unflatten_defaults(index_dict)
+            self.alignment_type = self._select_alignment_type()
+            if not self.alignment_type:
+                self.log("노선 유형이 선택되지 않았습니다.")
+                return
+
+            form = UserForm(
+                self, defaults=flatten_defaults(get_default_values(self.alignment_type))
+            )
+            raw = form.ask_user_form()
+            if not raw:
+                self.log("입력 폼이 취소되었습니다.")
+                return
+            index_dict = unflatten_defaults(raw)
+
             self.log("파일을 읽는 중...")
             lines = read_file()
             if not lines:
@@ -651,92 +592,44 @@ class FreeobjApp(tk.Tk):
 
             self.log("구조물 정보 로드 중...")
             structure_list = load_structure_data()
-            if structure_list:
-                self.log("구조물 정보가 성공적으로 로드되었습니다.")
+            if not structure_list:
+                self.log("구조물 정보 로드 실패. 중단합니다.")
+                return
+            self.log("구조물 정보 로드 완료.")
 
             self.log("곡선 정보 파싱 중...")
             curveinfo = parsing_curveinfo(lines)
 
-            self.log("캔트 정보 추출 중...")
-            C_list = extract_cant(curveinfo)
-
             self.log("FreeObj 계산 중...")
-            freeobj = cal_mainlogic(curveinfo, C_list)
+            freeobj = cal_mainlogic(curveinfo)
 
             self.log("FreeObj 생성 중...")
-            content = create_freeobj(freeobj, structure_list, curveinfo, index_dict)
-            savefile = asksaveasfilename(
+            content = modify_content(
+                create_freeobj(freeobj, structure_list, curveinfo, index_dict)
+            )
+            savefile = filedialog.asksaveasfilename(
                 defaultextension=".txt",
                 filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-                title="FREEOBJ 저장"
+                title="FREEOBJ 저장",
             )
-
-            save_files(content, savefile)
+            save_lines(content, savefile)
             self.log("FreeObj 저장 완료!")
 
             self.log("Railtype 생성 중...")
             railtype = create_railtype(curveinfo, structure_list, index_dict)
-            savefile = asksaveasfilename(
+            savefile = filedialog.asksaveasfilename(
                 defaultextension=".txt",
                 filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-                title="RAILTYPE 저장"
+                title="RAILTYPE 저장",
             )
-
-            save_railtype(railtype, savefile)
+            save_lines(railtype, savefile)
             self.log("Railtype 저장 완료!")
 
             messagebox.showinfo("완료", "FreeObj 및 RailType 생성이 완료되었습니다.")
         except Exception as e:
-            self.log(f"[오류] {str(e)}")
+            self.log(f"[오류] {type(e).__name__}: {e}")
             messagebox.showerror("오류", f"실행 중 오류 발생:\n{e}")
-
-class UserForm(tk.Toplevel):
-    def __init__(self, master=None, defaults=None):
-        super().__init__(master)
-        self.title("구조물 입력 폼")
-        self.defaults = defaults or {}
-        self.entries = {}
-        self.values = None
-        self.create_widgets()
-
-    def create_widgets(self):
-        labels = [
-            "freeobj 곡선-토공-자갈도상",
-            "freeobj 곡선-토공-콘크리트도상",
-            "freeobj 곡선-교량-자갈도상",
-            "freeobj 곡선-교량-콘크리트도상",
-            "freeobj 곡선-터널-자갈도상",
-            "freeobj 곡선-터널-콘크리트도상",
-            "freeobj 직선",
-            "railtype 곡선",
-            "railtype 직선-토공-자갈도상",
-            "railtype 직선-토공-콘크리트도상",
-            "railtype 직선-교량-자갈도상",
-            "railtype 직선-교량-콘크리트도상",
-            "railtype 직선-터널-자갈도상",
-            "railtype 직선-터널-콘크리트도상",
-        ]
-
-        for i, label in enumerate(labels):
-            tk.Label(self, text=label).grid(row=i, column=0, sticky="w")
-            entry = tk.Entry(self)
-            entry.grid(row=i, column=1)
-            entry.insert(0, self.defaults.get(label, ""))  # 기본값 넣기
-            self.entries[label] = entry
-
-        tk.Button(self, text="확인", command=self.submit).grid(row=len(labels), column=0, columnspan=2)
-
-    def submit(self):
-        self.values = {label: entry.get() for label, entry in self.entries.items()}
-        self.destroy()
-
-    def ask_user_form(self):
-        self.grab_set()       # 모달처럼 동작
-        self.wait_window()    # 닫힐 때까지 대기
-        return self.values
 
 
 if __name__ == "__main__":
-    app = FreeobjApp()
-    app.mainloop()
-
+    FreeobjApp().mainloop()
