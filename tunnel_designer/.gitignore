@@ -1,7 +1,4 @@
 *.pyc
 __pycache__/
 .idea/
-*.csv
-*.dxf
-*.xlsx
-
+test_output/

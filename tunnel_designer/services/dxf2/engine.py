@@ -4,6 +4,7 @@ from __future__ import annotations
 from ezdxf.document import Drawing
 
 from core.models import TunnelParams
+from services.dxf2.document import DocumentParams
 from services.dxf2.standard_loader import load_standard_template
 from services.dxf2.title_block import (
     build_title_values, fill_title_block,
@@ -20,9 +21,9 @@ from services.dxf2.layers import (
 def write_document(
     path: str,
     params: TunnelParams,
-    builder_fn,
+    doc_params: DocumentParams | None = None,  # ★ 신규
+    builder_fn=None,
     *,
-    scale: str = "1:100",
     title_overrides: dict | None = None,
 ):
     """
@@ -35,18 +36,28 @@ def write_document(
     ----------
     path           : 저장 경로
     params         : TunnelParams (터널 제원)
+    doc_params     : 문서 파라메터
     builder_fn     : (msp, params, doc) -> None
-    scale          : "1:100", "1:200" 등 (표제란 SCALE 값)
     title_overrides: 사용자가 수정한 표제란 값 (선택)
     """
     # 1) 표준 템플릿
+    if doc_params is None:
+        doc_params = DocumentParams()
+
     doc = load_standard_template()
 
     # 2) 표제란
     title_values = build_title_values(
         tunnel_type_label=_type_label(params),
         kind_label="터널 단면도",
-        scale=scale,
+        scale=doc_params.scale,
+        design_name=doc_params.design_name,
+        construction_name=doc_params.construction_name,
+        supervisor=doc_params.supervisor,
+        contractor=doc_params.contractor,
+        location=doc_params.location,
+        direction=doc_params.direction,
+        drawing_code=doc_params.drawing_code,
     )
     if title_overrides:
         title_values.update(title_overrides)
@@ -54,11 +65,11 @@ def write_document(
 
     # 3) 타입별 빌더
     msp = doc.modelspace()
-    builder_fn(msp, params, doc)
+    builder_fn(msp, params, doc_params, doc)
 
     # 4) 저장
     doc.saveas(path)
-
+    return doc
 
 def _type_label(params: TunnelParams) -> str:
     """터널 타입 → 부타이틀 문자열."""

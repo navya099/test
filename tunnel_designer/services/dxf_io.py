@@ -6,6 +6,7 @@ from tkinter import messagebox
 import ezdxf
 
 from core.models import TunnelParams
+from services.dxf2.document import DocumentParams
 
 
 class DxfCache:
@@ -27,7 +28,7 @@ class DxfCache:
         return self.entities
 
 
-def write_dxf(path: str, ax, params: TunnelParams, hatch_style: str):
+def write_dxf(path: str, ax, params: TunnelParams, hatch_style: str, doc_params=None):
     """
         표준 DXF 기반 저장 (v2).
         - 표준 템플릿(도곽/표제란/스타일/블록) 자동 로드
@@ -36,13 +37,16 @@ def write_dxf(path: str, ax, params: TunnelParams, hatch_style: str):
     from services.dxf2 import (
         is_standard_available, write_document, get_builder,
     )
+    if doc_params is None:
+        doc_params = DocumentParams()
 
     if is_standard_available():
         # ★ 표준 DXF 로드 방식 (v2)
-        builder = get_builder(params.kind)  # 미등록이면 NotImplementedError
-        write_document(path, params, builder,
-                       scale="1:100",
-                       title_overrides={"TB_MTITIL": "터널 단면도"})
+        try:
+            builder = get_builder(params.kind)  # 미등록이면 NotImplementedError
+        except NotImplementedError as e:
+            raise NotImplementedError(f"{e}")
+        write_document(path, params, doc_params, builder)
     else:
         # 폴백: 기존 방식
         from services.dxf.wirte import write_document as _old_write
