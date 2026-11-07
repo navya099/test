@@ -5,4 +5,5 @@ from dataclasses import dataclass
 class OutputConfig:
     """출력 옵션을 담는 컴포넌트"""
     format: str            # 'console', 'csv', 'txt'
-    file_path: str = ""    # csv/txt일 경우 저장 경로
+    file_path: str = ""    # 저장 경로
+    file_name: str = ""    # 확장자 제외 파일명

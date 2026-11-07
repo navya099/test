@@ -22,7 +22,7 @@ from core.system.create_turnout_spec import CreateTurnoutSpecSystem
 # 설정 임포트
 from config import (
     BRANCH_START_STATION, BRANCH_END_STATION, BRANCH_TARGET_TRACK,
-    TRACK_OFFSET_X, MAIN_TRACK_NAME, OUTPUT_FORMAT, OUTPUT_FILE_PATH
+    TRACK_OFFSET_X, MAIN_TRACK_NAME, OUTPUT_FORMAT, OUTPUT_FILE_PATH, OUTPUT_FILE_NAME
 )
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,8 @@ class Main:
         # 4. 출력 옵션 컴포넌트 등록
         world.add_component(ComponentKey.OUTPUT_CONFIG, OutputConfig(
             format=OUTPUT_FORMAT,
-            file_path=OUTPUT_FILE_PATH
+            file_path=OUTPUT_FILE_PATH,
+            file_name=OUTPUT_FILE_NAME
         ))
 
         # 2. 출력 시스템 동적 선택 및 등록

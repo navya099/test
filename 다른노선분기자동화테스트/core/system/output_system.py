@@ -2,6 +2,8 @@
 import abc
 import csv
 import math
+import os
+
 from core.system.system import System
 from core.constants import ComponentKey
 
@@ -13,6 +15,24 @@ class BaseOutputSystem(System):
     @abc.abstractmethod
     def execute(self, entities, components):
         pass
+
+    def _get_file_path(self, config, default_name: str, extension: str) -> str:
+        """
+        공통 파일 경로 생성 헬퍼
+        - 디렉토리 생성 및 경로 조합을 한 곳에서 관리합니다.
+        """
+        dir_path = config.file_path or ""
+        file_name = config.file_name or default_name
+
+        # 확장자가 이미 포함되어 있으면 중복 방지
+        if not file_name.lower().endswith(f".{extension.lower()}"):
+            file_name = f"{file_name}.{extension}"
+
+        # 디렉토리 생성
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+
+        return os.path.join(dir_path, file_name)
 
     def _format_summary(self, spec) -> str:
         return (
@@ -51,7 +71,8 @@ class TxtOutputSystem(BaseOutputSystem):
         coords_data = components[ComponentKey.BRANCH_COORDS]
         config = components[ComponentKey.OUTPUT_CONFIG]
 
-        file_path = config.file_path or "output_result.txt"
+        # ★ 공통 헬퍼 사용
+        file_path = self._get_file_path(config, default_name="output_result", extension="txt")
 
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(self._format_summary(spec))
@@ -71,7 +92,8 @@ class CsvOutputSystem(BaseOutputSystem):
         coords_data = components[ComponentKey.BRANCH_COORDS]
         config = components[ComponentKey.OUTPUT_CONFIG]
 
-        file_path = config.file_path or "output_coords.csv"
+        # ★ 공통 헬퍼 사용
+        file_path = self._get_file_path(config, default_name="output_result", extension="csv")
 
         with open(file_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -82,6 +104,3 @@ class CsvOutputSystem(BaseOutputSystem):
                 writer.writerow([i, f"{p[0]:.4f}", f"{p[1]:.4f}"])
 
         self.logger.info(f"CSV 파일 저장 완료: {file_path}")
-        # 콘솔에도 요약은 보여줌
-        print(f"\n[알림] CSV 저장 완료: {file_path}")
-        #print(self._format_summary(spec))

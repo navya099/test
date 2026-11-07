@@ -17,4 +17,5 @@ MIN_RADIUS = 250.0
 
 #출력 설정
 OUTPUT_FORMAT = 'csv'  # 'console', 'csv', 'txt' 중 선택
-OUTPUT_FILE_PATH = 'c:/temp/result_branch.csv'
+OUTPUT_FILE_PATH = 'c:/temp/'
+OUTPUT_FILE_NAME = 'result_branch'
