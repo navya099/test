@@ -1,0 +1,598 @@
+{
+  "version": "0.1",
+  "station": {
+    "id": "STN-001",
+    "name": "예시역",
+    "type": "passing",
+    "mileage_start": 12.34,
+    "mileage_end": 13.18,
+    "platforms": [
+      {
+        "id": "PF-1",
+        "track_id": "TRK-2",
+        "side": "island",
+        "length": 210.0,
+        "mileage_center": 12.76
+      },
+      {
+        "id": "PF-2",
+        "track_id": "TRK-3",
+        "side": "island",
+        "length": 210.0,
+        "mileage_center": 12.76
+      }
+    ]
+  },
+  "tracks": [
+    {
+      "id": "TRK-1",
+      "name": "상행 본선",
+      "type": "main",
+      "gauge": 1435,
+      "direction": "up",
+      "design_speed": 120,
+      "min_curve_radius": 300
+    },
+    {
+      "id": "TRK-2",
+      "name": "상행 측선",
+      "type": "siding",
+      "gauge": 1435,
+      "direction": "up",
+      "design_speed": 60,
+      "min_curve_radius": 150
+    },
+    {
+      "id": "TRK-3",
+      "name": "하행 측선",
+      "type": "siding",
+      "gauge": 1435,
+      "direction": "down",
+      "design_speed": 60,
+      "min_curve_radius": 150
+    },
+    {
+      "id": "TRK-4",
+      "name": "하행 본선",
+      "type": "main",
+      "gauge": 1435,
+      "direction": "down",
+      "design_speed": 120,
+      "min_curve_radius": 300
+    }
+  ],
+  "nodes": [
+    {
+      "id": "N-001",
+      "type": "boundary",
+      "mileage": 12.34,
+      "track_id": "TRK-1",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "boundary_side": "start"
+      }
+    },
+    {
+      "id": "N-002",
+      "type": "switch",
+      "mileage": 12.48,
+      "track_id": "TRK-1",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "switch_type": "right",
+        "facing": "facing",
+        "branch_track_id": "TRK-2",
+        "throw_mileage": 12.49
+      }
+    },
+    {
+      "id": "N-003",
+      "type": "signal",
+      "mileage": 12.52,
+      "track_id": "TRK-1",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "signal_type": "home",
+        "direction": "up",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-004",
+      "type": "signal",
+      "mileage": 12.53,
+      "track_id": "TRK-2",
+      "lateral_offset": 5.0,
+      "attrs": {
+        "signal_type": "home",
+        "direction": "up",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-005",
+      "type": "insulation_joint",
+      "mileage": 12.65,
+      "track_id": "TRK-1",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "purpose": "track_circuit"
+      }
+    },
+    {
+      "id": "N-006",
+      "type": "insulation_joint",
+      "mileage": 12.65,
+      "track_id": "TRK-2",
+      "lateral_offset": 5.0,
+      "attrs": {
+        "purpose": "track_circuit"
+      }
+    },
+    {
+      "id": "N-007",
+      "type": "signal",
+      "mileage": 12.87,
+      "track_id": "TRK-1",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "signal_type": "starting",
+        "direction": "up",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-008",
+      "type": "signal",
+      "mileage": 12.88,
+      "track_id": "TRK-2",
+      "lateral_offset": 5.0,
+      "attrs": {
+        "signal_type": "starting",
+        "direction": "up",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-009",
+      "type": "switch",
+      "mileage": 12.94,
+      "track_id": "TRK-1",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "switch_type": "left",
+        "facing": "trailing",
+        "branch_track_id": "TRK-2",
+        "throw_mileage": 12.95
+      }
+    },
+    {
+      "id": "N-010",
+      "type": "boundary",
+      "mileage": 13.18,
+      "track_id": "TRK-1",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "boundary_side": "end"
+      }
+    },
+    {
+      "id": "N-011",
+      "type": "boundary",
+      "mileage": 12.34,
+      "track_id": "TRK-4",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "boundary_side": "start"
+      }
+    },
+    {
+      "id": "N-012",
+      "type": "switch",
+      "mileage": 12.48,
+      "track_id": "TRK-4",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "switch_type": "left",
+        "facing": "facing",
+        "branch_track_id": "TRK-3",
+        "throw_mileage": 12.49
+      }
+    },
+    {
+      "id": "N-013",
+      "type": "signal",
+      "mileage": 12.52,
+      "track_id": "TRK-4",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "signal_type": "home",
+        "direction": "down",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-014",
+      "type": "signal",
+      "mileage": 12.5326,
+      "track_id": "TRK-3",
+      "lateral_offset": -7.46,
+      "attrs": {
+        "signal_type": "home",
+        "direction": "down",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-015",
+      "type": "insulation_joint",
+      "mileage": 12.65,
+      "track_id": "TRK-4",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "purpose": "track_circuit"
+      }
+    },
+    {
+      "id": "N-016",
+      "type": "insulation_joint",
+      "mileage": 12.6777,
+      "track_id": "TRK-3",
+      "lateral_offset": -7.5,
+      "attrs": {
+        "purpose": "track_circuit"
+      }
+    },
+    {
+      "id": "N-017",
+      "type": "signal",
+      "mileage": 12.87,
+      "track_id": "TRK-4",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "signal_type": "starting",
+        "direction": "down",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-018",
+      "type": "signal",
+      "mileage": 12.8576,
+      "track_id": "TRK-3",
+      "lateral_offset": -7.56,
+      "attrs": {
+        "signal_type": "starting",
+        "direction": "down",
+        "aspects": [
+          "R",
+          "Y",
+          "G"
+        ]
+      }
+    },
+    {
+      "id": "N-019",
+      "type": "switch",
+      "mileage": 12.94,
+      "track_id": "TRK-4",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "switch_type": "right",
+        "facing": "trailing",
+        "branch_track_id": "TRK-3",
+        "throw_mileage": 12.95
+      }
+    },
+    {
+      "id": "N-020",
+      "type": "boundary",
+      "mileage": 13.18,
+      "track_id": "TRK-4",
+      "lateral_offset": 0.0,
+      "attrs": {
+        "boundary_side": "end"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "E-001",
+      "from": "N-001",
+      "to": "N-002",
+      "track_id": "TRK-1",
+      "geometry": {
+        "type": "straight",
+        "length": 140.0,
+        "radius": null,
+        "start_tangent": 0.0,
+        "end_tangent": 0.0
+      }
+    },
+    {
+      "id": "E-002",
+      "from": "N-002",
+      "to": "N-003",
+      "track_id": "TRK-1",
+      "geometry": {
+        "type": "straight",
+        "length": 40.0,
+        "radius": null,
+        "start_tangent": 0.0,
+        "end_tangent": 0.0
+      }
+    },
+    {
+      "id": "E-003",
+      "from": "N-003",
+      "to": "N-005",
+      "track_id": "TRK-1",
+      "geometry": {
+        "type": "straight",
+        "length": 130.0,
+        "radius": null,
+        "start_tangent": 0.0,
+        "end_tangent": 0.0
+      }
+    },
+    {
+      "id": "E-004",
+      "from": "N-005",
+      "to": "N-007",
+      "track_id": "TRK-1",
+      "geometry": {
+        "type": "straight",
+        "length": 220.0,
+        "radius": null,
+        "start_tangent": 0.0,
+        "end_tangent": 0.0
+      }
+    },
+    {
+      "id": "E-005",
+      "from": "N-007",
+      "to": "N-009",
+      "track_id": "TRK-1",
+      "geometry": {
+        "type": "straight",
+        "length": 70.0,
+        "radius": null,
+        "start_tangent": 0.0,
+        "end_tangent": 0.0
+      }
+    },
+    {
+      "id": "E-006",
+      "from": "N-009",
+      "to": "N-010",
+      "track_id": "TRK-1",
+      "geometry": {
+        "type": "straight",
+        "length": 240.0,
+        "radius": null,
+        "start_tangent": 0.0,
+        "end_tangent": 0.0
+      }
+    },
+    {
+      "id": "E-007",
+      "from": "N-002",
+      "to": "N-004",
+      "track_id": "TRK-2",
+      "geometry": {
+        "type": "curve",
+        "length": 45.0,
+        "radius": 200.0,
+        "start_tangent": 0.0,
+        "end_tangent": 12.9
+      }
+    },
+    {
+      "id": "E-008",
+      "from": "N-004",
+      "to": "N-006",
+      "track_id": "TRK-2",
+      "geometry": {
+        "type": "straight",
+        "length": 120.0,
+        "radius": null,
+        "start_tangent": 12.9,
+        "end_tangent": 12.9
+      }
+    },
+    {
+      "id": "E-009",
+      "from": "N-006",
+      "to": "N-008",
+      "track_id": "TRK-2",
+      "geometry": {
+        "type": "straight",
+        "length": 230.0,
+        "radius": null,
+        "start_tangent": 12.9,
+        "end_tangent": 12.9
+      }
+    },
+    {
+      "id": "E-010",
+      "from": "N-008",
+      "to": "N-009",
+      "track_id": "TRK-2",
+      "geometry": {
+        "type": "curve",
+        "length": 45.0,
+        "radius": 200.0,
+        "start_tangent": 12.9,
+        "end_tangent": 0.0
+      }
+    },
+    {
+      "id": "E-011",
+      "from": "N-011",
+      "to": "N-012",
+      "track_id": "TRK-4",
+      "geometry": {
+        "type": "straight",
+        "length": 140.0,
+        "radius": null,
+        "start_tangent": 180.0,
+        "end_tangent": 180.0
+      }
+    },
+    {
+      "id": "E-012",
+      "from": "N-012",
+      "to": "N-013",
+      "track_id": "TRK-4",
+      "geometry": {
+        "type": "straight",
+        "length": 40.0,
+        "radius": null,
+        "start_tangent": 180.0,
+        "end_tangent": 180.0
+      }
+    },
+    {
+      "id": "E-013",
+      "from": "N-013",
+      "to": "N-015",
+      "track_id": "TRK-4",
+      "geometry": {
+        "type": "straight",
+        "length": 130.0,
+        "radius": null,
+        "start_tangent": 180.0,
+        "end_tangent": 180.0
+      }
+    },
+    {
+      "id": "E-014",
+      "from": "N-015",
+      "to": "N-017",
+      "track_id": "TRK-4",
+      "geometry": {
+        "type": "straight",
+        "length": 220.0,
+        "radius": null,
+        "start_tangent": 180.0,
+        "end_tangent": 180.0
+      }
+    },
+    {
+      "id": "E-015",
+      "from": "N-017",
+      "to": "N-019",
+      "track_id": "TRK-4",
+      "geometry": {
+        "type": "straight",
+        "length": 70.0,
+        "radius": null,
+        "start_tangent": 180.0,
+        "end_tangent": 180.0
+      }
+    },
+    {
+      "id": "E-016",
+      "from": "N-019",
+      "to": "N-020",
+      "track_id": "TRK-4",
+      "geometry": {
+        "type": "straight",
+        "length": 240.0,
+        "radius": null,
+        "start_tangent": 180.0,
+        "end_tangent": 180.0
+      }
+    },
+    {
+      "id": "E-017",
+      "from": "N-012",
+      "to": "N-014",
+      "track_id": "TRK-3",
+      "geometry": {
+        "type": "curve",
+        "length": 45.0,
+        "radius": 200.0,
+        "start_tangent": 180.0,
+        "end_tangent": 167.1
+      }
+    },
+    {
+      "id": "E-018",
+      "from": "N-014",
+      "to": "N-016",
+      "track_id": "TRK-3",
+      "geometry": {
+        "type": "straight",
+        "length": 120.0,
+        "radius": null,
+        "start_tangent": 167.1,
+        "end_tangent": 167.1
+      }
+    },
+    {
+      "id": "E-019",
+      "from": "N-016",
+      "to": "N-018",
+      "track_id": "TRK-3",
+      "geometry": {
+        "type": "straight",
+        "length": 230.0,
+        "radius": null,
+        "start_tangent": 167.1,
+        "end_tangent": 167.1
+      }
+    },
+    {
+      "id": "E-020",
+      "from": "N-018",
+      "to": "N-019",
+      "track_id": "TRK-3",
+      "geometry": {
+        "type": "curve",
+        "length": 45.0,
+        "radius": 200.0,
+        "start_tangent": 167.1,
+        "end_tangent": 180.0
+      }
+    }
+  ],
+  "metadata": {
+    "created_by": "manual",
+    "created_at": "2026-10-25T10:00:00Z",
+    "schema_version": "0.1",
+    "generator_version": "0.0.1",
+    "validation": {
+      "passed": true,
+      "warnings": []
+    }
+  }
+}
