@@ -3,14 +3,14 @@ import math
 from core.system.system import System
 from core.constants import EntityKey, ComponentKey
 from core.component.cross_turnout_spec import CrossTurnoutSpecComponent
-from config import CURVE_UNIT, STRAIGHT_UNIT, TARGET_RADIUS, MIN_RADIUS
+from config import CURVE_UNIT, STRAIGHT_UNIT, MIN_RADIUS
 
 
 class CreateTurnoutSpecSystem(System):
     """곡선-직선-곡선 형상의 비선형 방정식을 수치 해석으로 푼다."""
     requires_entities = frozenset({EntityKey.TARGET_TRACK})
     requires_components = frozenset({ComponentKey.BRANCH_CONDITION})
-    produces_components = frozenset({ComponentKey.TURNOUT_SPEC})
+    produces_components = frozenset({"turnout_candidates"})  # ★ 후보 리스트 생성2
 
     def execute(self, entities, components):
         condition = components[ComponentKey.BRANCH_CONDITION]
@@ -23,38 +23,27 @@ class CreateTurnoutSpecSystem(System):
 
         candidates = self._generate_candidates(length)
         if not candidates:
-            raise ValueError(f"L={length}에 대한 (cl, sl) 후보가 없습니다.")
+            raise ValueError(f"L={length}m에 대한 (cl, sl) 후보가 없습니다. CURVE_UNIT({CURVE_UNIT})을 확인하세요.")
 
-        best_spec = None
-        best_score = float('inf')
-
+        valid_solutions = []
         for cl, sl in candidates:
             theta = self._solve_theta(cl, sl, rail_x)
             if theta is None:
                 continue
-
             R = cl / theta
-
             if R < MIN_RADIUS:
-                continue
+                continue  # 물리적 제약 탈락
 
-            score = abs(R - TARGET_RADIUS)
-            if score < best_score:
-                best_score = score
-                best_spec = (cl, sl, theta, R)
+            valid_solutions.append({
+                "cl": cl, "sl": sl, "theta": theta, "R": R
+            })
 
-        if best_spec is None:
-            # 디버깅을 위해 각 후보의 실패 이유 로깅
-            self.logger.error(f"후보 {candidates}에 대해 해를 찾지 못했습니다. (rail_x={rail_x})")
-            raise ValueError(f"L={length}, offset={rail_x}를 만족하는 분기기 제원이 없습니다.")
+        if not valid_solutions:
+            raise ValueError(f"L={length}, offset={rail_x}를 만족하는 유효한 분기기 제원이 없습니다.")
 
-        cl, sl, theta, R = best_spec
-
-        components[ComponentKey.TURNOUT_SPEC] = CrossTurnoutSpecComponent(
-            start_length=cl, middle_length=sl, end_length=cl,
-            cross_angle=theta, radius=R
-        )
-        self.logger.info(f"제원 계산 완료: cl={cl}, sl={sl}, R={R:.1f}m, angle={math.degrees(theta):.2f}°")
+        # ★ 결과를 리스트로 저장
+        components["turnout_candidates"] = valid_solutions
+        self.logger.info(f"총 {len(valid_solutions)}개의 유효한 후보를 찾았습니다.")
 
     def _get_target_rail_x(self, target_track, start_station):
         for rail in target_track.raildata:

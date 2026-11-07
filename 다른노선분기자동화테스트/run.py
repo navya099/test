@@ -2,6 +2,7 @@
 import logging
 import math
 from core.component.branch_condition import BranchCondition
+from core.system.interactive_selector import InteractiveSelectorSystem
 from core.world.world import World
 from core.constants import EntityKey, ComponentKey
 from alignment.rail import Rail
@@ -64,6 +65,8 @@ class Main:
         world.add_system(ExtractStartInfoSystem())
         world.add_system(GetTargetTrackSystem())
         world.add_system(CreateTurnoutSpecSystem())
+        # 2. 사용자 선택
+        world.add_system(InteractiveSelectorSystem())
 
         world.run()
 
