@@ -2,6 +2,7 @@
 import logging
 import math
 from core.component.branch_condition import BranchCondition
+from core.system.generate_branch_coords import GenerateBranchCoordsSystem
 from core.system.interactive_selector import InteractiveSelectorSystem
 from core.world.world import World
 from core.constants import EntityKey, ComponentKey
@@ -67,6 +68,9 @@ class Main:
         world.add_system(CreateTurnoutSpecSystem())
         # 2. 사용자 선택
         world.add_system(InteractiveSelectorSystem())
+
+        # 3. 좌표계산 및 산출
+        world.add_system(GenerateBranchCoordsSystem())  # ★ 추가
 
         world.run()
 

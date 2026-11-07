@@ -366,3 +366,55 @@ def calculator_internal_angle(p1,p2,p3):
     elif ia < -math.pi:
         ia += 2 * math.pi
     return abs(ia)
+
+
+# math_utils.py 에 추가
+
+def generate_arc_points(start_point, start_angle, radius, sweep_angle, direction_sign=1, num_points=20):
+    """
+    원호를 따라 이동하는 좌표 리스트를 생성합니다.
+
+    Args:
+        start_point: (x, y) 시작 좌표
+        start_angle: 시작 접선 각도 (라디안)
+        radius: 곡선 반지름
+        sweep_angle: 회전할 각도 (라디안, 절대값)
+        direction_sign: +1 (좌회전/반시계), -1 (우회전/시계)
+        num_points: 분할 점 개수
+    """
+    points = []
+    x0, y0 = start_point
+
+    # 시작점에서의 원의 중심 계산 (진행 방향 기준 좌/우 수직)
+    # 좌회전(+)이면 중심이 왼쪽, 우회전(-)이면 중심이 오른쪽
+    # 수직 벡터: (-sin, cos) for left, (sin, -cos) for right
+    perp_angle = start_angle + (math.pi / 2 if direction_sign > 0 else -math.pi / 2)
+    cx = x0 + radius * math.cos(perp_angle)
+    cy = y0 + radius * math.sin(perp_angle)
+
+    # 시작점의 원 중심 기준 각도
+    start_rad_angle = math.atan2(y0 - cy, x0 - cx)
+
+    # 각도 변화량 (라디안)
+    delta_angle = direction_sign * sweep_angle
+
+    for i in range(num_points):
+        t = i / (num_points - 1)
+        current_angle = start_rad_angle + t * delta_angle
+        px = cx + radius * math.cos(current_angle)
+        py = cy + radius * math.sin(current_angle)
+        points.append((px, py))
+
+    return points
+
+
+def generate_straight_points(start_point, angle, length, num_points=2):
+    """직선을 따라 이동하는 좌표 리스트를 생성합니다."""
+    points = []
+    x0, y0 = start_point
+    for i in range(num_points):
+        t = i / (num_points - 1)
+        px = x0 + t * length * math.cos(angle)
+        py = y0 + t * length * math.sin(angle)
+        points.append((px, py))
+    return points
