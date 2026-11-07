@@ -2,8 +2,10 @@
 import logging
 import math
 from core.component.branch_condition import BranchCondition
+from core.system.coord_printer import CoordPrinter
 from core.system.generate_branch_coords import GenerateBranchCoordsSystem
 from core.system.interactive_selector import InteractiveSelectorSystem
+from core.system.result_summary import ResultSummarySystem
 from core.world.world import World
 from core.constants import EntityKey, ComponentKey
 from alignment.rail import Rail
@@ -72,20 +74,13 @@ class Main:
         # 3. 좌표계산 및 산출
         world.add_system(GenerateBranchCoordsSystem())  # ★ 추가
 
-        world.run()
+        # 4. 계산 제원 결과 표시
+        world.add_system(ResultSummarySystem())  # ★ 추가\
 
-        # 3. 결과 출력
-        spec = world.components[ComponentKey.TURNOUT_SPEC]
-        result_msg = (
-            f"\n=== 건넘선 설계 결과 ===\n"
-            f"곡선장(cl): {spec.start_length} m\n"
-            f"직선장(sl): {spec.middle_length} m\n"
-            f"반지름(R): {spec.radius:.2f} m\n"
-            f"접선각(θ): {math.degrees(spec.cross_angle):.2f}°\n"
-            f"========================="
-        )
-        logger.info(result_msg)
-        print(result_msg)  # GUI 제거했으므로 콘솔 출력
+        # 5. 좌표 출력
+        world.add_system(CoordPrinter())  # ★ 추가\
+
+        world.run()
 
     def _create_local_mainline(self, length: float, interval: float, start_station: int) -> Alignment:
         """로컬 좌표계의 자선 생성 (X축 방향으로 직선)"""
