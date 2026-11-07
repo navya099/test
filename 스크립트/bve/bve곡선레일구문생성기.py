@@ -334,19 +334,40 @@ def open_excel_file() -> str:
 
 
 def find_structure_section(filepath: str) -> dict:
-    structure_list = {"bridge": [], "tunnel": []}
+    structure_list = {
+        "bridge": [],
+        "tunnel": []
+    }
+
     df_bridge = pd.read_excel(filepath, sheet_name="교량", header=None)
     df_tunnel = pd.read_excel(filepath, sheet_name="터널", header=None)
 
-    print(df_tunnel.shape, df_tunnel.head())
+    if not df_bridge.empty:
+        df_bridge.columns = [
+            "br_NAME",
+            "br_START_STA",
+            "br_END_STA",
+            "br_LENGTH"
+        ]
 
-    df_bridge.columns = ["br_NAME", "br_START_STA", "br_END_STA", "br_LENGTH"]
-    df_tunnel.columns = ["tn_NAME", "tn_START_STA", "tn_END_STA", "tn_LENGTH"]
+        for _, row in df_bridge.iterrows():
+            structure_list["bridge"].append(
+                (row["br_NAME"], row["br_START_STA"], row["br_END_STA"])
+            )
 
-    for _, row in df_bridge.iterrows():
-        structure_list["bridge"].append((row["br_NAME"], row["br_START_STA"], row["br_END_STA"]))
-    for _, row in df_tunnel.iterrows():
-        structure_list["tunnel"].append((row["tn_NAME"], row["tn_START_STA"], row["tn_END_STA"]))
+    if not df_tunnel.empty:
+        df_tunnel.columns = [
+            "tn_NAME",
+            "tn_START_STA",
+            "tn_END_STA",
+            "tn_LENGTH"
+        ]
+
+        for _, row in df_tunnel.iterrows():
+            structure_list["tunnel"].append(
+                (row["tn_NAME"], row["tn_START_STA"], row["tn_END_STA"])
+            )
+
     return structure_list
 
 
@@ -496,139 +517,258 @@ def unflatten_defaults(flat: dict[str, str]) -> dict:
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
-class UserForm(tk.Toplevel):
-    def __init__(self, master=None, defaults: dict | None = None):
+# ===========================================================================
+# UserForm — Enter로 다음 칸 이동, 마지막 칸 Enter = 자동 제출
+# ===========================================================================
+class UserForm(tk.Frame):
+    """파라미터 입력 폼 (Toplevel이 아닌 Frame → 메인창에 임베드)."""
+
+    def __init__(self, master, defaults: dict[str, int], on_submit=None):
         super().__init__(master)
-        self.title("구조물 입력 폼")
-        self.defaults = defaults or {}
+        self.defaults = defaults
+        self.on_submit = on_submit
         self.entries: dict[str, tk.Entry] = {}
-        self.values: dict[str, str] | None = None
         self._create_widgets()
+        self._bind_enter_navigation()
 
     def _create_widgets(self):
-        for i, label in enumerate(FORM_LABELS):
-            tk.Label(self, text=label).grid(row=i, column=0, sticky="w")
-            entry = tk.Entry(self)
-            entry.grid(row=i, column=1)
-            entry.insert(0, self.defaults.get(label, ""))
-            self.entries[label] = entry
-        tk.Button(self, text="확인", command=self._submit).grid(
-            row=len(FORM_LABELS), column=0, columnspan=2
-        )
+        # 2열 그리드: FreeObj / RailType
+        left_labels = [l for l in FORM_LABELS if l.startswith("freeobj")]
+        right_labels = [l for l in FORM_LABELS if l.startswith("railtype")]
+
+        for col, (title, labels) in enumerate(
+            [("FreeObj 인덱스", left_labels), ("RailType 인덱스", right_labels)]
+        ):
+            box = ttk.LabelFrame(self, text=title, padding=8)
+            box.grid(row=0, column=col, sticky="nsew", padx=6, pady=6)
+            for i, label in enumerate(labels):
+                ttk.Label(box, text=label).grid(row=i, column=0, sticky="w", pady=2)
+                entry = ttk.Entry(box, width=8, justify="right")
+                entry.grid(row=i, column=1, sticky="e", pady=2)
+                entry.insert(0, str(self.defaults.get(label, "")))
+                self.entries[label] = entry
+            self.columnconfigure(col, weight=1)
+
+        # 버튼 행
+        btn_row = ttk.Frame(self)
+        btn_row.grid(row=1, column=0, columnspan=2, pady=(4, 8))
+        ttk.Button(
+            btn_row, text="▶ 실행 (Ctrl+Enter)", command=self._submit
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            btn_row, text="기본값 복원", command=self._reset_defaults
+        ).pack(side="left", padx=4)
+
+    def _ordered_entries(self) -> list[tk.Entry]:
+        """Tab 순서대로 Entry 리스트 (FreeObj → RailType)."""
+        order = [l for l in FORM_LABELS if l in self.entries]
+        return [self.entries[l] for l in order]
+
+    def _bind_enter_navigation(self):
+        entries = self._ordered_entries()
+        for i, entry in enumerate(entries):
+            if i < len(entries) - 1:
+                nxt = entries[i + 1]
+                entry.bind("<Return>", lambda e, n=nxt: (n.focus_set(), n.select_range(0, "end"), "break")[2])
+            else:
+                # 마지막 칸 Enter → 자동 제출
+                entry.bind("<Return>", lambda e: (self._submit(), "break")[1])
+            # 숫자만 허용
+            entry.bind("<KeyPress>", self._only_numeric)
+
+        # Ctrl+Enter는 어디서든 제출
+        self.bind_all("<Control-Return>", lambda e: self._submit())
+
+        # 폼 최초 포커스
+        if entries:
+            self.after(50, lambda: (entries[0].focus_set(), entries[0].select_range(0, "end")))
+
+    @staticmethod
+    def _only_numeric(event):
+        if event.char and not event.char.isdigit() and event.keysym not in (
+            "BackSpace", "Delete", "Left", "Right", "Tab", "Return", "Home", "End"
+        ):
+            return "break"
+
+    def _reset_defaults(self):
+        for label, entry in self.entries.items():
+            entry.delete(0, "end")
+            entry.insert(0, str(self.defaults.get(label, "")))
+
+    def update_defaults(self, new_defaults: dict[str, int]):
+        self.defaults = new_defaults
+        self._reset_defaults()
 
     def _submit(self):
-        self.values = {label: e.get() for label, e in self.entries.items()}
-        self.destroy()
+        values = {}
+        for label, entry in self.entries.items():
+            raw = entry.get().strip()
+            if not raw:
+                messagebox.showwarning("입력 오류", f"'{label}' 값이 비어 있습니다.")
+                entry.focus_set()
+                return
+            try:
+                values[label] = int(raw)
+            except ValueError:
+                messagebox.showwarning("입력 오류", f"'{label}' 값이 숫자가 아닙니다.")
+                entry.focus_set()
+                entry.select_range(0, "end")
+                return
+        if self.on_submit:
+            self.on_submit(values)
 
-    def ask_user_form(self) -> dict[str, str] | None:
-        self.grab_set()
-        self.wait_window()
-        return self.values
 
 
 class FreeobjApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("FreeObj 자동 생성기")
-        self.geometry("600x400")
-        self.alignment_type: str | None = None
-        self._create_widgets()
+        self.title("BVE FreeObj 자동 생성기")
+        self.geometry("820x680")
+        self.minsize(760, 620)
 
-    def _create_widgets(self):
-        ttk.Label(
-            self, text="BVE FreeObj 자동 생성 프로그램", font=("Arial", 14, "bold")
-        ).pack(pady=20)
-        self.log_box = tk.Text(self, height=15, wrap=tk.WORD, font=("Consolas", 10))
-        self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        ttk.Button(self, text="FreeObj 생성 실행", command=self.run_main).pack(pady=10)
+        self.alignment_type = tk.StringVar(value="도시철도")
+        self.curve_path = tk.StringVar()
+        self.structure_path = tk.StringVar()
+        self.output_dir = tk.StringVar()
+
+        self.user_form: UserForm | None = None
+        self._build_ui()
+        self._on_alignment_change()  # 초기 폼 구성
+
+    # ---- UI 구성 --------------------------------------------------------
+    def _build_ui(self):
+        top = ttk.Frame(self, padding=10)
+        top.pack(fill="x")
+
+        ttk.Label(top, text="노선 유형:").grid(row=0, column=0, sticky="w")
+        cb = ttk.Combobox(
+            top,
+            textvariable=self.alignment_type,
+            values=[v for v in ALIGNMENT_TYPES if v in _DEFAULT_VALUES],
+            state="readonly",
+            width=12,
+        )
+        cb.grid(row=0, column=1, sticky="w", padx=6)
+        cb.bind("<<ComboboxSelected>>", lambda e: self._on_alignment_change())
+
+        # 파일 경로 3행
+        self._path_row(top, 1, "곡선 파일", self.curve_path,
+                       [("CURVE_INFO", "*.txt"), ("All files", "*.*")])
+        self._path_row(top, 2, "구조물 XLSX", self.structure_path,
+                       [("Excel", "*.xlsx")])
+        self._path_row(top, 3, "출력 폴더", self.output_dir, None)  # 폴더 선택
+        top.columnconfigure(1, weight=1)
+
+        # 폼 컨테이너
+        self.form_container = ttk.Frame(self, padding=(10, 0))
+        self.form_container.pack(fill="x")
+
+        # 로그
+        log_frame = ttk.LabelFrame(self, text="로그", padding=6)
+        log_frame.pack(fill="both", expand=True, padx=10, pady=(4, 10))
+        self.log_box = tk.Text(log_frame, height=12, wrap="word", font=("Consolas", 10))
+        sb = ttk.Scrollbar(log_frame, command=self.log_box.yview)
+        self.log_box.configure(yscrollcommand=sb.set)
+        self.log_box.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        self.log("노선 유형을 선택하고 파일 경로를 지정한 뒤 실행하세요.")
+
+    def _path_row(self, parent, row, label, var, filetypes):
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2)
+        entry = ttk.Entry(parent, textvariable=var)
+        entry.grid(row=row, column=1, sticky="ew", padx=6)
+
+        def browse():
+            if filetypes is None:  # 폴더 선택
+                path = filedialog.askdirectory(title=f"{label} 선택")
+            else:
+                path = filedialog.askopenfilename(title=f"{label} 선택", filetypes=filetypes)
+            if path:
+                var.set(path)
+
+        ttk.Button(parent, text="찾아보기", command=browse).grid(row=row, column=2)
+
+    # ---- 이벤트 ---------------------------------------------------------
+    def _on_alignment_change(self):
+        try:
+            defaults = get_default_values(self.alignment_type.get())
+        except ValueError:
+            return
+        flat = flatten_defaults(defaults)
+        if self.user_form is None:
+            self.user_form = UserForm(
+                self.form_container, defaults=flat, on_submit=self._run_with_values
+            )
+            self.user_form.pack(fill="x")
+        else:
+            self.user_form.update_defaults(flat)
 
     def log(self, message: str):
-        self.log_box.insert(tk.END, message + "\n")
-        self.log_box.see(tk.END)
+        self.log_box.insert("end", message + "\n")
+        self.log_box.see("end")
+        self.update_idletasks()
 
-    def _select_alignment_type(self) -> str | None:
-        top = tk.Toplevel(self)
-        top.title("노선 구분 선택")
-        tk.Label(top, text="노선의 종류를 선택하세요:").pack(pady=10)
+    # ---- 실행 -----------------------------------------------------------
+    def _run_with_values(self, values: dict[str, int]):
+        # 경로 검증
+        curve = self.curve_path.get().strip()
+        structure = self.structure_path.get().strip()
+        outdir = self.output_dir.get().strip()
 
-        result: dict[str, str | None] = {"value": None}
+        from pathlib import Path
+        if not curve or not Path(curve).is_file():
+            messagebox.showwarning("입력 오류", "곡선 파일을 선택하세요.")
+            return
+        if not structure or not Path(structure).is_file():
+            messagebox.showwarning("입력 오류", "구조물 XLSX 파일을 선택하세요.")
+            return
+        if not outdir:
+            # 폴더 미지정 시 곡선 파일과 같은 위치 사용
+            outdir = str(Path(curve).parent)
+            self.output_dir.set(outdir)
+            self.log(f"출력 폴더 미지정 → {outdir} 사용")
 
-        def select(value: str):
-            result["value"] = value
-            top.destroy()
-
-        for option in ALIGNMENT_TYPES:
-            if option not in _DEFAULT_VALUES:
-                continue
-            tk.Button(
-                top, text=option, width=15, command=lambda v=option: select(v)
-            ).pack(pady=5)
-
-        top.grab_set()
-        top.wait_window()
-        return result["value"]
-
-    def run_main(self):
         try:
-            self.alignment_type = self._select_alignment_type()
-            if not self.alignment_type:
-                self.log("노선 유형이 선택되지 않았습니다.")
-                return
-
-            form = UserForm(
-                self, defaults=flatten_defaults(get_default_values(self.alignment_type))
-            )
-            raw = form.ask_user_form()
-            if not raw:
-                self.log("입력 폼이 취소되었습니다.")
-                return
-            index_dict = unflatten_defaults(raw)
-
-            self.log("파일을 읽는 중...")
-            lines = read_file()
-            if not lines:
-                self.log("파일 없음 또는 불러오기 실패.")
-                return
-
-            self.log("구조물 정보 로드 중...")
-            structure_list = load_structure_data()
-            if not structure_list:
-                self.log("구조물 정보 로드 실패. 중단합니다.")
-                return
-            self.log("구조물 정보 로드 완료.")
-
-            self.log("곡선 정보 파싱 중...")
-            curveinfo = parsing_curveinfo(lines)
-
-            self.log("FreeObj 계산 중...")
-            freeobj = cal_mainlogic(curveinfo)
-
-            self.log("FreeObj 생성 중...")
-            content = modify_content(
-                create_freeobj(freeobj, structure_list, curveinfo, index_dict)
-            )
-            savefile = filedialog.asksaveasfilename(
-                defaultextension=".txt",
-                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-                title="FREEOBJ 저장",
-            )
-            save_lines(content, savefile)
-            self.log("FreeObj 저장 완료!")
-
-            self.log("Railtype 생성 중...")
-            railtype = create_railtype(curveinfo, structure_list, index_dict)
-            savefile = filedialog.asksaveasfilename(
-                defaultextension=".txt",
-                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-                title="RAILTYPE 저장",
-            )
-            save_lines(railtype, savefile)
-            self.log("Railtype 저장 완료!")
-
-            messagebox.showinfo("완료", "FreeObj 및 RailType 생성이 완료되었습니다.")
+            self._execute(curve, structure, outdir, unflatten_defaults(values))
+            self.log("✅ 모든 작업 완료.")
         except Exception as e:
             self.log(f"[오류] {type(e).__name__}: {e}")
             messagebox.showerror("오류", f"실행 중 오류 발생:\n{e}")
+
+    def _execute(self, curve_path: str, structure_path: str, outdir: str, index_dict: dict):
+        self.log("곡선 파일 읽는 중...")
+        with open(curve_path, "r", encoding="utf-8") as f:
+            lines = list(csv.reader(f))
+
+        self.log("구조물 정보 로드 중...")
+        structure_list = find_structure_section(structure_path)
+        self.log("구조물 정보 로드 완료.")
+
+        self.log("곡선 정보 파싱 중...")
+        curveinfo = parsing_curveinfo(lines)
+
+        self.log("FreeObj 계산 중...")
+        freeobj = cal_mainlogic(curveinfo)
+
+        self.log("FreeObj 구문 생성 중...")
+        content = modify_content(
+            create_freeobj(freeobj, structure_list, curveinfo, index_dict)
+        )
+
+        from datetime import datetime
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        from pathlib import Path
+        freeobj_path = Path(outdir) / f"freeobj_{stamp}.txt"
+        railtype_path = Path(outdir) / f"railtype_{stamp}.txt"
+
+        save_lines(content, str(freeobj_path))
+        self.log(f"FreeObj 저장: {freeobj_path}")
+
+        self.log("RailType 구문 생성 중...")
+        railtype = create_railtype(curveinfo, structure_list, index_dict)
+        save_lines(railtype, str(railtype_path))
+        self.log(f"RailType 저장: {railtype_path}")
 
 
 if __name__ == "__main__":
