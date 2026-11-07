@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
             return
 
         self.undo_stack.clear()
-        self._rebuild_scene()
+        self._rebuild_scene(fit=True)   # ← 최초 로드만 fit
         self.statusBar().showMessage(f"로드 완료: {path}")
 
     def save_file(self):
@@ -233,13 +233,22 @@ class MainWindow(QMainWindow):
 
     # ---------- scene 재구축 ----------
 
-    def _rebuild_scene(self):
+    def _rebuild_scene(self, fit: bool = False):
         if self.data is None:
             return
         if self._rebuilding:
             return
         self._rebuilding = True
         try:
+            # 재구축 전 뷰 상태 저장 (fit=False일 때 복원용)
+            old_transform = None
+            old_center = None
+            if self.view is not None and not fit:
+                old_transform = self.view.transform()
+                old_center = self.view.mapToScene(
+                    self.view.viewport().rect().center()
+                )
+
             # 재구축 전 선택 상태 저장
             selected_ids = set()
             if self.scene is not None:
@@ -295,7 +304,12 @@ class MainWindow(QMainWindow):
                 if nid in self.scene.node_items:
                     self.scene.node_items[nid].setSelected(True)
 
-            self.fit_view()
+            # 뷰 상태 복원
+            if fit:
+                self.fit_view()
+            elif old_transform is not None:
+                self.view.setTransform(old_transform)
+                self.view.centerOn(old_center)
         finally:
             self._rebuilding = False
 
