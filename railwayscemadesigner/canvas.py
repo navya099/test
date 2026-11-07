@@ -4,7 +4,7 @@
 from PyQt6.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsItem
 from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal
 # canvas.py 상단
-from PyQt6.QtGui import QPen, QBrush, QColor, QPainter, QPolygonF
+from PyQt6.QtGui import QPen, QBrush, QColor, QPainter, QPolygonF, QTransform
 import transform
 
 
@@ -106,6 +106,9 @@ class StationScene(QGraphicsScene):
     edge_requested = pyqtSignal(object, object)
     node_add_requested = pyqtSignal(float, float)
 
+    rebuild_requested = pyqtSignal()  # 신규
+    move_committed = pyqtSignal(str, float, float, float, float)  # 신규
+
     MODE_SELECT = "select"
     MODE_ADD_NODE = "add_node"
     MODE_ADD_EDGE = "add_edge"
@@ -119,6 +122,11 @@ class StationScene(QGraphicsScene):
         self.mode = self.MODE_SELECT
         self._edge_start = None  # 엣지 추가 모드에서 첫 클릭 노드
         self._build()
+        self._drag_start = {}  # node_id → (mileage, lateral) 드래그 시작 스냅샷
+
+    def request_rebuild(self):
+        """커맨드가 모델을 바꾼 뒤 호출. MainWindow가 scene을 새로 만든다."""
+        self.rebuild_requested.emit()
 
     def _build(self):
         self.clear()
@@ -156,28 +164,38 @@ class StationScene(QGraphicsScene):
             item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, movable)
 
     def mousePressEvent(self, event):
-        # 선택 모드는 기본 동작
+        # 1) 선택 모드: 드래그 스냅샷 + 기본 동작
         if self.mode == self.MODE_SELECT:
+            if event.button() == Qt.MouseButton.LeftButton:
+                item = self.itemAt(event.scenePos(), QTransform())
+                if isinstance(item, NodeItem):
+                    self._drag_start[item.node.id] = (
+                        item.node.mileage, item.node.lateral_offset
+                    )
             super().mousePressEvent(event)
             return
 
-        # 좌클릭만 처리
+        # 2) 좌클릭이 아니면 기본 동작
         if event.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(event)
             return
 
         scene_pos = event.scenePos()
-        item = self.itemAt(scene_pos, self.views()[0].transform() if self.views() else None)
 
+        # 3) 노드 추가 모드
         if self.mode == self.MODE_ADD_NODE:
-            # 빈 곳 클릭일 때만 노드 생성 신호
+            items = self.items(scene_pos)
+            item = items[0] if items else None
             if not isinstance(item, NodeItem):
                 self.node_add_requested.emit(scene_pos.x(), scene_pos.y())
             event.accept()
             return
 
+        # 4) 엣지 추가 모드
         if self.mode == self.MODE_ADD_EDGE:
-            if isinstance(item, NodeItem):
+            items = self.items(scene_pos)
+            item = next((it for it in items if isinstance(it, NodeItem)), None)
+            if item is not None:
                 if self._edge_start is None:
                     self._edge_start = item
                     item.setSelected(True)
@@ -186,30 +204,46 @@ class StationScene(QGraphicsScene):
                     self._edge_start.setSelected(False)
                     self._edge_start = None
             else:
-                # 빈 곳 클릭 → 선택 해제
-                if self._edge_start:
+                if self._edge_start is not None:
                     self._edge_start.setSelected(False)
                     self._edge_start = None
             event.accept()
             return
 
+        # 5) 그 외
         super().mousePressEvent(event)
 
-    def on_node_moved(self, node_item: NodeItem):
-        # 이 노드에 연결된 엣지 갱신
+    # ---- 드래그 시작/종료 훅 ----
+    def on_node_moved(self, node_item):
+        # 기존: 엣지 갱신 + 모델 반영 (드래그 중)
         for e in self.edge_items:
             if e.node_a is node_item or e.node_b is node_item:
                 e.update_geometry()
 
-        # 모델 갱신: 화면 좌표 → mileage/lateral_offset
         track = self.tracks_by_id[node_item.node.track_id]
         pos = node_item.pos()
+        import transform
         mileage, lateral = transform.scene_to_node(pos.x(), pos.y(), track)
         node_item.node.mileage = round(mileage, 4)
         node_item.node.lateral_offset = round(lateral, 2)
 
         self.node_moved.emit(node_item.node.id)
 
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if not self._drag_start:
+            return
+
+        # 드래그 종료: 시작 스냅샷과 비교해서 이동이 있으면 커맨드 발행
+        for node_id, (old_m, old_l) in list(self._drag_start.items()):
+            item = self.node_items.get(node_id)
+            if item is None:
+                continue
+            new_m, new_l = item.node.mileage, item.node.lateral_offset
+            if abs(new_m - old_m) > 1e-6 or abs(new_l - old_l) > 1e-6:
+                self.move_committed.emit(node_id, old_m, old_l, new_m, new_l)
+
+        self._drag_start.clear()
 
 class StationView(QGraphicsView):
     """확대/축소 + 팬. 마우스 휠로 줌."""
