@@ -1,0 +1,150 @@
+"""표준 DXF 기반 도면 작성 공통 엔진."""
+from __future__ import annotations
+
+from ezdxf.document import Drawing
+
+from core.models import TunnelParams
+from services.dxf2.standard_loader import load_standard_template
+from services.dxf2.title_block import (
+    build_title_values, fill_title_block,
+)
+from services.dxf2.layers import (
+    DIMSTYLE_1_100, STYLE_T25, HEIGHT_T25,
+    LAYER_DIM, LAYER_TEXT,
+)
+
+
+# ═══════════════════════════════════════════════════════════
+# 도면 생성 오케스트레이션
+# ═══════════════════════════════════════════════════════════
+def write_document(
+    path: str,
+    params: TunnelParams,
+    builder_fn,
+    *,
+    scale: str = "1:100",
+    title_overrides: dict | None = None,
+):
+    """
+    1. 표준 DXF 템플릿 로드 (도곽/표제란/스타일/블록 그대로)
+    2. 표제란 자동 채움 (타입에 맞춰)
+    3. 타입별 빌더 호출 (형상 + 치수 + 문자)
+    4. 저장
+
+    Parameters
+    ----------
+    path           : 저장 경로
+    params         : TunnelParams (터널 제원)
+    builder_fn     : (msp, params, doc) -> None
+    scale          : "1:100", "1:200" 등 (표제란 SCALE 값)
+    title_overrides: 사용자가 수정한 표제란 값 (선택)
+    """
+    # 1) 표준 템플릿
+    doc = load_standard_template()
+
+    # 2) 표제란
+    title_values = build_title_values(
+        tunnel_type_label=_type_label(params),
+        kind_label="터널 단면도",
+        scale=scale,
+    )
+    if title_overrides:
+        title_values.update(title_overrides)
+    fill_title_block(doc, title_values)
+
+    # 3) 타입별 빌더
+    msp = doc.modelspace()
+    builder_fn(msp, params, doc)
+
+    # 4) 저장
+    doc.saveas(path)
+
+
+def _type_label(params: TunnelParams) -> str:
+    """터널 타입 → 부타이틀 문자열."""
+    try:
+        kind = params.kind.value if hasattr(params.kind, "value") else str(params.kind)
+    except Exception:
+        kind = "터널"
+    return f"{kind} 표준단면"
+
+
+# ═══════════════════════════════════════════════════════════
+# 치수 헬퍼 (표준 DIMENSION 엔티티)
+# ═══════════════════════════════════════════════════════════
+def dim_horizontal(
+    msp,
+    x1: float, x2: float, y: float,
+    *,
+    offset: float = 1500.0,
+    override_text: str | None = None,
+    dimstyle: str = DIMSTYLE_1_100,
+):
+    """
+    수평 치수 (DIMENSION 엔티티).
+    offset은 치수선이 대상선에서 얼마나 떨어질지 (mm).
+    """
+    dim = msp.add_linear_dim(
+        base=(x1, y + offset),
+        p1=(x1, y),
+        p2=(x2, y),
+        dimstyle=dimstyle,
+        override={"dimtad": 1},
+    )
+    if override_text:
+        dim.dxf.text = override_text
+    dim.render()
+    return dim
+
+
+def dim_vertical(
+    msp,
+    y1: float, y2: float, x: float,
+    *,
+    offset: float = 1500.0,
+    override_text: str | None = None,
+    dimstyle: str = DIMSTYLE_1_100,
+):
+    """수직 치수 (DIMENSION 엔티티, angle=90)."""
+    dim = msp.add_linear_dim(
+        base=(x + offset, y1),
+        p1=(x, y1),
+        p2=(x, y2),
+        angle=90,
+        dimstyle=dimstyle,
+        override={"dimtad": 1},
+    )
+    if override_text:
+        dim.dxf.text = override_text
+    dim.render()
+    return dim
+
+
+# ═══════════════════════════════════════════════════════════
+# 문자 헬퍼
+# ═══════════════════════════════════════════════════════════
+def text_std(
+    msp,
+    x: float, y: float, s: str,
+    *,
+    style: str = STYLE_T25,
+    height: float = HEIGHT_T25,
+    layer: str = LAYER_TEXT,
+    rotation: float = 0.0,
+    align: str | None = None,
+):
+    """표준 문자 (GulimChe + 크기)."""
+    t = msp.add_text(
+        s,
+        dxfattribs={
+            "height": height,
+            "style": style,
+            "layer": layer,
+            "rotation": rotation,
+        },
+    )
+    if align:
+        t.set_placement((x, y), align=align)
+    else:
+        t.set_placement((x, y))
+    return t
