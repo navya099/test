@@ -14,7 +14,7 @@ from services.dxf2 import is_standard_available, write_document, get_builder
 
 def main():
     print("=" * 70)
-    print("NATM 빌더 1단계 테스트")
+    print("NATM 3스케일 테스트 (터널 mm 절대값)")
     print("=" * 70)
 
     if not is_standard_available():
@@ -31,26 +31,33 @@ def main():
         ts=0.40, ts_slab=1,
         show_lining=True,
     )
-    doc_params = DocumentParams(
-        design_name="OO선 OO공구",
-        construction_name="OO건설",
-        supervisor="OO엔지니어링",
-        contractor="OO건설",
-        drawing_code="NATM-001",
-        scale="1:30",
-    )
+
 
     builder = get_builder(TunnelType.NATM)
     out_dir = _PROJECT_ROOT / "tests" / "test_output"
     out_dir.mkdir(exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = out_dir / f"NATM_step1_{ts}.dxf"
 
-    write_document(str(out), params, doc_params, builder)
-    print(f"✅ 저장: {out}")
-    print(f"   파일 크기: {out.stat().st_size / 1024:.1f} KB")
+    for scale in ["1:50", "1:100", "1:200"]:
+        dp = DocumentParams(
+            design_name="OO선 OO공구",
+            construction_name="OO건설",
+            supervisor="OO엔지니어링",
+            contractor="OO건설",
+            drawing_code=f"NATM-{scale}",
+            scale=scale,
+        )
+        out = out_dir / f"NATM_{scale.replace(':', '_')}.dxf"
+        write_document(str(out), params, dp, builder)
+
+        mult = dp.scale_multiplier
+        print(f"\n=== {scale} ===")
+        print(f"  도곽 확대 배율: ×{mult:.0f}")
+        print(f"  도곽 크기: {841 * mult:.0f} × {594 * mult:.0f} mm")
+        print(f"  터널 폭: 12,000mm (mm 절대값, 불변)")
+        print(f"  비율: {12000 / (841 * mult) * 100:.1f}%")
+        print(f"  ✅ {out.name}")
+
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

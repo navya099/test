@@ -86,7 +86,7 @@ KEEP_BLOCKS = {
 }
 
 
-def load_standard_template() -> Drawing:
+def load_standard_template(scale_multiplier: float = 1.0) -> Drawing:
     """
     표준 DXF 로드 + 형상 삭제 + 도곽/표제란/스타일 유지.
     반환된 Drawing은 우리 도면의 기반이 됨.
@@ -144,6 +144,57 @@ def load_standard_template() -> Drawing:
     for layer_name in KEEP_LAYERS:
         if layer_name not in doc.layers:
             continue
+
+    # ── 2) 도곽/표제란 배율 확대 ───────────────
+    if scale_multiplier != 1.0:
+        from ezdxf.math import Matrix44
+        scale_mat = Matrix44.scale(scale_multiplier)
+
+        for entity in list(msp):
+            try:
+                entity.transform(scale_mat)
+            except Exception:
+                pass
+
+        # ATTDEF 위치/높이 수동 조정
+        for attdef in msp.query("ATTDEF"):
+            try:
+                h = attdef.dxf.get("height", 1.0) * scale_multiplier
+                attdef.dxf.height = h
+                ip = attdef.dxf.insert
+                attdef.dxf.insert = (
+                    ip[0] * scale_multiplier,
+                    ip[1] * scale_multiplier,
+                )
+                ap = attdef.dxf.get("align_point", None)
+                if ap is not None:
+                    attdef.dxf.align_point = (
+                        ap[0] * scale_multiplier,
+                        ap[1] * scale_multiplier,
+                    )
+            except Exception:
+                pass
+
+        # LTSCALE 조정
+        doc.header["$LTSCALE"] = (
+                doc.header.get("$LTSCALE", 1.0) * scale_multiplier
+        )
+
+        # DIMSTYLE의 dimscale 조정
+        for dimstyle in doc.dimstyles:
+            try:
+                cur = dimstyle.dxf.get("dimscale", 1.0)
+                dimstyle.dxf.dimscale = cur * scale_multiplier
+            except Exception:
+                pass
+
+        # EXTMAX 확대
+        old_extmax = doc.header.get("$EXTMAX", (841, 594, 0))
+        doc.header["$EXTMAX"] = (
+            old_extmax[0] * scale_multiplier,
+            old_extmax[1] * scale_multiplier,
+            0.0,
+        )
 
     return doc
 

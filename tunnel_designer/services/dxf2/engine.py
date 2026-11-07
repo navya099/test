@@ -44,7 +44,10 @@ def write_document(
     if doc_params is None:
         doc_params = DocumentParams()
 
-    doc = load_standard_template()
+    # ★ 도곽 배율 적용 로드
+    doc = load_standard_template(
+        scale_multiplier=doc_params.scale_multiplier,
+    )
 
     # 2) 표제란
     title_values = build_title_values(

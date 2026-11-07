@@ -23,14 +23,14 @@ from services.dxf2.registry import register
 def _t(pt: tuple[float, float], d: DocumentParams) -> tuple[float, float]:
     """터널 좌표(m) → 도면 좌표(mm)."""
     return (
-        pt[0] * d.scale_factor + d.base_x,
-        pt[1] * d.scale_factor + d.base_y,
+        pt[0] * 1000.0 + d.base_x,
+        pt[1] * 1000.0 + d.base_y,
     )
 
 
-def _len(v_m: float, d: DocumentParams) -> float:
+def _len(v_m: float) -> float:
     """m 단위 길이 → 도면 mm."""
-    return v_m * d.scale_factor
+    return v_m * 1000.0
 
 
 def _add_arc(msp, center, radius, start_deg, end_deg,
@@ -85,11 +85,11 @@ def build_natm(msp, params: TunnelParams, doc_params: DocumentParams, doc):
     # ═══════════════════════════════════════════════════════
     # (1) 내공 아치 3개 (CR-TUNL)
     # ═══════════════════════════════════════════════════════
-    _add_arc(msp, _t(g.center_top, d), _len(a.R1, d),
+    _add_arc(msp, _t(g.center_top, d), _len(a.R1),
              a_right, a_left, LAYER_TUNNEL)       # 상단 R1
-    _add_arc(msp, _t(g.left_center, d), _len(a.R2, d),
+    _add_arc(msp, _t(g.left_center, d), _len(a.R2),
              a_left, a_left + a.r2_angle, LAYER_TUNNEL)  # 좌 R2
-    _add_arc(msp, _t(g.right_center, d), _len(a.R2, d),
+    _add_arc(msp, _t(g.right_center, d), _len(a.R2),
              a_right - a.r2_angle, a_right, LAYER_TUNNEL)  # 우 R2
 
     # ═══════════════════════════════════════════════════════
@@ -103,7 +103,7 @@ def build_natm(msp, params: TunnelParams, doc_params: DocumentParams, doc):
                 s, e = e, s
             if e < s:
                 e += 360
-            _add_arc(msp, _t(c, d), _len(r, d), s, e, LAYER_CONCRETE)
+            _add_arc(msp, _t(c, d), _len(r), s, e, LAYER_CONCRETE)
 
         _add_outer_arc(g.lining_top_arc)
         _add_outer_arc(g.lining_left_arc)
@@ -151,7 +151,7 @@ def build_natm(msp, params: TunnelParams, doc_params: DocumentParams, doc):
         text_std(
             msp,
             *_t((x, y_text + 0.3), d),
-            f"C {t.label or 'T'}",
+            s=f"C {t.label or 'T'}",
             style=STYLE_T25, height=HEIGHT_T25,
             layer=LAYER_TEXT,
         )
@@ -160,7 +160,7 @@ def build_natm(msp, params: TunnelParams, doc_params: DocumentParams, doc):
     text_std(
         msp,
         *_t((0, y_text + 0.3), d),
-        "C 터널",
+        s="C 터널",
         style=STYLE_T25, height=HEIGHT_T25,
         layer=LAYER_TEXT,
     )
@@ -183,7 +183,7 @@ def build_natm(msp, params: TunnelParams, doc_params: DocumentParams, doc):
         text_std(
             msp,
             *_t((mid[0] - 0.3, mid[1] + 0.3), d),
-            f"R1={a.R1 * 1000:.0f}",
+            s=f"R1={a.R1 * 1000:.0f}",
             style=STYLE_T25, height=HEIGHT_T25,
             layer=LAYER_TEXT,
             rotation=ang,
@@ -204,7 +204,7 @@ def build_natm(msp, params: TunnelParams, doc_params: DocumentParams, doc):
         text_std(
             msp,
             *_t(mid, d),
-            f"R2={a.R2 * 1000:.0f}",
+            s=f"R2={a.R2 * 1000:.0f}",
             style=STYLE_T25, height=HEIGHT_T25,
             layer=LAYER_TEXT,
             rotation=rot,
@@ -277,7 +277,7 @@ def build_natm(msp, params: TunnelParams, doc_params: DocumentParams, doc):
     y_dim = g.top_of_tunnel + 1.5
     for i in range(len(tracks) - 1):
         t1, t2 = tracks[i], tracks[i + 1]
-        gap_mm = (t2.offset_x - t1.offset_x) * d.scale_factor
+        gap_mm = (t2.offset_x - t1.offset_x) * 1000.0
         dim_horizontal(
             msp,
             _t((t1.offset_x, 0), d)[0],
