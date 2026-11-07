@@ -2,9 +2,11 @@
 import logging
 import math
 from core.component.branch_condition import BranchCondition
+from core.component.output_config import OutputConfig
 from core.system.coord_printer import CoordPrinter
 from core.system.generate_branch_coords import GenerateBranchCoordsSystem
 from core.system.interactive_selector import InteractiveSelectorSystem
+from core.system.output_system import ConsoleOutputSystem, CsvOutputSystem, TxtOutputSystem
 from core.system.result_summary import ResultSummarySystem
 from core.world.world import World
 from core.constants import EntityKey, ComponentKey
@@ -20,7 +22,7 @@ from core.system.create_turnout_spec import CreateTurnoutSpecSystem
 # 설정 임포트
 from config import (
     BRANCH_START_STATION, BRANCH_END_STATION, BRANCH_TARGET_TRACK,
-    TRACK_OFFSET_X, MAIN_TRACK_NAME
+    TRACK_OFFSET_X, MAIN_TRACK_NAME, OUTPUT_FORMAT, OUTPUT_FILE_PATH
 )
 
 logger = logging.getLogger(__name__)
@@ -74,11 +76,21 @@ class Main:
         # 3. 좌표계산 및 산출
         world.add_system(GenerateBranchCoordsSystem())  # ★ 추가
 
-        # 4. 계산 제원 결과 표시
-        world.add_system(ResultSummarySystem())  # ★ 추가\
+        # 4. 출력 옵션 컴포넌트 등록
+        world.add_component(ComponentKey.OUTPUT_CONFIG, OutputConfig(
+            format=OUTPUT_FORMAT,
+            file_path=OUTPUT_FILE_PATH
+        ))
 
-        # 5. 좌표 출력
-        world.add_system(CoordPrinter())  # ★ 추가\
+        # 2. 출력 시스템 동적 선택 및 등록
+        if OUTPUT_FORMAT == 'console':
+            world.add_system(ConsoleOutputSystem())
+        elif OUTPUT_FORMAT == 'csv':
+            world.add_system(CsvOutputSystem())
+        elif OUTPUT_FORMAT == 'txt':
+            world.add_system(TxtOutputSystem())
+        else:
+            raise ValueError(f"지원하지 않는 출력 포맷입니다: {OUTPUT_FORMAT}")
 
         world.run()
 

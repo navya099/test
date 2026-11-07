@@ -10,3 +10,4 @@ class ComponentKey:
     TURNOUT_SPEC = "turnout_spec"
     START_INFO = "start_info"
     BRANCH_COORDS = "branch_coords"
+    OUTPUT_CONFIG = "output_config"
