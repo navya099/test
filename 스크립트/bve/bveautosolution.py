@@ -1,23 +1,20 @@
 import time
 import tkinter as tk
 
-from bve곡선레일구문생성기 import preprocess_input_index, extract_cant, create_freeobj,\
-    cal_mainlogic, save_files, create_railtype, save_railtype
+from bve곡선레일구문생성기 import create_freeobj, cal_mainlogic,  create_railtype
 from 거리표이미지생성기 import create_km_object
 from 곡선표이미지생성기 import process_curve_data, create_curve_post_txt, create_curve_index_txt, create_speed_limit
 from 교량터널구문생성기 import load_structure_data, create_network_data, create_txt
 import os
 import random
 
-from 기울기표이미지생성기 import process_bve_profile, create_pitch_post_txt, create_pitch_index_txt
-from 랜덤신호위치생성 import save_signal_data
+from 기울기표이미지생성기 import create_pitch_post_txt, create_pitch_index_txt
+
 from 랜덤전주위치생성 import distribute_pole_spacing_flexible, load_curve_data, load_pitch_data, \
     load_coordinates, define_airjoint_section, generate_postnumbers, write_to_file, \
     load_dataset, PoleProcessor, WireProcessor, DatasetGetter, BVECSV
 from 자동통신구문생성 import create_transmisson_data
 
-from file_io_utils import copy_files
-from file_io_utils import copy_all_files
 
 def get_float_input(prompt):
     while 1:
