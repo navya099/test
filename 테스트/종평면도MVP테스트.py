@@ -1,5 +1,6 @@
 import math
 import ezdxf
+from ifcopenshell.express.rules.IFC4X3_ADD2 import position
 
 
 def rotate_point(x, y, cx, cy, angle_deg):
@@ -18,202 +19,247 @@ def rotate_point(x, y, cx, cy, angle_deg):
     return rx + cx, ry + cy
 
 
-import math
-import ezdxf
-
-
-def rotate_point(x, y, cx, cy, angle_deg):
-    """중심점 기준 회전"""
-    rad = math.radians(angle_deg)
-    cos_a = math.cos(rad)
-    sin_a = math.sin(rad)
-
-    dx = x - cx
-    dy = y - cy
-
-    rx = dx * cos_a - dy * sin_a
-    ry = dx * sin_a + dy * cos_a
-
-    return rx + cx, ry + cy
-
-
-def generate_plan_profile_mvp(
+def generate_plan_profile(
     plan_pts,
     profile_pts,
-    output_filename="plan_profile_mvp.dxf"
+    output_filename="plan_profile.dxf",
 ):
-    doc = ezdxf.new(dxfversion="R2010")
+    # ==========================================
+    # DXF 생성
+    # ==========================================
+
+    doc = ezdxf.new("R2010")
     msp = doc.modelspace()
 
-    # -----------------------------------------
-    # Layer
-    # -----------------------------------------
-    doc.layers.new("PLAN_LINE", dxfattribs={"color": 3})
-    doc.layers.new("PROFILE_LINE", dxfattribs={"color": 1})
-    doc.layers.new("SHEET_FRAME", dxfattribs={"color": 7})
+    doc.layers.new("PLAN", dxfattribs={"color": 3})
+    doc.layers.new("PROFILE", dxfattribs={"color": 1})
+    doc.layers.new("FRAME", dxfattribs={"color": 7})
+    doc.layers.new("GRID", dxfattribs={"color": 8})
 
-    # -----------------------------------------
-    # Sheet Frame
-    # -----------------------------------------
-    SHEET_WIDTH = 1000
-    SHEET_HEIGHT = 800
+    # ==========================================
+    # 축척 설정
+    # ==========================================
+
+    H_SCALE = 1000.0
+    V_SCALE = 400.0
+    scale_factor = 1.0
+    y_scale_factor = H_SCALE / V_SCALE
+    # ==========================================
+    # 도곽
+    # ==========================================
+
+    SHEET_W = 841
+    SHEET_H = 594
 
     msp.add_lwpolyline(
         [
             (0, 0),
-            (SHEET_WIDTH, 0),
-            (SHEET_WIDTH, SHEET_HEIGHT),
-            (0, SHEET_HEIGHT),
+            (SHEET_W, 0),
+            (SHEET_W, SHEET_H),
+            (0, SHEET_H),
             (0, 0),
         ],
-        dxfattribs={"layer": "SHEET_FRAME"}
+        dxfattribs={"layer": "FRAME"},
+    )
+    #타이틀
+    title = '종평면도 (1)'
+    project_name = '사업명: 행복도시철도 1호선 건설공사'
+    scale_text = '1:1000'
+
+    msp.add_text(text=title,height=15, dxfattribs={
+        "layer": "DOGAK",
+        "color": 1,
+        'insert' :(376,563)
+    })
+    msp.add_text(text=project_name, height=15, dxfattribs={
+        "layer": "DOGAK",
+        "color": 1,
+        'insert': (25, 25)
+    })
+    #평면 뷰포트
+    plan_vport_x = 810
+    plan_vport_y = 350
+    plan_vport_margin = 35
+    plan_vport_top = 550
+    msp.add_lwpolyline(
+        [
+            (plan_vport_margin, plan_vport_top),
+            (plan_vport_x, plan_vport_top),
+            (plan_vport_x, plan_vport_y),
+            (plan_vport_margin, plan_vport_y),
+            (plan_vport_margin, plan_vport_top),
+        ],
+        dxfattribs={"layer": "V_PLAN_FRAME"},
     )
 
-    # =========================================
-    # 1. PLAN VIEW
-    # =========================================
+    # 종단 뷰포트
+    profile_vport_x = 810
+    profile_vport_y = 50
+    profile_vport_margin = 35
+    profile_vport_top = 250
+    msp.add_lwpolyline(
+        [
+            (profile_vport_margin, profile_vport_top),
+            (profile_vport_x, profile_vport_top),
+            (profile_vport_x, profile_vport_y),
+            (profile_vport_margin, profile_vport_y),
+            (profile_vport_margin, profile_vport_top),
+        ],
+        dxfattribs={"layer": "V_PLAN_FRAME"},
+    )
+    # ==========================================
+    # 평면도
+    # ==========================================
+
+    PLAN_ORIGIN_X = plan_vport_margin
+    PLAN_ORIGIN_Y = 450
 
     if plan_pts:
 
-        # -----------------------------------------
-        # 주 방향 계산
-        # -----------------------------------------
         start_x, start_y = plan_pts[0]
         end_x, end_y = plan_pts[-1]
 
-        dx = end_x - start_x
-        dy = end_y - start_y
+        angle = math.degrees(
+            math.atan2(
+                end_y - start_y,
+                end_x - start_x,
+            )
+        )
 
-        angle = math.degrees(math.atan2(dy, dx))
         rotation_angle = -angle
 
-        # -----------------------------------------
-        # 중심점
-        # -----------------------------------------
         cx = sum(x for x, _ in plan_pts) / len(plan_pts)
         cy = sum(y for _, y in plan_pts) / len(plan_pts)
 
-        # -----------------------------------------
-        # 회전
-        # -----------------------------------------
         rotated_pts = []
 
         for x, y in plan_pts:
+
             rx, ry = rotate_point(
                 x,
                 y,
                 cx,
                 cy,
-                rotation_angle
+                rotation_angle,
             )
+
             rotated_pts.append((rx, ry))
 
-        # -----------------------------------------
-        # Bounding Box
-        # -----------------------------------------
-        min_x = min(x for x, _ in rotated_pts)
-        max_x = max(x for x, _ in rotated_pts)
-
-        min_y = min(y for _, y in rotated_pts)
-        max_y = max(y for _, y in rotated_pts)
-
-        width = max_x - min_x
-        height = max_y - min_y
-
-        # -----------------------------------------
-        # 배치 영역
-        # -----------------------------------------
-        PLAN_BOX_X = 50
-        PLAN_BOX_Y = 350
-
-        PLAN_BOX_W = 900
-        PLAN_BOX_H = 400
-
-        # -----------------------------------------
-        # 자동 축척
-        # -----------------------------------------
-        scale_x = PLAN_BOX_W / width if width > 0 else 1
-        scale_y = PLAN_BOX_H / height if height > 0 else 1
-
-        plan_scale = min(scale_x, scale_y)
+        min_x = min(p[0] for p in rotated_pts)
+        min_y = min(p[1] for p in rotated_pts)
 
         transformed_plan = []
 
         for rx, ry in rotated_pts:
 
             tx = (
-                (rx - min_x) * plan_scale
-                + PLAN_BOX_X
+                (rx - min_x)
+                * scale_factor
+                + PLAN_ORIGIN_X
             )
 
             ty = (
-                (ry - min_y) * plan_scale
-                + PLAN_BOX_Y
+                (ry - min_y)
+                * scale_factor
+                + PLAN_ORIGIN_Y
             )
 
             transformed_plan.append((tx, ty))
 
         msp.add_lwpolyline(
             transformed_plan,
-            dxfattribs={"layer": "PLAN_LINE"}
+            dxfattribs={"layer": "PLAN"},
         )
 
-    # =========================================
-    # 2. PROFILE VIEW
-    # =========================================
+    # ==========================================
+    # 종단도
+    # ==========================================
 
-    if profile_pts:
+    PROFILE_ORIGIN_X = PLAN_ORIGIN_X
+    PROFILE_ORIGIN_Y = 150
 
-        min_sta = min(sta for sta, _ in profile_pts)
-        max_sta = max(sta for sta, _ in profile_pts)
+    min_sta = min(sta for sta, _ in profile_pts)
+    max_sta = max(sta for sta, _ in profile_pts)
 
-        min_el = min(el for _, el in profile_pts)
-        max_el = max(el for _, el in profile_pts)
+    min_el = min(el for _, el in profile_pts)
 
-        sta_range = max_sta - min_sta
-        el_range = max_el - min_el
+    # 종단도 기준고(DL)
 
-        PROFILE_BOX_X = 50
-        PROFILE_BOX_Y = 50
+    datum_el = (
+        math.floor(min_el / 10.0)
+        * 10.0
+    )
 
-        PROFILE_BOX_W = 900
-        PROFILE_BOX_H = 200
+    profile_draw_pts = []
 
-        h_scale = (
-            PROFILE_BOX_W / sta_range
-            if sta_range > 0 else 1
+    for sta, el in profile_pts:
+
+        px = (
+            PROFILE_ORIGIN_X
+            + (sta - min_sta)
+            * 1.0
         )
 
-        v_scale = (
-            PROFILE_BOX_H / el_range
-            if el_range > 0 else 1
+        py = (
+            PROFILE_ORIGIN_Y
+            + (el - datum_el)
+            * y_scale_factor
         )
 
-        transformed_profile = []
+        profile_draw_pts.append((px, py))
 
-        for sta, el in profile_pts:
+    msp.add_lwpolyline(
+        profile_draw_pts,
+        dxfattribs={"layer": "PROFILE"},
+    )
 
-            px = (
-                PROFILE_BOX_X
-                + (sta - min_sta) * h_scale
-            )
+    # ==========================================
+    # STA Grid
+    # ==========================================
 
-            py = (
-                PROFILE_BOX_Y
-                + (el - min_el) * v_scale
-            )
+    STA_INTERVAL = 200
 
-            transformed_profile.append((px, py))
+    sta = math.floor(min_sta / STA_INTERVAL) * STA_INTERVAL
 
-        msp.add_lwpolyline(
-            transformed_profile,
-            dxfattribs={"layer": "PROFILE_LINE"}
+    while sta <= max_sta:
+
+        gx = (
+            PROFILE_ORIGIN_X
+            + (sta - min_sta)
+            * scale_factor
         )
+
+        msp.add_line(
+            (gx, PROFILE_ORIGIN_Y),
+            (gx, profile_vport_y),
+            dxfattribs={"layer": "GRID"},
+        )
+
+        msp.add_text(
+            f"{int(sta)}",
+            height=2.5,
+            dxfattribs={
+                "layer": "GRID",
+            },
+        ).set_placement(
+            (gx + 1, PROFILE_ORIGIN_Y - 5)
+        )
+
+        sta += STA_INTERVAL
+
+    print(
+        f"축척 H:{int(H_SCALE)}, V:{int(V_SCALE)}"
+    )
+
+    print(
+        f"기준고 DL={datum_el:.3f}"
+    )
 
     doc.saveas(output_filename)
 
-    print(f"생성 완료 : {output_filename}")
-
+    print(
+        f"저장 완료 : {output_filename}"
+    )
 
 # ==========================================
 # 실행 테스트
@@ -241,4 +287,4 @@ if __name__ == "__main__":
             [6000,121.289],
             [7150,129.914],
         ]
-    generate_plan_profile_mvp(sample_plan_linestring, sample_profile_linestring)
+    generate_plan_profile(sample_plan_linestring, sample_profile_linestring)
