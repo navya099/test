@@ -1,17 +1,26 @@
-# AutoCAD Python Package
+# cadgeom
 
-AutoCAD는 파이썬 기반의 CAD 유틸리티 패키지로, 2D/3D 선, 점, 호, 폴리라인 등 기본적인 기하학 객체를 다룰 수 있도록 설계되었습니다.  
-다양한 프로젝트에서 공용 라이브러리로 활용할 수 있습니다.
+Pure-Python CAD geometry primitives. No AutoCAD dependency.
+Supports 2D/3D points, lines, arcs, polylines, and DXF bulge segments.
 
 ## Features
-- `Line2d`, `Line3d`: 2D/3D 선 객체
-- `Point2d`, `Point3d`: 2D/3D 점 객체
-- `Arc`: 호(arc) 객체
-- `Polyline`: 폴리라인 객체
-- `Geometry`: 기하학적 연산 유틸리티
+- `Point2d`, `Point3d`
+- `Line2d`, `Line3d`
+- `Arc` — counterclockwise arc with proper range-aware distance
+- `BulgeSegment` — DXF bulge (`tan(θ/4)`) with clockwise support
+- `Polyline` — mixed line/arc/bulge path
+- `Geometry` — abstract base with uniform `move`/`moved`/`rotate`/`rotated`/`center` contract
 
-## Installation
-로컬 개발 환경에서 설치하려면:
+## Install
+pip install cadgeom
 
+## Quick start
+```python
+from cadgeom import Point2d, Line2d, Polyline
 
-pip install -e .
+pl = Polyline([
+    Line2d(Point2d(0, 0), Point2d(4, 0)),
+    Line2d(Point2d(4, 0), Point2d(4, 3)),
+])
+print(pl.length)         # 7.0
+print(pl.distance_to(Point2d(2, 2)))  # 2.0

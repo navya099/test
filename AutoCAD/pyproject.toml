@@ -1,13 +1,47 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autocadforpython"
+name = "cadgeom"
 version = "0.1.0"
-description = "Python port of AutoCAD"
+description = "Pure-Python CAD geometry primitives: lines, arcs, polylines, and DXF bulge segments"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Your Name", email = "you@example.com" }]
+keywords = ["cad", "geometry", "dxf", "polyline", "arc", "bulge", "2d", "3d"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/<you>/cadgeom"
+Repository = "https://github.com/<you>/cadgeom"
+Issues = "https://github.com/<you>/cadgeom/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["cadgeom*"]
+
+[tool.setuptools.package-data]
+cadgeom = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v"

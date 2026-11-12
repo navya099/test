@@ -1,2 +1,2 @@
-myautocad
+cadgeom
 tests

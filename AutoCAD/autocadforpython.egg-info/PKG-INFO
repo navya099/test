@@ -4,8 +4,6 @@ Version: 0.1.0
 Summary: Python port of AutoCAD
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: chardet
-Requires-Dist: tqdm
 
 # AutoCAD Python Package
 

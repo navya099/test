@@ -1,0 +1,54 @@
+Metadata-Version: 2.4
+Name: cadgeom
+Version: 0.1.0
+Summary: Pure-Python CAD geometry primitives: lines, arcs, polylines, and DXF bulge segments
+Author-email: Your Name <you@example.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/<you>/cadgeom
+Project-URL: Repository, https://github.com/<you>/cadgeom
+Project-URL: Issues, https://github.com/<you>/cadgeom/issues
+Keywords: cad,geometry,dxf,polyline,arc,bulge,2d,3d
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Scientific/Engineering
+Classifier: Typing :: Typed
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: test
+Requires-Dist: pytest>=7; extra == "test"
+Dynamic: license-file
+
+# cadgeom
+
+Pure-Python CAD geometry primitives. No AutoCAD dependency.
+Supports 2D/3D points, lines, arcs, polylines, and DXF bulge segments.
+
+## Features
+- `Point2d`, `Point3d`
+- `Line2d`, `Line3d`
+- `Arc` — counterclockwise arc with proper range-aware distance
+- `BulgeSegment` — DXF bulge (`tan(θ/4)`) with clockwise support
+- `Polyline` — mixed line/arc/bulge path
+- `Geometry` — abstract base with uniform `move`/`moved`/`rotate`/`rotated`/`center` contract
+
+## Install
+pip install cadgeom
+
+## Quick start
+```python
+from cadgeom import Point2d, Line2d, Polyline
+
+pl = Polyline([
+    Line2d(Point2d(0, 0), Point2d(4, 0)),
+    Line2d(Point2d(4, 0), Point2d(4, 3)),
+])
+print(pl.length)         # 7.0
+print(pl.distance_to(Point2d(2, 2)))  # 2.0
