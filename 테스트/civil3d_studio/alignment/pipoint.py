@@ -16,6 +16,8 @@ class PIPoint:
     easting: float
     northing: float
     R: float = 0.0                  # 원곡선 반경 (m)
-    L: Optional[float] = None       # 진입/진출 완화곡선 길이 (m) - L1, L2 동일 기준
-    A: Optional[float] = None       # 완화곡선 계수 A (m) -> 입력 시 L = A^2 / R 자동 계산
+    L1: Optional[float] = None  # 진입 완화곡선 길이 (m)
+    L2: Optional[float] = None  # 진출 완화곡선 길이 (m)
+    A1: Optional[float] = None  # 진입 완화곡선 계수 A1 (m)
+    A2: Optional[float] = None  # 진출 완화곡선 계수 A2 (m)
     spiral_type: str = "JapaneseCubic"  # "JapaneseCubic" 또는 "Clothoid"

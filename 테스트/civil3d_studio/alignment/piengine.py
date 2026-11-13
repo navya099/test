@@ -1,5 +1,5 @@
 import math
-from typing import List, Any
+from typing import List, Optional, Any
 
 from alignment.arc import ArcSegment
 from alignment.japancubic import JapaneseCubicSpiralSegment
@@ -7,9 +7,7 @@ from alignment.line import LineSegment
 
 class PIAlignmentEngine:
     """
-    실무 설계 방식(PI 좌표 + R, L 또는 A 제원)으로 전체 선형을 자동 계산/생성하는 통합 엔진
-    - IP 제원표(IA, TL, CL, SL, Xc, Yc, dR, 주요측점 BP/TS/SC/CS/ST/EP) 자동 산출
-    - 임의 좌표의 StationOffset 및 PointLocation 1e-12m 정밀도 계산
+    Civil 3D와 동일하게 대칭/비대칭/단측 완화곡선(L1 != L2, A1 != A2)을 모두 지원하는 선형 생성 엔진
     """
 
     def __init__(self, name: str, pi_list: List[Any], start_station: float = 0.0):
@@ -19,109 +17,132 @@ class PIAlignmentEngine:
         self.pi_list = pi_list
         self.start_station = float(start_station)
         self.entities: List[Any] = []
-        self.ip_table = []  # 실무 선형 계산서(IP 제원표) 저장용
+        self.ip_table = []
         self._build_from_pis()
 
     @staticmethod
     def _normalize_angle(rad: float) -> float:
         return (rad + math.pi) % (2.0 * math.pi) - math.pi
 
-    def _compute_spiral_geometry(self, R: float, L: float):
-        """주어진 R과 L에 대한 완화곡선 끝점(Xc, Yc, tau) 및 원곡선 이정(dR), 접선거리(Xm) 계산"""
+    @staticmethod
+    def _resolve_spiral_pair(R: float, L1: Optional[float], L2: Optional[float], A1: Optional[float],
+                             A2: Optional[float]):
+        """입력된 (L1, A1) 및 (L2, A2)로부터 진입/진출 (L1, A1, L2, A2) 확정"""
+        if R <= 0.0:
+            return 0.0, 0.0, 0.0, 0.0
+
+        # 진입부(1) 계산
+        if L1 is not None:
+            res_L1 = float(L1)
+            res_A1 = math.sqrt(R * res_L1) if res_L1 > 0 else 0.0
+        elif A1 is not None:
+            res_A1 = float(A1)
+            res_L1 = (res_A1 * res_A1) / R if res_A1 > 0 else 0.0
+        else:
+            res_L1, res_A1 = 0.0, 0.0
+
+        # 진출부(2) 계산 (미입력 시 진입부 제원을 승계하여 대칭 처리)
+        if L2 is not None:
+            res_L2 = float(L2)
+            res_A2 = math.sqrt(R * res_L2) if res_L2 > 0 else 0.0
+        elif A2 is not None:
+            res_A2 = float(A2)
+            res_L2 = (res_A2 * res_A2) / R if res_A2 > 0 else 0.0
+        else:
+            res_L2, res_A2 = res_L1, res_A1
+
+        return res_L1, res_A1, res_L2, res_A2
+
+    def _compute_spiral_shift(self, R: float, L: float):
+        """단일 완화곡선의 끝점 편각(tau), 원곡선 이정(dR), 접선 보정거리(Xm) 산출"""
         if L <= 0.0:
-            return 0.0, 0.0, 0.0, 0.0, 0.0
+            return 0.0, 0.0, 0.0
         temp = JapaneseCubicSpiralSegment(0.0, 0.0, 0.0, 0.0, R, L, turn_direction=1)
         Xc, Yc, tau = temp.Xc, temp.Yc, temp.tau
         dR = Yc - R * (1.0 - math.cos(tau))
         Xm = Xc - R * math.sin(tau)
-        return Xc, Yc, tau, dR, Xm
+        return tau, dR, Xm
 
     def _build_from_pis(self):
         n = len(self.pi_list)
-        # 1. 각 PI 구간의 방위각과 직선 거리 계산
         bearings = []
         seg_lengths = []
+
         for i in range(n - 1):
             de = self.pi_list[i + 1].easting - self.pi_list[i].easting
             dn = self.pi_list[i + 1].northing - self.pi_list[i].northing
             dist = math.hypot(de, dn)
             if dist < 1e-9:
-                raise ValueError(f"{self.pi_list[i].name}와 {self.pi_list[i+1].name}의 좌표가 중복됩니다.")
+                raise ValueError(f"{self.pi_list[i].name}와 {self.pi_list[i + 1].name}의 좌표가 중복됩니다.")
             bearings.append(math.atan2(dn, de))
             seg_lengths.append(dist)
 
-        # 2. 각 중간 PI별 곡선 제원(TL, CL, SL, 회전방향 등) 계산
         curve_params = []
         for i in range(1, n - 1):
             pi = self.pi_list[i]
             R = float(pi.R)
-            # L 또는 A 입력값 상호 자동 변환 (A^2 = R * L)
-            if R <= 0.0:
-                L, A = 0.0, 0.0
-            elif pi.L is not None:
-                L = float(pi.L)
-                A = math.sqrt(R * L)
-            elif pi.A is not None:
-                A = float(pi.A)
-                L = (A * A) / R
-            else:
-                L, A = 0.0, 0.0
+            L1, A1, L2, A2 = self._resolve_spiral_pair(R, pi.L1, pi.L2, pi.A1, pi.A2)
 
             delta_theta = self._normalize_angle(bearings[i] - bearings[i - 1])
             IA = abs(delta_theta)
-            turn_dir = 1 if delta_theta >= 0 else -1  # 좌회전(+1), 우회전(-1)
+            turn_dir = 1 if delta_theta >= 0 else -1
 
             if R > 0.0 and IA > 1e-12:
-                Xc, Yc, tau, dR, Xm = self._compute_spiral_geometry(R, L)
-                if IA < 2.0 * tau:
+                tau1, dR1, Xm1 = self._compute_spiral_shift(R, L1)
+                tau2, dR2, Xm2 = self._compute_spiral_shift(R, L2)
+                if IA < (tau1 + tau2):
                     raise ValueError(
-                        f"[{pi.name}] 교각(IA={math.degrees(IA):.4f}°)이 완화곡선 편각 합(2τ={math.degrees(2*tau):.4f}°)보다 작아 원곡선을 배치할 수 없습니다."
+                        f"[{pi.name}] 교각(IA={math.degrees(IA):.4f}°)이 진입·진출 완화곡선 편각 합"
+                        f"(τ1+τ2={math.degrees(tau1 + tau2):.4f}°)보다 작아 원곡선을 배치할 수 없습니다."
                     )
-                TL = Xm + (R + dR) * math.tan(IA * 0.5)
-                CL = R * (IA - 2.0 * tau)
-                SL = (R + dR) / math.cos(IA * 0.5) - R  # 외할(Secant Length)
+
+                # 비대칭 전접선장(TL1) 및 후접선장(TL2) 엄밀 계산
+                sin_ia = math.sin(IA)
+                tan_half_ia = math.tan(IA * 0.5)
+                TL1 = Xm1 + (R + dR1) * tan_half_ia + (dR2 - dR1) / sin_ia
+                TL2 = Xm2 + (R + dR2) * tan_half_ia + (dR1 - dR2) / sin_ia
+                CL = R * (IA - tau1 - tau2)
             else:
-                Xc = Yc = tau = dR = Xm = TL = CL = SL = 0.0
+                tau1 = dR1 = Xm1 = tau2 = dR2 = Xm2 = TL1 = TL2 = CL = 0.0
 
             curve_params.append({
-                "pi": pi, "R": R, "L": L, "A": A,
+                "pi": pi, "R": R,
+                "L1": L1, "A1": A1, "L2": L2, "A2": A2,
                 "IA": IA, "turn_dir": turn_dir,
-                "Xc": Xc, "Yc": Yc, "tau": tau, "dR": dR, "Xm": Xm,
-                "TL": TL, "CL": CL, "SL": SL
+                "TL1": TL1, "TL2": TL2, "CL": CL
             })
 
-        # 3. 직선 구간 길이 검증 및 전체 기하 세그먼트 순차 조립
+        # 직선 구간 길이 계산 시 이전 PI의 후접선장(TL2)과 다음 PI의 전접선장(TL1)을 차감
         curr_e = self.pi_list[0].easting
         curr_n = self.pi_list[0].northing
         curr_sta = self.start_station
 
         for i in range(n - 1):
-            prev_tl = curve_params[i - 1]["TL"] if i > 0 else 0.0
-            next_tl = curve_params[i]["TL"] if i < n - 2 else 0.0
-            straight_len = seg_lengths[i] - prev_tl - next_tl
+            prev_tl2 = curve_params[i - 1]["TL2"] if i > 0 else 0.0
+            next_tl1 = curve_params[i]["TL1"] if i < n - 2 else 0.0
+            straight_len = seg_lengths[i] - prev_tl2 - next_tl1
+
             if straight_len < -1e-7:
                 raise ValueError(
-                    f"[{self.pi_list[i].name} ~ {self.pi_list[i+1].name}] 구간 직선 거리({seg_lengths[i]:.3f}m)보다 "
-                    f"앞뒤 접선장 합({prev_tl + next_tl:.3f}m)이 더 큽니다. 반경(R) 또는 완화곡선 길이(L)를 줄이세요."
+                    f"[{self.pi_list[i].name} ~ {self.pi_list[i + 1].name}] 구간 직선 거리({seg_lengths[i]:.3f}m)보다 "
+                    f"앞 PI의 후접선장(TL2={prev_tl2:.3f}m) + 뒤 PI의 전접선장(TL1={next_tl1:.3f}m) 합이 큽니다."
                 )
 
-            # 3-1. 직선 구간(Line) 추가
             if straight_len > 1e-9:
 
                 line_seg = LineSegment(curr_e, curr_n, bearings[i], curr_sta, straight_len)
                 self.entities.append(line_seg)
                 curr_e, curr_n, _, curr_sta = line_seg.end_pose
 
-            # 3-2. 다음 교점(PI)에 곡선부가 있으면 [진입완화 -> 원곡선 -> 진출완화] 추가
             if i < n - 2:
                 cp = curve_params[i]
                 ts_sta = curr_sta
 
-                # 진입 완화곡선 (TS -> SC)
-                if cp["L"] > 1e-9:
+                # 1. 진입 완화곡선 (L1)
+                if cp["L1"] > 1e-9:
                     sp_in = JapaneseCubicSpiralSegment(
                         curr_e, curr_n, bearings[i], curr_sta,
-                        cp["R"], cp["L"], cp["turn_dir"], is_exit_spiral=False
+                        cp["R"], cp["L1"], cp["turn_dir"], is_exit_spiral=False
                     )
                     self.entities.append(sp_in)
                     curr_e, curr_n, curr_angle, curr_sta = sp_in.end_pose
@@ -129,7 +150,7 @@ class PIAlignmentEngine:
                     curr_angle = bearings[i]
                 sc_sta = curr_sta
 
-                # 중앙 원곡선 (SC -> CS)
+                # 2. 중앙 원곡선 (CL)
                 if cp["CL"] > 1e-9:
                     arc_seg = ArcSegment(
                         curr_e, curr_n, curr_angle, curr_sta,
@@ -139,51 +160,51 @@ class PIAlignmentEngine:
                     curr_e, curr_n, curr_angle, curr_sta = arc_seg.end_pose
                 cs_sta = curr_sta
 
-                # 진출 완화곡선 (CS -> ST)
-                if cp["L"] > 1e-9:
+                # 3. 진출 완화곡선 (L2)
+                if cp["L2"] > 1e-9:
                     sp_out = JapaneseCubicSpiralSegment(
                         curr_e, curr_n, curr_angle, curr_sta,
-                        cp["R"], cp["L"], cp["turn_dir"], is_exit_spiral=True
+                        cp["R"], cp["L2"], cp["turn_dir"], is_exit_spiral=True
                     )
                     self.entities.append(sp_out)
                     curr_e, curr_n, _, curr_sta = sp_out.end_pose
                 st_sta = curr_sta
 
-                # IP 제원표 기록
+                is_asym = abs(cp["L1"] - cp["L2"]) > 1e-6
                 self.ip_table.append({
                     "Name": cp["pi"].name,
-                    "Easting": cp["pi"].easting,
-                    "Northing": cp["pi"].northing,
+                    "Type": "비대칭" if is_asym else "대칭",
                     "Dir": "좌(L)" if cp["turn_dir"] > 0 else "우(R)",
                     "IA_deg": math.degrees(cp["IA"]),
                     "R": cp["R"],
-                    "A": cp["A"],
-                    "L": cp["L"],
-                    "TL": cp["TL"],
+                    "L1": cp["L1"], "A1": cp["A1"],
+                    "L2": cp["L2"], "A2": cp["A2"],
+                    "TL1": cp["TL1"], "TL2": cp["TL2"],
                     "CL": cp["CL"],
-                    "SL": cp["SL"],
-                    "TS_STA": ts_sta,
-                    "SC_STA": sc_sta,
-                    "CS_STA": cs_sta,
-                    "ST_STA": st_sta
+                    "TS_STA": ts_sta, "SC_STA": sc_sta,
+                    "CS_STA": cs_sta, "ST_STA": st_sta
                 })
 
     def print_ip_report(self):
-        """실무 설계용 선형 계산서(IP 제원표) 콘솔 출력"""
-        print(f"\n==================== [{self.name}] 실무 선형 계산서 (IP 제원표) ====================")
+        """비대칭 전·후접선장(TL1, TL2)이 포함된 실무 선형 계산서 출력"""
+        print(f"\n========================== [{self.name}] 비대칭 지원 선형 계산서 ==========================")
         print(f"시점(BP) STA: {self.start_station:.3f} m  |  종점(EP) STA: {self.entities[-1].end_sta:.3f} m")
-        print("-" * 105)
-        header = f"{'IP':<6} | {'방향':<5} | {'교각(IA°)':<10} | {'R(m)':<8} | {'A(m)':<8} | {'L(m)':<8} | {'TL(m)':<9} | {'CL(m)':<9} | {'TS ~ ST 측점 범위'}"
+        print("-" * 125)
+        header = (
+            f"{'IP':<6} | {'구분':<4} | {'방향':<5} | {'교각(IA°)':<9} | {'R(m)':<7} | "
+            f"{'L1/L2(m)':<13} | {'A1/A2(m)':<13} | {'TL1(m)':<8} | {'TL2(m)':<8} | {'CL(m)':<8} | {'TS ~ ST 측점'}"
+        )
         print(header)
-        print("-" * 105)
-        for row in self.ip_table:
-            sta_range = f"{row['TS_STA']:.3f} ~ {row['ST_STA']:.3f}"
+        print("-" * 125)
+        for r in self.ip_table:
+            l_pair = f"{r['L1']:.1f}/{r['L2']:.1f}"
+            a_pair = f"{r['A1']:.1f}/{r['A2']:.1f}"
+            sta_str = f"{r['TS_STA']:.2f}~{r['ST_STA']:.2f}"
             print(
-                f"{row['Name']:<6} | {row['Dir']:<5} | {row['IA_deg']:<10.4f} | "
-                f"{row['R']:<8.2f} | {row['A']:<8.2f} | {row['L']:<8.2f} | "
-                f"{row['TL']:<9.3f} | {row['CL']:<9.3f} | {sta_range}"
+                f"{r['Name']:<6} | {r['Type']:<4} | {r['Dir']:<5} | {r['IA_deg']:<9.4f} | {r['R']:<7.1f} | "
+                f"{l_pair:<13} | {a_pair:<13} | {r['TL1']:<8.3f} | {r['TL2']:<8.3f} | {r['CL']:<8.3f} | {sta_str}"
             )
-        print("=" * 105)
+        print("=" * 125)
 
     def point_location(self, station: float, offset: float = 0.0):
         for idx, ent in enumerate(self.entities):
@@ -201,7 +222,7 @@ class PIAlignmentEngine:
         for ent in self.entities:
             res = ent.station_offset(easting, northing)
             if res is not None:
-                _, off, _, _ = res
+                _, off, _, _ = res  # 튜플 언패킹 수정 완료
                 if abs(off) < min_off:
                     min_off = abs(off)
                     best_res = res
