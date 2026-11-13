@@ -32,12 +32,13 @@ class JapaneseCubicSpiralSegment(AlignmentEntity):
         self.is_exit = bool(is_exit_spiral)
 
         self.Xc = self._solve_Xc()
+        self.Yc = (self.Xc ** 3) / (6.0 * self.R * self.Xc)
+        self.tau = math.atan((self.Xc ** 2) / (2.0 * self.R * self.Xc))  # 끝점 접선 편각
         self.denom = 6.0 * self.R * self.Xc
 
         # 일본 3차 포물선의 총 접선 편각 (End Tangent Angle Deflection)
 
-        deflection = math.atan((self.Xc ** 2) / (2.0 * self.R * self.Xc))
-        self._end_angle = self.start_angle + self.turn_dir * deflection
+        self._end_angle = self.start_angle + self.turn_dir * self.tau
 
         if not self.is_exit:
             self.origin_e = self.start_e
@@ -45,7 +46,7 @@ class JapaneseCubicSpiralSegment(AlignmentEntity):
             self.base_angle = self.start_angle
             self.local_dir = self.turn_dir
 
-            yc = self.local_dir * (self.Xc ** 3) / self.denom
+            yc = self.local_dir * self.Yc
             cos_b, sin_b = math.cos(self.base_angle), math.sin(self.base_angle)
             self._end_e = self.origin_e + (self.Xc * cos_b - yc * sin_b)
             self._end_n = self.origin_n + (self.Xc * sin_b + yc * cos_b)
@@ -53,7 +54,7 @@ class JapaneseCubicSpiralSegment(AlignmentEntity):
             # 진출 완화곡선: 끝점(ST)을 로컬 원점으로 삼아 역방향 배치
             self.base_angle = self._end_angle + math.pi
             self.local_dir = -self.turn_dir
-            yc_local = self.local_dir * (self.Xc ** 3) / self.denom
+            yc_local = self.local_dir * self.Yc
             cos_b, sin_b = math.cos(self.base_angle), math.sin(self.base_angle)
 
             # 시점(CS) = origin + Local(Xc, yc_local) 이므로 역산하여 끝점(ST) = origin 산출
