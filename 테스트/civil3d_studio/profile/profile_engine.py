@@ -128,4 +128,4 @@ class Civil3DProfileEngine:
         if end_pvi.station > curr_sta + 1e-9:
             entities.append(ProfileTangent(curr_sta, end_pvi.station, curr_el, grades[-1]))
 
-        return CompositeProfile(name, entities, pvi_report)
+        return CompositeProfile(name, entities, pvi_report, sorted_pvis)

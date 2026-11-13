@@ -1,14 +1,16 @@
 from typing import List
 
 from profile.profile_entity import ProfileEntity
+from profile.pvi import PVIPoint
 
 
 class CompositeProfile:
     """전체 종단 선형 컨테이너 및 조회 순수 객체"""
-    def __init__(self, name: str, entities: List[ProfileEntity], pvi_report: List[dict]):
+    def __init__(self, name: str, entities: List[ProfileEntity], pvi_report: List[dict], pvi_list: List[PVIPoint]):
         self.name = name
         self.entities = entities
         self.pvi_report = pvi_report
+        self.pvi_list = pvi_list  # <--- 이 부분이 추가되어야 합니다!
 
     @property
     def start_station(self) -> float:
