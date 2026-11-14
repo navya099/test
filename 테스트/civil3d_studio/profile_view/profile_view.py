@@ -2,14 +2,14 @@ import math
 import tkinter as tk
 from typing import List, Optional, Any
 
-from profile.profile import CompositeProfile
+from profile.profile import Profile
 
 
 # ==============================================================================
 # 3. Civil 3D 스타일 종단뷰(Profile View) 실시간 Tkinter 시각화 앱
 # ==============================================================================
 class Civil3DProfileViewerApp:
-    def __init__(self, root, layout_profile: CompositeProfile):
+    def __init__(self, root, layout_profile: Profile):
         self.root = root
         self.profile = layout_profile
         self.root.title(f"Civil 3D Profile View - [{self.profile.name}]")

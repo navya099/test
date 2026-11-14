@@ -4,7 +4,7 @@
 from typing import List, Any
 
 from profile.parabola import ProfileParabola
-from profile.profile import CompositeProfile
+from profile.profile import Profile
 from profile.tangent import ProfileTangent
 
 
@@ -15,7 +15,7 @@ class Civil3DProfileEngine:
     """
 
     @staticmethod
-    def build(name: str, pvi_list: List[Any]) -> CompositeProfile:
+    def build(name: str, pvi_list: List[Any]) -> Profile:
         if len(pvi_list) < 2:
             raise ValueError("종단을 생성하려면 최소 2개 이상의 PVI(시점, 종점)가 필요합니다.")
 
@@ -128,4 +128,4 @@ class Civil3DProfileEngine:
         if end_pvi.station > curr_sta + 1e-9:
             entities.append(ProfileTangent(curr_sta, end_pvi.station, curr_el, grades[-1]))
 
-        return CompositeProfile(name, entities, pvi_report, sorted_pvis)
+        return Profile(name, entities, pvi_report, sorted_pvis)

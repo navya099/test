@@ -1,10 +1,11 @@
 from typing import List
 
+from profile.profile_engine import Civil3DProfileEngine
 from profile.profile_entity import ProfileEntity
 from profile.pvi import PVIPoint
 
 
-class CompositeProfile:
+class Profile:
     """전체 종단 선형 컨테이너 및 조회 순수 객체"""
     def __init__(self, name: str, entities: List[ProfileEntity], pvi_report: List[dict], pvi_list: List[PVIPoint]):
         self.name = name
@@ -19,6 +20,18 @@ class CompositeProfile:
     @property
     def end_station(self) -> float:
         return self.entities[-1].end_sta if self.entities else 0.0
+
+    @classmethod
+    def create(
+            cls,
+            name: str,
+            pvi_list: list[PVIPoint]
+    ) -> "Profile":
+
+        return Civil3DProfileEngine.build(
+            name=name,
+            pvi_list=pvi_list,
+        )
 
     def elevation_and_grade_at(self, station: float):
         """
