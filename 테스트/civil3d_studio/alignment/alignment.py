@@ -32,6 +32,11 @@ class Alignment:
             raise RuntimeError("선형 엔티티가 없습니다.")
         return self.entities[-1].end_sta
 
+    @property
+    def total_length(self) -> float:
+        """선형 총 연장(m)"""
+        return self.ending_station - self.starting_station
+
     @classmethod
     def create(
             cls,
