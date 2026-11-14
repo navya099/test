@@ -27,10 +27,12 @@ class Profile:
             name: str,
             pvi_list: list[PVIPoint]
     ) -> "Profile":
-
-        return Civil3DProfileEngine.build(
+        entities, pvi_report, pvis = Civil3DProfileEngine.build(pvi_list)
+        return cls(
             name=name,
-            pvi_list=pvi_list,
+            entities=entities,
+            pvi_report=pvi_report,
+            pvi_list=pvis,
         )
 
     def elevation_and_grade_at(self, station: float):
