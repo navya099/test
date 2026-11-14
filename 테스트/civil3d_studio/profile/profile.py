@@ -49,6 +49,20 @@ class Profile:
 
         raise RuntimeError("측점에 해당하는 종단 세그먼트를 찾지 못했습니다.")
 
+    def elevation_at(self, station):
+        """
+        특정 측점에서의 계획고(EL) 조회
+        :return: elevation_m
+        """
+        return self.elevation_and_grade_at(station)[0]
+
+    def grade_at(self, station):
+        """
+        특정 측점에서의 경사(Grade) 조회
+        :return: grade_decimal
+        """
+        return self.elevation_and_grade_at(station)[1]
+
     def print_profile_report(self):
         """Civil 3D 종단 계산서(PVI Report) 출력"""
         print(f"\n======================= [{self.name}] Civil 3D 종단 계산서 (PVI Report) =======================")
