@@ -58,7 +58,8 @@ class Civil3DStudioDashboard:
 
         # 종단 인터랙티브 드래그 편집 상태 변수
         self.drag_target = None  # ("PVI", index) 또는 ("STRUCT_START", index) 또는 ("STRUCT_END", index)
-
+        #평면 인터랙티브 드래그 편집 상태 변수
+        self.plan_drag_idx: Optional[int] = None
         # 화면 좌표 변환 캐시 파라미터
         self.plan_transform = (1.0, 0.0, 0.0, 0.0, 0.0)
         self.prof_bounds = (0, 0, 1, 1, 0, 1, 0, 1)
@@ -224,6 +225,9 @@ class Civil3DStudioDashboard:
         self.canvas_plan.pack(fill=tk.BOTH, expand=True)
         self.canvas_plan.bind("<Motion>", self.on_plan_mouse_move)
         self.canvas_plan.bind("<Configure>", lambda e: self.redraw_all_views())
+        self.canvas_plan.bind("<ButtonPress-1>", self.on_plan_mouse_down)
+        self.canvas_plan.bind("<B1-Motion>", self.on_plan_mouse_drag)
+        self.canvas_plan.bind("<ButtonRelease-1>", self.on_plan_mouse_up)
 
         # 뷰포트 2: 3D 드라이브 가상 주행 (3D Drive View)
         drive_frame = tk.Frame(top_horiz_pane, bg="#0b1120")
@@ -607,11 +611,14 @@ class Civil3DStudioDashboard:
             return w * 0.5 + (gx - cx) * scale, h * 0.5 - (gy - cy) * scale
 
         pi_scr = []
-        for pi in self.pis:
+        for idx, pi in enumerate(self.pis):
             sx, sy = to_scr(pi.easting, pi.northing)
             pi_scr.extend([sx, sy])
             c.create_polygon(sx, sy - 6, sx + 5, sy + 4, sx - 5, sy + 4, outline="#facc15", fill="", width=1.5)
             c.create_text(sx, sy - 12, text=pi.name, fill="#facc15", font=("Consolas", 8, "bold"))
+            # ✅ 수정: 태그를 하나로 통합
+            c.create_oval(sx - 10, sy - 10, sx + 10, sy + 10, outline="", fill="",
+                          tags=(f"plan_pi_{idx}",))
         c.create_line(*pi_scr, fill="#475569", dash=(3, 3))
 
         for pts_arr in (r_pts, l_pts):
@@ -1221,6 +1228,67 @@ class Civil3DStudioDashboard:
             lines.append(f"{s.name}, {s.structure_type}, {s.start_station:.2f}, {s.end_station:.2f}, {s.wall_side}")
         self.txt_struct.delete("1.0", tk.END)
         self.txt_struct.insert("1.0", "\n".join(lines) + "\n")
+
+    def on_plan_mouse_down(self, event):
+        """평면도에서 PI(평면 교점) 마커 클릭 감지"""
+        if not self.h_align:
+            return
+        items = self.canvas_plan.find_overlapping(
+            event.x - 10, event.y - 10, event.x + 10, event.y + 10
+        )
+        for item in reversed(items):
+            for t in self.canvas_plan.gettags(item):
+                if t.startswith("plan_pi_"):
+                    try:
+                        # ★ 수정: split("_")[-1] 로 마지막 숫자만 추출
+                        self.plan_drag_idx = int(t.split("_")[-1])
+                        return
+                    except (ValueError, IndexError):
+                        pass  # 숫자가 아닌 태그는 무시
+        self.plan_drag_idx = None
+
+    def on_plan_mouse_drag(self, event):
+        if self.plan_drag_idx is None or not self.h_align:
+            return
+        scale, cx, cy, hw, hh = self.plan_transform
+        new_e = round(cx + (event.x - hw) / scale, 2)
+        new_n = round(cy - (event.y - hh) / scale, 2)
+        self.pis[self.plan_drag_idx].easting = new_e
+        self.pis[self.plan_drag_idx].northing = new_n
+
+        # 마커만 재그리기 (빠름)
+        self.canvas_plan.delete("plan_pi_drag_preview")
+        sx = hw + (new_e - cx) * scale
+        sy = hh - (new_n - cy) * scale
+        self.canvas_plan.create_polygon(
+            sx, sy - 6, sx + 5, sy + 4, sx - 5, sy + 4,
+            outline="#facc15", fill="", width=1.5, tags="plan_pi_drag_preview"
+        )
+
+    def on_plan_mouse_up(self, event):
+        """평면 PI 드래그 종료 시 최종 반영"""
+        if self.plan_drag_idx is None:
+            return
+        idx = self.plan_drag_idx
+        self.plan_drag_idx = None
+
+        try:
+            self._sync_pi_list_to_editor()
+            self.recalculate_all()
+        except Exception:
+            # 유효하지 않은 형상(반경 대비 PI 근접 등)일 경우 롤백
+            messagebox.showwarning("선형 오류", "PI 이동으로 인해 선형을 생성할 수 없습니다. 이전 위치로 복구합니다.")
+            # (선택) 이전 좌표를 백업해두었다면 복구
+
+    def _sync_pi_list_to_editor(self):
+        """변경된 평면 PI 좌표를 좌측 평면 PI 텍스트 에디터에 역동기화"""
+        lines = ["# Name, Easting, Northing, R, L1, L2"]
+        for p in self.pis:
+            l1 = p.L1 if p.L1 is not None else 0.0
+            l2 = p.L2 if p.L2 is not None else l1
+            lines.append(f"{p.name}, {p.easting:.3f}, {p.northing:.3f}, {p.R:.1f}, {l1:.1f}, {l2:.1f}")
+        self.txt_pi.delete("1.0", tk.END)
+        self.txt_pi.insert("1.0", "\n".join(lines) + "\n")
 
 if __name__ == "__main__":
     root = tk.Tk()
