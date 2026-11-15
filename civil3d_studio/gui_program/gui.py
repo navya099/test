@@ -10,11 +10,14 @@ from alignment.pipoint import PIPoint
 from alignment.station.equation_manager import StationEquationManager
 from alignment.widing.offset_alignment import OffsetAlignment
 from alignment.widing.wideing_region import WideningRegion
+from corridor.engine import Corridor3DEngine
 from profile.pvi import PVIPoint
+from structure.region import StructureRegion
 from superelevation.superelevation import SuperelevationStation
 from superelevation.superelevation_table import SuperelevationTable
 from profile.profile import Profile
 from alignment.alignment import Alignment
+from surface.surface import ExistingGroundTerrain
 
 
 class Civil3DStudioDashboard:
@@ -49,6 +52,9 @@ class Civil3DStudioDashboard:
         self.drive_lane_offset: float = 1.75
         self.drive_eye_height: float = 1.25
         self.drive_dt: float = 0.035
+
+        #코리더 상태변수
+        self.corridor: Optional[Corridor3DEngine] = None
 
         # 화면 좌표 변환 캐시 파라미터
         self.plan_transform = (1.0, 0.0, 0.0, 0.0, 0.0)
@@ -194,6 +200,11 @@ class Civil3DStudioDashboard:
             "형식: 시점측점(StartSTA) 및 파정(후방측점 Back, 전방측점 Ahead)"
         )
 
+        self.txt_struct = self._create_editor_tab(
+            notebook, "5. 구조물(교량/터널)",
+            "형식: 이름, 유형(BRIDGE/TUNNEL/RETAINING_WALL), 시작RawSTA, 종료RawSTA, 방향(BOTH/LEFT/RIGHT)"
+        )
+
         # [우측 패널] 2x2 4분할 실시간 연동 뷰포트
         # 상단 좌: 평면도(Plan) | 상단 우: 3D 드라이브(3D Drive)
         # 하단 좌: 종단도(Profile) | 하단 우: 횡단면도(Cross Section)
@@ -258,7 +269,7 @@ class Civil3DStudioDashboard:
         return txt
 
     def _clear_editors(self):
-        for w in (self.txt_pi, self.txt_pvi, self.txt_super, self.txt_eq):
+        for w in (self.txt_pi, self.txt_pvi, self.txt_super, self.txt_eq, self.txt_struct):
             w.delete("1.0", tk.END)
 
     def _load_default_design_data(self):
@@ -301,6 +312,12 @@ class Civil3DStudioDashboard:
             "# EQUATION: BackSTA, AheadSTA (파정)\n"
             "EQ, 1300.0, 1350.0\n"
         ))
+        self.txt_struct.insert("1.0", (
+            "# Name, Type(BRIDGE/TUNNEL/RETAINING_WALL), StartSTA, EndSTA, Side\n"
+            "제1교량, BRIDGE,         280.0, 410.0, BOTH\n"
+            "사면옹벽, RETAINING_WALL, 600.0, 720.0, RIGHT\n"
+            "관악터널, TUNNEL,         920.0, 1120.0, BOTH\n"
+        ))
 
     # ==========================================================================
     # 프로젝트 저장 (.c3dproj / .json) 및 불러오기 로직
@@ -340,6 +357,7 @@ class Civil3DStudioDashboard:
                     "vertical_pvi": self.txt_pvi.get("1.0", tk.END).rstrip("\n"),
                     "superelevation_widening": self.txt_super.get("1.0", tk.END).rstrip("\n"),
                     "station_equations": self.txt_eq.get("1.0", tk.END).rstrip("\n"),
+                    "structures": self.txt_struct.get("1.0", tk.END).rstrip("\n"),
                 }
             }
             try:
@@ -373,7 +391,8 @@ class Civil3DStudioDashboard:
             self.txt_pvi.insert("1.0", editors.get("vertical_pvi", ""))
             self.txt_super.insert("1.0", editors.get("superelevation_widening", ""))
             self.txt_eq.insert("1.0", editors.get("station_equations", ""))
-            self.active_raw_sta = float(data.get("active_raw_station", 0.0))
+            self.txt_struct.insert("1.0", editors.get("station_equations", ""))
+            self.active_raw_sta = float(data.get("structures", 0.0))
             self.current_project_path = target_path
             self._update_window_title()
             self.recalculate_all()
@@ -478,6 +497,32 @@ class Civil3DStudioDashboard:
                         transition_type=parts[6] if len(parts) > 6 else "Smooth"
                     ))
             self.sup_tbl = SuperelevationTable(sup_list)
+
+            # 구조물 파싱 및 코리더 조립
+            structs = []
+            for line in self.txt_struct.get("1.0", tk.END).splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                structs.append(StructureRegion(
+                    parts[0], parts[1].upper(), float(parts[2]), float(parts[3]),
+                    parts[4].upper() if len(parts) > 4 else "BOTH"
+                ))
+
+            terrain = ExistingGroundTerrain(
+                base_profile_func=lambda sta: self.v_prof.elevation_and_grade_at(sta)[0]
+            )
+            self.corridor = Corridor3DEngine(
+                name='Corriodr 1',
+                alignment=self.h_align,
+                profile=self.v_prof,
+                left_offset_align=self.left_lane,
+                right_offset_align=self.right_lane,
+                superelevation_table=self.sup_tbl,
+                terrain=terrain,
+                structures=structs
+            )
 
             # 4. 파정(Station Equation) 파싱
             start_sta = 0.0
@@ -663,27 +708,10 @@ class Civil3DStudioDashboard:
             return sx, sy
 
         def section_pts(s_val):
-            ce, cn = self.h_align.point_location(s_val, 0.0)
+            sec = self.corridor.sample_cross_section(s_val)
+            p = sec["points"]
+            return {k: (p[k][1], p[k][2], p[k][3]) for k in ["L_DAY", "L_EPS", "L_ETW", "CL", "R_ETW", "R_EPS", "R_DAY"]}, sec
 
-            cz, _ = self.v_prof.elevation_and_grade_at(s_val)
-            ls, rs = self.sup_tbl.get_slopes_at(s_val)
-            l_off, _ = self.left_lane.get_offset_at(s_val)  # ← 튜플 언팩 필수
-            r_off, _ = self.right_lane.get_offset_at(s_val)
-            lez = cz + abs(l_off) * ls
-            rez = cz + abs(r_off) * rs
-            leps_o, reps_o = l_off - 1.5, r_off + 1.5
-            leps_z, reps_z = lez - 0.06, rez - 0.06
-            lday_o, rday_o = leps_o - 2.5, reps_o + 2.5
-            lday_z, rday_z = leps_z - 1.25, reps_z - 1.25
-            return {
-                "L_DAY": (*self.h_align.point_location(s_val, lday_o), lday_z),
-                "L_EPS": (*self.h_align.point_location(s_val, leps_o), leps_z),
-                "L_ETW": (*self.h_align.point_location(s_val, l_off), lez),
-                "CL": (ce, cn, cz),
-                "R_ETW": (*self.h_align.point_location(s_val, r_off), rez),
-                "R_EPS": (*self.h_align.point_location(s_val, reps_o), reps_z),
-                "R_DAY": (*self.h_align.point_location(s_val, rday_o), rday_z),
-            }
         # ── 8. 슬라이스 (view_dist 600으로 확장)
         view_dist, step = 600.0, 4.0
         slices = []
@@ -695,7 +723,10 @@ class Civil3DStudioDashboard:
 
         keys = ["L_DAY", "L_EPS", "L_ETW", "CL", "R_ETW", "R_EPS", "R_DAY"]
         for i in range(len(slices) - 2, -1, -1):
-            sn, sf = slices[i], slices[i + 1]
+            sn, sec_n = slices[i]
+            sf, _ = slices[i + 1]
+
+            #투영 로직
             dist_ratio = (i * step) / view_dist
             pn = {k: project_3d(sn[k]) for k in keys}
             pf = {k: project_3d(sf[k]) for k in keys}
@@ -705,10 +736,19 @@ class Civil3DStudioDashboard:
             shade = 1.0 - dist_ratio * 0.55
             is_even = (int((cam_sta + i * step) // step) % 2 == 0)
 
-            # 비탈면
-            slope_col = f"#{int(22 * shade):02x}{int((75 if is_even else 62) * shade):02x}{int(45 * shade):02x}"
-            for a, b in [("L_DAY", "L_EPS"), ("R_EPS", "R_DAY")]:
-                c.create_polygon(*pn[a], *pn[b], *pf[b], *pf[a], fill=slope_col, outline="")
+            # 절토(갈색/붉은색) vs 성토(녹색) vs 교량 난간(노란 회색) 색상 분기
+            for side_a, side_b, mode in [("L_DAY", "L_EPS", sec_n["left_mode"]), ("R_EPS", "R_DAY", sec_n["right_mode"])]:
+                if mode == "CUT":
+                    scol = f"#{int(115 * shade):02x}{int(65 * shade):02x}{int(45 * shade):02x}"
+                elif mode == "BRIDGE":
+                    scol = f"#{int(140 * shade):02x}{int(145 * shade):02x}{int(155 * shade):02x}"
+                else:
+                    scol = f"#{int(25 * shade):02x}{int(85 * shade):02x}{int(48 * shade):02x}"
+                c.create_polygon(*pn[side_a], *pn[side_b], *pf[side_b], *pf[side_a], fill=scol, outline="")
+
+            # 터널 구간일 때 전방 3D 터널 아치 천장 링 그리기
+            if sec_n["left_mode"] == "TUNNEL":
+                c.create_line(*pn["L_DAY"], *pn["R_DAY"], fill="#f59e0b", width=2)
 
             # 길어깨
             shd_col = f"#{int(45 * shade):02x}{int(52 * shade):02x}{int(62 * shade):02x}"
@@ -816,57 +856,65 @@ class Civil3DStudioDashboard:
     def draw_cross_section_view(self):
         c = self.canvas_sec
         c.delete("all")
-        if not self.h_align or not self.v_prof:
+        if not self.corridor:
             return
-
         w, h = max(100, c.winfo_width()), max(100, c.winfo_height())
+
         s = self.active_raw_sta
         disp_s, zone = self.sta_mgr.raw_to_display(s)
-        cl_el, _ = self.v_prof.elevation_and_grade_at(s)
-        l_slope, r_slope = self.sup_tbl.get_slopes_at(s)
-        l_off, l_dw = self.left_lane.get_offset_at(s)  # 음수 (-)
-        r_off, r_dw = self.right_lane.get_offset_at(s)  # 양수 (+)
+        sec = self.corridor.sample_cross_section(s)
+        pts = sec["points"]
+        cl_el = sec["points"]["CL"][3]
 
-        l_etw_dz = abs(l_off) * l_slope
-        r_etw_dz = abs(r_off) * r_slope
+        cx, cy = w * 0.5, h * 0.58
+        scale_x = (w - 60) / 36.0  # 절성토 법면 폭을 고려해 좌우 36m 범위 표시
+        scale_y = scale_x * 2.5
 
-        pts = [
-            (l_off - 3.0, l_etw_dz - 1.5 * 0.04 - 1.5 * 0.5),
-            (l_off - 1.5, l_etw_dz - 1.5 * 0.04),
-            (l_off, l_etw_dz),
-            (0.0, 0.0),
-            (r_off, r_etw_dz),
-            (r_off + 1.5, r_etw_dz - 1.5 * 0.04),
-            (r_off + 3.0, r_etw_dz - 1.5 * 0.04 - 1.5 * 0.5),
-        ]
+        def to_sec(off_x, abs_el):
+            return cx + off_x * scale_x, cy - (abs_el - cl_el) * scale_y
 
-        cx, cy = w * 0.5, h * 0.56
-        scale_x = (w - 60) / 24.0
-        scale_y = scale_x * 4.0
+        # 1. 현지지반선(EG - 녹색 실선) 그리기 (-18m ~ +18m)
+        eg_coords = []
+        for ox in range(-18, 19, 1):
+            eg_el = self.corridor.terrain.elevation_at(s, float(ox))
+            eg_coords.extend(to_sec(ox, eg_el))
+        c.create_line(*eg_coords, fill="#4ade80", width=2.0)
 
-        def to_sec(off_x, dz_y):
-            return cx + off_x * scale_x, cy - dz_y * scale_y
+        # 2. 좌/우 절성토 법면 또는 구조물(교량/터널/옹벽) 그리기
+        for side_keys, mode in [(["L_DAY", "L_EPS"], sec["left_mode"]), (["R_EPS", "R_DAY"], sec["right_mode"])]:
+            p1 = to_sec(pts[side_keys[0]][0], pts[side_keys[0]][3])
+            p2 = to_sec(pts[side_keys[1]][0], pts[side_keys[1]][3])
+            color = "#f87171" if mode == "CUT" else ("#60a5fa" if mode == "FILL" else "#facc15")
+            c.create_line(*p1, *p2, fill=color, width=2.5)
 
-        c.create_line(cx, 38, cx, h - 25, fill="#334155", dash=(4, 4))
+        # 터널 아치 천장 곡선 표시
+        if sec["left_mode"] == "TUNNEL":
+            lx, ly = to_sec(pts["L_DAY"][0], pts["L_DAY"][3])
+            rx, ry = to_sec(pts["R_DAY"][0], pts["R_DAY"][3])
+            c.create_arc(lx, ly - 35, rx, ly + 35, start=0, extent=180, style=tk.ARC, outline="#facc15", width=2.5)
 
-        top_scr = [to_sec(ox, dz) for ox, dz in pts]
-        bot_scr = [to_sec(ox, dz - 0.25) for ox, dz in reversed(pts)]
-        poly_coords = [coord for pt in (top_scr + bot_scr) for coord in pt]
-        c.create_polygon(*poly_coords, fill="#1e293b", outline="#38bdf8", width=2)
+        # 교량 하부 거더 및 교각 표시
+        if sec["left_mode"] == "BRIDGE":
+            lx, ly = to_sec(pts["L_EPS"][0], pts["L_EPS"][3])
+            rx, ry = to_sec(pts["R_EPS"][0], pts["R_EPS"][3])
+            c.create_rectangle(lx, ly, rx, ly + 14, fill="#475569", outline="#facc15")
+            c.create_rectangle(cx - 8, ly + 14, cx + 8, h - 15, fill="#334155", outline="#94a3b8")
 
-        for ox, dz in pts:
-            sx, sy = to_sec(ox, dz)
-            c.create_oval(sx - 3.5, sy - 3.5, sx + 3.5, sy + 3.5, fill="#facc15", outline="#0f172a")
+        # 3. 도로 본선 포장 단면 (L_EPS ~ L_ETW ~ CL ~ R_ETW ~ R_EPS)
+        road_keys = ["L_EPS", "L_ETW", "CL", "R_ETW", "R_EPS"]
+        top_scr = [to_sec(pts[k][0], pts[k][3]) for k in road_keys]
+        bot_scr = [to_sec(pts[k][0], pts[k][3] - 0.3) for k in reversed(road_keys)]
+        c.create_polygon(*[xy for pt in (top_scr + bot_scr) for xy in pt], fill="#1e293b", outline="#38bdf8", width=2)
 
-        c.create_text(14, 10, anchor="nw", fill="#38bdf8", font=("맑은 고딕", 9, "bold"),
-                      text=f"CROSS SECTION (실시간 횡단면) - STA {self.sta_mgr.format_station(disp_s)} (Zone {zone})")
-
-        info_txt = (
-            f"중심 계획고(CL EL): {cl_el:.3f} m\n"
-            f"좌측 차선: 폭 {abs(l_off):.2f}m | 편경사 {l_slope * 100:+.2f}%\n"
-            f"우측 차선: 폭 {abs(r_off):.2f}m | 편경사 {r_slope * 100:+.2f}%"
+        # 4. 상단 상태 HUD (절성토 단면적 및 활성 구조물 표시)
+        struct_str = f" | 구조물: {','.join(sec['structures'])}" if sec["structures"] else ""
+        c.create_text(12, 10, anchor="nw", fill="#38bdf8", font=("맑은 고딕", 9, "bold"),
+                      text=f"CROSS SECTION - STA {self.sta_mgr.format_station(disp_s)} (Z{zone}){struct_str}")
+        info = (
+            f"좌측: {sec['left_mode']} | 우측: {sec['right_mode']} | "
+            f"절토면적(Cut): {sec['cut_area']:.2f}㎡ | 성토면적(Fill): {sec['fill_area']:.2f}㎡"
         )
-        c.create_text(14, 32, anchor="nw", fill="#cbd5e0", font=("Consolas", 8), text=info_txt)
+        c.create_text(12, 30, anchor="nw", fill="#cbd5e0", font=("Consolas", 8), text=info)
 
     # --------------------------------------------------------------------------
     # 마우스 실시간 연동 이벤트 핸들러
