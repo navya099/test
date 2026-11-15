@@ -1,6 +1,10 @@
 from typing import Dict, List, Tuple, Optional
 
+from alignment.alignment import Alignment
+from alignment.widing.offset_alignment import OffsetAlignment
+from profile.profile import Profile
 from structure.region import StructureRegion
+from superelevation.superelevation_table import SuperelevationTable
 from surface.surface import ExistingGroundTerrain
 
 
@@ -12,10 +16,11 @@ class Corridor3DEngine:
 
     def __init__(self,
                  name: str,
-                 alignment, profile,
-                 left_offset_align,
-                 right_offset_align,
-                 superelevation_table,
+                 alignment: Alignment,
+                 profile: Profile,
+                 left_offset_align: OffsetAlignment,
+                 right_offset_align: OffsetAlignment,
+                 superelevation_table: SuperelevationTable,
                  terrain: Optional[ExistingGroundTerrain] = None,
                  structures: Optional[List[StructureRegion]] = None):
         self.name = name
@@ -55,10 +60,11 @@ class Corridor3DEngine:
         # 1. 중심선 기준 2D 좌표 및 계획고
         cl_e, cl_n = self.alignment.point_location(station, 0.0)
         cl_el = self.profile.elevation_at(station)
-        l_slp, r_slp = self.superelevation.get_slopes(station)
-        l_w = abs(self.left_lane.get_offset_at(station))
-        r_w = abs(self.right_lane.get_offset_at(station))
-
+        l_slp, r_slp = self.superelevation.get_slopes_at(station)
+        l_w, _ = self.left_lane.get_offset_at(station)
+        r_w, _ = self.right_lane.get_offset_at(station)
+        l_w = abs(l_w)
+        r_w = abs(r_w)
         # 2. 차선 끝(ETW) 및 노견 끝(Hinge)
         l_etw_off, r_etw_off = -l_w, +r_w
         l_etw_el = cl_el + l_w * l_slp
