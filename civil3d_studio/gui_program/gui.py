@@ -153,6 +153,11 @@ class Civil3DStudioDashboard:
             command=self.export_earthwork_report_dialog, **btn_cfg
         ).pack(side=tk.LEFT, padx=(3, 12), pady=6)
 
+        tk.Button(
+            toolbar, text="📋 선형 계산서", bg="#0d9488", fg="white",
+            command=self.export_geometry_report_dialog, **btn_cfg
+        ).pack(side=tk.LEFT, padx=(3, 12), pady=6)
+
         # 3D 드라이브 전용 빠른 제어 버튼
         self.btn_drive = tk.Button(toolbar, text="🚗 3D 주행 시작 (Space)", bg="#e11d48", fg="white",
                                    command=self.toggle_drive, **btn_cfg)
@@ -1391,6 +1396,196 @@ class Civil3DStudioDashboard:
             messagebox.showinfo("조서 저장 완료", f"토공량 조서 CSV 파일이 생성되었습니다:\n{path}")
         except Exception as ex:
             messagebox.showerror("저장 오류", f"토공량 조서 저장 중 오류가 발생했습니다:\n{ex}")
+
+    def export_geometry_report_dialog(self):
+        """평면 선형 계산서(IP 제원표) + 종단 선형 계산서(PVI 제원표) 통합 CSV 내보내기"""
+        if not self.h_align or not self.v_prof:
+            return
+
+        default_name = f"{self.entry_align_name.get().strip() or 'alignment'}_geometry_report.csv"
+        path = filedialog.asksaveasfilename(
+            title="평면·종단 선형 계산서 저장",
+            defaultextension=".csv",
+            initialfile=default_name,
+            filetypes=[("CSV 파일", "*.csv")]
+        )
+        if not path:
+            return
+
+        def fmt_sta(raw_sta: float) -> str:
+            """튜플 반환값을 안전하게 처리하는 헬퍼"""
+            disp, _ = self.sta_mgr.raw_to_display(raw_sta)
+            return self.sta_mgr.format_station(disp)
+
+        try:
+            with open(path, mode="w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+
+                # ==============================================================
+                # [PART 1] 평면 선형 계산서 (IP 제원표)
+                # ==============================================================
+                w.writerow([f"[평면 선형 계산서 - {self.h_align.name}]"])
+                w.writerow([
+                    "교점명(IP)", "방향", "Easting(X)", "Northing(Y)",
+                    "교각_IA(도)", "반경_R(m)", "진입완화_L1(m)", "진출완화_L2(m)",
+                    "전접선장_TL1(m)", "후접선장_TL2(m)", "원곡선장_CL(m)",
+                    "TS_표기측점", "SC_표기측점", "CS_표기측점", "ST_표기측점"
+                ])
+
+                pis = self.pis
+                n_pi = len(pis)
+                bearings = [
+                    math.atan2(pis[i + 1].northing - pis[i].northing,
+                               pis[i + 1].easting - pis[i].easting)
+                    for i in range(n_pi - 1)
+                ]
+
+                # 엔티티를 시작 측점으로 정렬한 리스트 (안전한 매칭)
+                entities = self.h_align.entities
+
+                def find_entity_near(target_sta: float):
+                    """주어진 측점과 가장 가까운 엔티티 찾기"""
+                    if not entities:
+                        return None
+                    return min(entities, key=lambda e: abs(e.start_sta - target_sta))
+
+                for i in range(1, n_pi - 1):
+                    pi = pis[i]
+                    R = float(pi.R) if pi.R else 0.0
+                    L1 = float(pi.L1 or 0.0)
+                    L2 = float(pi.L2) if pi.L2 is not None else L1
+                    d_th = (bearings[i] - bearings[i - 1] + math.pi) % (2.0 * math.pi) - math.pi
+                    IA_deg = math.degrees(abs(d_th))
+                    dir_str = "좌회전(L)" if d_th >= 0 else "우회전(R)"
+
+                    # 각 주요 측점은 엔티티를 순회하며 찾음 (LineSegment/ArcSegment/Spiral 구분)
+                    ts_raw = sc_raw = cs_raw = st_raw = 0.0
+                    CL = 0.0
+                    # PI 구간에 해당하는 엔티티들을 station 순서로 순회
+                    # TS ~ ST 범위 엔티티를 모두 수집
+                    candidates = []
+                    for ent in entities:
+                        # 이 PI의 교각 범위 내 엔티티만 후보로
+                        candidates.append(ent)
+
+                    # PI의 교점 위치와 가장 가까운 엔티티를 기준으로 그룹화
+                    # 정확한 계산을 위해 TS/ST를 PI 좌표로부터 역산
+                    # 접선장(TL1, TL2)은 PI 좌표로부터 TS/ST까지의 거리
+                    # 여기서는 각 엔티티의 start_sta/end_sta를 직접 활용
+                    # 1) 교점 앞뒤의 가장 가까운 원곡선 관련 엔티티를 찾음
+                    curve_entities = []
+                    for ent in entities:
+                        # 원곡선, 스파이럴 엔티티만 필터
+                        tname = type(ent).__name__
+                        if tname in ("JapaneseCubicSpiralSegment", "ArcSegment"):
+                            # 이 PI에 해당하는지 판별 (PI 교점 반경과 매칭)
+                            if hasattr(ent, "start_sta"):
+                                curve_entities.append(ent)
+
+                    # 간이 매칭: PI 인덱스 순서대로 curve_entities를 그룹핑
+                    # (완화곡선 L1, L2 개수에 따라 1~3개 엔티티가 한 PI에 대응)
+                    groups = []
+                    idx = 0
+                    for j in range(1, n_pi - 1):
+                        p = pis[j]
+                        L1_j = float(p.L1 or 0.0)
+                        L2_j = float(p.L2) if p.L2 is not None else L1_j
+                        count = (1 if L1_j > 1e-9 else 0) + (1 if L2_j > 1e-9 else 0) + 1  # arc 포함
+                        groups.append(curve_entities[idx:idx + count])
+                        idx += count
+
+                    group = groups[i - 1] if i - 1 < len(groups) else []
+                    if group:
+                        ts_raw = group[0].start_sta
+                        st_raw = group[-1].end_sta
+                        # arc 엔티티 길이 = CL
+                        for ent in group:
+                            if type(ent).__name__ == "ArcSegment":
+                                CL = ent.length
+                        sc_raw = group[1].start_sta if len(group) > 1 else ts_raw
+                        cs_raw = group[-2].end_sta if len(group) > 1 else st_raw
+                    else:
+                        # 폴백: 엔티티 없으면 0
+                        ts_raw = st_raw = sc_raw = cs_raw = 0.0
+
+                    # 접선장 역산
+                    ts_e, ts_n = self.h_align.point_location(ts_raw, 0.0)
+                    st_e, st_n = self.h_align.point_location(st_raw, 0.0)
+                    TL1 = math.hypot(pi.easting - ts_e, pi.northing - ts_n)
+                    TL2 = math.hypot(st_e - pi.easting, st_n - pi.northing)
+
+                    w.writerow([
+                        pi.name, dir_str, f"{pi.easting:.4f}", f"{pi.northing:.4f}",
+                        f"{IA_deg:.4f}", f"{R:.3f}", f"{L1:.3f}", f"{L2:.3f}",
+                        f"{TL1:.3f}", f"{TL2:.3f}", f"{CL:.3f}",
+                        fmt_sta(ts_raw), fmt_sta(sc_raw), fmt_sta(cs_raw), fmt_sta(st_raw),
+                    ])
+
+                w.writerow([])
+
+                # ==============================================================
+                # [PART 2] 종단 선형 계산서 (PVI 제원표)
+                # ==============================================================
+                w.writerow([f"[종단 선형 계산서 - {self.h_align.name}]"])
+                w.writerow([
+                    "종단교점(PVI)", "물리측점(Raw)", "표기측점(Display)", "계획고_EL(m)",
+                    "전경사_g1(%)", "후경사_g2(%)", "경사차_A(%)",
+                    "진입곡선_L1(m)", "진출곡선_L2(m)", "종단곡선_K값",
+                    "BVC_표기측점", "EVC_표기측점", "변곡점(극점)_측점_및_EL"
+                ])
+
+                pvis = self.v_prof.pvi_list
+                n_pvi = len(pvis)
+                grades = [
+                    (pvis[j + 1].elevation - pvis[j].elevation)
+                    / max(1e-9, pvis[j + 1].station - pvis[j].station)
+                    for j in range(n_pvi - 1)
+                ]
+
+                for i, pvi in enumerate(pvis):
+                    if i == 0 or i == n_pvi - 1:
+                        w.writerow([
+                            pvi.name, f"{pvi.station:.3f}", fmt_sta(pvi.station),
+                            f"{pvi.elevation:.3f}",
+                            "-", "-", "-", "0.000", "0.000", "-", "-", "-", "-"
+                        ])
+                        continue
+
+                    g1, g2 = grades[i - 1], grades[i]
+                    A_pct = (g2 - g1) * 100.0
+                    l1 = float(pvi.L1) if pvi.L1 is not None else (float(pvi.L) * 0.5 if pvi.L else 0.0)
+                    l2 = float(pvi.L2) if pvi.L2 is not None else (float(pvi.L) * 0.5 if pvi.L else 0.0)
+                    tot_l = l1 + l2
+                    k_val = (tot_l / abs(A_pct)) if abs(A_pct) > 1e-6 else 0.0
+
+                    bvc_raw = pvi.station - l1
+                    evc_raw = pvi.station + l2
+
+                    # 극점(최고/최저점) 계산
+                    ext_note = "-"
+                    if tot_l > 1e-6 and g1 * g2 < 0:
+                        e_off = ((g2 - g1) * l1 * l2) / (2.0 * tot_l)
+                        if abs(e_off) > 1e-9:
+                            x1_z = -g1 * (l1 ** 2) / (2.0 * e_off)
+                            if 0.0 <= x1_z <= l1:
+                                ext_raw = bvc_raw + x1_z
+                            else:
+                                x2_z = g2 * (l2 ** 2) / (2.0 * e_off)
+                                ext_raw = evc_raw - x2_z
+                            ext_el, _ = self.v_prof.elevation_and_grade_at(ext_raw)
+                            ext_note = f"STA {fmt_sta(ext_raw)} (EL {ext_el:.3f}m)"
+
+                    w.writerow([
+                        pvi.name, f"{pvi.station:.3f}", fmt_sta(pvi.station),
+                        f"{pvi.elevation:.3f}",
+                        f"{g1 * 100:+.4f}", f"{g2 * 100:+.4f}", f"{A_pct:+.4f}",
+                        f"{l1:.3f}", f"{l2:.3f}", f"{k_val:.2f}",
+                        fmt_sta(bvc_raw), fmt_sta(evc_raw), ext_note
+                    ])
+
+            messagebox.showinfo("계산서 저장 완료", f"평면·종단 선형 계산서가 저장되었습니다:\n{path}")
+        except Exception as ex:
+            messagebox.showerror("저장 오류", f"선형 계산서 생성 중 오류가 발생했습니다:\n{ex}")
 
 if __name__ == "__main__":
     root = tk.Tk()
