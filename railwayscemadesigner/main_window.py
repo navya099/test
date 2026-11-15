@@ -3,19 +3,22 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QToolBar,
     QDockWidget, QFormLayout, QLabel,
-    QDoubleSpinBox, QComboBox, QLineEdit, QFileDialog, QMessageBox
+    QDoubleSpinBox, QComboBox, QLineEdit, QFileDialog, QMessageBox, QDialog
 )
 from PyQt6.QtGui import QAction, QActionGroup, QUndoStack, QKeySequence, QShortcut, QTransform
 from PyQt6.QtCore import Qt
 
 import copy
 
-from model import StationData, Node, Edge
+from datetime import datetime, timezone
+
+from model import StationData, Node, Edge, Station
 from canvas import StationScene, StationView, NodeItem
 from undo_commands import (
     AddNodeCommand, DeleteNodesCommand, AddEdgeCommand,
     MoveNodeCommand, EditNodeCommand,
 )
+from new_station_dialog import NewStationDialog, suggest_station_id
 import transform
 
 
@@ -321,6 +324,12 @@ class MainWindow(QMainWindow):
         save_act.triggered.connect(self.save_file)
         tb.addAction(save_act)
 
+        new_st_act = QAction("새 정거장", self)
+        new_st_act.setToolTip(
+            "새 정거장 문서 시작 — 선로/노드 없음, 자동배선 또는 JSON으로 채움")
+        new_st_act.triggered.connect(self._new_station)
+        tb.addAction(new_st_act)
+
         tb.addSeparator()
 
         undo_act = self.undo_stack.createUndoAction(self, "되돌리기")
@@ -476,8 +485,12 @@ class MainWindow(QMainWindow):
 
     def fit_view(self):
         if self.view and self.scene:
+            rect = self.scene.itemsBoundingRect()
+            # 빈 씬(선로/노드 없음) fit 금지 — 배율/중심이 무너짐
+            if rect.isEmpty() or rect.width() < 1 or rect.height() < 1:
+                return
             self.view.fitInView(
-                self.scene.itemsBoundingRect(),
+                rect,
                 Qt.AspectRatioMode.KeepAspectRatio,
             )
 
@@ -491,6 +504,40 @@ class MainWindow(QMainWindow):
         item = items[0]
         if isinstance(item, NodeItem):
             self.panel.set_item(item)
+
+    # ---------- 문서 생성 ----------
+
+    def _next_station_id(self):
+        existing = {self.data.station.id} if self.data else set()
+        return suggest_station_id(existing)
+
+    def _new_station(self):
+        dialog = NewStationDialog(self._next_station_id(), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        sid, name, stype, start, end = dialog.station_values()
+        now = datetime.now(timezone.utc).replace(
+            microsecond=0).isoformat().replace("+00:00", "Z")
+        self.data = StationData(
+            version="0.1",
+            station=Station(id=sid, name=name, type=stype,
+                            mileage_start=start, mileage_end=end,
+                            platforms=[]),
+            tracks=[],
+            nodes=[],
+            edges=[],
+            metadata={
+                "created_by": "manual",
+                "created_at": now,
+                "schema_version": "0.1",
+                "generator_version": "0.0.1",
+                "validation": {"passed": True, "warnings": []},
+            },
+        )
+        self.undo_stack.clear()
+        self._rebuild_scene(fit=True)
+        self.statusBar().showMessage(
+            f"새 정거장: {name} ({sid}) — 파일 > 저장으로 경로 지정")
 
     # ---------- 노드/엣지 생성 커맨드 ----------
 

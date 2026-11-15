@@ -6,6 +6,11 @@ from typing import Optional
 import json
 
 
+# 정거장 type 어휘 — 고정값. 새 값이 필요하면 여기만 늘리면 툴바/대화상자 콤보가
+# 자동으로 따라온다(자유 텍스트 입력은 허용하지 않음).
+STATION_TYPES = ("passing", "terminal")
+
+
 @dataclass
 class Station:
     id: str
