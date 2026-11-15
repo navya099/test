@@ -1,4 +1,5 @@
 import pytest
+import math
 
 from alignment.alignment import Alignment
 from alignment.pipoint import PIPoint
@@ -354,3 +355,160 @@ def test_curve_round_trip(station):
         0.0,
         abs=0.1,
     )
+
+def test_create_raises_when_tangent_length_is_negative():
+    """
+    교각에 비해 완화곡선이 과도하여
+
+    SEG < prev_tl2 + next_tl1
+
+    상황이 발생하면 예외가 발생해야 한다.
+    """
+
+    pi_list = [
+        PIPoint(
+            name="BP",
+            easting=200000.0,
+            northing=500000.0,
+            R=0.0,
+        ),
+        PIPoint(
+            name="IP-1",
+            easting=200420.0,
+            northing=500260.0,
+            R=450.0,
+            L1=100.0,
+            L2=80.0,
+        ),
+        PIPoint(
+            name="IP-2",
+            easting=200880.0,
+            northing=500040.0,
+            R=400.0,  # 문제를 일으켰던 값
+            L1=80.0,
+            L2=90.0,
+        ),
+        PIPoint(
+            name="EP",
+            easting=201320.0,
+            northing=500320.0,
+            R=0.0,
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="접선구간 길이 부족"):
+        Alignment.create(
+            name="invalid_alignment",
+            pi_list=pi_list,
+        )
+
+
+def test_create_end_point_matches_ep():
+    """
+    생성된 선형의 종점은 반드시 EP 좌표를 통과해야 한다.
+    """
+
+    pi_list = [
+        PIPoint("BP", 200000.0, 500000.0, 0.0),
+        PIPoint("IP-1", 200420.0, 500260.0, 450.0, L1=100.0, L2=80.0),
+        PIPoint("IP-2", 200880.0, 500040.0, 233.0, L1=80.0, L2=90.0),
+        PIPoint("EP", 201320.0, 500320.0, 0.0),
+    ]
+
+    al = Alignment.create(
+        name="valid_alignment",
+        pi_list=pi_list,
+    )
+
+    ep = pi_list[-1]
+
+    e, n = al.point_location(
+        al.ending_station,
+        0.0,
+    )
+
+    err = math.hypot(
+        e - ep.easting,
+        n - ep.northing,
+    )
+
+    assert err < 1e-6
+
+def test_create_raises_when_pi_coordinates_are_duplicated():
+    """
+    인접 PI 좌표가 동일하면 선형 생성이 불가능해야 한다.
+    """
+
+    pi_list = [
+        PIPoint(
+            name="BP",
+            easting=0.0,
+            northing=0.0,
+            R=0.0,
+        ),
+        PIPoint(
+            name="IP-1",
+            easting=100.0,
+            northing=100.0,
+            R=300.0,
+            L1=50.0,
+            L2=50.0,
+        ),
+        PIPoint(
+            name="IP-2",
+            easting=100.0,  # 중복
+            northing=100.0,  # 중복
+            R=300.0,
+            L1=50.0,
+            L2=50.0,
+        ),
+        PIPoint(
+            name="EP",
+            easting=500.0,
+            northing=200.0,
+            R=0.0,
+        ),
+    ]
+
+    with pytest.raises(ValueError):
+        Alignment.create(
+            name="duplicate_pi",
+            pi_list=pi_list,
+        )
+def test_create_raises_when_spiral_angles_exceed_intersection_angle():
+    """
+    교각보다 완화곡선 편각합이 큰 경우
+    원곡선을 배치할 수 없어야 한다.
+    """
+
+    pi_list = [
+        PIPoint(
+            name="BP",
+            easting=0.0,
+            northing=0.0,
+            R=0.0,
+        ),
+        PIPoint(
+            name="IP",
+            easting=100.0,
+            northing=0.0,
+            R=500.0,
+            L1=400.0,   # 의도적으로 과대
+            L2=400.0,
+        ),
+        PIPoint(
+            name="EP",
+            easting=200.0,
+            northing=20.0,  # 매우 작은 교각
+            R=0.0,
+        ),
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match="교각.*완화곡선 편각합"
+    ):
+        Alignment.create(
+            name="invalid_spiral_angle",
+            pi_list=pi_list,
+        )
