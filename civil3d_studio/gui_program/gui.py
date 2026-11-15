@@ -148,6 +148,11 @@ class Civil3DStudioDashboard:
             command=self.export_csv_dialog, **btn_style
         ).pack(side=tk.LEFT, padx=6, pady=6)
 
+        tk.Button(
+            toolbar, text="📑 토공량 조서", bg="#7c3aed", fg="white",
+            command=self.export_earthwork_report_dialog, **btn_cfg
+        ).pack(side=tk.LEFT, padx=(3, 12), pady=6)
+
         # 3D 드라이브 전용 빠른 제어 버튼
         self.btn_drive = tk.Button(toolbar, text="🚗 3D 주행 시작 (Space)", bg="#e11d48", fg="white",
                                    command=self.toggle_drive, **btn_cfg)
@@ -1319,6 +1324,73 @@ class Civil3DStudioDashboard:
             lines.append(f"{p.name}, {p.easting:.3f}, {p.northing:.3f}, {p.R:.1f}, {l1:.1f}, {l2:.1f}")
         self.txt_pi.delete("1.0", tk.END)
         self.txt_pi.insert("1.0", "\n".join(lines) + "\n")
+
+    def export_earthwork_report_dialog(self, interval: float = 20.0):
+        """양단면 평균법 기반 Civil 3D 표준 토공량 조서(CSV) 내보내기"""
+        if not self.corridor or not self.h_align:
+            return
+
+        default_name = f"{self.entry_align_name.get().strip() or 'alignment'}_earthwork_report.csv"
+        path = filedialog.asksaveasfilename(
+            title="토공량 조서(Earthwork Volume Report) 저장",
+            defaultextension=".csv",
+            initialfile=default_name,
+            filetypes=[("CSV 파일", "*.csv")]
+        )
+        if not path:
+            return
+
+        # ★ 엔진이 이미 기점(0) 포함 + 누적 계산까지 다 해줌
+        report = self.corridor.compute_earthwork_volumes(interval=interval)
+
+        rows = []
+        # 기점(첫 측점) 추가
+        first_s = 0.0
+        first_sec = self.corridor.sample_cross_section(first_s)
+        disp_s, zone = self.sta_mgr.raw_to_display(first_s)
+        eg_cl = self.corridor.terrain.elevation_at(0.0, 0.0, first_s, 0.0)
+        cl_el = first_sec["points"]["CL"][3]
+        structs = first_sec.get("structures") or []
+        rows.append([
+            f"{first_s:.3f}", self.sta_mgr.format_station(disp_s), f"Z{zone}",
+            "0.000", f"{eg_cl:.3f}", f"{cl_el:.3f}", f"{cl_el - eg_cl:+.3f}",
+            f"{first_sec['cut_area']:.3f}", f"{first_sec['fill_area']:.3f}",
+            "0.000", "0.000", "0.000", "0.000", "+0.000",
+            ",".join(structs) if structs else "-"
+        ])
+
+        for row in report:
+            curr_s = row["station"]
+            disp_s, zone = self.sta_mgr.raw_to_display(curr_s)
+            sec = self.corridor.sample_cross_section(curr_s)
+            eg_cl = self.corridor.terrain.elevation_at(0.0, 0.0, curr_s, 0.0)
+            cl_el = sec["points"]["CL"][3]
+            rows.append([
+                f"{curr_s:.3f}", self.sta_mgr.format_station(disp_s), f"Z{zone}",
+                f"{interval:.3f}", f"{eg_cl:.3f}", f"{cl_el:.3f}", f"{cl_el - eg_cl:+.3f}",
+                f"{row['cut_area']:.3f}", f"{row['fill_area']:.3f}",
+                f"{row['cut_vol']:.3f}", f"{row['fill_vol']:.3f}",
+                f"{row['cum_cut']:.3f}", f"{row['cum_fill']:.3f}",
+                f"{row['cum_cut'] - row['cum_fill']:+.3f}",
+                ",".join(row["structures"]) if row["structures"] else "-"
+            ])
+
+        headers = [
+            "물리측점(Raw_STA)", "표기측점(Display_STA)", "파정구역", "누가거리(m)",
+            "중심지반고_EG(m)", "중심계획고_FG(m)", "계획고차(m)",
+            "절토면적(㎡)", "성토면적(㎡)",
+            "구간절토량(㎥)", "구간성토량(㎥)",
+            "누적절토량(㎥)", "누적성토량(㎥)", "누적순토공량(㎥)", "구조물_비고"
+        ]
+
+        try:
+            with open(path, mode="w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+                writer.writerows(rows)
+            messagebox.showinfo("조서 저장 완료", f"토공량 조서 CSV 파일이 생성되었습니다:\n{path}")
+        except Exception as ex:
+            messagebox.showerror("저장 오류", f"토공량 조서 저장 중 오류가 발생했습니다:\n{ex}")
 
 if __name__ == "__main__":
     root = tk.Tk()
