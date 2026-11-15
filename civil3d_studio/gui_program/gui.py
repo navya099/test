@@ -822,6 +822,46 @@ class Civil3DStudioDashboard:
             fg_coords.extend(to_px(s, el))
         c.create_line(*fg_coords, fill="#f43f5e", width=2.2)
 
+        #
+        # ----------------------------------------------------------------------
+        # [추가 1] 현지지반선 (EG - 녹색 점선) 렌더링
+        # ----------------------------------------------------------------------
+        if self.corridor and self.corridor.terrain:
+            eg_coords = []
+            for i in range(161):
+                s = min_s + (max_s - min_s) * (i / 160.0)
+                eg_el = self.corridor.terrain.elevation_at(s, 0.0)
+                eg_coords.extend(to_px(s, eg_el))
+            c.create_line(*eg_coords, fill="#4ade80", width=1.6, dash=(4, 2))
+
+        # ----------------------------------------------------------------------
+        # [추가 2] 구조물 구간 (교량/터널/옹벽) 범위 하이라이트 및 라벨 표시
+        # ----------------------------------------------------------------------
+        if self.corridor and self.corridor.structures:
+            struct_colors = {
+                "BRIDGE": ("#38bdf8", "교량"),
+                "TUNNEL": ("#f59e0b", "터널"),
+                "RETAINING_WALL": ("#a78bfa", "옹벽")
+            }
+            for st in self.corridor.structures:
+                s1 = max(min_s, st.start_station)
+                s2 = min(max_s, st.end_station)
+                if s2 <= s1:
+                    continue
+
+                x1, _ = to_px(s1, min_el)
+                x2, _ = to_px(s2, min_el)
+                col, type_kor = struct_colors.get(st.structure_type, ("#94a3b8", "구조물"))
+
+                # 구조물 시작/끝 수직 경계선 및 상단 구간 바(Bar) 그리기
+                c.create_line(x1, pt + 22, x1, pb, fill=col, dash=(2, 2), width=1.2)
+                c.create_line(x2, pt + 22, x2, pb, fill=col, dash=(2, 2), width=1.2)
+                c.create_rectangle(x1, pt + 22, x2, pt + 36, fill="#1e293b", outline=col, width=1.2)
+                c.create_text(
+                    (x1 + x2) * 0.5, pt + 29,
+                    text=f"[{type_kor}] {st.name}",
+                    fill=col, font=("맑은 고딕", 7, "bold")
+                )
         s_step = 200.0
         curr_s = 0.0
         while curr_s <= max_s + 1e-6:
