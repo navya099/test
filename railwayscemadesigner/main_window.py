@@ -3,10 +3,12 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QToolBar,
     QDockWidget, QFormLayout, QLabel,
-    QDoubleSpinBox, QComboBox, QFileDialog, QMessageBox
+    QDoubleSpinBox, QComboBox, QLineEdit, QFileDialog, QMessageBox
 )
 from PyQt6.QtGui import QAction, QActionGroup, QUndoStack, QKeySequence, QShortcut, QTransform
 from PyQt6.QtCore import Qt
+
+import copy
 
 from model import StationData, Node, Edge
 from canvas import StationScene, StationView, NodeItem
@@ -15,6 +17,27 @@ from undo_commands import (
     MoveNodeCommand, EditNodeCommand,
 )
 import transform
+
+
+# 노드 type → attrs 편집 필드 매핑. (key, kind, 제안값)
+# kind: "choice"=콤보(제안값+모델의 현재값) / "track"=선로ID 콤보 / "text"=자유텍스트
+#       / "strlist"=쉼표구분 목록 / "float"=실수 스핀박스
+# 스키마에 새 키가 생겨도 여기 등록만 하면 되고, 미등록 키/타입은 "text"로 자동 폴백된다.
+ATTR_FIELDS = {
+    "switch": (
+        ("switch_type", "choice", ("left", "right")),
+        ("facing", "choice", ("facing", "trailing")),
+        ("branch_track_id", "track", ()),
+        ("throw_mileage", "float", ()),
+    ),
+    "signal": (
+        ("signal_type", "choice", ("home", "starting")),
+        ("direction", "choice", ("up", "down")),
+        ("aspects", "strlist", ()),
+    ),
+    "insulation_joint": (("purpose", "text", ()),),
+    "boundary": (("boundary_side", "choice", ("start", "end")),),
+}
 
 
 class PropertyPanel(QWidget):
@@ -38,18 +61,24 @@ class PropertyPanel(QWidget):
         self.lateral_spin.setDecimals(2)
         self.lateral_spin.setRange(-100, 100)
         self.track_label = QLabel("-")
+        self._attrs_group = QWidget()
+        self._attrs_layout = QFormLayout(self._attrs_group)
+        self._attr_widgets = {}
+        self._attr_kinds = {}
 
         layout.addRow("ID", self.id_label)
         layout.addRow("Type", self.type_combo)
         layout.addRow("Track", self.track_label)
         layout.addRow("Mileage (km)", self.mileage_spin)
         layout.addRow("Lateral (m)", self.lateral_spin)
+        layout.addRow("속성 (attrs)", self._attrs_group)
 
         # 편집 시작/종료 훅
         self.mileage_spin.editingFinished.connect(self._commit_mileage)
         self.lateral_spin.editingFinished.connect(self._commit_lateral)
         self.mileage_spin.valueChanged.connect(self._on_mileage_changed_live)
         self.lateral_spin.valueChanged.connect(self._on_lateral_changed_live)
+        self.type_combo.currentIndexChanged.connect(self._on_type_changed)
 
     def set_item(self, item):
         self._updating = True
@@ -64,10 +93,15 @@ class PropertyPanel(QWidget):
                 n = item.node
                 self.id_label.setText(n.id)
                 self.track_label.setText(n.track_id)
+                types = [self.type_combo.itemText(i)
+                         for i in range(self.type_combo.count())]
+                if n.type not in types:
+                    self.type_combo.addItem(n.type)
                 self.type_combo.setCurrentText(n.type)
                 self.mileage_spin.setValue(n.mileage)
                 self.lateral_spin.setValue(n.lateral_offset)
                 self._edit_start = (n.mileage, n.lateral_offset)
+            self._rebuild_attrs_widgets()
         finally:
             self._updating = False
 
@@ -113,6 +147,133 @@ class PropertyPanel(QWidget):
             node_id, old_m, old_l, new_m, new_l,
         ))
         self._edit_start = (new_m, new_l)
+
+    # ---------- attrs 편집 ----------
+
+    def _current_node(self):
+        """선택 아이템의 노드를 모델에서 재조회 (삭제/재건 대비)."""
+        if self.current_item is None:
+            return None
+        nid = self.current_item.node.id
+        for n in self.main.data.nodes:
+            if n.id == nid:
+                return n
+        return None
+
+    def _read_attr_value(self, widget, kind):
+        if kind in ("choice", "track"):
+            return widget.currentText()
+        if kind == "float":
+            return float(widget.value())
+        if kind == "strlist":
+            return [p.strip() for p in widget.text().split(",") if p.strip()]
+        return widget.text()
+
+    def _rebuild_attrs_widgets(self):
+        lay = self._attrs_layout
+        while lay.count():
+            it = lay.takeAt(0)
+            w = it.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        self._attr_widgets = {}
+        self._attr_kinds = {}
+
+        node = self._current_node()
+        if node is None:
+            return
+
+        fields = ATTR_FIELDS.get(node.type)
+        if fields is None:
+            fields = [(k, "text", ()) for k in sorted(node.attrs)]
+        if not fields:
+            lay.addRow("", QLabel("(이 타입에 기록된 속성 없음 — 필요하면 JSON 직접 편집)"))
+            return
+
+        tracks = list(self.scene.tracks_by_id)
+        for key, kind, suggestions in fields:
+            self._attr_kinds[key] = kind
+            if kind == "choice":
+                w = QComboBox()
+                w.addItems(list(suggestions))
+                cur = node.attrs.get(key)
+                if cur is not None:
+                    if str(cur) not in list(suggestions):
+                        w.addItem(str(cur))
+                    w.setCurrentText(str(cur))
+                w.currentIndexChanged.connect(
+                    lambda *_a, k=key: self._on_attr_committed(k))
+            elif kind == "track":
+                w = QComboBox()
+                w.addItems(tracks)
+                cur = node.attrs.get(key)
+                if cur:
+                    if cur not in tracks:
+                        w.addItem(cur)
+                    w.setCurrentText(cur)
+                w.currentIndexChanged.connect(
+                    lambda *_a, k=key: self._on_attr_committed(k))
+            elif kind == "strlist":
+                w = QLineEdit()
+                v = node.attrs.get(key)
+                w.setText(
+                    ", ".join(v) if isinstance(v, list)
+                    else (str(v) if v is not None else "")
+                )
+                w.editingFinished.connect(
+                    lambda *_a, k=key: self._on_attr_committed(k))
+            elif kind == "float":
+                w = QDoubleSpinBox()
+                w.setDecimals(3)
+                w.setRange(0, 100000)
+                v = node.attrs.get(key)
+                w.setValue(float(v) if v is not None else 0.0)
+                w.editingFinished.connect(
+                    lambda *_a, k=key: self._on_attr_committed(k))
+            else:  # "text"
+                w = QLineEdit()
+                v = node.attrs.get(key)
+                w.setText(str(v) if v is not None else "")
+                w.editingFinished.connect(
+                    lambda *_a, k=key: self._on_attr_committed(k))
+            lay.addRow(key, w)
+            self._attr_widgets[key] = w
+
+    def _on_type_changed(self, _sig=None):
+        if self._updating:
+            return
+        node = self._current_node()
+        if node is None:
+            return
+        new_type = self.type_combo.currentText()
+        if not new_type or new_type == node.type:
+            return
+        self.main.undo_stack.push(EditNodeCommand(
+            self.main.data, self.main._rebuild_scene, node.id,
+            {"type": node.type}, {"type": new_type},
+        ))
+
+    def _on_attr_committed(self, key):
+        if self._updating:
+            return
+        w = self._attr_widgets.get(key)
+        if w is None:
+            return
+        kind = self._attr_kinds.get(key, "text")
+        if kind in ("choice", "track") and w.currentIndex() < 0:
+            return
+        node = self._current_node()
+        if node is None:
+            return
+        new_attrs = dict(node.attrs)
+        new_attrs[key] = self._read_attr_value(w, self._attr_kinds.get(key, "text"))
+        if new_attrs == node.attrs:
+            return
+        self.main.undo_stack.push(EditNodeCommand(
+            self.main.data, self.main._rebuild_scene, node.id,
+            {"attrs": copy.deepcopy(node.attrs)}, {"attrs": new_attrs},
+        ))
 
 
 class MainWindow(QMainWindow):
