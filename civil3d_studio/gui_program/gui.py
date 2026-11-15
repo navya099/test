@@ -187,6 +187,17 @@ class Civil3DStudioDashboard:
         notebook = ttk.Notebook(left_panel)
         notebook.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
 
+        # 좌측 하단: 실시간 토공량(Earthwork Volume) 요약 카드
+        ew_frame = tk.Frame(left_panel, bg="#0f172a", padx=10, pady=8, highlightbackground="#334155",
+                            highlightthickness=1)
+        ew_frame.pack(fill=tk.X, padx=6, pady=(2, 6))
+
+        tk.Label(ew_frame, text="📊 실시간 토공량 집계 (양단면 평균법, 10m 간격)", bg="#0f172a", fg="#38bdf8",
+                 font=("맑은 고딕", 8, "bold")).pack(anchor="w")
+        self.earthwork_var = tk.StringVar(value="계산 대기 중...")
+        tk.Label(ew_frame, textvariable=self.earthwork_var, bg="#0f172a", fg="#f8fafc", font=("Consolas", 9, "bold"),
+                 justify=tk.LEFT).pack(anchor="w", pady=(4, 0))
+
         self.txt_pi = self._create_editor_tab(
             notebook, "1. 평면 PI (비대칭)",
             "형식: 이름, Easting(X), Northing(Y), 반경(R), 진입완화(L1), 진출완화(L2)"
@@ -559,8 +570,27 @@ class Civil3DStudioDashboard:
                 f"계산 완료 | 총 연장: {self.h_align.total_length:.2f}m | "
                 f"측점 범위: {self.sta_mgr.format_station(start_sta)} ~ {self.sta_mgr.format_station(end_disp)}"
             )
+            # 전 구간 토공량(절토/성토) 자동 산출 및 요약 패널 업데이트
+            tot_cut, tot_fill = self._compute_total_earthwork(interval=10.0)
+            net_vol = tot_cut - tot_fill
+            net_label = f"잔토(사토) +{net_vol:,.1f} ㎥" if net_vol >= 0 else f"부족토(토취) {net_vol:,.1f} ㎥"
+            self.earthwork_var.set(
+                f"총 절토량(Cut) : {tot_cut:10,.1f} ㎥\n"
+                f"총 성토량(Fill): {tot_fill:10,.1f} ㎥\n"
+                f"순 토공량(Net) : {net_label}"
+            )
         except Exception as ex:
             messagebox.showerror("설계 제원 오류", str(ex))
+
+    def _compute_total_earthwork(self, interval: float = 10.0) -> Tuple[float, float]:
+        """양단면 평균법으로 전 구간 총 절토량 및 총 성토량(m³) 계산"""
+        if not self.corridor:
+            return 0.0, 0.0
+        report = self.corridor.compute_earthwork_volumes(interval=interval)
+        if not report:
+            return 0.0, 0.0
+        # 마지막 행의 누적값이 전 구간 총합
+        return report[-1]["cum_cut"], report[-1]["cum_fill"]
 
     def redraw_all_views(self):
         if not self.h_align or not self.v_prof:
