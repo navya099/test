@@ -4,6 +4,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Dict, List, Optional, Tuple
+import json
 
 from alignment.pipoint import PIPoint
 from alignment.station.equation_manager import StationEquationManager
@@ -23,14 +24,14 @@ class Civil3DStudioDashboard:
     - 설계 제원 텍스트 에디터 탭 편집 및 즉시 재계산 워크플로우
     - 순수 Python 기반 3D DXF 및 3D 좌표 CSV 내보내기 지원
     """
-
+    APP_VERSION = "1.0.0"
     def __init__(self, root: tk.Tk):
         self.pis = []
         self.root = root
         self.root.title("Python Civil 3D 통합 설계 대시보드 (Plan + Profile + Cross Section + DXF)")
         self.root.geometry("1440x860")
         self.root.configure(bg="#181b20")
-
+        self.current_project_path: Optional[str] = None
         # 상태 변수 선언
 
         self.h_align: Optional[Alignment] = None
@@ -48,8 +49,10 @@ class Civil3DStudioDashboard:
 
         self._setup_styles()
         self._build_layout()
+        self._bind_shortcuts()
         self._load_default_design_data()
         self.recalculate_all()
+        self._update_window_title()
 
     def _setup_styles(self):
         style = ttk.Style()
@@ -62,24 +65,56 @@ class Civil3DStudioDashboard:
                         font=("맑은 고딕", 9, "bold"))
         style.map("TNotebook.Tab", background=[("selected", "#0284c7")], foreground=[("selected", "#ffffff")])
 
+    def _bind_shortcuts(self):
+        """실무 단축키 바인딩 (Ctrl+S 저장, Ctrl+O 열기, F5 재계산)"""
+        self.root.bind("<Control-s>", lambda e: self.save_project_dialog())
+        self.root.bind("<Control-o>", lambda e: self.load_project_dialog())
+        self.root.bind("<F5>", lambda e: self.recalculate_all())
+
+    def _update_window_title(self):
+        proj_name = os.path.basename(self.current_project_path) if self.current_project_path else "새 프로젝트 (저장 안 됨)"
+
+        self.root.title(f"Civil 3D Python Studio - [{proj_name}]")
+
     def _build_layout(self):
         # 상단 툴바
         toolbar = tk.Frame(self.root, bg="#0f172a", height=44, padx=12)
         toolbar.pack(fill=tk.X, side=tk.TOP)
 
         tk.Label(
-            toolbar, text="CIVIL 3D PYTHON GEOMETRY STUDIO",
+            toolbar, text="CIVIL 3D STUDIO",
             bg="#0f172a", fg="#38bdf8", font=("Consolas", 12, "bold")
         ).pack(side=tk.LEFT, pady=8)
 
         btn_style = {"font": ("맑은 고딕", 9, "bold"), "bd": 0, "padx": 12, "pady": 5, "cursor": "hand2"}
+
+        btn_cfg = {"font": ("맑은 고딕", 9, "bold"), "bd": 0, "padx": 11, "pady": 5, "cursor": "hand2"}
+        # 프로젝트 관리 버튼 그룹
         tk.Button(
-            toolbar, text="▶ 선형 재계산 및 뷰 갱신", bg="#0284c7", fg="white",
+            toolbar, text="📄 새 프로젝트", bg="#334155", fg="white",
+            command=self.new_project, **btn_cfg
+        ).pack(side=tk.LEFT, padx=3, pady=6)
+        tk.Button(
+            toolbar, text="📂 열기 (Ctrl+O)", bg="#334155", fg="white",
+            command=self.load_project_dialog, **btn_cfg
+        ).pack(side=tk.LEFT, padx=3, pady=6)
+        tk.Button(
+            toolbar, text="💾 저장 (Ctrl+S)", bg="#0284c7", fg="white",
+            command=self.save_project_dialog, **btn_cfg
+        ).pack(side=tk.LEFT, padx=3, pady=6)
+        tk.Button(
+            toolbar, text="📑 다른 이름으로 저장", bg="#0369a1", fg="white",
+            command=lambda: self.save_project_dialog(save_as=True), **btn_cfg
+        ).pack(side=tk.LEFT, padx=(3, 14), pady=6)
+
+
+        tk.Button(
+            toolbar, text="▶ 선형 재계산(F5)", bg="#0284c7", fg="white",
             command=self.recalculate_all, **btn_style
         ).pack(side=tk.LEFT, padx=(25, 8), pady=6)
 
         tk.Button(
-            toolbar, text="💾 3D DXF 도면 내보내기", bg="#059669", fg="white",
+            toolbar, text="📐 3D DXF 도면 내보내기", bg="#059669", fg="white",
             command=self.export_dxf_dialog, **btn_style
         ).pack(side=tk.LEFT, padx=6, pady=6)
 
@@ -97,9 +132,17 @@ class Civil3DStudioDashboard:
         main_pane = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, bg="#334155", sashwidth=4)
         main_pane.pack(fill=tk.BOTH, expand=True)
 
-        # [좌측 패널] 설계 제원 입력 탭 (PI, PVI, 확폭/편경사, 파정)
+        # [좌측 패널] 프로젝트 메타 정보 + 4개 설계 제원 탭
         left_panel = ttk.Frame(main_pane, width=420)
         main_pane.add(left_panel, minsize=380)
+
+        meta_frame = tk.Frame(left_panel, bg="#1e293b", padx=8, pady=6)
+        meta_frame.pack(fill=tk.X, padx=6, pady=(6, 2))
+        tk.Label(meta_frame, text="노선명:", bg="#1e293b", fg="#cbd5e0", font=("맑은 고딕", 9, "bold")).pack(side=tk.LEFT)
+        self.entry_align_name = tk.Entry(meta_frame, bg="#0f172a", fg="#38bdf8", insertbackground="white",
+                                         font=("맑은 고딕", 9, "bold"), bd=1, relief=tk.FLAT)
+        self.entry_align_name.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0))
+        self.entry_align_name.insert(0, "본선_중심선_01")
 
         notebook = ttk.Notebook(left_panel)
         notebook.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
@@ -161,12 +204,20 @@ class Civil3DStudioDashboard:
         txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
         return txt
 
+    def _clear_editors(self):
+        for w in (self.txt_pi, self.txt_pvi, self.txt_super, self.txt_eq):
+            w.delete("1.0", tk.END)
+
     def _load_default_design_data(self):
+        self._clear_editors()
+        self.entry_align_name.delete(0, tk.END)
+        self.entry_align_name.insert(0, "본선_중심선_01")
+
         self.txt_pi.insert("1.0", (
             "# Name, Easting, Northing, R, L1, L2\n"
             "BP,   200000.000, 500000.000,   0,   0,  0\n"
-            "IP-1, 200420.000, 500260.000, 450, 100, 80\n"
-            "IP-2, 200880.000, 500040.000, 400,  80, 90\n"
+            "IP-1, 200420.000, 500260.000, 231, 100, 80\n"
+            "IP-2, 200880.000, 500040.000, 166,  80, 90\n"
             "EP,   201320.000, 500320.000,   0,   0,  0\n"
         ))
         self.txt_pvi.insert("1.0", (
@@ -198,8 +249,87 @@ class Civil3DStudioDashboard:
             "EQ, 1300.0, 1350.0\n"
         ))
 
+    # ==========================================================================
+    # 프로젝트 저장 (.c3dproj / .json) 및 불러오기 로직
+    # ==========================================================================
+    def new_project(self):
+        if messagebox.askyesno("새 프로젝트", "현재 편집 내용을 초기화하고 기본 샘플 프로젝트로 시작할까요?"):
+            self.current_project_path = None
+
+            self.active_raw_sta = 200.0
+            self._load_default_design_data()
+            self.recalculate_all()
+            self._update_window_title()
+
+    def save_project_dialog(self, save_as: bool = False):
+
+        # 저장 전 현재 제원 유효성 먼저 검증
+        self.recalculate_all()
+        target_path = self.current_project_path
+        if save_as or not target_path:
+            default_name = f"{self.entry_align_name.get().strip() or 'alignment_project'}.c3dproj"
+            target_path = filedialog.asksaveasfilename(
+                title="프로젝트 파일 저장",
+                defaultextension=".c3dproj",
+                initialfile=default_name,
+                filetypes=[("Civil 3D Python 프로젝트", ".c3dproj"), ("JSON 파일", ".json")]
+            )
+            if not target_path:
+                return
+            project_payload = {
+                "format": "Civil3DPythonStudioProject",
+                "version": self.APP_VERSION,
+                "alignment_name": self.entry_align_name.get().strip(),
+                "active_raw_station": self.active_raw_sta,
+                "editors": {
+                    "horizontal_pi": self.txt_pi.get("1.0", tk.END).rstrip("\n"),
+                    "vertical_pvi": self.txt_pvi.get("1.0", tk.END).rstrip("\n"),
+                    "superelevation_widening": self.txt_super.get("1.0", tk.END).rstrip("\n"),
+                    "station_equations": self.txt_eq.get("1.0", tk.END).rstrip("\n"),
+                }
+            }
+            try:
+
+                with open(target_path, mode="w", encoding="utf-8") as f:
+                    json.dump(project_payload, f, ensure_ascii=False, indent=2)
+                self.current_project_path = target_path
+                self._update_window_title()
+                self.status_var.set(f"프로젝트 저장 완료: {os.path.basename(target_path)}")
+            except Exception as ex:
+                messagebox.showerror("저장 오류", f"프로젝트 저장 중 오류가 발생했습니다:\n{ex}")
+
+    def load_project_dialog(self):
+        target_path = filedialog.askopenfilename(
+            title="프로젝트 파일 열기",
+            filetypes=[("Civil 3D Python 프로젝트", ".c3dproj .json"), ("모든 파일", ".")]
+        )
+
+        if not target_path:
+            return
+        try:
+            with open(target_path, mode="r", encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("format") != "Civil3DPythonStudioProject":
+                raise ValueError("올바른 Civil 3D Python Studio 프로젝트 파일이 아닙니다.")
+            editors = data.get("editors", {})
+            self._clear_editors()
+            self.entry_align_name.delete(0, tk.END)
+            self.entry_align_name.insert(0, data.get("alignment_name", "불러온_선형"))
+            self.txt_pi.insert("1.0", editors.get("horizontal_pi", ""))
+            self.txt_pvi.insert("1.0", editors.get("vertical_pvi", ""))
+            self.txt_super.insert("1.0", editors.get("superelevation_widening", ""))
+            self.txt_eq.insert("1.0", editors.get("station_equations", ""))
+            self.active_raw_sta = float(data.get("active_raw_station", 0.0))
+            self.current_project_path = target_path
+            self._update_window_title()
+            self.recalculate_all()
+            self.status_var.set(f"프로젝트 불러오기 완료: {os.path.basename(target_path)}")
+        except Exception as ex:
+            messagebox.showerror("불러오기 오류", f"프로젝트 파일을 읽는 중 오류가 발생했습니다:\n{ex}")
+
     def recalculate_all(self):
         try:
+            align_name = self.entry_align_name.get().strip() or "본선_중심선"
             # 1. 평면 PI 파싱
             self.pis = []
             for line in self.txt_pi.get("1.0", tk.END).splitlines():
