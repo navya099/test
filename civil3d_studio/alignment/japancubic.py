@@ -135,12 +135,12 @@ class JapaneseCubicSpiralSegment(AlignmentEntity):
                 break
             dy = (x * x) / (2.0 * self.R * self.Xc)
             x -= diff / math.sqrt(1.0 + dy * dy)
-            lx, ly, dy, _ = self._local_point_at_x(x)
-            norm = math.hypot(1.0, dy)
-            eff_offset = -offset if self.is_exit else offset
-            lx_off = lx + eff_offset * (dy / norm)
-            ly_off = ly + eff_offset * (-1.0 / norm)
-            return self.to_global(lx_off, ly_off)
+        lx, ly, dy, _ = self._local_point_at_x(x)
+        norm = math.hypot(1.0, dy)
+        eff_offset = -offset if self.is_exit else offset
+        lx_off = lx + eff_offset * (dy / norm)
+        ly_off = ly + eff_offset * (-1.0 / norm)
+        return self.to_global(lx_off, ly_off)
 
     def station_offset(self, easting: float, northing: float, tol: float = 1e-12):
         """
