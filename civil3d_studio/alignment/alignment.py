@@ -60,6 +60,13 @@ class Alignment:
             de = pi_list[i + 1].easting - pi_list[i].easting
             dn = pi_list[i + 1].northing - pi_list[i].northing
 
+            dist = math.hypot(de, dn)
+            if dist < 1e-9:
+                raise ValueError(
+                    f"{pi_list[i].name}와 "
+                    f"{pi_list[i + 1].name}의 좌표가 동일합니다."
+                )
+
             bearings.append(math.atan2(dn, de))
             seg_lengths.append(math.hypot(de, dn))
 
@@ -99,7 +106,12 @@ class Alignment:
 
             tau1, dR1, Xm1 = get_shift(R, L1)
             tau2, dR2, Xm2 = get_shift(R, L2)
-
+            #교각 검증
+            if IA < (tau1 + tau2):
+                raise ValueError(
+                    f"[{pi.name}] 교각(IA={math.degrees(IA):.4f}°)이 "
+                    f"완화곡선 편각합(τ1+τ2={math.degrees(tau1 + tau2):.4f}°)보다 작습니다."
+                )
             TL1 = (
                     Xm1
                     + (R + dR1) * math.tan(IA * 0.5)
@@ -113,6 +125,24 @@ class Alignment:
             )
 
             CL = R * (IA - tau1 - tau2)
+            # TL,CL 음수 검증
+            if TL1 < -1e-9:
+                raise ValueError(
+                    f"[{pi.name}] TL1 계산 결과가 음수입니다. "
+                    f"(TL1={TL1:.6f})"
+                )
+
+            if TL2 < -1e-9:
+                raise ValueError(
+                    f"[{pi.name}] TL2 계산 결과가 음수입니다. "
+                    f"(TL2={TL2:.6f})"
+                )
+
+            if CL < -1e-9:
+                raise ValueError(
+                    f"[{pi.name}] CL 계산 결과가 음수입니다. "
+                    f"(CL={CL:.6f})"
+                )
 
             curve_params.append(
                 {
@@ -139,6 +169,17 @@ class Alignment:
             next_tl1 = curve_params[i]["TL1"] if i < len(pi_list) - 2 else 0.0
 
             tangent_length = seg_lengths[i] - prev_tl2 - next_tl1
+
+            #접선부 부족 검증
+            if tangent_length < -1e-7:
+                raise ValueError(
+                    f"[{pi_list[i].name} ~ {pi_list[i + 1].name}] "
+                    f"접선구간 길이 부족\n"
+                    f"SEG={seg_lengths[i]:.3f}m\n"
+                    f"prev_tl2={prev_tl2:.3f}m\n"
+                    f"next_tl1={next_tl1:.3f}m\n"
+                    f"계산결과={tangent_length:.3f}m"
+                )
 
             if tangent_length > 1e-9:
                 line = LineSegment(
@@ -209,7 +250,60 @@ class Alignment:
                 entities.append(spiral_out)
 
                 curr_e, curr_n, _, curr_sta = spiral_out.end_pose
+        #엔티티 연결성 검증
+        for i in range(len(entities) - 1):
 
+            e1, n1, _, _ = entities[i].end_pose
+
+            e2 = entities[i + 1].start_e
+            n2 = entities[i + 1].start_n
+
+            err = math.hypot(
+                e2 - e1,
+                n2 - n1
+            )
+
+            if err > 1e-6:
+                raise RuntimeError(
+                    f"엔티티 연결 오류\n"
+                    f"{type(entities[i]).__name__}"
+                    f" -> "
+                    f"{type(entities[i + 1]).__name__}\n"
+                    f"오차 = {err:.9f}m"
+                )
+
+        #EP 통과 검증
+        ep = pi_list[-1]
+
+        err = math.hypot(
+            curr_e - ep.easting,
+            curr_n - ep.northing,
+        )
+
+        if err > 0.01:
+            raise RuntimeError(
+                f"선형 생성 실패\n"
+                f"설계 EP와 계산 종점이 일치하지 않습니다.\n"
+                f"EP=({ep.easting:.3f}, {ep.northing:.3f})\n"
+                f"END=({curr_e:.3f}, {curr_n:.3f})\n"
+                f"오차={err:.3f}m"
+            )
+
+        # 선형 연속성 검증
+        for i in range(len(entities) - 1):
+
+            err_sta = abs(
+                entities[i].end_sta -
+                entities[i + 1].start_sta
+            )
+
+            if err_sta > 1e-9:
+                raise RuntimeError(
+                    f"측점 연속성 오류 : "
+                    f"{type(entities[i]).__name__}"
+                    f" -> "
+                    f"{type(entities[i + 1]).__name__}"
+                )
         return cls(
             name=name,
             entities=entities,
