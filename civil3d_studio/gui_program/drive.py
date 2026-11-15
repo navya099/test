@@ -155,8 +155,8 @@ class Civil3DDriveSimulator:
             sy = h * 0.48 - fov_scale * (y_cam / z_cam)
             return sx, sy
 
-        # 3. 전방 180m 구간을 4m 간격 슬라이스로 샘플링 (Painter's Algorithm: 먼 곳부터 가까운 곳 역순 렌더링)
-        view_dist = 180.0
+        # 3. 전방 600m 구간을 4m 간격 슬라이스로 샘플링 (Painter's Algorithm: 먼 곳부터 가까운 곳 역순 렌더링)
+        view_dist = 600.0
         step = 4.0
         slices = []
         s_val = cam_sta + 2.0

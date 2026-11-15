@@ -24,12 +24,12 @@ class Civil3DStudioDashboard:
     - 설계 제원 텍스트 에디터 탭 편집 및 즉시 재계산 워크플로우
     - 순수 Python 기반 3D DXF 및 3D 좌표 CSV 내보내기 지원
     """
-    APP_VERSION = "1.0.0"
+    APP_VERSION = "2.0.0"
     def __init__(self, root: tk.Tk):
         self.pis = []
         self.root = root
         self.root.title("Python Civil 3D 통합 설계 대시보드 (Plan + Profile + Cross Section + DXF)")
-        self.root.geometry("1440x860")
+        self.root.geometry("1540x920")
         self.root.configure(bg="#181b20")
         self.current_project_path: Optional[str] = None
         # 상태 변수 선언
@@ -43,6 +43,13 @@ class Civil3DStudioDashboard:
         self.right_lane: Optional[OffsetAlignment] = None
         self.active_raw_sta: float = 200.0
 
+        # 3D 드라이브(가상 주행) 상태 변수
+        self.is_driving: bool = False
+        self.drive_speed_kmh: float = 80.0
+        self.drive_lane_offset: float = 1.75
+        self.drive_eye_height: float = 1.25
+        self.drive_dt: float = 0.035
+
         # 화면 좌표 변환 캐시 파라미터
         self.plan_transform = (1.0, 0.0, 0.0, 0.0, 0.0)
         self.prof_bounds = (0, 0, 1, 1, 0, 1, 0, 1)
@@ -53,6 +60,7 @@ class Civil3DStudioDashboard:
         self._load_default_design_data()
         self.recalculate_all()
         self._update_window_title()
+        self._drive_animation_loop()
 
     def _setup_styles(self):
         style = ttk.Style()
@@ -70,6 +78,13 @@ class Civil3DStudioDashboard:
         self.root.bind("<Control-s>", lambda e: self.save_project_dialog())
         self.root.bind("<Control-o>", lambda e: self.load_project_dialog())
         self.root.bind("<F5>", lambda e: self.recalculate_all())
+        self.root.bind("<space>", lambda e: self._on_space_key(e))
+
+    def _on_space_key(self, event):
+        # 텍스트 에디터 입력 중일 때는 스페이스바 주행 토글 무시
+        if isinstance(event.widget, (tk.Text, tk.Entry)):
+            return
+        self.toggle_drive()
 
     def _update_window_title(self):
         proj_name = os.path.basename(self.current_project_path) if self.current_project_path else "새 프로젝트 (저장 안 됨)"
@@ -123,6 +138,21 @@ class Civil3DStudioDashboard:
             command=self.export_csv_dialog, **btn_style
         ).pack(side=tk.LEFT, padx=6, pady=6)
 
+        # 3D 드라이브 전용 빠른 제어 버튼
+        self.btn_drive = tk.Button(toolbar, text="🚗 3D 주행 시작 (Space)", bg="#e11d48", fg="white",
+                                   command=self.toggle_drive, **btn_cfg)
+        self.btn_drive.pack(side=tk.LEFT, padx=4, pady=6)
+
+        tk.Label(toolbar, text="속도:", bg="#0f172a", fg="#cbd5e0", font=("맑은 고딕", 8, "bold")).pack(side=tk.LEFT,
+                                                                                                  padx=(8, 2))
+        self.speed_scale = tk.Scale(
+            toolbar, from_=20, to=140, orient=tk.HORIZONTAL, bg="#0f172a", fg="#facc15",
+            troughcolor="#1e293b", highlightthickness=0, length=100, showvalue=True,
+            font=("Consolas", 8), command=lambda v: setattr(self, "drive_speed_kmh", float(v))
+        )
+        self.speed_scale.set(80)
+        self.speed_scale.pack(side=tk.LEFT, padx=2)
+
         self.status_var = tk.StringVar(value="준비 완료")
         tk.Label(
             toolbar, textvariable=self.status_var, bg="#0f172a", fg="#94a3b8", font=("맑은 고딕", 9)
@@ -164,31 +194,54 @@ class Civil3DStudioDashboard:
             "형식: 시점측점(StartSTA) 및 파정(후방측점 Back, 전방측점 Ahead)"
         )
 
-        # [우측 패널] 3분할 실시간 뷰포트 (상단: 평면도 | 하단 좌: 종단도 | 하단 우: 횡단면도)
-        right_pane = tk.PanedWindow(main_pane, orient=tk.VERTICAL, bg="#334155", sashwidth=4)
-        main_pane.add(right_pane, minsize=750)
+        # [우측 패널] 2x2 4분할 실시간 연동 뷰포트
+        # 상단 좌: 평면도(Plan) | 상단 우: 3D 드라이브(3D Drive)
+        # 하단 좌: 종단도(Profile) | 하단 우: 횡단면도(Cross Section)
+        right_vert_pane = tk.PanedWindow(main_pane, orient=tk.VERTICAL, bg="#334155", sashwidth=4)
+        main_pane.add(right_vert_pane , minsize=780)
 
-        # 우측 상단: 평면도(Plan View)
-        plan_frame = tk.Frame(right_pane, bg="#111418")
-        right_pane.add(plan_frame, height=420)
+        top_horiz_pane = tk.PanedWindow(right_vert_pane, orient=tk.HORIZONTAL, bg="#334155", sashwidth=4)
+        right_vert_pane.add(top_horiz_pane, height=450)
+
+        # 뷰포트 1: 평면도 (Plan View)
+        plan_frame = tk.Frame(top_horiz_pane, bg="#111418")
+        top_horiz_pane.add(plan_frame, height=560)
         self.canvas_plan = tk.Canvas(plan_frame, bg="#111418", highlightthickness=0)
         self.canvas_plan.pack(fill=tk.BOTH, expand=True)
         self.canvas_plan.bind("<Motion>", self.on_plan_mouse_move)
         self.canvas_plan.bind("<Configure>", lambda e: self.redraw_all_views())
 
-        # 우측 하단 좌우 분할: 종단도(Profile View) + 횡단면도(Cross Section View)
-        bottom_pane = tk.PanedWindow(right_pane, orient=tk.HORIZONTAL, bg="#334155", sashwidth=4)
-        right_pane.add(bottom_pane, height=380)
+        # 뷰포트 2: 3D 드라이브 가상 주행 (3D Drive View)
+        drive_frame = tk.Frame(top_horiz_pane, bg="#0b1120")
+        top_horiz_pane.add(drive_frame, width=540)
+        self.canvas_drive = tk.Canvas(drive_frame, bg="#0b1120", highlightthickness=0)
+        self.canvas_drive.pack(fill=tk.BOTH, expand=True)
+        self.canvas_drive.bind("<Configure>", lambda e: self.draw_3d_drive_view())
 
-        prof_frame = tk.Frame(bottom_pane, bg="#13171d")
-        bottom_pane.add(prof_frame, width=620)
+        # 3D 드라이브 하단 미니 차로 전환 바
+        drive_bar = tk.Frame(drive_frame, bg="#1e293b", height=26)
+        drive_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        tk.Label(drive_bar, text="주행 차로:", bg="#1e293b", fg="#94a3b8", font=("맑은 고딕", 8)).pack(side=tk.LEFT,
+                                                                                               padx=(8, 4))
+        for lbl, off_v in [("좌측(-1.75m)", -1.75), ("중심(0.0m)", 0.0), ("우측(+1.75m)", 1.75)]:
+            tk.Button(
+                drive_bar, text=lbl, bg="#334155", fg="#f8fafc", font=("맑은 고딕", 7, "bold"), bd=0, padx=6, pady=2,
+                command=lambda o=off_v: self._set_drive_lane(o)
+            ).pack(side=tk.LEFT, padx=2, pady=2)
+        bottom_horiz_pane = tk.PanedWindow(right_vert_pane, orient=tk.HORIZONTAL, bg="#334155", sashwidth=4)
+        right_vert_pane.add(bottom_horiz_pane, height=380)
+
+        # 뷰포트 3: 종단도 (Profile View)
+        prof_frame = tk.Frame(bottom_horiz_pane, bg="#13171d")
+        bottom_horiz_pane.add(prof_frame, width=640)
         self.canvas_prof = tk.Canvas(prof_frame, bg="#13171d", highlightthickness=0)
         self.canvas_prof.pack(fill=tk.BOTH, expand=True)
         self.canvas_prof.bind("<Motion>", self.on_prof_mouse_move)
         self.canvas_prof.bind("<Configure>", lambda e: self.redraw_all_views())
 
-        sec_frame = tk.Frame(bottom_pane, bg="#151921")
-        bottom_pane.add(sec_frame, width=380)
+        # 뷰포트 4: 실시간 횡단면도 (Cross Section View)
+        sec_frame = tk.Frame(bottom_horiz_pane, bg="#151921")
+        bottom_horiz_pane.add(sec_frame, width=460)
         self.canvas_sec = tk.Canvas(sec_frame, bg="#151921", highlightthickness=0)
         self.canvas_sec.pack(fill=tk.BOTH, expand=True)
         self.canvas_sec.bind("<Configure>", lambda e: self.draw_cross_section_view())
@@ -254,9 +307,10 @@ class Civil3DStudioDashboard:
     # ==========================================================================
     def new_project(self):
         if messagebox.askyesno("새 프로젝트", "현재 편집 내용을 초기화하고 기본 샘플 프로젝트로 시작할까요?"):
+            self.is_driving = False
+            self.btn_drive.config(text="🚗 3D 주행 시작 (Space)", bg="#e11d48")
             self.current_project_path = None
-
-            self.active_raw_sta = 200.0
+            self.active_raw_sta = 0.0
             self._load_default_design_data()
             self.recalculate_all()
             self._update_window_title()
@@ -327,6 +381,40 @@ class Civil3DStudioDashboard:
         except Exception as ex:
             messagebox.showerror("불러오기 오류", f"프로젝트 파일을 읽는 중 오류가 발생했습니다:\n{ex}")
 
+    # ==========================================================================
+    # 3D 드라이브(가상 주행) 애니메이션 루프
+    # ==========================================================================
+    def toggle_drive(self):
+        self.is_driving = not self.is_driving
+
+        if self.is_driving:
+            self.btn_drive.config(text="⏸ 주행 일시정지 (Space)", bg="#0284c7")
+        else:
+            self.btn_drive.config(text="🚗 3D 주행 시작 (Space)", bg="#e11d48")
+
+    def _set_drive_lane(self, offset_val: float):
+        self.drive_lane_offset = offset_val
+
+        self.draw_3d_drive_view()
+
+    def _drive_animation_loop(self):
+        if self.is_driving and self.h_align and self.v_prof:
+            v_ms = (self.drive_speed_kmh * 1000.0) / 3600.0
+
+            self.active_raw_sta += v_ms * self.drive_dt
+            if self.active_raw_sta >= self.h_align.total_length - 25.0:
+                self.active_raw_sta = 0.0
+            self._sync_all_active_markers()
+        self.root.after(int(self.drive_dt * 1000), self._drive_animation_loop)
+
+    def _sync_all_active_markers(self):
+        """현재 활성 측점(active_raw_sta) 변화 시 4개 뷰포트를 모두 즉시 동기화"""
+
+        self._update_plan_active_marker()
+        self._update_prof_active_marker()
+        self.draw_cross_section_view()
+        self.draw_3d_drive_view()
+
     def recalculate_all(self):
         try:
             align_name = self.entry_align_name.get().strip() or "본선_중심선"
@@ -345,7 +433,7 @@ class Civil3DStudioDashboard:
                     L1=float(parts[4]) if len(parts) > 4 and parts[4] else 0.0,
                     L2=float(parts[5]) if len(parts) > 5 and parts[5] else None
                 ))
-            self.h_align = Alignment.create(name="본선_중심선", pi_list=self.pis)
+            self.h_align = Alignment.create(name=align_name, pi_list=self.pis)
 
             # 2. 종단 PVI 파싱
             pvis = []
@@ -425,6 +513,7 @@ class Civil3DStudioDashboard:
         self.draw_plan_view()
         self.draw_profile_view()
         self.draw_cross_section_view()
+        self.draw_3d_drive_view()
 
     # --------------------------------------------------------------------------
     # [뷰포트 1] 평면도(Plan View) 렌더링
@@ -503,11 +592,155 @@ class Civil3DStudioDashboard:
         scale, cx, cy, hw, hh = self.plan_transform
         gx, gy = self.h_align.point_location(self.active_raw_sta, 0.0)
         sx, sy = hw + (gx - cx) * scale, hh - (gy - cy) * scale
+        # 전방 시야 방향 화살표(차량 헤딩) 표시
+        look_s = min(self.h_align.total_length, self.active_raw_sta + 15.0)
+        lx, ly = self.h_align.point_location(look_s, self.drive_lane_offset)
+        lsx, lsy = hw + (lx - cx) * scale, hh - (ly - cy) * scale
+        c.create_line(sx, sy, lsx, lsy, fill="#facc15", width=2.5, arrow=tk.LAST, tags="active_marker")
         c.create_oval(sx - 5, sy - 5, sx + 5, sy + 5, fill="#38bdf8", outline="#ffffff", width=1.5,
                       tags="active_marker")
 
     # --------------------------------------------------------------------------
-    # [뷰포트 2] 종단도(Profile View) 렌더링
+    # [뷰포트 2] 실시간 3D 드라이브 가상 주행 (3D Drive View)
+    # --------------------------------------------------------------------------
+    def draw_3d_drive_view(self):
+        c = self.canvas_drive
+
+        c.delete("all")
+        if not self.h_align or not self.v_prof:
+            return
+        w, h = max(120, c.winfo_width()), max(120, c.winfo_height())
+        # 배경 하늘 & 지면
+        horizon_y = h * 0.44
+        c.create_rectangle(0, 0, w, horizon_y, fill="#0c192c", outline="")
+        c.create_rectangle(0, horizon_y, w, h, fill="#111827", outline="")
+
+        cam_sta = self.active_raw_sta
+        look_sta = min(self.h_align.total_length, cam_sta + 20.0)
+
+        if look_sta <= cam_sta + 0.5:
+            look_sta = min(self.h_align.total_length, cam_sta + 1.0)
+
+        cam_e, cam_n = self.h_align.point_location(cam_sta, self.drive_lane_offset)
+        cam_cl_z, curr_grade = self.v_prof.elevation_and_grade_at(cam_sta)
+
+        l_slp, r_slp = self.sup_tbl.get_slopes_at(cam_sta)
+
+        curr_cross = r_slp if self.drive_lane_offset >= 0 else l_slp
+        cam_z = cam_cl_z + abs(self.drive_lane_offset) * curr_cross + self.drive_eye_height
+        tgt_e, tgt_n = self.h_align.point_location(look_sta, self.drive_lane_offset)
+
+        tgt_cl_z, _ = self.v_prof.elevation_and_grade_at(look_sta)
+        tgt_z = tgt_cl_z + abs(self.drive_lane_offset) * curr_cross + self.drive_eye_height * 0.85
+        fx, fy, fz = tgt_e - cam_e, tgt_n - cam_n, tgt_z - cam_z
+        f_len = max(1e-6, math.hypot(fx, fy, fz))
+        fx, fy, fz = fx / f_len, fy / f_len, fz / f_len
+
+        rx, ry, rz = fy, -fx, 0.0
+        r_len = max(1e-6, math.hypot(rx, ry, rz))
+        rx, ry, rz = rx / r_len, ry / r_len, rz / r_len
+        ux, uy, uz = ry * fz - rz * fy, rz * fx - rx * fz, rx * fy - ry * fx
+        # 차량 편경사 기울기(Roll) 적용
+        roll_ang = -curr_cross * 0.65
+        cos_r, sin_r = math.cos(roll_ang), math.sin(roll_ang)
+        rx_r, ry_r, rz_r = rx * cos_r + ux * sin_r, ry * cos_r + uy * sin_r, rz * cos_r + uz * sin_r
+        ux_r, uy_r, uz_r = -rx * sin_r + ux * cos_r, -ry * sin_r + uy * cos_r, -rz * sin_r + uz * cos_r
+        fov_scale = w * 0.75
+
+        def project_3d(pt_3d):
+            px, py, pz = pt_3d
+
+            dx = px - cam_e
+            dy = py - cam_n
+            dz = pz - cam_z
+            z_cam = dx * fx + dy * fy + dz * fz
+            if z_cam <= 1.2:  # 카메라 뒤쪽이나 너무 가까운 점 클리핑
+                return None
+            x_cam = dx * rx_r + dy * ry_r + dz * rz_r
+            y_cam = dx * ux_r + dy * uy_r + dz * uz_r
+            sx = w * 0.5 + fov_scale * (x_cam / z_cam)
+            sy = h * 0.48 - fov_scale * (y_cam / z_cam)
+            return sx, sy
+
+        def section_pts(s_val):
+            ce, cn = self.h_align.point_location(s_val, 0.0)
+
+            cz, _ = self.v_prof.elevation_and_grade_at(s_val)
+            ls, rs = self.sup_tbl.get_slopes_at(s_val)
+            l_off, _ = self.left_lane.get_offset_at(s_val)  # ← 튜플 언팩 필수
+            r_off, _ = self.right_lane.get_offset_at(s_val)
+            lez = cz + abs(l_off) * ls
+            rez = cz + abs(r_off) * rs
+            leps_o, reps_o = l_off - 1.5, r_off + 1.5
+            leps_z, reps_z = lez - 0.06, rez - 0.06
+            lday_o, rday_o = leps_o - 2.5, reps_o + 2.5
+            lday_z, rday_z = leps_z - 1.25, reps_z - 1.25
+            return {
+                "L_DAY": (*self.h_align.point_location(s_val, lday_o), lday_z),
+                "L_EPS": (*self.h_align.point_location(s_val, leps_o), leps_z),
+                "L_ETW": (*self.h_align.point_location(s_val, l_off), lez),
+                "CL": (ce, cn, cz),
+                "R_ETW": (*self.h_align.point_location(s_val, r_off), rez),
+                "R_EPS": (*self.h_align.point_location(s_val, reps_o), reps_z),
+                "R_DAY": (*self.h_align.point_location(s_val, rday_o), rday_z),
+            }
+        # ── 8. 슬라이스 (view_dist 600으로 확장)
+        view_dist, step = 600.0, 4.0
+        slices = []
+        sv = cam_sta + 2.0
+        max_s = min(self.h_align.total_length, cam_sta + view_dist)
+        while sv <= max_s:
+            slices.append(section_pts(sv))
+            sv += step
+
+        keys = ["L_DAY", "L_EPS", "L_ETW", "CL", "R_ETW", "R_EPS", "R_DAY"]
+        for i in range(len(slices) - 2, -1, -1):
+            sn, sf = slices[i], slices[i + 1]
+            dist_ratio = (i * step) / view_dist
+            pn = {k: project_3d(sn[k]) for k in keys}
+            pf = {k: project_3d(sf[k]) for k in keys}
+            if any(pn[k] is None or pf[k] is None for k in keys):
+                continue
+
+            shade = 1.0 - dist_ratio * 0.55
+            is_even = (int((cam_sta + i * step) // step) % 2 == 0)
+
+            # 비탈면
+            slope_col = f"#{int(22 * shade):02x}{int((75 if is_even else 62) * shade):02x}{int(45 * shade):02x}"
+            for a, b in [("L_DAY", "L_EPS"), ("R_EPS", "R_DAY")]:
+                c.create_polygon(*pn[a], *pn[b], *pf[b], *pf[a], fill=slope_col, outline="")
+
+            # 길어깨
+            shd_col = f"#{int(45 * shade):02x}{int(52 * shade):02x}{int(62 * shade):02x}"
+            for a, b in [("L_EPS", "L_ETW"), ("R_ETW", "R_EPS")]:
+                c.create_polygon(*pn[a], *pn[b], *pf[b], *pf[a], fill=shd_col, outline="")
+
+            # 아스팔트
+            rb = 58 if is_even else 50
+            road_col = f"#{int(rb * shade):02x}{int((rb + 4) * shade):02x}{int((rb + 10) * shade):02x}"
+            c.create_polygon(*pn["L_ETW"], *pn["R_ETW"], *pf["R_ETW"], *pf["L_ETW"], fill=road_col, outline="")
+
+            # 차선
+            lw = max(1, int(2.5 * (1.0 - dist_ratio)))
+            c.create_line(*pn["CL"], *pf["CL"], fill="#facc15", width=lw)
+            c.create_line(*pn["L_ETW"], *pf["L_ETW"], fill="#f8fafc", width=max(1, lw - 1))
+            c.create_line(*pn["R_ETW"], *pf["R_ETW"], fill="#f8fafc", width=max(1, lw - 1))
+
+        # ── 9. HUD
+        disp_s, zone = self.sta_mgr.raw_to_display(cam_sta)
+        r_off, _ = self.right_lane.get_offset_at(cam_sta)
+        c.create_text(12, 10, anchor="nw", fill="#38bdf8",
+                      font=("맑은 고딕", 9, "bold"),
+                      text="3D DRIVE VIEW (1인칭 가상 주행)")
+        hud = (
+            f"STA: {self.sta_mgr.format_station(disp_s)} (Z{zone}) | {int(self.drive_speed_kmh)} km/h\n"
+            f"EL : {cam_cl_z:.3f}m (경사 {curr_grade * 100:+.2f}%) | "
+            f"편경사: {l_slp * 100:+.1f}%/{r_slp * 100:+.1f}% | 우폭:{r_off:.2f}m"
+        )
+        c.create_rectangle(10, 30, w - 10, 68, fill="#0f172a", outline="#334155")
+        c.create_text(18, 36, anchor="nw", text=hud, fill="#f8fafc", font=("Consolas", 8, "bold"))
+    # --------------------------------------------------------------------------
+    # [뷰포트 3] 종단도(Profile View) 렌더링
     # --------------------------------------------------------------------------
     def draw_profile_view(self):
         c = self.canvas_prof
@@ -578,7 +811,7 @@ class Civil3DStudioDashboard:
         )
 
     # --------------------------------------------------------------------------
-    # [뷰포트 3] 실시간 횡단면도(Cross Section View) 렌더링
+    # [뷰포트 4] 실시간 횡단면도(Cross Section View) 렌더링
     # --------------------------------------------------------------------------
     def draw_cross_section_view(self):
         c = self.canvas_sec
@@ -653,9 +886,7 @@ class Civil3DStudioDashboard:
 
 
         self.active_raw_sta = raw_sta
-        self._update_plan_active_marker()
-        self._update_prof_active_marker()
-        self.draw_cross_section_view()
+        self._sync_all_active_markers()
 
         psx, psy = hw + (pe - cx) * scale, hh - (pn - cy) * scale
         self.canvas_plan.create_line(event.x, event.y, psx, psy, fill="#facc15", dash=(3, 3), tags="plan_tooltip")
@@ -685,9 +916,7 @@ class Civil3DStudioDashboard:
             return
         ratio = (event.x - pl) / max(1.0, pr - pl)
         self.active_raw_sta = min_s + ratio * (max_s - min_s)
-        self._update_plan_active_marker()
-        self._update_prof_active_marker()
-        self.draw_cross_section_view()
+        self._sync_all_active_markers()
 
     # --------------------------------------------------------------------------
     # 3D DXF 및 3D CSV 파일 내보내기 기능
