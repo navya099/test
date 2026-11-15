@@ -56,6 +56,9 @@ class Civil3DStudioDashboard:
         #코리더 상태변수
         self.corridor: Optional[Corridor3DEngine] = None
 
+        # 종단 인터랙티브 드래그 편집 상태 변수
+        self.drag_target = None  # ("PVI", index) 또는 ("STRUCT_START", index) 또는 ("STRUCT_END", index)
+
         # 화면 좌표 변환 캐시 파라미터
         self.plan_transform = (1.0, 0.0, 0.0, 0.0, 0.0)
         self.prof_bounds = (0, 0, 1, 1, 0, 1, 0, 1)
@@ -256,6 +259,9 @@ class Civil3DStudioDashboard:
         self.canvas_sec = tk.Canvas(sec_frame, bg="#151921", highlightthickness=0)
         self.canvas_sec.pack(fill=tk.BOTH, expand=True)
         self.canvas_sec.bind("<Configure>", lambda e: self.draw_cross_section_view())
+        self.canvas_prof.bind("<ButtonPress-1>", self.on_prof_mouse_down)
+        self.canvas_prof.bind("<B1-Motion>", self.on_prof_mouse_drag)
+        self.canvas_prof.bind("<ButtonRelease-1>", self.on_prof_mouse_up)
 
     def _create_editor_tab(self, notebook: ttk.Notebook, title: str, guide_text: str) -> tk.Text:
         frame = ttk.Frame(notebook)
@@ -809,10 +815,12 @@ class Civil3DStudioDashboard:
             curr_e += 2.0
 
         pvi_coords = []
-        for pvi in self.v_prof.pvi_list:
+        for idx, pvi in enumerate(self.v_prof.pvi_list):
             px, py = to_px(pvi.station, pvi.elevation)
             pvi_coords.extend([px, py])
             c.create_polygon(px, py, px - 5, py - 8, px + 5, py - 8, outline="#facc15", fill="")
+            # 드래그 감지용 히트 영역 (반경 8px)
+            c.create_oval(px - 8, py - 10, px + 8, py + 6, outline="", fill="", tags=(f"pvi_{idx}",))
         c.create_line(*pvi_coords, fill="#475569", dash=(2, 2))
 
         fg_coords = []
@@ -843,7 +851,8 @@ class Civil3DStudioDashboard:
                 "TUNNEL": ("#f59e0b", "터널"),
                 "RETAINING_WALL": ("#a78bfa", "옹벽")
             }
-            for st in self.corridor.structures:
+            # 구조물 구간 바(Bar) 그리는 루프 내부에 시·종점 드래그 핸들 추가:
+            for idx, st in enumerate(self.corridor.structures):
                 s1 = max(min_s, st.start_station)
                 s2 = min(max_s, st.end_station)
                 if s2 <= s1:
@@ -862,6 +871,12 @@ class Civil3DStudioDashboard:
                     text=f"[{type_kor}] {st.name}",
                     fill=col, font=("맑은 고딕", 7, "bold")
                 )
+
+                # 시점(x1) 및 종점(x2) 드래그용 사각 그립 핸들 추가
+                c.create_rectangle(x1 - 4, pt + 22, x1 + 4, pt + 36, fill=col, outline="#ffffff",
+                                   tags=("st_handle", f"st_start_{idx}"))
+                c.create_rectangle(x2 - 4, pt + 22, x2 + 4, pt + 36, fill=col, outline="#ffffff",
+                                   tags=("st_handle", f"st_end_{idx}"))
         s_step = 200.0
         curr_s = 0.0
         while curr_s <= max_s + 1e-6:
@@ -1108,6 +1123,104 @@ class Civil3DStudioDashboard:
             w.writerows(rows)
         messagebox.showinfo("저장 완료", f"3D 좌표 CSV 테이블이 저장되었습니다:\n{path}")
 
+    def on_prof_mouse_down(self, event):
+        """종단뷰에서 PVI 마커 또는 구조물 시·종점 핸들 클릭 감지"""
+        if not self.v_prof or not self.corridor:
+            return
+
+        items = self.canvas_prof.find_overlapping(event.x - 8, event.y - 8, event.x + 8, event.y + 8)
+        for item in reversed(items):
+            tags = self.canvas_prof.gettags(item)
+            for t in tags:
+                if t.startswith("pvi_"):
+                    try:
+                        idx = int(t.split("_")[1])
+                        self.drag_target = ("PVI", idx)
+                        return
+                    except (ValueError, IndexError):
+                        pass
+                elif t.startswith("st_start_"):
+                    try:
+                        idx = int(t.split("_")[-1])
+                        self.drag_target = ("STRUCT_START", idx)
+                        return
+                    except (ValueError, IndexError):
+                        pass
+                elif t.startswith("st_end_"):
+                    try:
+                        idx = int(t.split("_")[-1])
+                        self.drag_target = ("STRUCT_END", idx)
+                        return
+                    except (ValueError, IndexError):
+                        pass
+        self.drag_target = None
+
+    def on_prof_mouse_drag(self, event):
+        """드래그 중에는 화면 갱신 없이 데이터만 수정 (렉 방지)"""
+        if not self.drag_target:
+            return
+
+        pl, pr, pt, pb, min_s, max_s, min_el, max_el = self.prof_bounds
+        clamped_x = max(pl, min(pr, event.x))
+        clamped_y = max(pt, min(pb, event.y))
+
+        raw_s = min_s + ((clamped_x - pl) / max(1.0, pr - pl)) * (max_s - min_s)
+        raw_el = min_el + ((pb - clamped_y) / max(1.0, pb - pt)) * (max_el - min_el)
+        snapped_s = round(raw_s * 2.0) / 2.0
+        snapped_el = round(raw_el * 20.0) / 20.0
+
+        kind, idx = self.drag_target
+
+        if kind == "PVI":
+            pvis = self.v_prof.pvi_list
+            target_pvi = pvis[idx]
+            if 0 < idx < len(pvis) - 1:
+                min_allowed = pvis[idx - 1].station + 10.0
+                max_allowed = pvis[idx + 1].station - 10.0
+                target_pvi.station = max(min_allowed, min(max_allowed, snapped_s))
+            target_pvi.elevation = snapped_el
+
+            # ★ 중요: 여기서 self.recalculate_all()을 호출하지 않음!
+            # 필요하다면 여기서 얇은 선만 그리는 가벼운 시각화 업데이트 함수를 호출합니다.
+            # 일단은 마우스를 뗄 때까지 화면 갱신을 생략하여 크래시를 방지합니다.
+
+        elif kind in ("STRUCT_START", "STRUCT_END"):
+            st = self.corridor.structures[idx]
+            if kind == "STRUCT_START":
+                st.start_station = max(0.0, min(st.end_station - 10.0, snapped_s))
+            else:
+                st.end_station = min(self.h_align.total_length, max(st.start_station + 10.0, snapped_s))
+
+    def on_prof_mouse_up(self, event):
+        if self.drag_target:
+            kind, idx = self.drag_target
+            self.drag_target = None
+
+            # 3. 마우스를 뗄 때 비로소 텍스트 동기화 및 전체 재계산
+            if kind == "PVI":
+                self._sync_pvi_list_to_editor()
+                self.recalculate_all()
+            elif kind in ("STRUCT_START", "STRUCT_END"):
+                self._sync_structures_to_editor()
+                self.recalculate_all()
+
+    def _sync_pvi_list_to_editor(self):
+        """메모리 상의 수정된 PVI 제원을 좌측 종단 PVI 텍스트 에디터에 반영"""
+        lines = ["# Name, RawSTA, Elevation, L1, L2"]
+        for p in self.v_prof.pvi_list:
+            l1 = p.L1 if p.L1 is not None else (p.L * 0.5 if p.L else 0.0)
+            l2 = p.L2 if p.L2 is not None else (p.L * 0.5 if p.L else 0.0)
+            lines.append(f"{p.name}, {p.station:.2f}, {p.elevation:.3f}, {l1:.1f}, {l2:.1f}")
+        self.txt_pvi.delete("1.0", tk.END)
+        self.txt_pvi.insert("1.0", "\n".join(lines) + "\n")
+
+    def _sync_structures_to_editor(self):
+        """메모리 상의 수정된 구조물 구간을 좌측 구조물 텍스트 에디터에 반영"""
+        lines = ["# Name, Type(BRIDGE/TUNNEL/RETAINING_WALL), StartSTA, EndSTA, Side"]
+        for s in self.corridor.structures:
+            lines.append(f"{s.name}, {s.structure_type}, {s.start_station:.2f}, {s.end_station:.2f}, {s.wall_side}")
+        self.txt_struct.delete("1.0", tk.END)
+        self.txt_struct.insert("1.0", "\n".join(lines) + "\n")
 
 if __name__ == "__main__":
     root = tk.Tk()
