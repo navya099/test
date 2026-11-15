@@ -1,19 +1,11 @@
-import math
-from typing import List, Optional, Dict, Tuple
-
 from assembly.road import RoadAssembly
 from corridor.engine import Corridor3DEngine
-from profile.profile_engine import Civil3DProfileEngine
+from profile.profile import Profile
+
 from profile.pvi import PVIPoint
 from subassembly.link import SubassemblyLink
 from superelevation.superelevation import SuperelevationStation
 from superelevation.superelevation_table import SuperelevationTable
-
-# 앞서 구현한 모듈들 및 클래스들 임포트 (파일 구조에 맞게 경로 조정)
-# from alignment.pi_alignment import AsymmetricPIAlignmentEngine, PIPoint
-# from profile.profile_engine import Civil3DProfileEngine
-# from profile.pvi import PVIPoint
-# from corridor.corridor_engine import Corridor3DEngine, SuperelevationTable, SuperelevationStation, RoadAssembly, SubassemblyLink
 
 
 if __name__ == "__main__":
@@ -45,7 +37,7 @@ if __name__ == "__main__":
     ]
 
     # 종단 선형 엔진을 이용한 CompositeProfile 생성
-    v_prof = Civil3DProfileEngine.build("본선_종단", pvis)
+    v_prof = Profile.create("본선_종단", pvis)
 
     # 3. 편경사 테이블 구성 (우회전 곡선 구간에서 우측 내리막 -5%, 좌측 오르막 +5% 편경사 적용)
     super_table = SuperelevationTable([

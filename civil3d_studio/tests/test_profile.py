@@ -4,7 +4,7 @@ from typing import Optional
 
 from profile.profile_engine import Civil3DProfileEngine
 from profile.pvi import PVIPoint
-
+from profile.profile import Profile
 
 # ==============================================================================
 # 단위 테스트 클래스
@@ -19,8 +19,9 @@ class TestCivil3DProfileEngine(unittest.TestCase):
             PVIPoint("PVI-2", station=2100.0, elevation=60.0, L1=100.0, L2=150.0),  # 비대칭 오목 (Sag): L1=100m, L2=150m
             PVIPoint("EVP", station=2600.0, elevation=85.0)
         ]
-        # 엔진을 통해 순수 객체(CompositeProfile) 생성
-        self.profile = Civil3DProfileEngine.build("테스트_종단선형", self.pvi_list)
+        # Profile 생성
+
+        self.profile = Profile.create("테스트_종단선형", self.pvi_list)
 
     def test_profile_basic_properties(self):
         """선형 기본 시·종점 측점 검증"""
@@ -68,8 +69,39 @@ class TestCivil3DProfileEngine(unittest.TestCase):
     def test_insufficient_pvis_raises_error(self):
         """PVI 개수가 2개 미만일 때 에러 발생 검증"""
         with self.assertRaises(ValueError):
-            Civil3DProfileEngine.build("오류_선형", [PVIPoint("BVP", 1000.0, 50.0)])
+            Profile.create("오류_선형", [PVIPoint("BVP", 1000.0, 50.0)])
 
+    def test_total_length(self):
+        self.assertAlmostEqual(
+            self.profile.total_length,
+            1600.0
+        )
+
+    def test_elevation_at(self):
+        el1 = self.profile.elevation_at(1500.0)
+
+        el2, _ = self.profile.elevation_and_grade_at(
+            1500.0
+        )
+
+        self.assertAlmostEqual(
+            el1,
+            el2,
+            places=6,
+        )
+
+    def test_grade_at(self):
+        g1 = self.profile.grade_at(1500.0)
+
+        _, g2 = self.profile.elevation_and_grade_at(
+            1500.0
+        )
+
+        self.assertAlmostEqual(
+            g1,
+            g2,
+            places=6,
+        )
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

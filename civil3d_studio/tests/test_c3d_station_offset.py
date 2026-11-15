@@ -4,7 +4,7 @@ import io
 import math
 import re
 
-from alignment.japancubic import JapaneseCubicSpiral
+from alignment.japancubic import JapaneseCubicSpiralSegment
 
 # ==============================================================================
 # 2. Civil 3D Station Offset Report 파서 유틸리티
@@ -63,11 +63,11 @@ class TestJapaneseCubicAgainstC3DReport(unittest.TestCase):
         - 시점 측점: 0+522.3121 (522.3121m)
         - 곡선 반경(R): 3100.0m, 완화곡선 길이(L): 333.096m, 좌회전(-1), 진입곡선(False)
         """
-        self.spiral = JapaneseCubicSpiral(
-            start_easting=195986.311,
-            start_northing=387441.999,
-            start_angle_rad=math.radians(100.09556282),
-            start_station=522.3121,
+        self.spiral = JapaneseCubicSpiralSegment(
+            start_e=195986.311,
+            start_n=387441.999,
+            start_angle=math.radians(100.09556282),
+            start_sta=522.3121,
             R=3100,
             L=333.096,
             turn_direction=-1,

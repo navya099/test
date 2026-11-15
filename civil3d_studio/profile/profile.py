@@ -63,6 +63,11 @@ class Profile:
         """
         return self.elevation_and_grade_at(station)[1]
 
+    @property
+    def total_length(self):
+        """종단 전체 길이"""
+        return self.end_station - self.start_station
+
     def print_profile_report(self):
         """Civil 3D 종단 계산서(PVI Report) 출력"""
         print(f"\n======================= [{self.name}] Civil 3D 종단 계산서 (PVI Report) =======================")

@@ -3,6 +3,7 @@ import tkinter as tk
 from profile.profile_engine import Civil3DProfileEngine
 from profile.pvi import PVIPoint
 from profile_view.profile_view import Civil3DProfileViewerApp
+from profile.profile import Profile
 
 # 1. 리스트 대괄호 [...]로 올바르게 묶어줍니다.
 pvis = [
@@ -13,7 +14,7 @@ pvis = [
 ]
 
 # 2. build 메서드는 @staticmethod이므로 클래스명으로 직접 호출하거나 인스턴스를 통해 호출 가능
-profile = Civil3DProfileEngine.build(name="본선_계획종단_FG", pvi_list=pvis)
+profile = Profile.create(name="본선_계획종단_FG", pvi_list=pvis)
 profile.print_profile_report()
 
 root = tk.Tk()
