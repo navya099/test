@@ -11,6 +11,8 @@ from alignment.station.equation_manager import StationEquationManager
 from alignment.widing.offset_alignment import OffsetAlignment
 from alignment.widing.wideing_region import WideningRegion
 from corridor.engine import Corridor3DEngine
+from importer.landxml_exporter import LandXMLExporter
+from importer.landxml_importer import LandXMLImporter
 from profile.pvi import PVIPoint
 from structure.region import StructureRegion
 from superelevation.superelevation import SuperelevationStation
@@ -123,6 +125,14 @@ class Civil3DStudioDashboard:
             toolbar, text="📂 열기 (Ctrl+O)", bg="#334155", fg="white",
             command=self.load_project_dialog, **btn_cfg
         ).pack(side=tk.LEFT, padx=3, pady=6)
+        tk.Button(
+            toolbar, text="🌐 LandXML 열기", bg="#0f766e", fg="white",
+            command = self.import_landxml_dialog, ** btn_cfg
+        ).pack(side=tk.LEFT, padx=2, pady=6)
+        tk.Button(
+            toolbar, text="📤 LandXML 저장", bg="#115e59", fg="white",
+            command = self.export_landxml_dialog, ** btn_cfg
+        ).pack(side=tk.LEFT, padx=2, pady=6)
         tk.Button(
             toolbar, text="💾 저장 (Ctrl+S)", bg="#0284c7", fg="white",
             command=self.save_project_dialog, **btn_cfg
@@ -1586,6 +1596,80 @@ class Civil3DStudioDashboard:
             messagebox.showinfo("계산서 저장 완료", f"평면·종단 선형 계산서가 저장되었습니다:\n{path}")
         except Exception as ex:
             messagebox.showerror("저장 오류", f"선형 계산서 생성 중 오류가 발생했습니다:\n{ex}")
+
+    def import_landxml_dialog(self):
+        """Civil 3D LandXML(.xml) 파일을 읽어 좌측 에디터에 자동 채우고 전체 재계산"""
+        target_path = filedialog.askopenfilename(
+            title="Civil 3D LandXML 파일 열기",
+            filetypes=[("LandXML 파일", "*.xml"), ("모든 파일", "*.*")]
+        )
+        if not target_path:
+            return
+
+        try:
+            parsed = LandXMLImporter.parse_file(target_path)
+            if len(parsed["pis"]) < 2:
+                raise ValueError("LandXML에서 유효한 평면 선형(PI)을 추출하지 못했습니다.")
+
+            self.is_driving = False
+            self.btn_drive.config(text="🚗 3D 주행 시작 (Space)", bg="#e11d48")
+            self.current_project_path = None
+            self._clear_editors()
+
+            self.entry_align_name.delete(0, tk.END)
+            self.entry_align_name.insert(0, parsed["name"])
+
+            # 1. 평면 PI 에디터 채우기
+            pi_lines = ["# Name, Easting, Northing, R, L1, L2"]
+            for p in parsed["pis"]:
+                pi_lines.append(f"{p.name}, {p.easting:.4f}, {p.northing:.4f}, {p.R:.3f}, {p.L1:.3f}, {p.L2:.3f}")
+            self.txt_pi.insert("1.0", "\n".join(pi_lines) + "\n")
+
+            # 2. 종단 PVI 에디터 채우기 (LandXML에 종단이 없으면 기본 수평 종단 자동 생성)
+            pvi_lines = ["# Name, RawSTA, Elevation, L1, L2"]
+            if len(parsed["pvis"]) >= 2:
+                for v in parsed["pvis"]:
+                    pvi_lines.append(f"{v.name}, {v.station:.3f}, {v.elevation:.3f}, {v.L1:.3f}, {v.L2:.3f}")
+            else:
+                pvi_lines.append("BVP, 0.0, 40.00, 0, 0")
+                pvi_lines.append("EVP, 1000.0, 40.00, 0, 0")
+            self.txt_pvi.insert("1.0", "\n".join(pvi_lines) + "\n")
+
+            # 3. 기본 편경사 초기화
+            self.txt_super.insert("1.0", "# [SUPERELEVATION] RawSTA, LeftSlope, RightSlope\n0.0, -0.02, -0.02\n")
+
+            # 4. 시점 측점 및 파정(Station Equation) 에디터 채우기
+            eq_lines = [f"START, {parsed['start_station']:.3f}"]
+            for b_sta, a_sta in parsed["equations"]:
+                eq_lines.append(f"EQ, {b_sta:.3f}, {a_sta:.3f}")
+            self.txt_eq.insert("1.0", "\n".join(eq_lines) + "\n")
+
+            self.active_raw_sta = 0.0
+            self._update_window_title()
+            self.recalculate_all()
+            self.status_var.set(f"LandXML 로드 완료: {os.path.basename(target_path)}")
+        except Exception as ex:
+            messagebox.showerror("LandXML 파싱 오류", f"LandXML 파일을 읽는 중 오류가 발생했습니다:\n{ex}")
+
+    def export_landxml_dialog(self):
+        """현재 설계된 평면·종단·파정 선형을 Civil 3D 표준 LandXML(.xml) 파일로 내보내기"""
+        if not self.h_align or not self.v_prof or not self.sta_mgr:
+            return
+        default_xml = f"{self.entry_align_name.get().strip() or 'alignment'}_export.xml"
+        path = filedialog.asksaveasfilename(
+        title = "Civil 3D LandXML 내보내기",
+        defaultextension = ".xml",
+        initialfile = default_xml,
+        filetypes = [("LandXML 파일", "*.xml")]
+        )
+
+        if not path:
+            return
+        try:
+            LandXMLExporter.export_file(path, self.h_align, self.v_prof, self.sta_mgr)
+            messagebox.showinfo("LandXML 내보내기 완료", f"Civil 3D 호환 LandXML 파일이 저장되었습니다:\n{path}")
+        except Exception as ex:
+            messagebox.showerror("LandXML 저장 오류", f"LandXML 생성 중 오류가 발생했습니다:\n{ex}")
 
 if __name__ == "__main__":
     root = tk.Tk()
