@@ -1,0 +1,668 @@
+import csv
+import math
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from typing import Dict, List, Optional, Tuple
+
+from alignment.pipoint import PIPoint
+from alignment.station.equation_manager import StationEquationManager
+from alignment.widing.offset_alignment import OffsetAlignment
+from alignment.widing.wideing_region import WideningRegion
+from profile.pvi import PVIPoint
+from superelevation.superelevation import SuperelevationStation
+from superelevation.superelevation_table import SuperelevationTable
+from profile.profile import Profile
+from alignment.alignment import Alignment
+
+
+class Civil3DStudioDashboard:
+    """
+    Python 기반 Civil 3D 통합 설계 대시보드 애플리케이션
+    - 평면도(Plan), 종단도(Profile), 횡단면도(Cross Section) 3분할 실시간 뷰포트 제공
+    - 설계 제원 텍스트 에디터 탭 편집 및 즉시 재계산 워크플로우
+    - 순수 Python 기반 3D DXF 및 3D 좌표 CSV 내보내기 지원
+    """
+
+    def __init__(self, root: tk.Tk):
+        self.pis = []
+        self.root = root
+        self.root.title("Python Civil 3D 통합 설계 대시보드 (Plan + Profile + Cross Section + DXF)")
+        self.root.geometry("1440x860")
+        self.root.configure(bg="#181b20")
+
+        # 상태 변수 선언
+
+        self.h_align: Optional[Alignment] = None
+
+        self.v_prof: Optional[Profile] = None
+        self.sup_tbl: Optional[SuperelevationTable] = None
+        self.sta_mgr: Optional[StationEquationManager] = None
+        self.left_lane: Optional[OffsetAlignment] = None
+        self.right_lane: Optional[OffsetAlignment] = None
+        self.active_raw_sta: float = 200.0
+
+        # 화면 좌표 변환 캐시 파라미터
+        self.plan_transform = (1.0, 0.0, 0.0, 0.0, 0.0)
+        self.prof_bounds = (0, 0, 1, 1, 0, 1, 0, 1)
+
+        self._setup_styles()
+        self._build_layout()
+        self._load_default_design_data()
+        self.recalculate_all()
+
+    def _setup_styles(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("TFrame", background="#181b20")
+        style.configure("TLabel", background="#181b20", foreground="#e2e8f0", font=("맑은 고딕", 9))
+        style.configure("Header.TLabel", background="#181b20", foreground="#38bdf8", font=("맑은 고딕", 10, "bold"))
+        style.configure("TNotebook", background="#181b20", borderwidth=0)
+        style.configure("TNotebook.Tab", background="#262b33", foreground="#cbd5e0", padding=[10, 5],
+                        font=("맑은 고딕", 9, "bold"))
+        style.map("TNotebook.Tab", background=[("selected", "#0284c7")], foreground=[("selected", "#ffffff")])
+
+    def _build_layout(self):
+        # 상단 툴바
+        toolbar = tk.Frame(self.root, bg="#0f172a", height=44, padx=12)
+        toolbar.pack(fill=tk.X, side=tk.TOP)
+
+        tk.Label(
+            toolbar, text="CIVIL 3D PYTHON GEOMETRY STUDIO",
+            bg="#0f172a", fg="#38bdf8", font=("Consolas", 12, "bold")
+        ).pack(side=tk.LEFT, pady=8)
+
+        btn_style = {"font": ("맑은 고딕", 9, "bold"), "bd": 0, "padx": 12, "pady": 5, "cursor": "hand2"}
+        tk.Button(
+            toolbar, text="▶ 선형 재계산 및 뷰 갱신", bg="#0284c7", fg="white",
+            command=self.recalculate_all, **btn_style
+        ).pack(side=tk.LEFT, padx=(25, 8), pady=6)
+
+        tk.Button(
+            toolbar, text="💾 3D DXF 도면 내보내기", bg="#059669", fg="white",
+            command=self.export_dxf_dialog, **btn_style
+        ).pack(side=tk.LEFT, padx=6, pady=6)
+
+        tk.Button(
+            toolbar, text="📊 3D 좌표 CSV 저장", bg="#4f46e5", fg="white",
+            command=self.export_csv_dialog, **btn_style
+        ).pack(side=tk.LEFT, padx=6, pady=6)
+
+        self.status_var = tk.StringVar(value="준비 완료")
+        tk.Label(
+            toolbar, textvariable=self.status_var, bg="#0f172a", fg="#94a3b8", font=("맑은 고딕", 9)
+        ).pack(side=tk.RIGHT, padx=10)
+
+        # 메인 좌우 분할 컨테이너 (PanedWindow)
+        main_pane = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, bg="#334155", sashwidth=4)
+        main_pane.pack(fill=tk.BOTH, expand=True)
+
+        # [좌측 패널] 설계 제원 입력 탭 (PI, PVI, 확폭/편경사, 파정)
+        left_panel = ttk.Frame(main_pane, width=420)
+        main_pane.add(left_panel, minsize=380)
+
+        notebook = ttk.Notebook(left_panel)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        self.txt_pi = self._create_editor_tab(
+            notebook, "1. 평면 PI (비대칭)",
+            "형식: 이름, Easting(X), Northing(Y), 반경(R), 진입완화(L1), 진출완화(L2)"
+        )
+        self.txt_pvi = self._create_editor_tab(
+            notebook, "2. 종단 PVI",
+            "형식: 이름, 물리측점(RawSTA), 계획고(EL), 곡선장L (또는 L1, L2)"
+        )
+        self.txt_super = self._create_editor_tab(
+            notebook, "3. 편경사 & 확폭",
+            "[편경사] 물리측점, 좌측경사(소수), 우측경사(소수)  /  [하단] 우측 확폭 제원"
+        )
+        self.txt_eq = self._create_editor_tab(
+            notebook, "4. 파정(Station Eq)",
+            "형식: 시점측점(StartSTA) 및 파정(후방측점 Back, 전방측점 Ahead)"
+        )
+
+        # [우측 패널] 3분할 실시간 뷰포트 (상단: 평면도 | 하단 좌: 종단도 | 하단 우: 횡단면도)
+        right_pane = tk.PanedWindow(main_pane, orient=tk.VERTICAL, bg="#334155", sashwidth=4)
+        main_pane.add(right_pane, minsize=750)
+
+        # 우측 상단: 평면도(Plan View)
+        plan_frame = tk.Frame(right_pane, bg="#111418")
+        right_pane.add(plan_frame, height=420)
+        self.canvas_plan = tk.Canvas(plan_frame, bg="#111418", highlightthickness=0)
+        self.canvas_plan.pack(fill=tk.BOTH, expand=True)
+        self.canvas_plan.bind("<Motion>", self.on_plan_mouse_move)
+        self.canvas_plan.bind("<Configure>", lambda e: self.redraw_all_views())
+
+        # 우측 하단 좌우 분할: 종단도(Profile View) + 횡단면도(Cross Section View)
+        bottom_pane = tk.PanedWindow(right_pane, orient=tk.HORIZONTAL, bg="#334155", sashwidth=4)
+        right_pane.add(bottom_pane, height=380)
+
+        prof_frame = tk.Frame(bottom_pane, bg="#13171d")
+        bottom_pane.add(prof_frame, width=620)
+        self.canvas_prof = tk.Canvas(prof_frame, bg="#13171d", highlightthickness=0)
+        self.canvas_prof.pack(fill=tk.BOTH, expand=True)
+        self.canvas_prof.bind("<Motion>", self.on_prof_mouse_move)
+        self.canvas_prof.bind("<Configure>", lambda e: self.redraw_all_views())
+
+        sec_frame = tk.Frame(bottom_pane, bg="#151921")
+        bottom_pane.add(sec_frame, width=380)
+        self.canvas_sec = tk.Canvas(sec_frame, bg="#151921", highlightthickness=0)
+        self.canvas_sec.pack(fill=tk.BOTH, expand=True)
+        self.canvas_sec.bind("<Configure>", lambda e: self.draw_cross_section_view())
+
+    def _create_editor_tab(self, notebook: ttk.Notebook, title: str, guide_text: str) -> tk.Text:
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text=title)
+        ttk.Label(frame, text=guide_text, foreground="#94a3b8", wraplength=380).pack(anchor="w", padx=8, pady=(8, 4))
+        txt = tk.Text(
+            frame, bg="#0f172a", fg="#f8fafc", insertbackground="#38bdf8",
+            font=("Consolas", 10), bd=1, relief=tk.FLAT, padx=8, pady=8
+        )
+        txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+        return txt
+
+    def _load_default_design_data(self):
+        self.txt_pi.insert("1.0", (
+            "# Name, Easting, Northing, R, L1, L2\n"
+            "BP,   200000.000, 500000.000,   0,   0,  0\n"
+            "IP-1, 200420.000, 500260.000, 450, 100, 80\n"
+            "IP-2, 200880.000, 500040.000, 400,  80, 90\n"
+            "EP,   201320.000, 500320.000,   0,   0,  0\n"
+        ))
+        self.txt_pvi.insert("1.0", (
+            "# Name, RawSTA, Elevation, L1, L2\n"
+            "BVP,   0.0,    40.00,   0,   0\n"
+            "PVI-1, 420.0,  49.50, 100, 100\n"
+            "PVI-2, 880.0,  42.00,  80, 120\n"
+            "EVP,   1350.0, 46.50,   0,   0\n"
+        ))
+        self.txt_super.insert("1.0", (
+            "# [SUPERELEVATION] RawSTA, LeftSlope, RightSlope\n"
+            "0.0,    -0.02, -0.02\n"
+            "260.0,  -0.02, -0.02\n"
+            "360.0,   0.05, -0.05\n"
+            "540.0,   0.05, -0.05\n"
+            "620.0,  -0.02, -0.02\n"
+            "740.0,  -0.02, -0.02\n"
+            "820.0,  -0.05,  0.05\n"
+            "1020.0, -0.05,  0.05\n"
+            "1110.0, -0.02, -0.02\n"
+            "\n"
+            "# [WIDENING_RIGHT] Name, StartSTA, EndSTA, AddWidth, EntryLen, ExitLen, Type(Smooth/Linear)\n"
+            "버스정차대, 120.0, 240.0, 3.0, 25.0, 25.0, Smooth\n"
+        ))
+        self.txt_eq.insert("1.0", (
+            "# START_STATION: 시점 기준 측점\n"
+            "START, 1000.0\n"
+            "# EQUATION: BackSTA, AheadSTA (파정)\n"
+            "EQ, 1300.0, 1350.0\n"
+        ))
+
+    def recalculate_all(self):
+        try:
+            # 1. 평면 PI 파싱
+            self.pis = []
+            for line in self.txt_pi.get("1.0", tk.END).splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                self.pis.append(PIPoint(
+                    name=parts[0],
+                    easting=float(parts[1]),
+                    northing=float(parts[2]),
+                    R=float(parts[3]) if len(parts) > 3 and parts[3] else 0.0,
+                    L1=float(parts[4]) if len(parts) > 4 and parts[4] else 0.0,
+                    L2=float(parts[5]) if len(parts) > 5 and parts[5] else None
+                ))
+            self.h_align = Alignment.create(name="본선_중심선", pi_list=self.pis)
+
+            # 2. 종단 PVI 파싱
+            pvis = []
+            for line in self.txt_pvi.get("1.0", tk.END).splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                pvis.append(PVIPoint(
+                    name=parts[0],
+                    station=float(parts[1]),
+                    elevation=float(parts[2]),
+                    L1=float(parts[3]) if len(parts) > 3 and parts[3] else 0.0,
+                    L2=float(parts[4]) if len(parts) > 4 and parts[4] else 0.0
+                ))
+            pvis[-1].station = self.h_align.total_length
+            self.v_prof = Profile.create(name="본선_배치 (1)", pvi_list=pvis)
+
+            # 3. 편경사 및 확폭 파싱
+            sup_list = []
+            self.right_lane = OffsetAlignment("우측차선_ETW", self.h_align, nominal_offset=+3.5)
+            self.left_lane = OffsetAlignment("좌측차선_ETW", self.h_align, nominal_offset=-3.5)
+            mode = "SUPER"
+            for line in self.txt_super.get("1.0", tk.END).splitlines():
+                line = line.strip()
+                if "[WIDENING_RIGHT]" in line:
+                    mode = "WIDEN"
+                    continue
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if mode == "SUPER":
+                    sup_list.append(SuperelevationStation(float(parts[0]), float(parts[1]), float(parts[2])))
+                else:
+                    self.right_lane.add_widening(WideningRegion(
+                        name=parts[0],
+                        start_station=float(parts[1]),
+                        end_station=float(parts[2]),
+                        widening_width=float(parts[3]),
+                        entry_transition_len=float(parts[4]),
+                        exit_transition_len=float(parts[5]),
+                        transition_type=parts[6] if len(parts) > 6 else "Smooth"
+                    ))
+            self.sup_tbl = SuperelevationTable(sup_list)
+
+            # 4. 파정(Station Equation) 파싱
+            start_sta = 0.0
+            eq_pairs = []
+            for line in self.txt_eq.get("1.0", tk.END).splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if parts[0].upper() == "START":
+                    start_sta = float(parts[1])
+                elif parts[0].upper() == "EQ":
+                    eq_pairs.append((float(parts[1]), float(parts[2])))
+
+            self.sta_mgr = StationEquationManager(start_station=start_sta,
+                                                  total_physical_length=self.h_align.total_length)
+            for b_sta, a_sta in eq_pairs:
+                self.sta_mgr.add_equation_by_back(b_sta, a_sta)
+
+            self.active_raw_sta = min(self.active_raw_sta, self.h_align.total_length)
+            self.redraw_all_views()
+            end_disp, _ = self.sta_mgr.raw_to_display(self.h_align.total_length)
+            self.status_var.set(
+                f"계산 완료 | 총 연장: {self.h_align.total_length:.2f}m | "
+                f"측점 범위: {self.sta_mgr.format_station(start_sta)} ~ {self.sta_mgr.format_station(end_disp)}"
+            )
+        except Exception as ex:
+            messagebox.showerror("설계 제원 오류", str(ex))
+
+    def redraw_all_views(self):
+        if not self.h_align or not self.v_prof:
+            return
+        self.draw_plan_view()
+        self.draw_profile_view()
+        self.draw_cross_section_view()
+
+    # --------------------------------------------------------------------------
+    # [뷰포트 1] 평면도(Plan View) 렌더링
+    # --------------------------------------------------------------------------
+    def draw_plan_view(self):
+        c = self.canvas_plan
+        c.delete("all")
+        w, h = max(100, c.winfo_width()), max(100, c.winfo_height())
+
+        total_len = self.h_align.total_length
+        samples = 240
+        cl_pts, r_pts, l_pts = [], [], []
+        all_x, all_y = [], []
+
+        for i in range(samples + 1):
+            s = total_len * (i / samples)
+            ce, cn = self.h_align.point_location(s, 0.0)
+            re, rn = self.h_align.point_location(s, self.right_lane.get_offset_at(s)[0])
+            le, ln = self.h_align.point_location(s, self.left_lane.get_offset_at(s)[0])
+            cl_pts.append((ce, cn))
+            r_pts.append((re, rn))
+            l_pts.append((le, ln))
+            all_x.extend([ce, re, le])
+            all_y.extend([cn, rn, ln])
+
+        for pi in self.pis:
+            all_x.append(pi.easting)
+            all_y.append(pi.northing)
+
+        min_x, max_x = min(all_x), max(all_x)
+        min_y, max_y = min(all_y), max(all_y)
+        span_x = max(1.0, max_x - min_x)
+        span_y = max(1.0, max_y - min_y)
+        pad = 45
+        scale = min((w - 2 * pad) / span_x, (h - 2 * pad) / span_y)
+        cx, cy = (min_x + max_x) * 0.5, (min_y + max_y) * 0.5
+        self.plan_transform = (scale, cx, cy, w * 0.5, h * 0.5)
+
+        def to_scr(gx, gy):
+            return w * 0.5 + (gx - cx) * scale, h * 0.5 - (gy - cy) * scale
+
+        pi_scr = []
+        for pi in self.pis:
+            sx, sy = to_scr(pi.easting, pi.northing)
+            pi_scr.extend([sx, sy])
+            c.create_polygon(sx, sy - 6, sx + 5, sy + 4, sx - 5, sy + 4, outline="#facc15", fill="", width=1.5)
+            c.create_text(sx, sy - 12, text=pi.name, fill="#facc15", font=("Consolas", 8, "bold"))
+        c.create_line(*pi_scr, fill="#475569", dash=(3, 3))
+
+        for pts_arr in (r_pts, l_pts):
+            coords = [coord for gx, gy in pts_arr for coord in to_scr(gx, gy)]
+            c.create_line(*coords, fill="#2dd4bf", width=1.5)
+
+        cl_coords = [coord for gx, gy in cl_pts for coord in to_scr(gx, gy)]
+        c.create_line(*cl_coords, fill="#f43f5e", width=2.5)
+
+        sta_step = 100.0
+        s_tick = 0.0
+        while s_tick <= total_len + 1e-6:
+            gx, gy = self.h_align.point_location(min(s_tick, total_len), 0.0)
+            sx, sy = to_scr(gx, gy)
+            disp_s, _ = self.sta_mgr.raw_to_display(min(s_tick, total_len))
+            c.create_oval(sx - 2.5, sy - 2.5, sx + 2.5, sy + 2.5, fill="#ffffff", outline="")
+            c.create_text(sx, sy + 12, text=self.sta_mgr.format_station(disp_s), fill="#94a3b8", font=("Consolas", 8))
+            s_tick += sta_step
+
+        c.create_text(14, 14, anchor="nw", fill="#38bdf8", font=("맑은 고딕", 9, "bold"),
+                      text="PLAN VIEW (평면 선형 & 확폭 차선) - 마우스를 움직여 실시간 추적")
+        self._update_plan_active_marker()
+
+    def _update_plan_active_marker(self):
+        c = self.canvas_plan
+        c.delete("active_marker")
+        if not self.h_align:
+            return
+        scale, cx, cy, hw, hh = self.plan_transform
+        gx, gy = self.h_align.point_location(self.active_raw_sta, 0.0)
+        sx, sy = hw + (gx - cx) * scale, hh - (gy - cy) * scale
+        c.create_oval(sx - 5, sy - 5, sx + 5, sy + 5, fill="#38bdf8", outline="#ffffff", width=1.5,
+                      tags="active_marker")
+
+    # --------------------------------------------------------------------------
+    # [뷰포트 2] 종단도(Profile View) 렌더링
+    # --------------------------------------------------------------------------
+    def draw_profile_view(self):
+        c = self.canvas_prof
+        c.delete("all")
+        w, h = max(100, c.winfo_width()), max(100, c.winfo_height())
+        pl, pr, pt, pb = 58, w - 24, 34, h - 36
+        min_s, max_s = 0.0, max(1.0, self.h_align.total_length)
+
+        els = [p.elevation for p in self.v_prof.pvi_list]
+        min_el = math.floor((min(els) - 2.0) / 2.0) * 2.0
+        max_el = math.ceil((max(els) + 2.0) / 2.0) * 2.0
+        self.prof_bounds = (pl, pr, pt, pb, min_s, max_s, min_el, max_el)
+
+        def to_px(s_val, el_val):
+            x = pl + ((s_val - min_s) / (max_s - min_s)) * (pr - pl)
+            y = pb - ((el_val - min_el) / max(0.1, max_el - min_el)) * (pb - pt)
+            return x, y
+
+        c.create_rectangle(pl, pt, pr, pb, outline="#334155")
+
+        curr_e = min_el
+        while curr_e <= max_el + 1e-6:
+            _, y = to_px(min_s, curr_e)
+            c.create_line(pl, y, pr, y, fill="#1e293b")
+            c.create_text(pl - 6, y, anchor="e", text=f"{curr_e:.1f}", fill="#94a3b8", font=("Consolas", 8))
+            curr_e += 2.0
+
+        pvi_coords = []
+        for pvi in self.v_prof.pvi_list:
+            px, py = to_px(pvi.station, pvi.elevation)
+            pvi_coords.extend([px, py])
+            c.create_polygon(px, py, px - 5, py - 8, px + 5, py - 8, outline="#facc15", fill="")
+        c.create_line(*pvi_coords, fill="#475569", dash=(2, 2))
+
+        fg_coords = []
+        for i in range(181):
+            s = min_s + (max_s - min_s) * (i / 180.0)
+            el, _ = self.v_prof.elevation_and_grade_at(s)
+            fg_coords.extend(to_px(s, el))
+        c.create_line(*fg_coords, fill="#f43f5e", width=2.2)
+
+        s_step = 200.0
+        curr_s = 0.0
+        while curr_s <= max_s + 1e-6:
+            x, _ = to_px(curr_s, min_el)
+            c.create_line(x, pt, x, pb, fill="#1e293b")
+            disp_s, _ = self.sta_mgr.raw_to_display(min(curr_s, max_s))
+            c.create_text(x, pb + 12, text=self.sta_mgr.format_station(disp_s), fill="#94a3b8", font=("Consolas", 8))
+            curr_s += s_step
+
+        c.create_text(14, 10, anchor="nw", fill="#38bdf8", font=("맑은 고딕", 9, "bold"),
+                      text="PROFILE VIEW (종단 선형)")
+        self._update_prof_active_marker()
+
+    def _update_prof_active_marker(self):
+        c = self.canvas_prof
+        c.delete("active_prof")
+        pl, pr, pt, pb, min_s, max_s, min_el, max_el = self.prof_bounds
+        el, grade = self.v_prof.elevation_and_grade_at(self.active_raw_sta)
+        x = pl + ((self.active_raw_sta - min_s) / (max_s - min_s)) * (pr - pl)
+        y = pb - ((el - min_el) / max(0.1, max_el - min_el)) * (pb - pt)
+
+        c.create_line(x, pt, x, pb, fill="#38bdf8", dash=(3, 3), tags="active_prof")
+        c.create_oval(x - 4, y - 4, x + 4, y + 4, fill="#f43f5e", outline="#ffffff", width=1.5, tags="active_prof")
+        c.create_text(
+            pr - 8, pt + 12, anchor="ne", fill="#e2e8f0", font=("Consolas", 8, "bold"),
+            text=f"EL: {el:.3f}m | 경사: {grade * 100:+.2f}%", tags="active_prof"
+        )
+
+    # --------------------------------------------------------------------------
+    # [뷰포트 3] 실시간 횡단면도(Cross Section View) 렌더링
+    # --------------------------------------------------------------------------
+    def draw_cross_section_view(self):
+        c = self.canvas_sec
+        c.delete("all")
+        if not self.h_align or not self.v_prof:
+            return
+
+        w, h = max(100, c.winfo_width()), max(100, c.winfo_height())
+        s = self.active_raw_sta
+        disp_s, zone = self.sta_mgr.raw_to_display(s)
+        cl_el, _ = self.v_prof.elevation_and_grade_at(s)
+        l_slope, r_slope = self.sup_tbl.get_slopes_at(s)
+        l_off, l_dw = self.left_lane.get_offset_at(s)  # 음수 (-)
+        r_off, r_dw = self.right_lane.get_offset_at(s)  # 양수 (+)
+
+        l_etw_dz = abs(l_off) * l_slope
+        r_etw_dz = abs(r_off) * r_slope
+
+        pts = [
+            (l_off - 3.0, l_etw_dz - 1.5 * 0.04 - 1.5 * 0.5),
+            (l_off - 1.5, l_etw_dz - 1.5 * 0.04),
+            (l_off, l_etw_dz),
+            (0.0, 0.0),
+            (r_off, r_etw_dz),
+            (r_off + 1.5, r_etw_dz - 1.5 * 0.04),
+            (r_off + 3.0, r_etw_dz - 1.5 * 0.04 - 1.5 * 0.5),
+        ]
+
+        cx, cy = w * 0.5, h * 0.56
+        scale_x = (w - 60) / 24.0
+        scale_y = scale_x * 4.0
+
+        def to_sec(off_x, dz_y):
+            return cx + off_x * scale_x, cy - dz_y * scale_y
+
+        c.create_line(cx, 38, cx, h - 25, fill="#334155", dash=(4, 4))
+
+        top_scr = [to_sec(ox, dz) for ox, dz in pts]
+        bot_scr = [to_sec(ox, dz - 0.25) for ox, dz in reversed(pts)]
+        poly_coords = [coord for pt in (top_scr + bot_scr) for coord in pt]
+        c.create_polygon(*poly_coords, fill="#1e293b", outline="#38bdf8", width=2)
+
+        for ox, dz in pts:
+            sx, sy = to_sec(ox, dz)
+            c.create_oval(sx - 3.5, sy - 3.5, sx + 3.5, sy + 3.5, fill="#facc15", outline="#0f172a")
+
+        c.create_text(14, 10, anchor="nw", fill="#38bdf8", font=("맑은 고딕", 9, "bold"),
+                      text=f"CROSS SECTION (실시간 횡단면) - STA {self.sta_mgr.format_station(disp_s)} (Zone {zone})")
+
+        info_txt = (
+            f"중심 계획고(CL EL): {cl_el:.3f} m\n"
+            f"좌측 차선: 폭 {abs(l_off):.2f}m | 편경사 {l_slope * 100:+.2f}%\n"
+            f"우측 차선: 폭 {abs(r_off):.2f}m | 편경사 {r_slope * 100:+.2f}%"
+        )
+        c.create_text(14, 32, anchor="nw", fill="#cbd5e0", font=("Consolas", 8), text=info_txt)
+
+    # --------------------------------------------------------------------------
+    # 마우스 실시간 연동 이벤트 핸들러
+    # --------------------------------------------------------------------------
+    def on_plan_mouse_move(self, event):
+        if not self.h_align:
+            return
+        scale, cx, cy, hw, hh = self.plan_transform
+        gx = cx + (event.x - hw) / scale
+        gy = cy - (event.y - hh) / scale
+        res = self.h_align.station_offset(gx, gy)
+        if res is None:
+            return
+        raw_sta, offset, pe, pn = res
+        #res = station, signed_offset, proj_e, proj_n
+        self.canvas_plan.delete("plan_tooltip")
+
+
+        self.active_raw_sta = raw_sta
+        self._update_plan_active_marker()
+        self._update_prof_active_marker()
+        self.draw_cross_section_view()
+
+        psx, psy = hw + (pe - cx) * scale, hh - (pn - cy) * scale
+        self.canvas_plan.create_line(event.x, event.y, psx, psy, fill="#facc15", dash=(3, 3), tags="plan_tooltip")
+
+        disp_s, zone = self.sta_mgr.raw_to_display(raw_sta)
+        cl_el, _ = self.v_prof.elevation_and_grade_at(raw_sta)
+        side = "우측(R)" if offset >= 0 else "좌측(L)"
+        msg = (
+            f"STA : {self.sta_mgr.format_station(disp_s)} (Z{zone})\n"
+            f"OFF : {side} {abs(offset):.2f} m\n"
+            f"EL  : {cl_el:.3f} m"
+        )
+        tx, ty = event.x + 14, event.y + 14
+        tid = self.canvas_plan.create_text(tx + 6, ty + 4, anchor="nw", text=msg, fill="#ffffff",
+                                           font=("Consolas", 8, "bold"), tags="plan_tooltip")
+        bbox = self.canvas_plan.bbox(tid)
+        if bbox:
+            rid = self.canvas_plan.create_rectangle(bbox[0] - 4, bbox[1] - 3, bbox[2] + 4, bbox[3] + 3, fill="#0f172a",
+                                                    outline="#38bdf8", tags="plan_tooltip")
+            self.canvas_plan.tag_raise(tid, rid)
+
+    def on_prof_mouse_move(self, event):
+        if not self.h_align or not self.v_prof:
+            return
+        pl, pr, pt, pb, min_s, max_s, _, _ = self.prof_bounds
+        if not (pl <= event.x <= pr and pt <= event.y <= pb):
+            return
+        ratio = (event.x - pl) / max(1.0, pr - pl)
+        self.active_raw_sta = min_s + ratio * (max_s - min_s)
+        self._update_plan_active_marker()
+        self._update_prof_active_marker()
+        self.draw_cross_section_view()
+
+    # --------------------------------------------------------------------------
+    # 3D DXF 및 3D CSV 파일 내보내기 기능
+    # --------------------------------------------------------------------------
+    def _collect_3d_corridor_data(self, interval: float = 5.0):
+        flines: Dict[str, List[Tuple[float, float, float]]] = {
+            "CL": [], "L_ETW": [], "R_ETW": [], "L_Daylight": [], "R_Daylight": []
+        }
+        rows = []
+        labels = []
+        total = self.h_align.total_length
+        curr = 0.0
+
+        while curr <= total + 1e-6:
+            s = min(curr, total)
+            disp_s, zone = self.sta_mgr.raw_to_display(s)
+            disp_str = self.sta_mgr.format_station(disp_s)
+            cl_e, cl_n = self.h_align.point_location(s, 0.0)
+            cl_el, _ = self.v_prof.elevation_and_grade_at(s)
+            l_slp, r_slp = self.sup_tbl.get_slopes_at(s)
+            l_off, l_dw = self.left_lane.get_offset_at(s)
+            r_off, r_dw = self.right_lane.get_offset_at(s)
+
+            l_el = cl_el + abs(l_off) * l_slp
+            r_el = cl_el + abs(r_off) * r_slp
+            ld_off, rd_off = l_off - 3.0, r_off + 3.0
+            ld_el = l_el - 1.5 * 0.04 - 1.5 * 0.5
+            rd_el = r_el - 1.5 * 0.04 - 1.5 * 0.5
+
+            pts = {
+                "CL": (0.0, cl_e, cl_n, cl_el),
+                "L_ETW": (l_off, *self.h_align.point_location(s, l_off), l_el),
+                "R_ETW": (r_off, *self.h_align.point_location(s, r_off), r_el),
+                "L_Daylight": (ld_off, *self.h_align.point_location(s, ld_off), ld_el),
+                "R_Daylight": (rd_off, *self.h_align.point_location(s, rd_off), rd_el),
+            }
+
+            for code, (off, e, n, z) in pts.items():
+                flines[code].append((e, n, z))
+                rows.append([f"{s:.3f}", disp_str, zone, code, f"{off:.3f}", f"{e:.6f}", f"{n:.6f}", f"{z:.6f}"])
+
+            if abs(round(s / 20.0) * 20.0 - s) < 1e-4:
+                labels.append((cl_e, cl_n, f"STA {disp_str}"))
+
+            if s >= total:
+                break
+            curr += interval
+
+        return flines, rows, labels
+
+    def export_dxf_dialog(self):
+        path = filedialog.asksaveasfilename(
+            title="3D 코리더 DXF 저장", defaultextension=".dxf",
+            initialfile="corridor_3d_output.dxf", filetypes=[("AutoCAD DXF", "*.dxf")]
+        )
+        if not path:
+            return
+
+        flines, _, labels = self._collect_3d_corridor_data(interval=5.0)
+        dxf = [
+            "0", "SECTION", "2", "HEADER", "0", "ENDSEC",
+            "0", "SECTION", "2", "TABLES", "0", "TABLE", "2", "LAYER",
+            "0", "LAYER", "2", "CL_3D", "70", "0", "62", "1", "6", "CONTINUOUS",
+            "0", "LAYER", "2", "ROAD_EDGE_3D", "70", "0", "62", "2", "6", "CONTINUOUS",
+            "0", "LAYER", "2", "DAYLIGHT_3D", "70", "0", "62", "3", "6", "CONTINUOUS",
+            "0", "LAYER", "2", "STATION_LABELS", "70", "0", "62", "4", "6", "CONTINUOUS",
+            "0", "ENDTAB", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES"
+        ]
+
+        for code, pts in flines.items():
+            lyr = "CL_3D" if code == "CL" else ("DAYLIGHT_3D" if "Daylight" in code else "ROAD_EDGE_3D")
+            dxf.extend(["0", "POLYLINE", "8", lyr, "66", "1", "70", "8", "10", "0.0", "20", "0.0", "30", "0.0"])
+            for x, y, z in pts:
+                dxf.extend(["0", "VERTEX", "8", lyr, "70", "32", "10", f"{x:.6f}", "20", f"{y:.6f}", "30", f"{z:.6f}"])
+            dxf.extend(["0", "SEQEND", "8", lyr])
+
+        for x, y, txt in labels:
+            dxf.extend(
+                ["0", "TEXT", "8", "STATION_LABELS", "10", f"{x:.6f}", "20", f"{y:.6f}", "30", "0.0", "40", "2.5", "1",
+                 txt])
+
+        dxf.extend(["0", "ENDSEC", "0", "EOF"])
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(dxf))
+        messagebox.showinfo("저장 완료", f"3D 코리더 DXF 파일이 저장되었습니다:\n{path}")
+
+    def export_csv_dialog(self):
+        path = filedialog.asksaveasfilename(
+            title="3D 좌표 테이블 CSV 저장", defaultextension=".csv",
+            initialfile="corridor_3d_coordinates.csv", filetypes=[("CSV 파일", "*.csv")]
+        )
+        if not path:
+            return
+
+        _, rows, _ = self._collect_3d_corridor_data(interval=5.0)
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            w.writerow(
+                ["Raw_STA", "Display_STA", "Zone", "Code", "Offset(m)", "Easting(X)", "Northing(Y)", "Elevation(Z)"])
+            w.writerows(rows)
+        messagebox.showinfo("저장 완료", f"3D 좌표 CSV 테이블이 저장되었습니다:\n{path}")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = Civil3DStudioDashboard(root)
+    root.mainloop()
