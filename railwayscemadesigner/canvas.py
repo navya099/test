@@ -4,7 +4,7 @@
 from PyQt6.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsItem
 from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal
 # canvas.py 상단
-from PyQt6.QtGui import QPen, QBrush, QColor, QPainter, QPolygonF, QTransform
+from PyQt6.QtGui import QPen, QBrush, QColor, QPainter, QPolygonF, QTransform, QFont
 import transform
 
 
@@ -15,6 +15,48 @@ NODE_STYLE = {
     "boundary":         dict(color=QColor("gray"),   shape="cross", size=8,  label="경계"),
     "buffer_stop":      dict(color=QColor("purple"), shape="diamond", size=8, label="차막이"),
 }
+
+MAIN_TRACK_FILL, MAIN_TRACK_PEN = QColor("#c9d0da"), QColor("#5b6472")
+SIDING_TRACK_FILL, SIDING_TRACK_PEN = QColor("#e3e7ef"), QColor("#8b93a1")
+TRACK_LABEL_COLOR = QColor("#374151")
+
+
+class TrackItem(QGraphicsItem):
+    """선로 밴드(배경 레이어). 마일리지·래태그 배치의 기준선."""
+
+    HEIGHT = 20
+
+    def __init__(self, track, x_start, x_end, y_center):
+        super().__init__()
+        self.track = track
+        self.x_start = x_start
+        self.x_end = x_end
+        self.y_center = y_center
+        self.setZValue(0)
+        self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+
+    def boundingRect(self):
+        return QRectF(
+            self.x_start, self.y_center - self.HEIGHT / 2,
+            self.x_end - self.x_start, self.HEIGHT,
+        )
+
+    def paint(self, painter, option, widget=None):
+        if self.track["type"] == "main":
+            painter.setBrush(QBrush(MAIN_TRACK_FILL))
+            painter.setPen(QPen(MAIN_TRACK_PEN, 1))
+        else:
+            painter.setBrush(QBrush(SIDING_TRACK_FILL))
+            painter.setPen(QPen(SIDING_TRACK_PEN, 1))
+        painter.drawRect(self.boundingRect())
+
+        painter.setPen(TRACK_LABEL_COLOR)
+        painter.setFont(QFont("Segoe UI", 9))
+        painter.drawText(
+            QRectF(self.x_start + 4, self.y_center - 9, 240, 18),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            f'{self.track["id"]}  {self.track["name"]}',
+        )
 
 
 class NodeItem(QGraphicsItem):
@@ -33,8 +75,8 @@ class NodeItem(QGraphicsItem):
         self.setToolTip(f"{node.id} ({node.type})")
 
     def boundingRect(self):
-        s = 10
-        return QRectF(-s, -s, 2*s, 2*s)
+        # 도형 + ID 라벨 영역 포함
+        return QRectF(-14, -12, 28, 36)
 
     def paint(self, painter: QPainter, option, widget=None):
         st = NODE_STYLE.get(self.node.type, dict(color=QColor("gray"), shape="rect", size=6))
@@ -61,6 +103,14 @@ class NodeItem(QGraphicsItem):
             painter.setPen(QPen(QColor("blue"), 2, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(QRectF(-s, -s, 2 * s, 2 * s))
+
+        painter.setFont(QFont("Segoe UI", 9))
+        painter.setPen(QColor("#374151"))
+        painter.drawText(
+            QRectF(-13, 10, 26, 12),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+            self.node.id,
+        )
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
@@ -117,6 +167,7 @@ class StationScene(QGraphicsScene):
         super().__init__(parent)
         self.data = data
         self.tracks_by_id = data.tracks_by_id()
+        self.track_items = []    # TrackItem 리스트 (배경 레이어)
         self.node_items = {}    # node_id → NodeItem
         self.edge_items = []    # EdgeItem 리스트
         self.mode = self.MODE_SELECT
@@ -132,6 +183,24 @@ class StationScene(QGraphicsScene):
         self.clear()
         self.node_items.clear()
         self.edge_items.clear()
+        self.track_items.clear()
+
+        # 0) 선로 밴드(배경) — 마일리지/래태그 배치의 기준선
+        miles = [n.mileage for n in self.data.nodes]
+        if self.data.station is not None:
+            miles += [self.data.station.mileage_start,
+                      self.data.station.mileage_end]
+        if miles:
+            x0 = (min(miles) - transform.BASE_MILEAGE) * transform.SCALE_X - 300
+            x1 = (max(miles) - transform.BASE_MILEAGE) * transform.SCALE_X + 300
+        else:
+            x0, x1 = -2000.0, 2000.0
+        for trk in self.data.tracks:
+            sign = transform.track_direction_sign(self.tracks_by_id[trk.id])
+            cy = transform.track_base_y(self.tracks_by_id[trk.id]) * transform.SCALE_Y * sign
+            ti = TrackItem(self.tracks_by_id[trk.id], x0, x1, cy)
+            self.addItem(ti)
+            self.track_items.append(ti)
 
         # 1) 노드 아이템 생성
         for n in self.data.nodes:
