@@ -57,6 +57,23 @@ def validate_obstacles(obstacles):
     return validated
 
 
+def validate_profile(points, start, end, ground):
+    if not isinstance(points, list) or len(points) == 1 or len(points) > 100:
+        raise ValueError("종단 선형은 비워 두거나 2~100개의 측점으로 입력하세요.")
+    profile = []
+    for index, point in enumerate(points, 1):
+        if not isinstance(point, list) or len(point) != 2:
+            raise ValueError(f"종단 {index}행은 측점과 슬래브 표고를 입력하세요.")
+        station = number(point[0], -2e6, 2e6)
+        elevation = number(point[1], ground + 4, ground + 150)
+        if profile and station <= profile[-1][0]:
+            raise ValueError(f"종단 {index}행의 측점은 이전 측점보다 커야 합니다.")
+        profile.append([station, elevation])
+    if profile and (profile[0][0] > start + 1e-8 or profile[-1][0] < end - 1e-8):
+        raise ValueError(f"종단 선형은 교량 구간({start:g} ~ {end:g} m) 전체를 포함해야 합니다.")
+    return profile
+
+
 def generate(config):
     if not isinstance(config, dict):
         raise ValueError("프로젝트는 JSON 객체여야 합니다.")
@@ -104,7 +121,9 @@ def generate(config):
     cant = number(config.get("cant_mm", 0), 0, 200)
     if radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
         raise ValueError("곡선 반경의 절댓값은 60 m 이상이며 교량 구간의 원호각은 90도 이하여야 합니다.")
-    alignment = Alignment(start, radius, cant, deck)
+    profile = validate_profile(config.get("profile", []), start, end, ground)
+    alignment = Alignment(start, radius, cant, deck, profile)
+    tower_ids = set()
     track_centers = {}
     box("슬래브", "deck", [start, -half, deck - .35], [end, half, deck])
     for index, (a, b) in enumerate(zip(stations, stations[1:]), 1):
@@ -132,7 +151,7 @@ def generate(config):
                     beam(f"행어 S{index}", "special", [point[0], y, deck], point, .16)
     for index, station in enumerate(stations):
         label = f"교대 A{1 if index == 0 else 2}" if index in (0, len(stations)-1) else f"교각 P{index}"
-        support = deck - .35 - depth
+        support = alignment.elevation_at(station) - .35 - depth
         box(f"{label} 기초", "foundation", [station-2.5, -half*.8, ground-2],
             [station+2.5, half*.8, ground])
         box(label, "pier", [station-1, -half*.46, ground], [station+1, half*.46, support-.9])
@@ -147,13 +166,14 @@ def generate(config):
             for side in (-1, 1):
                 y = side * (half - .35)
                 box(f"주탑 {index+1}", "special", [station-.5, y-.3, ground],
-                    [station+.5, y+.3, deck+height])
+                    [station+.5, y+.3, alignment.elevation_at(station)+height])
+                tower_ids.add(objects[-1]["id"])
                 for neighbor in neighbors:
                     for fraction in (.25, .45, .65, .85):
                         x = station + fraction*(neighbor-station)
                         beam("사장 케이블" if kind == "cable" else "외부 케이블",
                              "special", [station, y, deck+height*(.65+.35*fraction)], [x, y, deck], .14)
-                        if radius:
+                        if radius or profile:
                             objects[-1]["chord"] = True
     for side in (-1, 1):
         edge = side * half
@@ -190,16 +210,19 @@ def generate(config):
 
     cells_by_id = {}
     station_ranges = {}
-    if radius:
+    if radius or profile:
         for item in objects:
             if item["role"] == "obstacle":
                 continue
+            follows = item["group"] not in ("foundation", "pier", "bearing") and item["id"] not in tower_ids
+            if not radius and not follows:
+                continue
             station_ranges[item["id"]] = (item["min"][0], item["max"][0])
-            cells = list(alignment.cells(item, track_centers.get(item["id"])))
+            cells = list(alignment.cells(item, track_centers.get(item["id"]), follow_profile=follows))
             item["mesh"] = [cell[2] for cell in cells]
             item["min"], item["max"] = bounds(vertex for cell in cells for vertex in cell[2])
             if "axis" in item:
-                item["axis"] = [alignment.point(point) for point in item["axis"]]
+                item["axis"] = [alignment.point(point, follow_profile=follows) for point in item["axis"]]
             cells_by_id[item["id"]] = cells
 
     def cells(item):
@@ -242,5 +265,5 @@ def generate(config):
                              "point": center})
     return {"objects": objects, "findings": findings, "stations": stations,
             "length": end-start, "kind": TYPES[kind],
-            "alignment": {"curve_radius": radius, "cant_mm": cant},
+            "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}

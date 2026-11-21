@@ -1,5 +1,6 @@
 """Constant-radius alignment and polygonal envelopes in the start tangent frame."""
 
+from bisect import bisect_right
 import math
 
 DEFAULTS = {"curve_radius": 0, "cant_mm": 0}
@@ -11,18 +12,34 @@ def bounds(vertices):
 
 
 class Alignment:
-    def __init__(self, start, radius, cant_mm, deck):
+    def __init__(self, start, radius, cant_mm, deck, profile=()):
         self.start = start
         self.center_offset = -radius  # Positive Y points left in the tangent frame.
         self.deck = deck
+        self.profile = tuple(profile)
+        self.profile_stations = tuple(station for station, _ in profile)
         self.roll = math.copysign(math.atan2(cant_mm, 1435), radius) if radius else 0.0
 
-    def point(self, vertex, track_center=None):
+    def elevation_at(self, station):
+        if not self.profile:
+            return self.deck
+        index = bisect_right(self.profile_stations, station)
+        if index == 0:
+            return self.profile[0][1]
+        if index == len(self.profile):
+            return self.profile[-1][1]
+        a, za = self.profile[index - 1]
+        b, zb = self.profile[index]
+        return za + (zb - za) * (station - a) / (b - a)
+
+    def point(self, vertex, track_center=None, *, follow_profile=True):
         station, offset, z = vertex
         if track_center is not None:
             y, height = offset - track_center, z - self.deck
             offset = track_center + y * math.cos(self.roll) - height * math.sin(self.roll)
             z = self.deck + y * math.sin(self.roll) + height * math.cos(self.roll)
+        if follow_profile and self.profile:
+            z += self.elevation_at(station) - self.deck
         if not self.center_offset:
             return [station, offset, z]
         angle = (station - self.start) / self.center_offset
@@ -40,7 +57,7 @@ class Alignment:
             (x - self.start) / self.center_offset, 1 - y / self.center_offset
         )
 
-    def cells(self, item, track_center):
+    def cells(self, item, track_center, *, follow_profile):
         """Return ordered solid mesh segments and their world-space bounds."""
         lo, hi = item["min"], item["max"]
         axis = item.get("axis")
@@ -64,11 +81,26 @@ class Alignment:
                         for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
 
         # A stay is a straight chord between its two mapped anchors.
-        count = max(1, math.ceil(abs(last - first) / 5)) if self.center_offset and not item.get("chord") else 1
-        previous = [self.point(vertex, track_center) for vertex in section(0)]
-        for step in range(1, count + 1):
-            t = step / count
-            current = [self.point(vertex, track_center) for vertex in section(t)]
+        fractions = [1.0]
+        if not item.get("chord"):
+            if self.center_offset or follow_profile and self.profile:
+                count = max(1, math.ceil(abs(last - first) / 5))
+                fractions = [step / count for step in range(1, count + 1)]
+            if follow_profile and self.profile and last != first:
+                breaks = set(fractions)
+                for a, b in zip(section(0), section(1)):
+                    low, high = sorted((a[0], b[0]))
+                    breaks.update((station - a[0]) / (b[0] - a[0])
+                                  for station in self.profile_stations if low < station < high)
+                fractions = sorted(breaks)
+
+        def mapped(t):
+            return [self.point(vertex, track_center, follow_profile=follow_profile)
+                    for vertex in section(t)]
+
+        previous = mapped(0)
+        for t in fractions:
+            current = mapped(t)
             vertices = previous + current
             low, high = bounds(vertices)
             yield low, high, vertices
