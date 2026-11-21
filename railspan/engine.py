@@ -215,6 +215,25 @@ def generate(config):
             "hanger_count": int(hanger_count),
         }
 
+    cables = None
+    if kind in ("cable", "ed"):
+        height = config.get("tower_height")
+        height = (rise if kind == "cable" else rise * .5) if height is None else number(height, .5, 150)
+        planes = number(config.get("cable_planes", 2), 1, 2)
+        count = number(config.get("cable_count", 4), 1, 12)
+        if planes != int(planes) or count != int(count):
+            raise ValueError("케이블 면 수와 개수는 정수로 입력하세요.")
+        near = number(config.get("anchor_start_pct", 25), 1, 99)
+        far = number(config.get("anchor_end_pct", 85), 1, 99)
+        if near >= far:
+            raise ValueError("가까운 정착점 비율은 먼 정착점 비율보다 작아야 합니다.")
+        cables = {"tower_height": height, "planes": int(planes), "count": int(count),
+                  "anchor_start_pct": near, "anchor_end_pct": far}
+        cable_offsets = [0] if planes == 1 else [-(half - .35), half - .35]
+        anchor_fractions = [(near+far)/200] if count == 1 else [
+            (near + (far-near)*i/(count-1))/100 for i in range(int(count))
+        ]
+
     tower_ids = set()
     track_centers = {}
     box("슬래브", "deck", [start, -half, girder_top], [end, half, deck])
@@ -261,16 +280,14 @@ def generate(config):
         for offset in offsets:
             box(f"{label} 받침", "bearing", [station-.35, offset-.35, bearing_bottom],
                 [station+.35, offset+.35, support])
-        if kind in ("cable", "ed") and (0 < index < len(stations)-1 or len(stations) == 2):
-            height = rise if kind == "cable" else rise*.5
+        if cables is not None and (0 < index < len(stations)-1 or len(stations) == 2):
             neighbors = stations[max(0,index-1):index] + stations[index+1:index+2]
-            for side in (-1, 1):
-                y = side * (half - .35)
+            for y in cable_offsets:
                 box(f"주탑 {index+1}", "special", [station-.5, y-.3, base_ground],
                     [station+.5, y+.3, alignment.elevation_at(station)+height])
                 tower_ids.add(objects[-1]["id"])
                 for neighbor in neighbors:
-                    for fraction in (.25, .45, .65, .85):
+                    for fraction in anchor_fractions:
                         x = station + fraction*(neighbor-station)
                         beam("사장 케이블" if kind == "cable" else "외부 케이블",
                              "special", [station, y, deck+height*(.65+.35*fraction)], [x, y, deck], .14)
@@ -411,6 +428,6 @@ def generate(config):
             "length": end-start, "kind": TYPES[kind],
             "ground_line": ground_line,
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
-            "dimensions": dimensions, "accessories": accessories, "arch": arch,
+            "dimensions": dimensions, "accessories": accessories, "arch": arch, "cables": cables,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}
