@@ -44,7 +44,7 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 </div>
 <div class="pair">
 <label>선로<select name="tracks"><option value="1">단선</option><option value="2">복선</option></select></label>
-<label>지장물 이격 (m)<input type="number" step="any" name="clearance" required></label>
+<label>기본 지장물 이격 (m)<input type="number" step="any" name="clearance" required></label>
 </div>
 <label id="riseLabel">아치 라이즈 / 주탑 기준 높이 (m)<input type="number" step="any" name="rise" required></label>
 <details><summary>종단 선형</summary>
@@ -84,7 +84,7 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <input type="file" id="obstacleFile" accept=".csv,text/csv" hidden>
 </div>
 <p id="importStatus" class="muted" role="status"></p>
-<p class="muted">가져온 CSV는 지장물 목록을 교체합니다. 좌표는 시작점 접선 좌표계의 X·Y·표고(m)입니다. 곡선 구간에서도 지장물 좌표는 고정됩니다.</p>
+<p class="muted">가져온 CSV는 지장물 목록을 교체합니다. 유형과 개별 이격은 예제 CSV에서 설정할 수 있습니다. 좌표는 시작점 접선 좌표계의 X·Y·표고(m)입니다. 곡선 구간에서도 지장물 좌표는 고정됩니다.</p>
 <textarea name="obstacles" rows="11" aria-label="지장물 JSON"></textarea>
 </details>
 <p><button class="primary">모델 생성 및 검토</button></p>
@@ -106,8 +106,11 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 </section>
 <section class="results">
 <div class="toolbar"><h2 id="findings">간섭 및 이격 결과</h2><button id="csv" disabled>CSV 내보내기</button><button id="model" disabled>모델 JSON 내보내기</button></div>
+<label>검토 대상 유형
+<select id="targetCategory" disabled><option value="">전체</option></select>
+</label>
 <p class="muted" id="status"></p>
-<div class="scroll"><table><thead><tr><th>측점 (m)</th><th>판정</th><th>부재</th><th>검토 대상</th><th>거리 / 요구 (m)</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="scroll"><table><thead><tr><th>측점 (m)</th><th>판정</th><th>부재</th><th>대상 유형</th><th>검토 대상</th><th>거리 / 요구 (m)</th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
 </div>
 </main>
@@ -176,33 +179,48 @@ async function generate(data){
     const radius = model.alignment.curve_radius;
     const route = radius ? (radius < 0 ? '좌곡선 R ' : '우곡선 R ') + Math.abs(radius) + ' m' : '직선';
     el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m · ' + route + (model.alignment.profile.length ? ' · 종단 입력' : '');
-    el('findings').textContent = '간섭 및 이격 결과 ' + model.findings.length + '건';
     el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '곡선·종단·캔트 및 선형 부재의 외접 상자 판정은 간섭 후보입니다.';
     el('csv').disabled = false;
     el('model').disabled = false;
-    el('rows').replaceChildren();
-    for(const hit of model.findings){
-      const row = el('rows').insertRow();
-      const button = document.createElement('button');
-      button.textContent = hit.station;
-      button.onclick = () => {
-        selected = [hit.part, hit.target];
-        focus = hit.point;
-        zoom = 2;
-        if(model.objects[hit.target-1].role === 'gauge') gauge = true;
-        if(model.objects[hit.target-1].role === 'obstacle') context = true;
-        layerButtons();
-        draw();
-      };
-      row.insertCell().append(button);
-      for(const value of [hit.status, model.objects[hit.part-1].name, model.objects[hit.target-1].name, hit.distance+' / '+hit.required]){
-        row.insertCell().textContent = value;
-      }
-    }
+    const filter = el('targetCategory');
+    const previous = filter.value;
+    filter.replaceChildren(new Option('전체',''),
+      ...Object.entries(model.target_categories).map(([code,label]) => new Option(label,code)));
+    filter.value = Object.hasOwn(model.target_categories,previous) ? previous : '';
+    filter.disabled = false;
+    renderFindings();
     zoom = 1;
     draw();
   } catch(error) { if(id === request) report(error); }
 }
+function renderFindings(){
+  const filter = el('targetCategory').value;
+  const hits = result.findings.filter(hit => !filter || hit.category === filter);
+  const count = filter ? hits.length + ' / ' + result.findings.length : hits.length;
+  el('findings').textContent = '간섭 및 이격 결과 ' + count + '건';
+  el('rows').replaceChildren();
+  for(const hit of hits){
+    const row = el('rows').insertRow();
+    const button = document.createElement('button');
+    const target = result.objects[hit.target-1];
+    button.textContent = hit.station;
+    button.onclick = () => {
+      selected = [hit.part, hit.target];
+      focus = hit.point;
+      zoom = 2;
+      if(target.role === 'gauge') gauge = true;
+      if(target.role === 'obstacle') context = true;
+      layerButtons();
+      draw();
+    };
+    row.insertCell().append(button);
+    for(const value of [hit.status, result.objects[hit.part-1].name, result.target_categories[hit.category],
+      target.name, hit.distance+' / '+hit.required]){
+      row.insertCell().textContent = value;
+    }
+  }
+}
+el('targetCategory').onchange = renderFindings;
 async function example(){
   try {
     const data = await loadExample();
@@ -271,10 +289,10 @@ el('save').onclick = () => {
 };
 el('model').onclick = () => download('bridge-model.json','application/json',JSON.stringify(result,null,2));
 el('csv').onclick = () => {
-  const rows = [['측점 (m)','판정','부재','검토 대상','거리 (m)','요구 (m)'],
+  const rows = [['측점 (m)','판정','부재','대상 유형','검토 대상','거리 (m)','요구 (m)'],
     ...result.findings.map(hit => [hit.station, hit.status, result.objects[hit.part-1].name,
-      result.objects[hit.target-1].name, hit.distance, hit.required]),
-    ...result.missing.map(message => ['', '판정 불가', '', message, '', ''])];
+      result.target_categories[hit.category], result.objects[hit.target-1].name, hit.distance, hit.required]),
+    ...result.missing.map(message => ['', '판정 불가', '', '', message, '', ''])];
   const quote = value => '"' + (typeof value === 'string' && /^[\s]*[=+@-]/.test(value) ? "'" : '') + String(value).replaceAll('"','""') + '"';
   download('bridge-review.csv','text/csv;charset=utf-8','\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n'));
 };

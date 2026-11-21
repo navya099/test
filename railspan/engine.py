@@ -1,10 +1,16 @@
-"""Straight-alignment, metre-based geometry for conceptual bridge review."""
+"""Metre-based geometry and clearance checks for conceptual bridge review."""
 import math
 
 from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, ElevationProfile, bounds, separation
 
 TYPES = {"psc": "PSC 거더교", "box": "ST BOX 거더교", "arch": "아치교",
          "cable": "사장교", "ed": "ED교"}
+OBSTACLE_CATEGORIES = {
+    "road": "도로", "waterway": "하천", "utility": "지하 매설물",
+    "rail": "철도시설물", "other": "기타 지장물",
+}
+TARGET_CATEGORIES = {**OBSTACLE_CATEGORIES, "gauge": "차량·건축한계"}
+
 GAUGE_DEFAULTS = {
     "track_spacing": 4, "vehicle_width": 3.1, "vehicle_height": 4.3,
     "structure_width": 3.8, "structure_height": 4.9, "gauge_base": .15,
@@ -15,9 +21,9 @@ EXAMPLE = {
     "kind": "psc", "start": 0, "spans": [30, 50, 30], "width": 11,
     "deck": 15, "ground": 0, "rise": 12, "tracks": 2, "clearance": 0.5,
     "obstacles": [
-        {"name": "도로 통과 공간", "min": [25, -18, 0], "max": [36, 18, 7]},
-        {"name": "하천 검토 구역", "min": [48, -24, -1], "max": [72, 24, 3]},
-        {"name": "지하 매설물", "min": [78, -15, -1.4], "max": [82, 15, -0.8]},
+        {"name": "도로 통과 공간", "category": "road", "min": [25, -18, 0], "max": [36, 18, 7]},
+        {"name": "하천 검토 구역", "category": "waterway", "min": [48, -24, -1], "max": [72, 24, 3]},
+        {"name": "지하 매설물", "category": "utility", "clearance": 1.0, "min": [78, -15, -1.4], "max": [82, 15, -0.8]},
     ],
 }
 
@@ -51,9 +57,19 @@ def validate_obstacles(obstacles):
             lo, hi = [[number(value, -2e6, 2e6) for value in point] for point in bounds]
             if any(a >= b for a, b in zip(lo, hi)):
                 raise ValueError("각 최소값은 최대값보다 작아야 합니다.")
+            category = obstacle.get("category", "other")
+            if not isinstance(category, str) or category not in OBSTACLE_CATEGORIES:
+                raise ValueError(f"유형 코드는 {', '.join(OBSTACLE_CATEGORIES)} 중 하나여야 합니다.")
+            clearance = obstacle.get("clearance")
+            result = {"name": name.strip(), "min": lo, "max": hi, "category": category}
+            if clearance is not None:
+                try:
+                    result["clearance"] = number(clearance, 0, 100)
+                except ValueError as error:
+                    raise ValueError("지장물 이격은 0~100 m여야 합니다.") from error
         except ValueError as error:
             raise ValueError(f"지장물 {index}번: {error}") from error
-        validated.append({"name": name.strip(), "min": lo, "max": hi})
+        validated.append(result)
     return validated
 
 
@@ -217,10 +233,13 @@ def generate(config):
         for name, half_width, height in gauges:
             box(f"{index}번 선로 {name}", "envelope", [start, offset-half_width, deck+base],
                 [end, offset+half_width, deck+height], "gauge")
+            objects[-1].update(category="gauge", required_clearance=0)
             track_centers[objects[-1]["id"]] = offset
     obstacles = validate_obstacles(config.get("obstacles"))
     for obstacle in obstacles:
         box(obstacle["name"], "context", obstacle["min"], obstacle["max"], "obstacle")
+        objects[-1].update(category=obstacle["category"],
+                           required_clearance=obstacle.get("clearance", clearance))
 
     cells_by_id = {}
     station_ranges = {}
@@ -247,7 +266,7 @@ def generate(config):
     for target in objects:
         if target["role"] == "bridge":
             continue
-        limit = clearance if target["role"] == "obstacle" else 0
+        limit = target["required_clearance"]
         threshold = max(limit, 1e-8)
         for part in parts:
             if separation(part["min"], part["max"], target["min"], target["max"]) > threshold:
@@ -274,7 +293,7 @@ def generate(config):
                 lo_station, hi_station = station_ranges[part["id"]]
                 station = max(lo_station, min(hi_station, station))
             findings.append({"part": part["id"], "target": target["id"], "status": status,
-                             "station": round(station, 3),
+                             "station": round(station, 3), "category": target["category"],
                              "distance": round(max(0, best), 4), "required": limit,
                              "point": center})
     count = max(1, math.ceil((end - start) / 5)) if radius else 1
@@ -286,6 +305,6 @@ def generate(config):
     return {"objects": objects, "findings": findings, "stations": stations,
             "length": end-start, "kind": TYPES[kind],
             "ground_line": ground_line,
-            "ground_profile": ground_points,
+            "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}

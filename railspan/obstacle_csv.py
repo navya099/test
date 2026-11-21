@@ -6,14 +6,16 @@ from .engine import EXAMPLE, validate_obstacles
 
 COLUMNS = ("name", "station_min", "offset_min", "elevation_min",
            "station_max", "offset_max", "elevation_max")
+OPTIONAL_COLUMNS = ("category", "clearance_m")
 
 
 def example_csv():
     stream = io.StringIO(newline="")
     writer = csv.writer(stream)
-    writer.writerow(COLUMNS)
+    writer.writerow(COLUMNS + OPTIONAL_COLUMNS)
     for obstacle in EXAMPLE["obstacles"]:
-        writer.writerow([obstacle["name"], *obstacle["min"], *obstacle["max"]])
+        writer.writerow([obstacle["name"], *obstacle["min"], *obstacle["max"],
+                         obstacle.get("category", "other"), obstacle.get("clearance", "")])
     return stream.getvalue().encode("utf-8-sig")
 
 
@@ -26,17 +28,28 @@ def read_obstacles(payload):
     obstacles = []
     try:
         header = tuple(value.strip() for value in next(reader, []))
-        if len(header) != len(COLUMNS) or set(header) != set(COLUMNS):
+        columns = set(header)
+        if (len(header) != len(columns) or not set(COLUMNS) <= columns
+                or not columns <= set(COLUMNS + OPTIONAL_COLUMNS)):
             raise ValueError("CSV 열 이름을 예제 CSV와 맞춰 주세요.")
         for row in reader:
             if not any(value.strip() for value in row):
                 continue
-            if len(row) != len(COLUMNS):
+            if len(row) != len(header):
                 raise ValueError(f"CSV {reader.line_num}행의 열 수를 확인하세요.")
             fields = dict(zip(header, row))
             try:
                 coordinates = [float(fields[key]) for key in COLUMNS[1:]]
                 obstacle = {"name": fields["name"], "min": coordinates[:3], "max": coordinates[3:]}
+                category = fields.get("category", "").strip()
+                clearance = fields.get("clearance_m", "").strip()
+                if category:
+                    obstacle["category"] = category
+                if clearance:
+                    try:
+                        obstacle["clearance"] = float(clearance)
+                    except ValueError as error:
+                        raise ValueError("clearance_m은 숫자로 입력하세요.") from error
                 obstacles.extend(validate_obstacles([obstacle]))
             except ValueError as error:
                 raise ValueError(f"CSV {reader.line_num}행: {error}") from error
