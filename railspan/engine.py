@@ -2,6 +2,7 @@
 import math
 
 from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, ElevationProfile, bounds, separation
+from .vertical_profile import VerticalCurve
 
 TYPES = {"psc": "PSC 거더교", "box": "ST BOX 거더교", "arch": "아치교",
          "cable": "사장교", "ed": "ED교"}
@@ -94,6 +95,63 @@ def validate_profile(points, label, minimum, maximum, *, extent=None):
         if profile[0][0] > start + 1e-8 or profile[-1][0] < end - 1e-8:
             raise ValueError(f"{label}은 교량 구간({start:g} ~ {end:g} m) 전체를 포함해야 합니다.")
     return profile
+
+
+def build_vertical_curves(rows, profile):
+    if not isinstance(rows, list) or len(rows) > 98:
+        raise ValueError("종단곡선은 최대 98개까지 입력할 수 있습니다.")
+    station_indices = {station: index for index, (station, _) in enumerate(profile)}
+    lengths = {}
+    for row in rows:
+        if not isinstance(row, list) or len(row) != 2:
+            raise ValueError("종단곡선은 변곡점 측점과 길이로 입력하세요.")
+        station = number(row[0], -2e6, 2e6)
+        length = number(row[1], .01, 4e6)
+        if station in lengths:
+            raise ValueError(f"측점 {station:g} m의 종단곡선을 중복 입력했습니다.")
+        index = station_indices.get(station)
+        if index is None or not 0 < index < len(profile) - 1:
+            raise ValueError(f"측점 {station:g} m는 종단 선형의 내부 변곡점이어야 합니다.")
+        lengths[station] = length
+
+    curves = []
+    for station, length in sorted(lengths.items()):
+        index = station_indices[station]
+        before, vip, after = profile[index-1:index+2]
+        start, end = station-length/2, station+length/2
+        if start < before[0] or end > after[0]:
+            raise ValueError(f"측점 {station:g} m 종단곡선이 인접 변곡점 범위를 벗어납니다.")
+        if curves and curves[-1].end > start:
+            raise ValueError(f"측점 {station:g} m 종단곡선이 이전 곡선과 겹칩니다.")
+        incoming = (vip[1]-before[1])/(station-before[0])
+        outgoing = (after[1]-vip[1])/(after[0]-station)
+        curves.append(VerticalCurve(start, end, vip[1]+incoming*(start-station), incoming, outgoing))
+    return curves, sorted(lengths.items())
+
+
+def check_profile_height(profile, terrain, start, end):
+    breakpoints = sorted({start, end, *(s for s in profile.breakpoints + terrain.breakpoints if start < s < end)})
+
+    def difference(station):
+        return profile.at(station) - terrain.at(station)
+
+    def validate(station, height):
+        if not 4 - 1e-8 <= height <= 150 + 1e-8:
+            raise ValueError(f"측점 {station:g} m의 슬래브와 지반 표고 차({height:.3f} m)는 4~150 m여야 합니다.")
+
+    heights = [difference(station) for station in breakpoints]
+    for station, height in zip(breakpoints, heights):
+        validate(station, height)
+    if profile.curves:
+        # The height difference is at most quadratic between consecutive breakpoints.
+        for a, b, za, zb in zip(breakpoints, breakpoints[1:], heights, heights[1:]):
+            midpoint = difference((a+b)/2)
+            quadratic = 2 * ((za-midpoint) + (zb-midpoint))
+            if abs(quadratic) > 1e-10:
+                ratio = (za-zb+quadratic)/(2*quadratic)
+                if 0 < ratio < 1:
+                    station = a + ratio*(b-a)
+                    validate(station, difference(station))
 
 
 def arch_span(length, rise, shape, hanger_count):
@@ -191,15 +249,11 @@ def generate(config):
     girder_top = deck - dimensions["slab_thickness"]
     girder_bottom = girder_top - dimensions["girder_depth"]
     profile = validate_profile(config.get("profile", []), "종단 선형", *elevations, extent=(start, end))
-    alignment = Alignment(start, radius, cant, deck, profile)
+    curves, curve_inputs = build_vertical_curves(config.get("vertical_curves", []), profile)
+    alignment = Alignment(start, radius, cant, deck, profile, curves)
     terrain = ElevationProfile(ground_points, ground)
-    if ground_points:
-        # The difference between two linear profiles is linear between their combined breakpoints.
-        checkpoints = sorted({start, end, *(s for s, _ in profile + ground_points if start < s < end)})
-        for station in checkpoints:
-            height = alignment.elevation_at(station) - terrain.at(station)
-            if not 4 - 1e-8 <= height <= 150 + 1e-8:
-                raise ValueError(f"측점 {station:g} m의 슬래브와 지반 표고 차({height:.3f} m)는 4~150 m여야 합니다.")
+    if ground_points or curves:
+        check_profile_height(alignment.profile, terrain, start, end)
     arch = None
     if kind == "arch":
         shape = config.get("arch_shape", "parabolic")
@@ -429,5 +483,6 @@ def generate(config):
             "ground_line": ground_line,
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
             "dimensions": dimensions, "accessories": accessories, "arch": arch, "cables": cables,
-            "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
+            "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile,
+                          "vertical_curves": curve_inputs},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}

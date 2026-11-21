@@ -12,14 +12,23 @@ def bounds(vertices):
 
 
 class ElevationProfile:
-    def __init__(self, points, fallback):
+    def __init__(self, points, fallback, curves=()):
         self.points = tuple(points)
         self.stations = tuple(station for station, _ in self.points)
         self.fallback = fallback
+        self.curves = tuple(curves)
+        self.curve_starts = tuple(curve.start for curve in self.curves)
+        self.breakpoints = tuple(sorted({
+            *self.stations,
+            *(s for curve in self.curves for s in (curve.start, curve.end, curve.extremum()) if s is not None),
+        }))
 
     def at(self, station):
         if not self.points:
             return self.fallback
+        curve_index = bisect_right(self.curve_starts, station) - 1
+        if curve_index >= 0 and station <= self.curves[curve_index].end:
+            return self.curves[curve_index].at(station)
         index = bisect_right(self.stations, station)
         if index == 0:
             return self.points[0][1]
@@ -31,11 +40,11 @@ class ElevationProfile:
 
 
 class Alignment:
-    def __init__(self, start, radius, cant_mm, deck, profile=()):
+    def __init__(self, start, radius, cant_mm, deck, profile=(), curves=()):
         self.start = start
         self.center_offset = -radius  # Positive Y points left in the tangent frame.
         self.deck = deck
-        self.profile = ElevationProfile(profile, deck)
+        self.profile = ElevationProfile(profile, deck, curves)
         self.roll = math.copysign(math.atan2(cant_mm, 1435), radius) if radius else 0.0
 
     def elevation_at(self, station):
@@ -100,7 +109,7 @@ class Alignment:
                 for a, b in zip(section(0), section(1)):
                     low, high = sorted((a[0], b[0]))
                     breaks.update((station - a[0]) / (b[0] - a[0])
-                                  for station in self.profile.stations if low < station < high)
+                                  for station in self.profile.breakpoints if low < station < high)
                 fractions = sorted(breaks)
 
         def mapped(t):

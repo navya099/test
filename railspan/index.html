@@ -102,6 +102,10 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <label>측점, 슬래브 표고
 <textarea name="profile_points" rows="5" placeholder="0, 15&#10;55, 16.5&#10;110, 15"></textarea>
 </label>
+<label>종단곡선 · 변곡점 측점, 곡선 길이 (m)
+<textarea name="vertical_curves" rows="3" placeholder="55, 40"></textarea>
+</label>
+<p class="muted">곡선 길이를 입력한 내부 변곡점에는 대칭 포물선을 적용합니다. 비워 두면 직선 보간합니다.</p>
 </details>
 <details><summary>지반선</summary>
 <div class="toolbar">
@@ -195,7 +199,7 @@ let generatedProject;
 let exportingIfc = false;
 let focus;
 let showTerrain = true;
-const profileFields = {profile:"profile_points", ground_profile:"ground_profile"};
+const profileFields = {profile:"profile_points", ground_profile:"ground_profile", vertical_curves:"vertical_curves"};
 const defaultKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height','curve_radius','cant_mm'];
 const dimensions = ['slab_thickness','girder_depth','cap_depth','bearing_height','foundation_depth',
   'foundation_length','foundation_width'];
