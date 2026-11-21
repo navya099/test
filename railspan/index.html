@@ -47,6 +47,18 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <label>기본 지장물 이격 (m)<input type="number" step="any" name="clearance" required></label>
 </div>
 <label id="riseLabel">아치 라이즈 / 주탑 기준 높이 (m)<input type="number" step="any" name="rise" required></label>
+<details><summary>부재 치수</summary>
+<p class="muted">치수 단위는 m입니다. 비워 두면 형식 또는 상부 폭에 따른 기본값을 적용합니다.</p>
+<div class="pair">
+<label>슬래브 두께<input type="number" step="any" min=".05" max="3" name="slab_thickness" placeholder="0.35"></label>
+<label>거더 형고<input type="number" step="any" min=".2" max="15" name="girder_depth"></label>
+<label>코핑 높이<input type="number" step="any" min=".05" max="8" name="cap_depth" placeholder="0.65"></label>
+<label>받침 높이<input type="number" step="any" min=".05" max="3" name="bearing_height" placeholder="0.25"></label>
+<label>기초 두께<input type="number" step="any" min=".1" max="15" name="foundation_depth" placeholder="2"></label>
+<label>기초 길이<input type="number" step="any" min=".5" max="50" name="foundation_length" placeholder="5"></label>
+<label>기초 폭<input type="number" step="any" min=".5" max="80" name="foundation_width" placeholder="상부 폭 × 0.8"></label>
+</div>
+</details>
 <details><summary>종단 선형</summary>
 <div class="toolbar">
 <button type="button" id="profileCsv">종단 CSV 가져오기</button>
@@ -153,7 +165,9 @@ let focus;
 let showTerrain = true;
 const profileFields = {profile:"profile_points", ground_profile:"ground_profile"};
 const defaultKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height','curve_radius','cant_mm'];
-const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys];
+const dimensions = ['slab_thickness','girder_depth','cap_depth','bearing_height','foundation_depth',
+  'foundation_length','foundation_width'];
+const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys,...dimensions];
 let defaults = {};
 const projectVersion = 2;
 async function loadExample(){
@@ -164,6 +178,7 @@ async function loadExample(){
   return data;
 }
 function toggleFields(){
+  field('girder_depth').placeholder = field('kind').value === 'psc' ? '1.7' : '2.2';
   el('automatic').style.display = field('spans').value.trim() ? 'none' : 'grid';
   el('riseLabel').style.display = ['arch','cable','ed'].includes(field('kind').value) ? 'grid' : 'none';
 }

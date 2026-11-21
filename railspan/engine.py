@@ -135,7 +135,25 @@ def generate(config):
         objects[-1]["thickness"] = thickness
 
     half = width / 2
-    depth = 1.7 if kind == "psc" else 2.2
+    parameters = {
+        "slab_thickness": ("슬래브 두께", .35, .05, 3),
+        "girder_depth": ("거더 형고", 1.7 if kind == "psc" else 2.2, .2, 15),
+        "cap_depth": ("코핑 높이", .65, .05, 8),
+        "bearing_height": ("받침 높이", .25, .05, 3),
+        "foundation_depth": ("기초 두께", 2, .1, 15),
+        "foundation_length": ("기초 길이", 5, .5, 50),
+        "foundation_width": ("기초 폭", width * .8, .5, 80),
+    }
+    dimensions = {}
+    for key, (label, default, low, high) in parameters.items():
+        value = config.get(key)
+        try:
+            dimensions[key] = default if value is None else number(value, low, high)
+        except ValueError as error:
+            raise ValueError(f"{label} (m): {error}") from error
+
+    foundation_half_length = dimensions["foundation_length"] / 2
+    foundation_half_width = dimensions["foundation_width"] / 2
     end = stations[-1]
     radius = number(config.get("curve_radius", 0), -1e6, 1e6)
     cant = number(config.get("cant_mm", 0), 0, 200)
@@ -144,6 +162,8 @@ def generate(config):
     ground_points = validate_profile(config.get("ground_profile", []), "지반선", -1000, 8000, extent=(start, end))
     elevations = (-996, 8150) if ground_points else (ground + 4, ground + 150)
     deck = number(config.get("deck"), *elevations)
+    girder_top = deck - dimensions["slab_thickness"]
+    girder_bottom = girder_top - dimensions["girder_depth"]
     profile = validate_profile(config.get("profile", []), "종단 선형", *elevations, extent=(start, end))
     alignment = Alignment(start, radius, cant, deck, profile)
     terrain = ElevationProfile(ground_points, ground)
@@ -156,19 +176,19 @@ def generate(config):
                 raise ValueError(f"측점 {station:g} m의 슬래브와 지반 표고 차({height:.3f} m)는 4~150 m여야 합니다.")
     tower_ids = set()
     track_centers = {}
-    box("슬래브", "deck", [start, -half, deck - .35], [end, half, deck])
+    box("슬래브", "deck", [start, -half, girder_top], [end, half, deck])
     for index, (a, b) in enumerate(zip(stations, stations[1:]), 1):
         offsets = [-.36 * width, -.12 * width, .12 * width, .36 * width] if kind == "psc" else [0]
         for offset in offsets:
             girder_half = .4 if kind == "psc" else width * .27
             if kind == "ed":
                 girder_half = width * .31
-            box(f"거더 S{index}", "girder", [a, offset - girder_half, deck - .35 - depth],
-                [b, offset + girder_half, deck - .35])
+            box(f"거더 S{index}", "girder", [a, offset - girder_half, girder_bottom],
+                [b, offset + girder_half, girder_top])
         if kind == "ed":
             for x, y in ((a, a + (b-a)*.18), (b - (b-a)*.18, b)):
                 beam(f"변단면 헌치 S{index}", "girder",
-                     [x, 0, deck - .35 - depth - .2], [y, 0, deck - .35 - depth - .2], .4)
+                     [x, 0, girder_bottom - .2], [y, 0, girder_bottom - .2], .4)
         if kind == "arch":
             for side in (-1, 1):
                 y = side * (half - .35)
@@ -182,15 +202,21 @@ def generate(config):
                     beam(f"행어 S{index}", "special", [point[0], y, deck], point, .16)
     for index, station in enumerate(stations):
         label = f"교대 A{1 if index == 0 else 2}" if index in (0, len(stations)-1) else f"교각 P{index}"
-        support = alignment.elevation_at(station) - .35 - depth
+        support = girder_bottom + (alignment.elevation_at(station) - deck)
         base_ground = terrain.at(station)
-        box(f"{label} 기초", "foundation", [station-2.5, -half*.8, base_ground-2],
-            [station+2.5, half*.8, base_ground])
-        box(label, "pier", [station-1, -half*.46, base_ground], [station+1, half*.46, support-.9])
-        box(f"{label} 코핑", "pier", [station-1.3, -half*.93, support-.9],
-            [station+1.3, half*.93, support-.25])
+        bearing_bottom = support - dimensions["bearing_height"]
+        cap_bottom = bearing_bottom - dimensions["cap_depth"]
+        if cap_bottom - base_ground <= 1e-8:
+            raise ValueError(f"{label} 측점 {station:g} m에 몸체를 배치할 높이가 부족합니다. "
+                             "부재 치수와 슬래브·지반 표고를 확인하세요.")
+        box(f"{label} 기초", "foundation",
+            [station-foundation_half_length, -foundation_half_width, base_ground-dimensions["foundation_depth"]],
+            [station+foundation_half_length, foundation_half_width, base_ground])
+        box(label, "pier", [station-1, -half*.46, base_ground], [station+1, half*.46, cap_bottom])
+        box(f"{label} 코핑", "pier", [station-1.3, -half*.93, cap_bottom],
+            [station+1.3, half*.93, bearing_bottom])
         for offset in offsets:
-            box(f"{label} 받침", "bearing", [station-.35, offset-.35, support-.25],
+            box(f"{label} 받침", "bearing", [station-.35, offset-.35, bearing_bottom],
                 [station+.35, offset+.35, support])
         if kind in ("cable", "ed") and (0 < index < len(stations)-1 or len(stations) == 2):
             height = rise if kind == "cable" else rise*.5
@@ -310,5 +336,6 @@ def generate(config):
             "length": end-start, "kind": TYPES[kind],
             "ground_line": ground_line,
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
+            "dimensions": dimensions,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}
