@@ -73,7 +73,7 @@ def validate_obstacles(obstacles):
     return validated
 
 
-def validate_profile(points, start, end, label, minimum, maximum):
+def validate_profile(points, label, minimum, maximum, *, extent=None):
     if not isinstance(points, list) or len(points) == 1 or len(points) > 100:
         raise ValueError(f"{label}은 비워 두거나 2~100개의 측점으로 입력하세요.")
     profile = []
@@ -88,8 +88,10 @@ def validate_profile(points, start, end, label, minimum, maximum):
         if profile and station <= profile[-1][0]:
             raise ValueError(f"{label} {index}행의 측점은 이전 측점보다 커야 합니다.")
         profile.append([station, elevation])
-    if profile and (profile[0][0] > start + 1e-8 or profile[-1][0] < end - 1e-8):
-        raise ValueError(f"{label}은 교량 구간({start:g} ~ {end:g} m) 전체를 포함해야 합니다.")
+    if profile and extent is not None:
+        start, end = extent
+        if profile[0][0] > start + 1e-8 or profile[-1][0] < end - 1e-8:
+            raise ValueError(f"{label}은 교량 구간({start:g} ~ {end:g} m) 전체를 포함해야 합니다.")
     return profile
 
 
@@ -139,10 +141,10 @@ def generate(config):
     cant = number(config.get("cant_mm", 0), 0, 200)
     if radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
         raise ValueError("곡선 반경의 절댓값은 60 m 이상이며 교량 구간의 원호각은 90도 이하여야 합니다.")
-    ground_points = validate_profile(config.get("ground_profile", []), start, end, "지반선", -1000, 8000)
+    ground_points = validate_profile(config.get("ground_profile", []), "지반선", -1000, 8000, extent=(start, end))
     elevations = (-996, 8150) if ground_points else (ground + 4, ground + 150)
     deck = number(config.get("deck"), *elevations)
-    profile = validate_profile(config.get("profile", []), start, end, "종단 선형", *elevations)
+    profile = validate_profile(config.get("profile", []), "종단 선형", *elevations, extent=(start, end))
     alignment = Alignment(start, radius, cant, deck, profile)
     terrain = ElevationProfile(ground_points, ground)
     if ground_points:

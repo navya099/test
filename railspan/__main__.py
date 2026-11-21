@@ -7,6 +7,9 @@ from pathlib import Path
 from .engine import EXAMPLE, generate
 from .ifc_export import export_ifc
 from .obstacle_csv import example_csv, read_obstacles
+from .profile_csv import EXAMPLES as PROFILE_EXAMPLES, profile_example, read_profile
+
+CSV_IMPORTS = {"/obstacles/import": read_obstacles, "/profiles/import": read_profile}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -28,15 +31,17 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(200, EXAMPLE)
         elif self.path == "/obstacles-example.csv":
             self.reply(200, example_csv(), "text/csv; charset=utf-8")
+        elif self.path in PROFILE_EXAMPLES:
+            self.reply(200, profile_example(PROFILE_EXAMPLES[self.path]), "text/csv; charset=utf-8")
         else:
             self.send_error(404)
 
     def do_POST(self):
-        if self.path not in ("/generate", "/obstacles/import", "/export/ifc"):
+        importer = CSV_IMPORTS.get(self.path)
+        if importer is None and self.path not in ("/generate", "/export/ifc"):
             self.send_error(404)
             return
-        importing = self.path == "/obstacles/import"
-        expected = "text/csv" if importing else "application/json"
+        expected = "text/csv" if importer else "application/json"
         if self.headers.get_content_type() != expected:
             self.send_error(415)
             return
@@ -52,7 +57,7 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < size <= 200_000:
                 raise ValueError("프로젝트 데이터 크기를 확인하세요.")
             payload = self.rfile.read(size)
-            result = read_obstacles(payload) if importing else generate(json.loads(payload))
+            result = importer(payload) if importer else generate(json.loads(payload))
         except (TypeError, ValueError) as error:
             self.json_reply(400, {"error": str(error)})
             return

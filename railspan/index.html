@@ -48,12 +48,24 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 </div>
 <label id="riseLabel">아치 라이즈 / 주탑 기준 높이 (m)<input type="number" step="any" name="rise" required></label>
 <details><summary>종단 선형</summary>
+<div class="toolbar">
+<button type="button" id="profileCsv">종단 CSV 가져오기</button>
+<a class="file-link" href="/profile-example.csv" download="railspan-profile.csv">예제 CSV</a>
+<input type="file" id="profileFile" accept=".csv,text/csv" hidden>
+</div>
+<p id="profileImportStatus" class="muted" role="status"></p>
 <p class="muted">한 줄에 측점과 슬래브 표고(m)를 쉼표로 구분해 입력하세요. 비워 두면 기본 슬래브 표고를 적용합니다.</p>
 <label>측점, 슬래브 표고
 <textarea name="profile_points" rows="5" placeholder="0, 15&#10;55, 16.5&#10;110, 15"></textarea>
 </label>
 </details>
 <details><summary>지반선</summary>
+<div class="toolbar">
+<button type="button" id="groundCsv">지반선 CSV 가져오기</button>
+<a class="file-link" href="/ground-example.csv" download="railspan-ground.csv">예제 CSV</a>
+<input type="file" id="groundFile" accept=".csv,text/csv" hidden>
+</div>
+<p id="groundImportStatus" class="muted" role="status"></p>
 <p class="muted">측점과 지반 표고(m)를 한 줄씩 입력하세요. 전 교량 구간을 포함해야 하며, 비워 두면 기본 지반 표고를 적용합니다.</p>
 <label>측점, 지반 표고
 <textarea name="ground_profile" rows="5" placeholder="0, 2&#10;55, -1&#10;110, 3"></textarea>
@@ -156,7 +168,9 @@ function toggleFields(){
   el('riseLabel').style.display = ['arch','cable','ed'].includes(field('kind').value) ? 'grid' : 'none';
 }
 function fill(data){
-  el('importStatus').textContent = '';
+  for(const id of ['importStatus','profileImportStatus','groundImportStatus']){
+    el(id).textContent = '';
+  }
   field('kind').value = data.kind;
   for(const key of keys) field(key).value = data[key] ?? ({length:110,nominal:40,...defaults}[key] ?? '');
   field('spans').value = Array.isArray(data.spans) ? data.spans.join(', ') : '';
@@ -365,23 +379,36 @@ el('project').onchange = async event => {
   } catch(error){ report(error); }
   finally { event.target.value = ''; }
 };
-el('loadCsv').onclick = () => el('obstacleFile').click();
-el('obstacleFile').onchange = async event => {
-  const file = event.target.files[0];
-  if(!file) return;
-  el('loadCsv').disabled = true;
-  el('error').textContent = '';
-  el('importStatus').textContent = '';
-  try {
-    if(file.size > 200000) throw new Error('CSV 파일은 200 KB 이하여야 합니다.');
-    const response = await fetch('/obstacles/import', {method:'POST', headers:{'Content-Type':'text/csv'}, body:file});
-    const values = await response.json();
-    if(!response.ok) throw new Error(values.error);
-    field('obstacles').value = JSON.stringify(values,null,2);
-    el('importStatus').textContent = '지장물 '+values.length+'개를 불러왔습니다. 모델 생성 및 검토를 눌러 반영하세요.';
-  } catch(error){ report(error); }
-  finally { event.target.value = ''; el('loadCsv').disabled = false; }
-};
+function bindCsvImport(buttonId, inputId, statusId, targetName, endpoint, format, countLabel){
+  const button = el(buttonId), input = el(inputId), status = el(statusId);
+  const target = field(targetName);
+  button.onclick = () => input.click();
+  input.onchange = async () => {
+    const file = input.files[0];
+    if(!file) return;
+    button.disabled = true;
+    el('error').textContent = '';
+    status.textContent = '';
+    const previous = target.value;
+    try{
+      if(file.size > 200000) throw new Error('CSV 파일은 200 KB 이하여야 합니다.');
+      const response = await fetch(endpoint, {method:'POST',headers:{'Content-Type':'text/csv'},body:file});
+      const values = await response.json();
+      if(!response.ok) throw new Error(values.error);
+      if(target.value !== previous) throw new Error('입력값이 변경되었습니다. CSV를 다시 선택하세요.');
+      target.value = format(values);
+      status.textContent = countLabel + ' ' + values.length + '개를 불러왔습니다. 모델 생성 및 검토를 눌러 반영하세요.';
+    } catch(error){ report(error); }
+    finally { input.value = ''; button.disabled = false; }
+  };
+}
+const formatProfile = points => points.map(point => point.join(', ')).join('\n');
+bindCsvImport('loadCsv','obstacleFile','importStatus','obstacles','/obstacles/import',
+  values => JSON.stringify(values,null,2),'지장물');
+bindCsvImport('profileCsv','profileFile','profileImportStatus','profile_points','/profiles/import',
+  formatProfile,'종단 측점');
+bindCsvImport('groundCsv','groundFile','groundImportStatus','ground_profile','/profiles/import',
+  formatProfile,'지반 측점');
 el('save').onclick = () => {
   try { download('bridge-project.json','application/json',JSON.stringify(config(),null,2)); }
   catch(error){ report(error); }
