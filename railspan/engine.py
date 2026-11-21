@@ -97,6 +97,34 @@ def validate_profile(points, label, minimum, maximum, *, extent=None, value_labe
     return profile
 
 
+def validate_plan(rows, start, end):
+    if not isinstance(rows, list) or len(rows) > 100:
+        raise ValueError("평면 선형 구간은 최대 100개까지 입력할 수 있습니다.")
+    plan = []
+    previous = start
+    total_turn = 0
+    for index, row in enumerate(rows, 1):
+        if not isinstance(row, list) or len(row) != 2:
+            raise ValueError(f"평면 선형 {index}행에 끝 측점과 반경을 입력하세요.")
+        stop = number(row[0], -2e6, 2e6)
+        radius = number(row[1], -1e6, 1e6)
+        if stop - previous < 1e-6 or stop > end + 1e-8:
+            raise ValueError(f"평면 선형 {index}행 끝 측점은 이전 측점보다 크고 교량 종점 이하여야 합니다.")
+        if radius:
+            if abs(radius) < 60:
+                raise ValueError(f"평면 선형 {index}행 곡선 반경의 절댓값은 60 m 이상이어야 합니다.")
+            total_turn += (stop - previous) / abs(radius)
+        plan.append([stop, radius])
+        previous = stop
+    if plan:
+        if abs(previous - end) > 1e-8:
+            raise ValueError(f"마지막 평면 선형 구간은 교량 종점({end:g} m)에서 끝나야 합니다.")
+        plan[-1][0] = end
+    if total_turn > math.pi / 2 + 1e-12:
+        raise ValueError("평면 선형의 누적 절대 회전각은 90도 이하여야 합니다.")
+    return plan
+
+
 def build_vertical_curves(rows, profile):
     if not isinstance(rows, list) or len(rows) > 98:
         raise ValueError("종단곡선은 최대 98개까지 입력할 수 있습니다.")
@@ -243,7 +271,8 @@ def generate(config):
     cant = number(config.get("cant_mm", 0), 0, 200)
     cant_points = validate_profile(config.get("cant_profile", []), "측점별 캔트", 0, 200,
                                    extent=(start, end), value_label="캔트(mm)")
-    if radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
+    plan_rows = validate_plan(config.get("plan_segments", []), start, end)
+    if not plan_rows and radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
         raise ValueError("곡선 반경의 절댓값은 60 m 이상이며 교량 구간의 원호각은 90도 이하여야 합니다.")
     ground_points = validate_profile(config.get("ground_profile", []), "지반선", -1000, 8000, extent=(start, end))
     elevations = (-996, 8150) if ground_points else (ground + 4, ground + 150)
@@ -252,7 +281,13 @@ def generate(config):
     girder_bottom = girder_top - dimensions["girder_depth"]
     profile = validate_profile(config.get("profile", []), "종단 선형", *elevations, extent=(start, end))
     curves, curve_inputs = build_vertical_curves(config.get("vertical_curves", []), profile)
-    alignment = Alignment(start, radius, cant, deck, profile, curves, cant_profile=cant_points)
+    alignment = Alignment(start, radius, cant, deck, profile, curves, cant_profile=cant_points, plan_rows=plan_rows)
+    curved = alignment.has_curve
+    for current, following in zip(alignment.plan, alignment.plan[1:]):
+        current_direction = (current.radius > 0) - (current.radius < 0)
+        next_direction = (following.radius > 0) - (following.radius < 0)
+        if current_direction != next_direction and alignment.cant.at(current.end) > 1e-8:
+            raise ValueError(f"직선·곡선 또는 곡선 방향이 바뀌는 측점 {current.end:g} m의 캔트는 0 mm여야 합니다.")
     terrain = StationProfile(ground_points, ground)
     if ground_points or curves:
         check_profile_height(alignment.profile, terrain, start, end)
@@ -347,7 +382,7 @@ def generate(config):
                         x = station + fraction*(neighbor-station)
                         beam("사장 케이블" if kind == "cable" else "외부 케이블",
                              "special", [station, y, deck+height*(.65+.35*fraction)], [x, y, deck], .14)
-                        if radius or profile:
+                        if curved or profile:
                             objects[-1]["chord"] = True
     accessories = {}
     for key, label in (("rail_side", "난간"), ("walkway_side", "점검통로"), ("drain_side", "배수관로")):
@@ -419,12 +454,12 @@ def generate(config):
 
     cells_by_id = {}
     station_ranges = {}
-    if radius or profile:
+    if curved or profile:
         for item in objects:
             if item["role"] == "obstacle":
                 continue
             follows = item["group"] not in ("foundation", "pier", "bearing") and item["id"] not in tower_ids
-            if not radius and not follows:
+            if not curved and not follows:
                 continue
             station_ranges[item["id"]] = (item["min"][0], item["max"][0])
             cells = list(alignment.cells(item, track_centers.get(item["id"]), follow_profile=follows))
@@ -474,8 +509,8 @@ def generate(config):
                              "approximate": approximate,
                              "distance": round(max(0, best), 4), "required": limit,
                              "point": center})
-    count = max(1, math.ceil((end - start) / 5)) if radius else 1
-    ground_stations = sorted({start, end, *stations,
+    count = max(1, math.ceil((end - start) / 5)) if curved else 1
+    ground_stations = sorted({start, end, *stations, *alignment.plan_breaks,
                               *(start + (end - start) * step / count for step in range(1, count)),
                               *(s for s in terrain.stations if start < s < end)})
     ground_line = [alignment.point([s, 0, terrain.at(s)], follow_profile=False)
@@ -486,5 +521,6 @@ def generate(config):
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
             "dimensions": dimensions, "accessories": accessories, "arch": arch, "cables": cables,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile,
-                          "vertical_curves": curve_inputs, "cant_profile": cant_points},
+                          "vertical_curves": curve_inputs, "cant_profile": cant_points,
+                          "plan_segments": plan_rows},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}

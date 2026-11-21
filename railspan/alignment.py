@@ -1,7 +1,9 @@
-"""Constant-radius alignment and polygonal envelopes in the start tangent frame."""
+"""Rail alignment and polygonal envelopes in the start tangent frame."""
 
 from bisect import bisect_right
 import math
+
+from .horizontal import build_plan
 
 DEFAULTS = {"curve_radius": 0, "cant_mm": 0}
 
@@ -40,24 +42,32 @@ class StationProfile:
 
 
 class Alignment:
-    def __init__(self, start, radius, cant_mm, deck, profile=(), curves=(), *, cant_profile=()):
+    def __init__(self, start, radius, cant_mm, deck, profile=(), curves=(), *, cant_profile=(), plan_rows=()):
         self.start = start
         self.center_offset = -radius  # Positive Y points left in the tangent frame.
+        self.plan = build_plan(start, plan_rows)
+        self.plan_breaks = tuple(segment.start for segment in self.plan[1:])
+        self.has_curve = any(segment.radius != 0 for segment in self.plan) if self.plan else bool(radius)
         self.deck = deck
         self.profile = StationProfile(profile, deck, curves)
         self.cant = StationProfile(cant_profile, cant_mm)
 
+    def segment_at(self, station):
+        return self.plan[bisect_right(self.plan_breaks, station)] if self.plan else None
+
     def roll_at(self, station):
-        if not self.center_offset:
+        segment = self.segment_at(station)
+        radius = segment.radius if segment else -self.center_offset
+        if not radius:
             return 0.0
-        return math.copysign(math.atan2(self.cant.at(station), 1435), -self.center_offset)
+        return math.copysign(math.atan2(self.cant.at(station), 1435), radius)
 
     def elevation_at(self, station):
         return self.profile.at(station)
 
     def point(self, vertex, track_center=None, *, follow_profile=True):
         station, offset, z = vertex
-        if track_center is not None and self.center_offset:
+        if track_center is not None and self.has_curve:
             roll = self.roll_at(station)
             cosine, sine = math.cos(roll), math.sin(roll)
             y, height = offset - track_center, z - self.deck
@@ -65,6 +75,10 @@ class Alignment:
             z = self.deck + y * sine + height * cosine
         if follow_profile and self.profile.points:
             z += self.elevation_at(station) - self.deck
+        segment = self.segment_at(station)
+        if segment:
+            x, y, _ = segment.frame(station, offset)
+            return [x, y, z]
         if not self.center_offset:
             return [station, offset, z]
         angle = (station - self.start) / self.center_offset
@@ -76,7 +90,9 @@ class Alignment:
 
     def station_at(self, vertex):
         x, y, _ = vertex
-        if not self.center_offset:
+        if self.plan and self.has_curve:
+            return min(segment.nearest(x, y) for segment in self.plan)[1]
+        if not self.center_offset or self.plan:
             return x
         return self.start + self.center_offset * math.atan2(
             (x - self.start) / self.center_offset, 1 - y / self.center_offset
@@ -108,11 +124,13 @@ class Alignment:
         # A stay is a straight chord between its two mapped anchors.
         fractions = [1.0]
         if not item.get("chord"):
-            if self.center_offset or follow_profile and self.profile.points:
+            if self.has_curve or follow_profile and self.profile.points:
                 count = max(1, math.ceil(abs(last - first) / 5))
                 fractions = [step / count for step in range(1, count + 1)]
-            stations = self.profile.breakpoints if follow_profile else ()
-            if track_center is not None and self.center_offset:
+            stations = self.plan_breaks
+            if follow_profile:
+                stations += self.profile.breakpoints
+            if track_center is not None and self.has_curve:
                 stations += self.cant.breakpoints
             if stations and last != first:
                 breaks = set(fractions)
