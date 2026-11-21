@@ -40,7 +40,7 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 </div>
 <div class="pair">
 <label>기본 슬래브 표고 (m)<input type="number" step="any" name="deck" required></label>
-<label>지반 표고 (m)<input type="number" step="any" name="ground" required></label>
+<label>기본 지반 표고 (m)<input type="number" step="any" name="ground" required></label>
 </div>
 <div class="pair">
 <label>선로<select name="tracks"><option value="1">단선</option><option value="2">복선</option></select></label>
@@ -51,6 +51,12 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <p class="muted">한 줄에 측점과 슬래브 표고(m)를 쉼표로 구분해 입력하세요. 비워 두면 기본 슬래브 표고를 적용합니다.</p>
 <label>측점, 슬래브 표고
 <textarea name="profile_points" rows="5" placeholder="0, 15&#10;55, 16.5&#10;110, 15"></textarea>
+</label>
+</details>
+<details><summary>지반선</summary>
+<p class="muted">측점과 지반 표고(m)를 한 줄씩 입력하세요. 전 교량 구간을 포함해야 하며, 비워 두면 기본 지반 표고를 적용합니다.</p>
+<label>측점, 지반 표고
+<textarea name="ground_profile" rows="5" placeholder="0, 2&#10;55, -1&#10;110, 3"></textarea>
 </label>
 </details>
 <details><summary>평면 선형 및 캔트</summary>
@@ -91,6 +97,7 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <h2 id="modelTitle">3D 개념 모델</h2>
 <div class="toolbar">
 <button id="iso">입체</button><button id="plan">평면</button><button id="profile">측면</button>
+<button id="terrain" aria-pressed="true">지반선 숨기기</button>
 <button id="gauge" aria-pressed="false">한계 단면 표시</button>
 <button id="context" aria-pressed="true">지장물 숨기기</button>
 </div>
@@ -113,6 +120,8 @@ const ctx = canvas.getContext('2d');
 let result, selected = [], az = .33, tilt = .48, zoom = 1, gauge = false, context = true;
 let request = 0;
 let focus;
+let showTerrain = true;
+const profileFields = {profile:"profile_points", ground_profile:"ground_profile"};
 const defaultKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height','curve_radius','cant_mm'];
 const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys];
 let defaults = {};
@@ -133,8 +142,10 @@ function fill(data){
   field('kind').value = data.kind;
   for(const key of keys) field(key).value = data[key] ?? ({length:110,nominal:40,...defaults}[key] ?? '');
   field('spans').value = Array.isArray(data.spans) ? data.spans.join(', ') : '';
-  field('profile_points').value = Array.isArray(data.profile)
-    ? data.profile.map(point => Array.isArray(point) ? point.join(', ') : String(point)).join('\n') : '';
+  for(const [key, name] of Object.entries(profileFields)){
+    field(name).value = Array.isArray(data[key])
+      ? data[key].map(point => Array.isArray(point) ? point.join(', ') : String(point)).join('\n') : '';
+  }
   field('obstacles').value = JSON.stringify(data.obstacles, null, 2) ?? '[]';
   toggleFields();
 }
@@ -142,8 +153,10 @@ function config(){
   const data = {project_version:projectVersion, kind:field('kind').value,
     obstacles:JSON.parse(field('obstacles').value)};
   for(const key of keys) data[key] = field(key).value === '' ? null : Number(field(key).value);
-  data.profile = field('profile_points').value.split(/\r?\n/).filter(line => line.trim())
-    .map(line => line.split(',').map(value => value.trim() ? Number(value) : null));
+  for(const [key, name] of Object.entries(profileFields)){
+    data[key] = field(name).value.split(/\r?\n/).filter(line => line.trim())
+      .map(line => line.split(',').map(value => value.trim() ? Number(value) : null));
+  }
   const spans = field('spans').value.trim();
   data.spans = spans ? spans.split(',').map(text => text.trim() ? Number(text) : null) : [];
   return data;
@@ -298,7 +311,8 @@ function draw(){
       showStart: i === 0, showEnd: i === segments.length-1,
     }));
   });
-  const points = geometry.flatMap(g => g.points);
+  const groundLine = showTerrain ? result.ground_line.map(project) : [];
+  const points = geometry.flatMap(g => g.points).concat(groundLine);
   const bounds = axis => points.reduce(([lo,hi],p) => [Math.min(lo,p[axis]),Math.max(hi,p[axis])],[Infinity,-Infinity]);
   const [left,right] = bounds(0), [top,bottom] = bounds(1);
   const scale = Math.min((w-48)/(right-left),(h-48)/(bottom-top))*zoom;
@@ -325,13 +339,29 @@ function draw(){
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  if(groundLine.length){
+    ctx.save();
+    ctx.beginPath();
+    for(const [index,[x,y]] of groundLine.entries()){
+      const px = w/2 + (x-cx)*scale, py = h/2 + (y-cy)*scale;
+      if(index === 0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.setLineDash([6,4]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#78522c';
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 function layerButtons(){
+  el('terrain').textContent = showTerrain ? '지반선 숨기기' : '지반선 표시';
+  el('terrain').setAttribute('aria-pressed',showTerrain);
   el('gauge').textContent = gauge ? '한계 단면 숨기기' : '한계 단면 표시';
   el('context').textContent = context ? '지장물 숨기기' : '지장물 표시';
   el('gauge').setAttribute('aria-pressed',gauge);
   el('context').setAttribute('aria-pressed',context);
 }
+el('terrain').onclick = () => {showTerrain = !showTerrain; layerButtons(); draw();};
 el('gauge').onclick = () => {gauge = !gauge; layerButtons(); draw();};
 el('context').onclick = () => {context = !context; layerButtons(); draw();};
 for(const [id,a,t] of [['iso',.33,.48],['plan',0,Math.PI/2],['profile',0,0]]){

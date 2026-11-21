@@ -11,26 +11,35 @@ def bounds(vertices):
     return [min(axis) for axis in axes], [max(axis) for axis in axes]
 
 
+class ElevationProfile:
+    def __init__(self, points, fallback):
+        self.points = tuple(points)
+        self.stations = tuple(station for station, _ in self.points)
+        self.fallback = fallback
+
+    def at(self, station):
+        if not self.points:
+            return self.fallback
+        index = bisect_right(self.stations, station)
+        if index == 0:
+            return self.points[0][1]
+        if index == len(self.points):
+            return self.points[-1][1]
+        a, za = self.points[index - 1]
+        b, zb = self.points[index]
+        return za + (zb - za) * (station - a) / (b - a)
+
+
 class Alignment:
     def __init__(self, start, radius, cant_mm, deck, profile=()):
         self.start = start
         self.center_offset = -radius  # Positive Y points left in the tangent frame.
         self.deck = deck
-        self.profile = tuple(profile)
-        self.profile_stations = tuple(station for station, _ in profile)
+        self.profile = ElevationProfile(profile, deck)
         self.roll = math.copysign(math.atan2(cant_mm, 1435), radius) if radius else 0.0
 
     def elevation_at(self, station):
-        if not self.profile:
-            return self.deck
-        index = bisect_right(self.profile_stations, station)
-        if index == 0:
-            return self.profile[0][1]
-        if index == len(self.profile):
-            return self.profile[-1][1]
-        a, za = self.profile[index - 1]
-        b, zb = self.profile[index]
-        return za + (zb - za) * (station - a) / (b - a)
+        return self.profile.at(station)
 
     def point(self, vertex, track_center=None, *, follow_profile=True):
         station, offset, z = vertex
@@ -38,7 +47,7 @@ class Alignment:
             y, height = offset - track_center, z - self.deck
             offset = track_center + y * math.cos(self.roll) - height * math.sin(self.roll)
             z = self.deck + y * math.sin(self.roll) + height * math.cos(self.roll)
-        if follow_profile and self.profile:
+        if follow_profile and self.profile.points:
             z += self.elevation_at(station) - self.deck
         if not self.center_offset:
             return [station, offset, z]
@@ -83,15 +92,15 @@ class Alignment:
         # A stay is a straight chord between its two mapped anchors.
         fractions = [1.0]
         if not item.get("chord"):
-            if self.center_offset or follow_profile and self.profile:
+            if self.center_offset or follow_profile and self.profile.points:
                 count = max(1, math.ceil(abs(last - first) / 5))
                 fractions = [step / count for step in range(1, count + 1)]
-            if follow_profile and self.profile and last != first:
+            if follow_profile and self.profile.points and last != first:
                 breaks = set(fractions)
                 for a, b in zip(section(0), section(1)):
                     low, high = sorted((a[0], b[0]))
                     breaks.update((station - a[0]) / (b[0] - a[0])
-                                  for station in self.profile_stations if low < station < high)
+                                  for station in self.profile.stations if low < station < high)
                 fractions = sorted(breaks)
 
         def mapped(t):

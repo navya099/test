@@ -1,7 +1,7 @@
 """Straight-alignment, metre-based geometry for conceptual bridge review."""
 import math
 
-from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, bounds, separation
+from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, ElevationProfile, bounds, separation
 
 TYPES = {"psc": "PSC 거더교", "box": "ST BOX 거더교", "arch": "아치교",
          "cable": "사장교", "ed": "ED교"}
@@ -57,20 +57,23 @@ def validate_obstacles(obstacles):
     return validated
 
 
-def validate_profile(points, start, end, ground):
+def validate_profile(points, start, end, label, minimum, maximum):
     if not isinstance(points, list) or len(points) == 1 or len(points) > 100:
-        raise ValueError("종단 선형은 비워 두거나 2~100개의 측점으로 입력하세요.")
+        raise ValueError(f"{label}은 비워 두거나 2~100개의 측점으로 입력하세요.")
     profile = []
     for index, point in enumerate(points, 1):
         if not isinstance(point, list) or len(point) != 2:
-            raise ValueError(f"종단 {index}행은 측점과 슬래브 표고를 입력하세요.")
-        station = number(point[0], -2e6, 2e6)
-        elevation = number(point[1], ground + 4, ground + 150)
+            raise ValueError(f"{label} {index}행에 측점과 표고를 입력하세요.")
+        try:
+            station = number(point[0], -2e6, 2e6)
+            elevation = number(point[1], minimum, maximum)
+        except ValueError as error:
+            raise ValueError(f"{label} {index}행: {error}") from error
         if profile and station <= profile[-1][0]:
-            raise ValueError(f"종단 {index}행의 측점은 이전 측점보다 커야 합니다.")
+            raise ValueError(f"{label} {index}행의 측점은 이전 측점보다 커야 합니다.")
         profile.append([station, elevation])
     if profile and (profile[0][0] > start + 1e-8 or profile[-1][0] < end - 1e-8):
-        raise ValueError(f"종단 선형은 교량 구간({start:g} ~ {end:g} m) 전체를 포함해야 합니다.")
+        raise ValueError(f"{label}은 교량 구간({start:g} ~ {end:g} m) 전체를 포함해야 합니다.")
     return profile
 
 
@@ -83,7 +86,6 @@ def generate(config):
     start = number(config.get("start"), -1e6, 1e6)
     width = number(config.get("width"), 5, 40)
     ground = number(config.get("ground"), -1000, 8000)
-    deck = number(config.get("deck"), ground + 4, ground + 150)
     rise = number(config.get("rise"), 1, 150)
     tracks = number(config.get("tracks"), 1, 2)
     if tracks not in (1, 2):
@@ -121,8 +123,19 @@ def generate(config):
     cant = number(config.get("cant_mm", 0), 0, 200)
     if radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
         raise ValueError("곡선 반경의 절댓값은 60 m 이상이며 교량 구간의 원호각은 90도 이하여야 합니다.")
-    profile = validate_profile(config.get("profile", []), start, end, ground)
+    ground_points = validate_profile(config.get("ground_profile", []), start, end, "지반선", -1000, 8000)
+    elevations = (-996, 8150) if ground_points else (ground + 4, ground + 150)
+    deck = number(config.get("deck"), *elevations)
+    profile = validate_profile(config.get("profile", []), start, end, "종단 선형", *elevations)
     alignment = Alignment(start, radius, cant, deck, profile)
+    terrain = ElevationProfile(ground_points, ground)
+    if ground_points:
+        # The difference between two linear profiles is linear between their combined breakpoints.
+        checkpoints = sorted({start, end, *(s for s, _ in profile + ground_points if start < s < end)})
+        for station in checkpoints:
+            height = alignment.elevation_at(station) - terrain.at(station)
+            if not 4 - 1e-8 <= height <= 150 + 1e-8:
+                raise ValueError(f"측점 {station:g} m의 슬래브와 지반 표고 차({height:.3f} m)는 4~150 m여야 합니다.")
     tower_ids = set()
     track_centers = {}
     box("슬래브", "deck", [start, -half, deck - .35], [end, half, deck])
@@ -152,9 +165,10 @@ def generate(config):
     for index, station in enumerate(stations):
         label = f"교대 A{1 if index == 0 else 2}" if index in (0, len(stations)-1) else f"교각 P{index}"
         support = alignment.elevation_at(station) - .35 - depth
-        box(f"{label} 기초", "foundation", [station-2.5, -half*.8, ground-2],
-            [station+2.5, half*.8, ground])
-        box(label, "pier", [station-1, -half*.46, ground], [station+1, half*.46, support-.9])
+        base_ground = terrain.at(station)
+        box(f"{label} 기초", "foundation", [station-2.5, -half*.8, base_ground-2],
+            [station+2.5, half*.8, base_ground])
+        box(label, "pier", [station-1, -half*.46, base_ground], [station+1, half*.46, support-.9])
         box(f"{label} 코핑", "pier", [station-1.3, -half*.93, support-.9],
             [station+1.3, half*.93, support-.25])
         for offset in offsets:
@@ -165,7 +179,7 @@ def generate(config):
             neighbors = stations[max(0,index-1):index] + stations[index+1:index+2]
             for side in (-1, 1):
                 y = side * (half - .35)
-                box(f"주탑 {index+1}", "special", [station-.5, y-.3, ground],
+                box(f"주탑 {index+1}", "special", [station-.5, y-.3, base_ground],
                     [station+.5, y+.3, alignment.elevation_at(station)+height])
                 tower_ids.add(objects[-1]["id"])
                 for neighbor in neighbors:
@@ -263,7 +277,15 @@ def generate(config):
                              "station": round(station, 3),
                              "distance": round(max(0, best), 4), "required": limit,
                              "point": center})
+    count = max(1, math.ceil((end - start) / 5)) if radius else 1
+    ground_stations = sorted({start, end, *stations,
+                              *(start + (end - start) * step / count for step in range(1, count)),
+                              *(s for s in terrain.stations if start < s < end)})
+    ground_line = [alignment.point([s, 0, terrain.at(s)], follow_profile=False)
+                   for s in ground_stations]
     return {"objects": objects, "findings": findings, "stations": stations,
             "length": end-start, "kind": TYPES[kind],
+            "ground_line": ground_line,
+            "ground_profile": ground_points,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}
