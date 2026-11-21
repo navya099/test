@@ -47,6 +47,13 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <label>지장물 이격 (m)<input type="number" step="any" name="clearance" required></label>
 </div>
 <label id="riseLabel">아치 라이즈 / 주탑 기준 높이 (m)<input type="number" step="any" name="rise" required></label>
+<details><summary>평면 선형 및 캔트</summary>
+<div class="pair">
+<label>부호 있는 반경 (m)<input type="number" step="any" name="curve_radius" required></label>
+<label>캔트 (mm)<input type="number" step="any" name="cant_mm" required></label>
+</div>
+<p class="muted">반경 0은 직선, 양수는 좌곡선, 음수는 우곡선입니다. 양수 캔트는 진행 방향 왼쪽의 레일을 높입니다. 캔트는 한계 단면에 적용됩니다.</p>
+</details>
 <details><summary>선간격 및 한계 단면</summary>
 <p class="muted">직사각형 개념 단면입니다. 높이는 슬래브 표고 기준입니다.</p>
 <div class="pair">
@@ -65,12 +72,12 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <input type="file" id="obstacleFile" accept=".csv,text/csv" hidden>
 </div>
 <p id="importStatus" class="muted" role="status"></p>
-<p class="muted">가져온 CSV는 지장물 목록을 교체합니다. 좌표 순서는 측점, 횡방향, 표고이며 단위는 m입니다.</p>
+<p class="muted">가져온 CSV는 지장물 목록을 교체합니다. 좌표는 시작점 접선 좌표계의 X·Y·표고(m)입니다. 곡선 구간에서도 지장물 좌표는 고정됩니다.</p>
 <textarea name="obstacles" rows="11" aria-label="지장물 JSON"></textarea>
 </details>
 <p><button class="primary">모델 생성 및 검토</button></p>
 <p id="error" class="error" role="alert"></p>
-<p class="muted">LOD 200 시제품 · 직선 선형 · 예시 한계 단면</p>
+<p class="muted">LOD 200 시제품 · 직선 및 단일 원곡선</p>
 </form>
 </aside>
 <div>
@@ -100,14 +107,14 @@ const ctx = canvas.getContext('2d');
 let result, selected = [], az = .33, tilt = .48, zoom = 1, gauge = false, context = true;
 let request = 0;
 let focus;
-const gaugeKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height'];
-const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...gaugeKeys];
+const defaultKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height','curve_radius','cant_mm'];
+const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys];
 let defaults = {};
 async function loadExample(){
   const response = await fetch('/example');
   if(!response.ok) throw new Error('예제를 불러올 수 없습니다.');
   const data = await response.json();
-  defaults = Object.fromEntries(gaugeKeys.map(key => [key,data[key]]));
+  defaults = Object.fromEntries(defaultKeys.map(key => [key,data[key]]));
   return data;
 }
 function toggleFields(){
@@ -141,9 +148,11 @@ async function generate(data){
     result = model;
     selected = [];
     focus = undefined;
-    el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m';
+    const radius = model.alignment.curve_radius;
+    const route = radius ? (radius > 0 ? '좌곡선 R ' : '우곡선 R ') + Math.abs(radius) + ' m' : '직선';
+    el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m · ' + route;
     el('findings').textContent = '간섭 및 이격 결과 ' + model.findings.length + '건';
-    el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '선형 부재의 외접 상자 후보는 뷰에서 확인할 수 있습니다.';
+    el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '곡선·캔트 및 선형 부재의 외접 상자 판정은 간섭 후보입니다.';
     el('csv').disabled = false;
     el('model').disabled = false;
     el('rows').replaceChildren();
@@ -153,8 +162,7 @@ async function generate(data){
       button.textContent = hit.station;
       button.onclick = () => {
         selected = [hit.part, hit.target];
-        const part = model.objects[hit.part-1];
-        focus = [hit.station, (part.min[1]+part.max[1])/2, (part.min[2]+part.max[2])/2];
+        focus = hit.point;
         zoom = 2;
         if(model.objects[hit.target-1].role === 'gauge') gauge = true;
         if(model.objects[hit.target-1].role === 'obstacle') context = true;
@@ -261,13 +269,20 @@ function draw(){
     const u = x*Math.cos(az)-y*Math.sin(az), v = x*Math.sin(az)+y*Math.cos(az);
     return [u, v*Math.sin(tilt)-z*Math.cos(tilt), v*Math.cos(tilt)+z*Math.sin(tilt)];
   };
-  const geometry = visible.map(o => ({o, points:corners(o).map(project)}));
+  const geometry = visible.flatMap(o => {
+    const segments = o.mesh || [corners(o)];
+    return segments.map((segment, i) => ({
+      o, points: segment.map(project),
+      showStart: i === 0, showEnd: i === segments.length-1,
+    }));
+  });
   const points = geometry.flatMap(g => g.points);
   const bounds = axis => points.reduce(([lo,hi],p) => [Math.min(lo,p[axis]),Math.max(hi,p[axis])],[Infinity,-Infinity]);
   const [left,right] = bounds(0), [top,bottom] = bounds(1);
   const scale = Math.min((w-48)/(right-left),(h-48)/(bottom-top))*zoom;
   const [cx,cy] = focus ? project(focus) : [(left+right)/2,(top+bottom)/2];
-  const polygons = geometry.flatMap(({o,points}) => faces.map((face,i) => {
+  const polygons = geometry.flatMap(({o,points,showStart,showEnd}) => faces.flatMap((face,i) => {
+    if((i === 0 && !showStart) || (i === 1 && !showEnd)) return [];
     const vertices = face.map(index=>points[index]);
     return {o,i,vertices,depth:vertices.reduce((sum,p)=>sum+p[2]/4,0)};
   }));

@@ -1,6 +1,8 @@
 """Straight-alignment, metre-based geometry for conceptual bridge review."""
 import math
 
+from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, bounds, separation
+
 TYPES = {"psc": "PSC 거더교", "box": "ST BOX 거더교", "arch": "아치교",
          "cable": "사장교", "ed": "ED교"}
 GAUGE_DEFAULTS = {
@@ -9,6 +11,7 @@ GAUGE_DEFAULTS = {
 }
 EXAMPLE = {
     **GAUGE_DEFAULTS,
+    **ALIGNMENT_DEFAULTS,
     "kind": "psc", "start": 0, "spans": [30, 50, 30], "width": 11,
     "deck": 15, "ground": 0, "rise": 12, "tracks": 2, "clearance": 0.5,
     "obstacles": [
@@ -97,6 +100,12 @@ def generate(config):
     half = width / 2
     depth = 1.7 if kind == "psc" else 2.2
     end = stations[-1]
+    radius = number(config.get("curve_radius", 0), -1e6, 1e6)
+    cant = number(config.get("cant_mm", 0), -200, 200)
+    if radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
+        raise ValueError("곡선 반경의 절댓값은 60 m 이상이며 교량 구간의 원호각은 90도 이하여야 합니다.")
+    alignment = Alignment(start, radius, cant, deck)
+    track_centers = {}
     box("슬래브", "deck", [start, -half, deck - .35], [end, half, deck])
     for index, (a, b) in enumerate(zip(stations, stations[1:]), 1):
         offsets = [-.36 * width, -.12 * width, .12 * width, .36 * width] if kind == "psc" else [0]
@@ -144,6 +153,8 @@ def generate(config):
                         x = station + fraction*(neighbor-station)
                         beam("사장 케이블" if kind == "cable" else "외부 케이블",
                              "special", [station, y, deck+height*(.65+.35*fraction)], [x, y, deck], .14)
+                        if radius:
+                            objects[-1]["chord"] = True
     for side in (-1, 1):
         edge = side * half
         lo, hi = sorted((edge, edge + side * .75))
@@ -172,31 +183,64 @@ def generate(config):
         for name, half_width, height in gauges:
             box(f"{index}번 선로 {name}", "envelope", [start, offset-half_width, deck+base],
                 [end, offset+half_width, deck+height], "gauge")
+            track_centers[objects[-1]["id"]] = offset
     obstacles = validate_obstacles(config.get("obstacles"))
     for obstacle in obstacles:
         box(obstacle["name"], "context", obstacle["min"], obstacle["max"], "obstacle")
 
+    cells_by_id = {}
+    station_ranges = {}
+    if radius or cant:
+        for item in objects:
+            if item["role"] == "obstacle" or not radius and item["role"] != "gauge":
+                continue
+            station_ranges[item["id"]] = (item["min"][0], item["max"][0])
+            cells = list(alignment.cells(item, track_centers.get(item["id"])))
+            item["mesh"] = [cell[2] for cell in cells]
+            item["min"], item["max"] = bounds(vertex for cell in cells for vertex in cell[2])
+            if "axis" in item:
+                item["axis"] = [alignment.point(point) for point in item["axis"]]
+            cells_by_id[item["id"]] = cells
+
+    def cells(item):
+        return cells_by_id.get(item["id"], [(item["min"], item["max"], None)])
+
     findings = []
+    parts = [item for item in objects if item["role"] == "bridge"]
     for target in objects:
         if target["role"] == "bridge":
             continue
-        for part in objects:
-            if part["role"] != "bridge":
+        limit = clearance if target["role"] == "obstacle" else 0
+        threshold = max(limit, 1e-8)
+        for part in parts:
+            if separation(part["min"], part["max"], target["min"], target["max"]) > threshold:
                 continue
-            gaps = [max(a-d, c-b) for a, b, c, d in zip(
-                part["min"], part["max"], target["min"], target["max"])]
-            distance = math.hypot(*(max(0, gap) for gap in gaps))
-            limit = clearance if target["role"] == "obstacle" else 0
-            if distance > 1e-8 and distance >= limit:
+            best = math.inf
+            center = None
+            target_cells = cells(target)
+            for lo, hi, _ in cells(part):
+                if separation(lo, hi, target["min"], target["max"]) > min(best, threshold):
+                    continue
+                for t_lo, t_hi, _ in target_cells:
+                    gap = separation(lo, hi, t_lo, t_hi)
+                    if gap < best:
+                        best = gap
+                        center = [(max(a, min(b, c)) + max(a, min(b, d))) / 2
+                                  for a, b, c, d in zip(lo, hi, t_lo, t_hi)]
+            if best > 1e-8 and best >= limit:
                 continue
-            status = "중첩" if max(gaps) < -1e-8 else "접촉" if distance <= 1e-8 else "이격 미달"
-            if "axis" in part:
+            status = "중첩" if best < -1e-8 else "접촉" if best <= 1e-8 else "이격 미달"
+            if "axis" in part or "mesh" in part or "mesh" in target:
                 status += " 후보 (외접 상자)"
-            lo = max(part["min"][0], min(part["max"][0], target["min"][0]))
-            hi = max(part["min"][0], min(part["max"][0], target["max"][0]))
+            station = alignment.station_at(center)
+            if part["id"] in station_ranges:
+                lo_station, hi_station = station_ranges[part["id"]]
+                station = max(lo_station, min(hi_station, station))
             findings.append({"part": part["id"], "target": target["id"], "status": status,
-                             "station": round((lo+hi)/2, 3), "distance": round(distance, 4),
-                             "required": limit})
+                             "station": round(station, 3),
+                             "distance": round(max(0, best), 4), "required": limit,
+                             "point": center})
     return {"objects": objects, "findings": findings, "stations": stations,
             "length": end-start, "kind": TYPES[kind],
+            "alignment": {"curve_radius": radius, "cant_mm": cant},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}
