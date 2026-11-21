@@ -122,8 +122,12 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <details><summary>평면 선형 및 캔트</summary>
 <div class="pair">
 <label>부호 있는 반경 (m)<input type="number" step="any" name="curve_radius" required></label>
-<label>캔트 (mm)<input type="number" min="0" max="200" step="any" name="cant_mm" required></label>
+<label>기본 캔트 (mm)<input type="number" min="0" max="200" step="any" name="cant_mm" required></label>
 </div>
+<label>측점별 캔트 · 측점 (m), 캔트 (mm)
+<textarea name="cant_profile" rows="4" placeholder="0, 0&#10;23, 120&#10;87, 120&#10;110, 0"></textarea>
+</label>
+<p class="muted">교량 전 구간을 포함하는 측점과 캔트를 한 줄씩 입력하세요. 두 측점 사이를 직선 보간하며, 비워 두면 기본 캔트를 적용합니다.</p>
 <p class="muted">반경 0은 직선, 음수는 좌곡선, 양수는 우곡선입니다. 캔트는 0 이상의 크기로 입력합니다. 곡선에서는 한계 단면이 원 중심을 향해 기울어지고, 직선에서는 수직을 유지합니다.</p>
 </details>
 <details><summary>선간격 및 한계 단면</summary>
@@ -199,7 +203,7 @@ let generatedProject;
 let exportingIfc = false;
 let focus;
 let showTerrain = true;
-const profileFields = {profile:"profile_points", ground_profile:"ground_profile", vertical_curves:"vertical_curves"};
+const profileFields = {profile:"profile_points", ground_profile:"ground_profile", vertical_curves:"vertical_curves", cant_profile:"cant_profile"};
 const defaultKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height','curve_radius','cant_mm'];
 const dimensions = ['slab_thickness','girder_depth','cap_depth','bearing_height','foundation_depth',
   'foundation_length','foundation_width'];
@@ -283,6 +287,7 @@ async function generate(data){
     const radius = model.alignment.curve_radius;
     const route = radius ? (radius < 0 ? '좌곡선 R ' : '우곡선 R ') + Math.abs(radius) + ' m' : '직선';
     el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m · ' + route + (model.alignment.profile.length ? ' · 종단 입력' : '');
+    if(radius && model.alignment.cant_profile.length) el('modelTitle').textContent += ' · 가변 캔트';
     el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '곡선·종단·캔트 및 선형 부재의 외접 상자 판정은 간섭 후보입니다.';
     el('csv').disabled = false;
     el('model').disabled = false;

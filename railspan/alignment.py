@@ -11,7 +11,7 @@ def bounds(vertices):
     return [min(axis) for axis in axes], [max(axis) for axis in axes]
 
 
-class ElevationProfile:
+class StationProfile:
     def __init__(self, points, fallback, curves=()):
         self.points = tuple(points)
         self.stations = tuple(station for station, _ in self.points)
@@ -40,22 +40,29 @@ class ElevationProfile:
 
 
 class Alignment:
-    def __init__(self, start, radius, cant_mm, deck, profile=(), curves=()):
+    def __init__(self, start, radius, cant_mm, deck, profile=(), curves=(), *, cant_profile=()):
         self.start = start
         self.center_offset = -radius  # Positive Y points left in the tangent frame.
         self.deck = deck
-        self.profile = ElevationProfile(profile, deck, curves)
-        self.roll = math.copysign(math.atan2(cant_mm, 1435), radius) if radius else 0.0
+        self.profile = StationProfile(profile, deck, curves)
+        self.cant = StationProfile(cant_profile, cant_mm)
+
+    def roll_at(self, station):
+        if not self.center_offset:
+            return 0.0
+        return math.copysign(math.atan2(self.cant.at(station), 1435), -self.center_offset)
 
     def elevation_at(self, station):
         return self.profile.at(station)
 
     def point(self, vertex, track_center=None, *, follow_profile=True):
         station, offset, z = vertex
-        if track_center is not None:
+        if track_center is not None and self.center_offset:
+            roll = self.roll_at(station)
+            cosine, sine = math.cos(roll), math.sin(roll)
             y, height = offset - track_center, z - self.deck
-            offset = track_center + y * math.cos(self.roll) - height * math.sin(self.roll)
-            z = self.deck + y * math.sin(self.roll) + height * math.cos(self.roll)
+            offset = track_center + y * cosine - height * sine
+            z = self.deck + y * sine + height * cosine
         if follow_profile and self.profile.points:
             z += self.elevation_at(station) - self.deck
         if not self.center_offset:
@@ -104,12 +111,15 @@ class Alignment:
             if self.center_offset or follow_profile and self.profile.points:
                 count = max(1, math.ceil(abs(last - first) / 5))
                 fractions = [step / count for step in range(1, count + 1)]
-            if follow_profile and self.profile.points and last != first:
+            stations = self.profile.breakpoints if follow_profile else ()
+            if track_center is not None and self.center_offset:
+                stations += self.cant.breakpoints
+            if stations and last != first:
                 breaks = set(fractions)
                 for a, b in zip(section(0), section(1)):
                     low, high = sorted((a[0], b[0]))
                     breaks.update((station - a[0]) / (b[0] - a[0])
-                                  for station in self.profile.breakpoints if low < station < high)
+                                  for station in stations if low < station < high)
                 fractions = sorted(breaks)
 
         def mapped(t):

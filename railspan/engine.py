@@ -1,7 +1,7 @@
 """Metre-based geometry and clearance checks for conceptual bridge review."""
 import math
 
-from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, ElevationProfile, bounds, separation
+from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, StationProfile, bounds, separation
 from .vertical_profile import VerticalCurve
 
 TYPES = {"psc": "PSC 거더교", "box": "ST BOX 거더교", "arch": "아치교",
@@ -75,13 +75,13 @@ def validate_obstacles(obstacles):
     return validated
 
 
-def validate_profile(points, label, minimum, maximum, *, extent=None):
+def validate_profile(points, label, minimum, maximum, *, extent=None, value_label="표고"):
     if not isinstance(points, list) or len(points) == 1 or len(points) > 100:
         raise ValueError(f"{label}은 비워 두거나 2~100개의 측점으로 입력하세요.")
     profile = []
     for index, point in enumerate(points, 1):
         if not isinstance(point, list) or len(point) != 2:
-            raise ValueError(f"{label} {index}행에 측점과 표고를 입력하세요.")
+            raise ValueError(f"{label} {index}행에 측점과 {value_label} 값을 입력하세요.")
         try:
             station = number(point[0], -2e6, 2e6)
             elevation = number(point[1], minimum, maximum)
@@ -241,6 +241,8 @@ def generate(config):
     end = stations[-1]
     radius = number(config.get("curve_radius", 0), -1e6, 1e6)
     cant = number(config.get("cant_mm", 0), 0, 200)
+    cant_points = validate_profile(config.get("cant_profile", []), "측점별 캔트", 0, 200,
+                                   extent=(start, end), value_label="캔트(mm)")
     if radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
         raise ValueError("곡선 반경의 절댓값은 60 m 이상이며 교량 구간의 원호각은 90도 이하여야 합니다.")
     ground_points = validate_profile(config.get("ground_profile", []), "지반선", -1000, 8000, extent=(start, end))
@@ -250,8 +252,8 @@ def generate(config):
     girder_bottom = girder_top - dimensions["girder_depth"]
     profile = validate_profile(config.get("profile", []), "종단 선형", *elevations, extent=(start, end))
     curves, curve_inputs = build_vertical_curves(config.get("vertical_curves", []), profile)
-    alignment = Alignment(start, radius, cant, deck, profile, curves)
-    terrain = ElevationProfile(ground_points, ground)
+    alignment = Alignment(start, radius, cant, deck, profile, curves, cant_profile=cant_points)
+    terrain = StationProfile(ground_points, ground)
     if ground_points or curves:
         check_profile_height(alignment.profile, terrain, start, end)
     arch = None
@@ -484,5 +486,5 @@ def generate(config):
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
             "dimensions": dimensions, "accessories": accessories, "arch": arch, "cables": cables,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile,
-                          "vertical_curves": curve_inputs},
+                          "vertical_curves": curve_inputs, "cant_profile": cant_points},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}
