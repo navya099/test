@@ -50,9 +50,9 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <details><summary>평면 선형 및 캔트</summary>
 <div class="pair">
 <label>부호 있는 반경 (m)<input type="number" step="any" name="curve_radius" required></label>
-<label>캔트 (mm)<input type="number" step="any" name="cant_mm" required></label>
+<label>캔트 (mm)<input type="number" min="0" max="200" step="any" name="cant_mm" required></label>
 </div>
-<p class="muted">반경 0은 직선, 양수는 좌곡선, 음수는 우곡선입니다. 양수 캔트는 진행 방향 왼쪽의 레일을 높입니다. 캔트는 한계 단면에 적용됩니다.</p>
+<p class="muted">반경 0은 직선, 음수는 좌곡선, 양수는 우곡선입니다. 캔트는 0 이상의 크기로 입력합니다. 곡선에서는 한계 단면이 원 중심을 향해 기울어지고, 직선에서는 수직을 유지합니다.</p>
 </details>
 <details><summary>선간격 및 한계 단면</summary>
 <p class="muted">직사각형 개념 단면입니다. 높이는 슬래브 표고 기준입니다.</p>
@@ -110,6 +110,7 @@ let focus;
 const defaultKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height','curve_radius','cant_mm'];
 const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys];
 let defaults = {};
+const projectVersion = 2;
 async function loadExample(){
   const response = await fetch('/example');
   if(!response.ok) throw new Error('예제를 불러올 수 없습니다.');
@@ -130,7 +131,8 @@ function fill(data){
   toggleFields();
 }
 function config(){
-  const data = {kind:field('kind').value, obstacles:JSON.parse(field('obstacles').value)};
+  const data = {project_version:projectVersion, kind:field('kind').value,
+    obstacles:JSON.parse(field('obstacles').value)};
   for(const key of keys) data[key] = field(key).value === '' ? null : Number(field(key).value);
   const spans = field('spans').value.trim();
   data.spans = spans ? spans.split(',').map(text => text.trim() ? Number(text) : null) : [];
@@ -149,7 +151,7 @@ async function generate(data){
     selected = [];
     focus = undefined;
     const radius = model.alignment.curve_radius;
-    const route = radius ? (radius > 0 ? '좌곡선 R ' : '우곡선 R ') + Math.abs(radius) + ' m' : '직선';
+    const route = radius ? (radius < 0 ? '좌곡선 R ' : '우곡선 R ') + Math.abs(radius) + ' m' : '직선';
     el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m · ' + route;
     el('findings').textContent = '간섭 및 이격 결과 ' + model.findings.length + '건';
     el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '곡선·캔트 및 선형 부재의 외접 상자 판정은 간섭 후보입니다.';
@@ -207,7 +209,17 @@ el('project').onchange = async event => {
     if(file.size > 200000) throw new Error('프로젝트 파일 크기를 확인하세요.');
     const data = JSON.parse(await file.text());
     if(!defaults.track_spacing) await loadExample();
+    if(!data || typeof data !== 'object' || Array.isArray(data)){
+      throw new Error('프로젝트는 JSON 객체여야 합니다.');
+    }
     const project = {...defaults,...data};
+    if(data.project_version === undefined){
+      // Legacy files used a positive radius for left curves and a signed cant.
+      if(typeof project.curve_radius === 'number') project.curve_radius = -project.curve_radius;
+      if(typeof project.cant_mm === 'number') project.cant_mm = Math.abs(project.cant_mm);
+    } else if(data.project_version !== projectVersion){
+      throw new Error('지원하지 않는 프로젝트 버전입니다.');
+    }
     fill(project);
     await generate(project);
   } catch(error){ report(error); }

@@ -101,7 +101,7 @@ def generate(config):
     depth = 1.7 if kind == "psc" else 2.2
     end = stations[-1]
     radius = number(config.get("curve_radius", 0), -1e6, 1e6)
-    cant = number(config.get("cant_mm", 0), -200, 200)
+    cant = number(config.get("cant_mm", 0), 0, 200)
     if radius and (abs(radius) < 60 or (end-start) / abs(radius) > math.pi / 2):
         raise ValueError("곡선 반경의 절댓값은 60 m 이상이며 교량 구간의 원호각은 90도 이하여야 합니다.")
     alignment = Alignment(start, radius, cant, deck)
@@ -190,9 +190,9 @@ def generate(config):
 
     cells_by_id = {}
     station_ranges = {}
-    if radius or cant:
+    if radius:
         for item in objects:
-            if item["role"] == "obstacle" or not radius and item["role"] != "gauge":
+            if item["role"] == "obstacle":
                 continue
             station_ranges[item["id"]] = (item["min"][0], item["max"][0])
             cells = list(alignment.cells(item, track_centers.get(item["id"])))
