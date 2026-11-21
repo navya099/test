@@ -286,7 +286,8 @@ def generate(config):
             if best > 1e-8 and best >= limit:
                 continue
             status = "중첩" if best < -1e-8 else "접촉" if best <= 1e-8 else "이격 미달"
-            if "axis" in part or "mesh" in part or "mesh" in target:
+            approximate = "axis" in part or "mesh" in part or "mesh" in target
+            if approximate:
                 status += " 후보 (외접 상자)"
             station = alignment.station_at(center)
             if part["id"] in station_ranges:
@@ -294,6 +295,7 @@ def generate(config):
                 station = max(lo_station, min(hi_station, station))
             findings.append({"part": part["id"], "target": target["id"], "status": status,
                              "station": round(station, 3), "category": target["category"],
+                             "approximate": approximate,
                              "distance": round(max(0, best), 4), "required": limit,
                              "point": center})
     count = max(1, math.ceil((end - start) / 5)) if radius else 1

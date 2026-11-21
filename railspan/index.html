@@ -15,7 +15,7 @@ button{cursor:pointer} .file-link{align-self:center;color:#145cc3}button:hover{b
 canvas{display:block;width:100%;height:clamp(320px,52vh,670px);background:#e9eef5;border-radius:7px;touch-action:none;cursor:grab}
 canvas:active{cursor:grabbing}.muted{color:#4b6079}.results{margin-top:16px}.scroll{max-height:280px;overflow:auto}
 table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:7px;border-bottom:1px solid #dfe5ed}th{background:white;position:sticky;top:0}
-td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:100%;resize:vertical;font-family:monospace}summary{cursor:pointer}
+td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-actions button+button{margin-left:6px}.error{color:#a12724;min-height:1.2em}textarea{width:100%;resize:vertical;font-family:monospace}summary{cursor:pointer}
 @media(max-width:760px){main{grid-template-columns:1fr}header{align-items:start;flex-direction:column}}
 </style>
 <header><h1>Railspan · 철도 교량 개념설계</h1><div class="toolbar">
@@ -112,6 +112,19 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <p class="muted" id="status"></p>
 <div class="scroll"><table><thead><tr><th>측점 (m)</th><th>판정</th><th>부재</th><th>대상 유형</th><th>검토 대상</th><th>거리 / 요구 (m)</th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
+<section class="results" aria-labelledby="alternativesTitle">
+<h2 id="alternativesTitle">교량 대안 비교</h2>
+<form id="alternativeForm">
+<label>대안 이름<input id="alternativeName" required maxlength="60"></label>
+<button id="addAlternative" disabled>마지막 생성 모델 저장</button>
+</form>
+<p class="muted" id="alternativeStatus" role="status"></p>
+<div class="scroll"><table>
+<thead><tr><th>대안</th><th>교량 형식</th><th>경간 구성 (m)</th><th>총연장 (m)</th><th>지장물</th><th>판정*</th><th>후보*</th><th>외부 검토</th><th>작업</th></tr></thead>
+<tbody id="alternativeRows"></tbody>
+</table></div>
+<p class="muted">*중첩·접촉·이격 미달 항목을 집계합니다. 후보는 외접 상자 기준입니다. 대안은 현재 브라우저에 저장됩니다.</p>
+</section>
 </div>
 </main>
 <script>
@@ -178,6 +191,7 @@ async function generate(data){
     if(!response.ok) throw new Error(model.error);
     result = model;
     generatedProject = payload;
+    el('addAlternative').disabled = false;
     el('ifc').disabled = exportingIfc;
     selected = [];
     focus = undefined;
@@ -226,6 +240,86 @@ function renderFindings(){
   }
 }
 el('targetCategory').onchange = renderFindings;
+const alternativeStorageKey = 'railspan.alternatives.v1';
+function readAlternatives(){
+  const saved = JSON.parse(localStorage.getItem(alternativeStorageKey) ?? '[]');
+  if(!Array.isArray(saved)) throw new Error('저장한 대안 목록을 읽을 수 없습니다.');
+  return saved;
+}
+function alternativeAction(work){
+  try{
+    work();
+  } catch(error){
+    el('alternativeStatus').textContent = error.message;
+  }
+}
+function renderAlternatives(entries){
+  const rows = el('alternativeRows');
+  rows.replaceChildren();
+  if(!entries.length){
+    const cell = rows.insertRow().insertCell();
+    cell.colSpan = 9;
+    cell.textContent = '저장한 대안이 없습니다.';
+    return;
+  }
+  for(const entry of entries){
+    const row = rows.insertRow();
+    const {name,project,summary} = entry;
+    const metres = value => Number(value.toFixed(3));
+    for(const value of [name,summary.kind,summary.spans.map(metres).join(' + '),
+      metres(summary.length),summary.obstacles,summary.findings,summary.candidates,
+      summary.obstacles ? '지장물 입력됨' : '판정 불가']){
+      row.insertCell().textContent = value;
+    }
+    const actions = row.insertCell();
+    actions.className = 'alternative-actions';
+    const open = document.createElement('button');
+    open.textContent = '열기';
+    open.setAttribute('aria-label', name + ' 열기');
+    open.onclick = async () => {
+      fill(project);
+      await generate(project);
+    };
+    const remove = document.createElement('button');
+    remove.textContent = '삭제';
+    remove.setAttribute('aria-label', name + ' 삭제');
+    remove.onclick = () => alternativeAction(() => {
+      const remaining = readAlternatives().filter(saved => saved.name !== name);
+      localStorage.setItem(alternativeStorageKey, JSON.stringify(remaining));
+      renderAlternatives(remaining);
+      el('alternativeStatus').textContent = name + ' 대안을 삭제했습니다.';
+    });
+    actions.append(open,remove);
+  }
+}
+el('alternativeForm').onsubmit = event => {
+  event.preventDefault();
+  if(!generatedProject) return;
+  alternativeAction(() => {
+    const name = el('alternativeName').value.trim();
+    if(!name) throw new Error('대안 이름을 입력하세요.');
+    const entries = readAlternatives();
+    if(entries.some(entry => entry.name === name)) throw new Error('이미 사용 중인 대안 이름입니다.');
+    const project = {...JSON.parse(generatedProject), project_version:projectVersion};
+    const candidates = result.findings.filter(hit => hit.approximate).length;
+    entries.push({name,project,summary:{
+      kind:result.kind, length:result.length, candidates,
+      spans:result.stations.slice(1).map((station,index) => station-result.stations[index]),
+      findings:result.findings.length-candidates,
+      obstacles:result.objects.filter(object => object.role === 'obstacle').length,
+    }});
+    localStorage.setItem(alternativeStorageKey, JSON.stringify(entries));
+    renderAlternatives(entries);
+    el('alternativeName').value = '';
+    el('alternativeStatus').textContent = name + ' 대안을 저장했습니다.';
+  });
+};
+window.addEventListener('storage', event => {
+  if(event.key === alternativeStorageKey || event.key === null){
+    alternativeAction(() => renderAlternatives(readAlternatives()));
+  }
+});
+alternativeAction(() => renderAlternatives(readAlternatives()));
 async function example(){
   try {
     const data = await loadExample();
