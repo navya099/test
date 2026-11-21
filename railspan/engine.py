@@ -10,6 +10,7 @@ OBSTACLE_CATEGORIES = {
     "rail": "철도시설물", "other": "기타 지장물",
 }
 TARGET_CATEGORIES = {**OBSTACLE_CATEGORIES, "gauge": "차량·건축한계"}
+ACCESSORY_SIDES = {"none": (), "left": (1,), "right": (-1,), "both": (-1, 1)}
 
 GAUGE_DEFAULTS = {
     "track_spacing": 4, "vehicle_width": 3.1, "vehicle_height": 4.3,
@@ -233,17 +234,49 @@ def generate(config):
                              "special", [station, y, deck+height*(.65+.35*fraction)], [x, y, deck], .14)
                         if radius or profile:
                             objects[-1]["chord"] = True
+    accessories = {}
+    for key, label in (("rail_side", "난간"), ("walkway_side", "점검통로"), ("drain_side", "배수관로")):
+        placement = config.get(key, "both")
+        if not isinstance(placement, str) or placement not in ACCESSORY_SIDES:
+            raise ValueError(f"{label} 설치 방향을 선택하세요.")
+        accessories[key] = placement
+
+    for key, label, default, low, high in (
+        ("railing_height", "난간 높이", 1.12, .2, 5),
+        ("walkway_width", "점검통로 폭", .75, .2, 6),
+        ("drain_diameter", "배수관 외경", .25, .05, 3),
+        ("drain_drop", "배수관 중심 하향 거리", 1, 0, 20),
+        ("drain_inset", "배수관 중심 안쪽 거리", width * .05, 0, half),
+    ):
+        value = config.get(key)
+        try:
+            accessories[key] = default if value is None else number(value, low, high)
+        except ValueError as error:
+            raise ValueError(f"{label} (m): {error}") from error
+
+    walk_sides = ACCESSORY_SIDES[accessories["walkway_side"]]
+    rail_sides = ACCESSORY_SIDES[accessories["rail_side"]]
+    drain_sides = ACCESSORY_SIDES[accessories["drain_side"]]
+    walkway_width = accessories["walkway_width"]
+    rail_top = deck + accessories["railing_height"]
+    drain_y = half - accessories["drain_inset"]
+    drain_z = deck - accessories["drain_drop"]
+    if len(drain_sides) == 2 and drain_y * 2 < accessories["drain_diameter"] - 1e-8:
+        raise ValueError("양쪽 배수관이 겹칩니다. 배수관의 안쪽 거리나 외경을 줄이세요.")
     for side in (-1, 1):
         edge = side * half
-        lo, hi = sorted((edge, edge + side * .75))
-        box("점검통로", "accessory", [start, lo, deck-.18], [end, hi, deck+.05])
-        rail = edge + side*.70
-        for station in stations:
-            box("난간 기둥", "accessory", [station-.06, rail-.06, deck],
-                [station+.06, rail+.06, deck+1.1])
-        box("난간", "accessory", [start, rail-.06, deck+1], [end, rail+.06, deck+1.12])
-        beam("배수관로", "accessory", [start, edge*.9, deck-1],
-             [end, edge*.9, deck-1], .25)
+        if side in walk_sides:
+            lo, hi = sorted((edge, edge + side * walkway_width))
+            box("점검통로", "accessory", [start, lo, deck-.18], [end, hi, deck+.05])
+        if side in rail_sides:
+            rail_y = edge + side * ((walkway_width if side in walk_sides else 0) - .05)
+            for station in stations:
+                box("난간 기둥", "accessory", [station-.06, rail_y-.06, deck],
+                    [station+.06, rail_y+.06, rail_top-.02])
+            box("난간", "accessory", [start, rail_y-.06, rail_top-.12], [end, rail_y+.06, rail_top])
+        if side in drain_sides:
+            beam("배수관로", "accessory", [start, side * drain_y, drain_z],
+                 [end, side * drain_y, drain_z], accessories["drain_diameter"])
     settings = {**GAUGE_DEFAULTS, **config}
     spacing = number(settings["track_spacing"], .1, 40)
     base = number(settings["gauge_base"], 0, 20)
@@ -336,6 +369,6 @@ def generate(config):
             "length": end-start, "kind": TYPES[kind],
             "ground_line": ground_line,
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
-            "dimensions": dimensions,
+            "dimensions": dimensions, "accessories": accessories,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}

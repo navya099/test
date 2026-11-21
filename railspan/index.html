@@ -59,6 +59,20 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <label>기초 폭<input type="number" step="any" min=".5" max="80" name="foundation_width" placeholder="상부 폭 × 0.8"></label>
 </div>
 </details>
+<details><summary>부속품 배치</summary>
+<p class="muted">좌·우는 측점이 증가하는 방향 기준입니다. 빈 치수는 기본값을 적용합니다.</p>
+<div class="pair">
+<label>난간 설치 방향<select name="rail_side"><option value="both">양쪽</option><option value="left">왼쪽</option><option value="right">오른쪽</option><option value="none">설치 안 함</option></select></label>
+<label>점검통로 설치 방향<select name="walkway_side"><option value="both">양쪽</option><option value="left">왼쪽</option><option value="right">오른쪽</option><option value="none">설치 안 함</option></select></label>
+<label>배수관로 설치 방향<select name="drain_side"><option value="both">양쪽</option><option value="left">왼쪽</option><option value="right">오른쪽</option><option value="none">설치 안 함</option></select></label>
+<label>난간 높이 (m)<input type="number" step="any" min=".2" max="5" name="railing_height" placeholder="1.12"></label>
+<label>점검통로 폭 (m)<input type="number" step="any" min=".2" max="6" name="walkway_width" placeholder="0.75"></label>
+<label>배수관 외경 (m)<input type="number" step="any" min=".05" max="3" name="drain_diameter" placeholder="0.25"></label>
+<label>배수관 중심 하향 거리 (m)<input type="number" step="any" min="0" max="20" name="drain_drop" placeholder="1"></label>
+<label>배수관 중심 안쪽 거리 (m)<input type="number" step="any" min="0" name="drain_inset" placeholder="상부 폭 × 0.05"></label>
+</div>
+<p class="muted">배수관 위치는 슬래브 상단과 가장자리 기준입니다. 난간은 해당 방향의 통로가 있으면 통로 바깥쪽에 배치합니다.</p>
+</details>
 <details><summary>종단 선형</summary>
 <div class="toolbar">
 <button type="button" id="profileCsv">종단 CSV 가져오기</button>
@@ -167,7 +181,9 @@ const profileFields = {profile:"profile_points", ground_profile:"ground_profile"
 const defaultKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height','curve_radius','cant_mm'];
 const dimensions = ['slab_thickness','girder_depth','cap_depth','bearing_height','foundation_depth',
   'foundation_length','foundation_width'];
-const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys,...dimensions];
+const accessorySides = ['rail_side','walkway_side','drain_side'];
+const accessoryDimensions = ['railing_height','walkway_width','drain_diameter','drain_drop','drain_inset'];
+const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys,...dimensions,...accessoryDimensions];
 let defaults = {};
 const projectVersion = 2;
 async function loadExample(){
@@ -187,6 +203,7 @@ function fill(data){
     el(id).textContent = '';
   }
   field('kind').value = data.kind;
+  for(const key of accessorySides) field(key).value = data[key] ?? 'both';
   for(const key of keys) field(key).value = data[key] ?? ({length:110,nominal:40,...defaults}[key] ?? '');
   field('spans').value = Array.isArray(data.spans) ? data.spans.join(', ') : '';
   for(const [key, name] of Object.entries(profileFields)){
@@ -199,6 +216,7 @@ function fill(data){
 function config(){
   const data = {project_version:projectVersion, kind:field('kind').value,
     obstacles:JSON.parse(field('obstacles').value)};
+  for(const key of accessorySides) data[key] = field(key).value;
   for(const key of keys) data[key] = field(key).value === '' ? null : Number(field(key).value);
   for(const [key, name] of Object.entries(profileFields)){
     data[key] = field(name).value.split(/\r?\n/).filter(line => line.trim())
