@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Railspan · 철도 교량 개념설계</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef1f5;color:#12253c;font:14px system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;background:#13263d;color:white;padding:16px 24px}
+h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 14px}p{line-height:1.5}
+main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;padding:16px}
+aside,section{background:white;border:1px solid #d5dce5;border-radius:10px;padding:16px}
+label{display:grid;gap:4px;margin-bottom:10px}input,select,textarea,button{font:inherit;border:1px solid #a9b7c8;border-radius:5px;padding:7px;background:white;color:#12253c;min-width:0}
+button{cursor:pointer}button:hover{background:#e6eef8}button:disabled{opacity:.5;cursor:default}.primary{background:#145cc3;color:white;border-color:#145cc3}.primary:hover{background:#104b9d}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap}.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+canvas{display:block;width:100%;height:clamp(320px,52vh,670px);background:#e9eef5;border-radius:7px;touch-action:none;cursor:grab}
+canvas:active{cursor:grabbing}.muted{color:#4b6079}.results{margin-top:16px}.scroll{max-height:280px;overflow:auto}
+table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:7px;border-bottom:1px solid #dfe5ed}th{background:white;position:sticky;top:0}
+td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:100%;resize:vertical;font-family:monospace}summary{cursor:pointer}
+@media(max-width:760px){main{grid-template-columns:1fr}header{align-items:start;flex-direction:column}}
+</style>
+<header><h1>Railspan · 철도 교량 개념설계</h1><div class="toolbar">
+<button id="sample" type="button">예제 불러오기</button>
+<button id="open" type="button">프로젝트 열기</button>
+<button id="save" type="button">프로젝트 저장</button>
+<input type="file" id="project" accept=".json,application/json" hidden>
+</div></header>
+<main>
+<aside>
+<h2>교량 배치</h2>
+<form id="design">
+<label>교량 형식<select name="kind"><option value="psc">PSC 거더교</option><option value="box">ST BOX 거더교</option><option value="arch">아치교</option><option value="cable">사장교</option><option value="ed">ED교</option></select></label>
+<div class="pair">
+<label>시작 측점 (m)<input type="number" step="any" name="start" required></label>
+<label>상부 폭 (m)<input type="number" step="any" name="width" required></label>
+</div>
+<label>경간 길이 (m, 쉼표 구분)<input name="spans" placeholder="30, 50, 30"></label>
+<div class="pair" id="automatic" hidden>
+<label>총연장 (m)<input type="number" step="any" name="length" value="110"></label>
+<label>기준 경간 (m)<input type="number" step="any" name="nominal" value="40"></label>
+</div>
+<div class="pair">
+<label>슬래브 표고 (m)<input type="number" step="any" name="deck" required></label>
+<label>지반 표고 (m)<input type="number" step="any" name="ground" required></label>
+</div>
+<div class="pair">
+<label>선로<select name="tracks"><option value="1">단선</option><option value="2">복선</option></select></label>
+<label>지장물 이격 (m)<input type="number" step="any" name="clearance" required></label>
+</div>
+<label id="riseLabel">아치 라이즈 / 주탑 기준 높이 (m)<input type="number" step="any" name="rise" required></label>
+<details><summary>지장물 및 검토 구역</summary>
+<p class="muted">직육면체 JSON 배열. min과 max의 순서는 측점, 횡방향, 표고입니다.</p>
+<textarea name="obstacles" rows="11" aria-label="지장물 JSON"></textarea>
+</details>
+<p><button class="primary">모델 생성 및 검토</button></p>
+<p id="error" class="error" role="alert"></p>
+<p class="muted">LOD 200 시제품 · 직선 선형 · 예시 한계 단면</p>
+</form>
+</aside>
+<div>
+<section>
+<h2 id="modelTitle">3D 개념 모델</h2>
+<div class="toolbar">
+<button id="iso">입체</button><button id="plan">평면</button><button id="profile">측면</button>
+<button id="gauge" aria-pressed="false">한계 단면 표시</button>
+<button id="context" aria-pressed="true">지장물 숨기기</button>
+</div>
+<p class="muted" id="hint">드래그로 회전하고 휠로 확대합니다.</p>
+<canvas id="view" aria-label="3D 개념 모델"></canvas>
+</section>
+<section class="results">
+<div class="toolbar"><h2 id="findings">간섭 및 이격 결과</h2><button id="csv" disabled>CSV 내보내기</button><button id="model" disabled>모델 JSON 내보내기</button></div>
+<p class="muted" id="status"></p>
+<div class="scroll"><table><thead><tr><th>측점 (m)</th><th>판정</th><th>부재</th><th>검토 대상</th><th>거리 / 요구 (m)</th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+</div>
+</main>
+<script>
+const el = id => document.getElementById(id);
+const form = el('design');
+const field = name => form.elements.namedItem(name);
+const canvas = el('view');
+const ctx = canvas.getContext('2d');
+let result, selected = [], az = .33, tilt = .48, zoom = 1, gauge = false, context = true;
+let request = 0;
+let focus;
+const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal'];
+function toggleFields(){
+  el('automatic').style.display = field('spans').value.trim() ? 'none' : 'grid';
+  el('riseLabel').style.display = ['arch','cable','ed'].includes(field('kind').value) ? 'grid' : 'none';
+}
+function fill(data){
+  field('kind').value = data.kind;
+  for(const key of keys) field(key).value = data[key] ?? ({length:110,nominal:40}[key] ?? '');
+  field('spans').value = Array.isArray(data.spans) ? data.spans.join(', ') : '';
+  field('obstacles').value = JSON.stringify(data.obstacles, null, 2) ?? '[]';
+  toggleFields();
+}
+function config(){
+  const data = {kind:field('kind').value, obstacles:JSON.parse(field('obstacles').value)};
+  for(const key of keys) data[key] = field(key).value === '' ? null : Number(field(key).value);
+  const spans = field('spans').value.trim();
+  data.spans = spans ? spans.split(',').map(text => text.trim() ? Number(text) : null) : [];
+  return data;
+}
+function report(error){ el('error').textContent = error.message; }
+async function generate(data){
+  const id = ++request;
+  el('error').textContent = '';
+  try {
+    const response = await fetch('/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const model = await response.json();
+    if(id !== request) return;
+    if(!response.ok) throw new Error(model.error);
+    result = model;
+    selected = [];
+    focus = undefined;
+    el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m';
+    el('findings').textContent = '간섭 및 이격 결과 ' + model.findings.length + '건';
+    el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '선형 부재의 외접 상자 후보는 뷰에서 확인할 수 있습니다.';
+    el('csv').disabled = false;
+    el('model').disabled = false;
+    el('rows').replaceChildren();
+    for(const hit of model.findings){
+      const row = el('rows').insertRow();
+      const button = document.createElement('button');
+      button.textContent = hit.station;
+      button.onclick = () => {
+        selected = [hit.part, hit.target];
+        const part = model.objects[hit.part-1];
+        focus = [hit.station, (part.min[1]+part.max[1])/2, (part.min[2]+part.max[2])/2];
+        zoom = 2;
+        if(model.objects[hit.target-1].role === 'gauge') gauge = true;
+        if(model.objects[hit.target-1].role === 'obstacle') context = true;
+        layerButtons();
+        draw();
+      };
+      row.insertCell().append(button);
+      for(const value of [hit.status, model.objects[hit.part-1].name, model.objects[hit.target-1].name, hit.distance+' / '+hit.required]){
+        row.insertCell().textContent = value;
+      }
+    }
+    zoom = 1;
+    draw();
+  } catch(error) { if(id === request) report(error); }
+}
+async function example(){
+  try {
+    const data = await (await fetch('/example')).json();
+    fill(data);
+    await generate(data);
+  } catch(error){ report(error); }
+}
+function download(name,mime,text){
+  const url = URL.createObjectURL(new Blob([text], {type:mime}));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+form.onsubmit = event => {
+  event.preventDefault();
+  try { generate(config()); } catch(error){ report(error); }
+};
+form.oninput = toggleFields;
+el('sample').onclick = example;
+el('open').onclick = () => el('project').click();
+el('project').onchange = async event => {
+  try {
+    const file = event.target.files[0];
+    if(!file) return;
+    if(file.size > 200000) throw new Error('프로젝트 파일 크기를 확인하세요.');
+    const data = JSON.parse(await file.text());
+    fill(data);
+    await generate(data);
+  } catch(error){ report(error); }
+  finally { event.target.value = ''; }
+};
+el('save').onclick = () => {
+  try { download('bridge-project.json','application/json',JSON.stringify(config(),null,2)); }
+  catch(error){ report(error); }
+};
+el('model').onclick = () => download('bridge-model.json','application/json',JSON.stringify(result,null,2));
+el('csv').onclick = () => {
+  const rows = [['측점 (m)','판정','부재','검토 대상','거리 (m)','요구 (m)'],
+    ...result.findings.map(hit => [hit.station, hit.status, result.objects[hit.part-1].name,
+      result.objects[hit.target-1].name, hit.distance, hit.required]),
+    ...result.missing.map(message => ['', '판정 불가', '', message, '', ''])];
+  const quote = value => '"' + (typeof value === 'string' && /^[\s]*[=+@-]/.test(value) ? "'" : '') + String(value).replaceAll('"','""') + '"';
+  download('bridge-review.csv','text/csv;charset=utf-8','\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n'));
+};
+const colors = {deck:'#9eb2c9',girder:'#42668d',pier:'#788ca3',bearing:'#bf905c',foundation:'#a98b6d',
+  special:'#3469ae',accessory:'#244767',context:'#2a9d8f',envelope:'#e4a03d'};
+const faces = [[0,2,3,1],[4,5,7,6],[0,1,5,4],[2,6,7,3],[0,4,6,2],[1,3,7,5]];
+function corners(item){
+  if(!item.axis) return Array.from({length:8},(_,i) => [4,2,1].map((bit, k) => item[i&bit?'max':'min'][k]));
+  const [a,b] = item.axis;
+  const dx = b[0]-a[0], dz = b[2]-a[2], length = Math.hypot(dx,dz), r = item.thickness / 2;
+  return Array.from({length:8},(_,i) => {
+    const point = i&4 ? b : a;
+    const offset = i&1 ? r : -r;
+    return [point[0]-offset*dz/length,point[1]+(i&2?r:-r),point[2]+offset*dx/length];
+  });
+}
+function draw(){
+  const w = canvas.clientWidth, h = canvas.clientHeight, dpi = window.devicePixelRatio || 1;
+  canvas.width = w*dpi;
+  canvas.height = h*dpi;
+  ctx.scale(dpi,dpi);
+  if(!result || !w || !h) return;
+  const visible = result.objects.filter(o => o.role === 'bridge' || (o.role === 'gauge' ? gauge : context));
+  const origin = result.stations[0];
+  const project = ([x,y,z]) => {
+    x -= origin;
+    const u = x*Math.cos(az)-y*Math.sin(az), v = x*Math.sin(az)+y*Math.cos(az);
+    return [u, v*Math.sin(tilt)-z*Math.cos(tilt), v*Math.cos(tilt)+z*Math.sin(tilt)];
+  };
+  const geometry = visible.map(o => ({o, points:corners(o).map(project)}));
+  const points = geometry.flatMap(g => g.points);
+  const bounds = axis => points.reduce(([lo,hi],p) => [Math.min(lo,p[axis]),Math.max(hi,p[axis])],[Infinity,-Infinity]);
+  const [left,right] = bounds(0), [top,bottom] = bounds(1);
+  const scale = Math.min((w-48)/(right-left),(h-48)/(bottom-top))*zoom;
+  const [cx,cy] = focus ? project(focus) : [(left+right)/2,(top+bottom)/2];
+  const polygons = geometry.flatMap(({o,points}) => faces.map((face,i) => {
+    const vertices = face.map(index=>points[index]);
+    return {o,i,vertices,depth:vertices.reduce((sum,p)=>sum+p[2]/4,0)};
+  }));
+  polygons.sort((a,b)=>a.depth-b.depth);
+  for(const {o,i,vertices} of polygons){
+    const active = selected.includes(o.id);
+    ctx.beginPath();
+    for(const [j,[x,y]] of vertices.entries()){
+      const px = w/2 + (x-cx)*scale, py = h/2 + (y-cy)*scale;
+      if(j===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath();
+    ctx.globalAlpha = o.role === 'bridge' ? 1 : active ? .32 : .13;
+    ctx.fillStyle = active ? '#ec5b31' : colors[o.group];
+    ctx.fill();
+    ctx.globalAlpha = active ? .95 : o.role === 'bridge' ? (i%2 ? .21 : .36) : .42;
+    ctx.strokeStyle = active ? '#ad321f' : o.role === 'bridge' ? '#182f49' : colors[o.group];
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function layerButtons(){
+  el('gauge').textContent = gauge ? '한계 단면 숨기기' : '한계 단면 표시';
+  el('context').textContent = context ? '지장물 숨기기' : '지장물 표시';
+  el('gauge').setAttribute('aria-pressed',gauge);
+  el('context').setAttribute('aria-pressed',context);
+}
+el('gauge').onclick = () => {gauge = !gauge; layerButtons(); draw();};
+el('context').onclick = () => {context = !context; layerButtons(); draw();};
+for(const [id,a,t] of [['iso',.33,.48],['plan',0,Math.PI/2],['profile',0,0]]){
+  el(id).onclick = () => {az=a; tilt=t; zoom=1; focus=undefined; selected=[]; draw();};
+}
+let drag;
+canvas.onpointerdown = event => {
+  drag = [event.clientX,event.clientY];
+  canvas.setPointerCapture(event.pointerId);
+};
+canvas.onpointermove = event => {
+  if(!drag) return;
+  az += (event.clientX-drag[0])*.009;
+  tilt = Math.max(0,Math.min(Math.PI/2,tilt+(event.clientY-drag[1])*.009));
+  drag = [event.clientX,event.clientY];
+  draw();
+};
+canvas.onlostpointercapture = () => {drag = null;};
+canvas.addEventListener('wheel',event => {
+  event.preventDefault();
+  zoom = Math.max(.5,Math.min(4,zoom*Math.exp(-event.deltaY*.002)));
+  draw();
+},{passive:false});
+new ResizeObserver(draw).observe(canvas);
+example();
+</script>
+</html>
