@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .engine import EXAMPLE, generate
+from .ifc_export import export_ifc
 from .obstacle_csv import example_csv, read_obstacles
 
 
@@ -31,7 +32,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if self.path not in ("/generate", "/obstacles/import"):
+        if self.path not in ("/generate", "/obstacles/import", "/export/ifc"):
             self.send_error(404)
             return
         importing = self.path == "/obstacles/import"
@@ -39,6 +40,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get_content_type() != expected:
             self.send_error(415)
             return
+        exporting = self.path == "/export/ifc"
+        if exporting:
+            try:
+                import ifcopenshell
+            except ModuleNotFoundError:
+                self.json_reply(503, {"error": "IFC 내보내기 전에 python -m pip install -r railspan/requirements-ifc.txt 를 실행하세요."})
+                return
         try:
             size = int(self.headers.get("Content-Length", "0"))
             if not 0 < size <= 200_000:
@@ -48,7 +56,10 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError) as error:
             self.json_reply(400, {"error": str(error)})
             return
-        self.json_reply(200, result)
+        if exporting:
+            self.reply(200, export_ifc(result, ifcopenshell), "application/x-step")
+        else:
+            self.json_reply(200, result)
 
 
 if __name__ == "__main__":

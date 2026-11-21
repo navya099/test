@@ -105,7 +105,7 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <canvas id="view" aria-label="3D 개념 모델"></canvas>
 </section>
 <section class="results">
-<div class="toolbar"><h2 id="findings">간섭 및 이격 결과</h2><button id="csv" disabled>CSV 내보내기</button><button id="model" disabled>모델 JSON 내보내기</button></div>
+<div class="toolbar"><h2 id="findings">간섭 및 이격 결과</h2><button id="csv" disabled>CSV 내보내기</button><button id="model" disabled>모델 JSON 내보내기</button><button id="ifc" disabled>IFC 내보내기</button></div>
 <label>검토 대상 유형
 <select id="targetCategory" disabled><option value="">전체</option></select>
 </label>
@@ -122,6 +122,8 @@ const canvas = el('view');
 const ctx = canvas.getContext('2d');
 let result, selected = [], az = .33, tilt = .48, zoom = 1, gauge = false, context = true;
 let request = 0;
+let generatedProject;
+let exportingIfc = false;
 let focus;
 let showTerrain = true;
 const profileFields = {profile:"profile_points", ground_profile:"ground_profile"};
@@ -169,11 +171,14 @@ async function generate(data){
   const id = ++request;
   el('error').textContent = '';
   try {
-    const response = await fetch('/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const payload = JSON.stringify(data);
+    const response = await fetch('/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:payload});
     const model = await response.json();
     if(id !== request) return;
     if(!response.ok) throw new Error(model.error);
     result = model;
+    generatedProject = payload;
+    el('ifc').disabled = exportingIfc;
     selected = [];
     focus = undefined;
     const radius = model.alignment.curve_radius;
@@ -229,7 +234,7 @@ async function example(){
   } catch(error){ report(error); }
 }
 function download(name,mime,text){
-  const url = URL.createObjectURL(new Blob([text], {type:mime}));
+  const url = URL.createObjectURL(text instanceof Blob ? text : new Blob([text], {type:mime}));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
@@ -288,6 +293,17 @@ el('save').onclick = () => {
   catch(error){ report(error); }
 };
 el('model').onclick = () => download('bridge-model.json','application/json',JSON.stringify(result,null,2));
+el('ifc').onclick = async () => {
+  exportingIfc = true;
+  el('ifc').disabled = true;
+  el('error').textContent = '';
+  try {
+    const response = await fetch('/export/ifc', {method:'POST',headers:{'Content-Type':'application/json'},body:generatedProject});
+    if(!response.ok) throw new Error((await response.json()).error);
+    download('railspan-model.ifc', 'application/x-step', await response.blob());
+  } catch(error){ report(error); }
+  finally { exportingIfc = false; el('ifc').disabled = false; }
+};
 el('csv').onclick = () => {
   const rows = [['측점 (m)','판정','부재','대상 유형','검토 대상','거리 (m)','요구 (m)'],
     ...result.findings.map(hit => [hit.station, hit.status, result.objects[hit.part-1].name,
