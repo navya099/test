@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .engine import EXAMPLE, generate
+from .obstacle_csv import example_csv, read_obstacles
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -24,21 +25,26 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, Path(__file__).with_name("index.html").read_bytes(), "text/html; charset=utf-8")
         elif self.path == "/example":
             self.json_reply(200, EXAMPLE)
+        elif self.path == "/obstacles-example.csv":
+            self.reply(200, example_csv(), "text/csv; charset=utf-8")
         else:
             self.send_error(404)
 
     def do_POST(self):
-        if self.path != "/generate":
+        if self.path not in ("/generate", "/obstacles/import"):
             self.send_error(404)
             return
-        if self.headers.get_content_type() != "application/json":
+        importing = self.path == "/obstacles/import"
+        expected = "text/csv" if importing else "application/json"
+        if self.headers.get_content_type() != expected:
             self.send_error(415)
             return
         try:
             size = int(self.headers.get("Content-Length", "0"))
             if not 0 < size <= 200_000:
                 raise ValueError("프로젝트 데이터 크기를 확인하세요.")
-            result = generate(json.loads(self.rfile.read(size)))
+            payload = self.rfile.read(size)
+            result = read_obstacles(payload) if importing else generate(json.loads(payload))
         except (TypeError, ValueError) as error:
             self.json_reply(400, {"error": str(error)})
             return

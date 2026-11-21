@@ -10,7 +10,7 @@ h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 14px}p{line-height:1.5}
 main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;padding:16px}
 aside,section{background:white;border:1px solid #d5dce5;border-radius:10px;padding:16px}
 label{display:grid;gap:4px;margin-bottom:10px}input,select,textarea,button{font:inherit;border:1px solid #a9b7c8;border-radius:5px;padding:7px;background:white;color:#12253c;min-width:0}
-button{cursor:pointer}button:hover{background:#e6eef8}button:disabled{opacity:.5;cursor:default}.primary{background:#145cc3;color:white;border-color:#145cc3}.primary:hover{background:#104b9d}
+button{cursor:pointer} .file-link{align-self:center;color:#145cc3}button:hover{background:#e6eef8}button:disabled{opacity:.5;cursor:default}.primary{background:#145cc3;color:white;border-color:#145cc3}.primary:hover{background:#104b9d}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap}.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 canvas{display:block;width:100%;height:clamp(320px,52vh,670px);background:#e9eef5;border-radius:7px;touch-action:none;cursor:grab}
 canvas:active{cursor:grabbing}.muted{color:#4b6079}.results{margin-top:16px}.scroll{max-height:280px;overflow:auto}
@@ -47,8 +47,25 @@ td button{padding:3px 6px}.error{color:#a12724;min-height:1.2em}textarea{width:1
 <label>지장물 이격 (m)<input type="number" step="any" name="clearance" required></label>
 </div>
 <label id="riseLabel">아치 라이즈 / 주탑 기준 높이 (m)<input type="number" step="any" name="rise" required></label>
+<details><summary>선간격 및 한계 단면</summary>
+<p class="muted">직사각형 개념 단면입니다. 높이는 슬래브 표고 기준입니다.</p>
+<div class="pair">
+<label>복선 선간격 (m)<input type="number" step="any" name="track_spacing" required></label>
+<label>공통 하단 높이 (m)<input type="number" step="any" name="gauge_base" required></label>
+<label>차량한계 폭 (m)<input type="number" step="any" name="vehicle_width" required></label>
+<label>차량한계 상단 (m)<input type="number" step="any" name="vehicle_height" required></label>
+<label>건축한계 폭 (m)<input type="number" step="any" name="structure_width" required></label>
+<label>건축한계 상단 (m)<input type="number" step="any" name="structure_height" required></label>
+</div>
+</details>
 <details><summary>지장물 및 검토 구역</summary>
-<p class="muted">직육면체 JSON 배열. min과 max의 순서는 측점, 횡방향, 표고입니다.</p>
+<div class="toolbar">
+<button type="button" id="loadCsv">지장물 CSV 가져오기</button>
+<a class="file-link" href="/obstacles-example.csv" download="railspan-obstacles.csv">예제 CSV</a>
+<input type="file" id="obstacleFile" accept=".csv,text/csv" hidden>
+</div>
+<p id="importStatus" class="muted" role="status"></p>
+<p class="muted">가져온 CSV는 지장물 목록을 교체합니다. 좌표 순서는 측점, 횡방향, 표고이며 단위는 m입니다.</p>
 <textarea name="obstacles" rows="11" aria-label="지장물 JSON"></textarea>
 </details>
 <p><button class="primary">모델 생성 및 검토</button></p>
@@ -83,14 +100,24 @@ const ctx = canvas.getContext('2d');
 let result, selected = [], az = .33, tilt = .48, zoom = 1, gauge = false, context = true;
 let request = 0;
 let focus;
-const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal'];
+const gaugeKeys = ['track_spacing','gauge_base','vehicle_width','vehicle_height','structure_width','structure_height'];
+const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...gaugeKeys];
+let defaults = {};
+async function loadExample(){
+  const response = await fetch('/example');
+  if(!response.ok) throw new Error('예제를 불러올 수 없습니다.');
+  const data = await response.json();
+  defaults = Object.fromEntries(gaugeKeys.map(key => [key,data[key]]));
+  return data;
+}
 function toggleFields(){
   el('automatic').style.display = field('spans').value.trim() ? 'none' : 'grid';
   el('riseLabel').style.display = ['arch','cable','ed'].includes(field('kind').value) ? 'grid' : 'none';
 }
 function fill(data){
+  el('importStatus').textContent = '';
   field('kind').value = data.kind;
-  for(const key of keys) field(key).value = data[key] ?? ({length:110,nominal:40}[key] ?? '');
+  for(const key of keys) field(key).value = data[key] ?? ({length:110,nominal:40,...defaults}[key] ?? '');
   field('spans').value = Array.isArray(data.spans) ? data.spans.join(', ') : '';
   field('obstacles').value = JSON.stringify(data.obstacles, null, 2) ?? '[]';
   toggleFields();
@@ -145,7 +172,7 @@ async function generate(data){
 }
 async function example(){
   try {
-    const data = await (await fetch('/example')).json();
+    const data = await loadExample();
     fill(data);
     await generate(data);
   } catch(error){ report(error); }
@@ -171,10 +198,29 @@ el('project').onchange = async event => {
     if(!file) return;
     if(file.size > 200000) throw new Error('프로젝트 파일 크기를 확인하세요.');
     const data = JSON.parse(await file.text());
-    fill(data);
-    await generate(data);
+    if(!defaults.track_spacing) await loadExample();
+    const project = {...defaults,...data};
+    fill(project);
+    await generate(project);
   } catch(error){ report(error); }
   finally { event.target.value = ''; }
+};
+el('loadCsv').onclick = () => el('obstacleFile').click();
+el('obstacleFile').onchange = async event => {
+  const file = event.target.files[0];
+  if(!file) return;
+  el('loadCsv').disabled = true;
+  el('error').textContent = '';
+  el('importStatus').textContent = '';
+  try {
+    if(file.size > 200000) throw new Error('CSV 파일은 200 KB 이하여야 합니다.');
+    const response = await fetch('/obstacles/import', {method:'POST', headers:{'Content-Type':'text/csv'}, body:file});
+    const values = await response.json();
+    if(!response.ok) throw new Error(values.error);
+    field('obstacles').value = JSON.stringify(values,null,2);
+    el('importStatus').textContent = '지장물 '+values.length+'개를 불러왔습니다. 모델 생성 및 검토를 눌러 반영하세요.';
+  } catch(error){ report(error); }
+  finally { event.target.value = ''; el('loadCsv').disabled = false; }
 };
 el('save').onclick = () => {
   try { download('bridge-project.json','application/json',JSON.stringify(config(),null,2)); }

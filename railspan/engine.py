@@ -3,7 +3,12 @@ import math
 
 TYPES = {"psc": "PSC 거더교", "box": "ST BOX 거더교", "arch": "아치교",
          "cable": "사장교", "ed": "ED교"}
+GAUGE_DEFAULTS = {
+    "track_spacing": 4, "vehicle_width": 3.1, "vehicle_height": 4.3,
+    "structure_width": 3.8, "structure_height": 4.9, "gauge_base": .15,
+}
 EXAMPLE = {
+    **GAUGE_DEFAULTS,
     "kind": "psc", "start": 0, "spans": [30, 50, 30], "width": 11,
     "deck": 15, "ground": 0, "rise": 12, "tracks": 2, "clearance": 0.5,
     "obstacles": [
@@ -24,6 +29,29 @@ def number(value, low, high):
     if type(value) not in (int, float) or not low <= value <= high:
         raise ValueError(f"숫자 입력 범위는 {low} ~ {high}입니다.")
     return value
+
+
+def validate_obstacles(obstacles):
+    if not isinstance(obstacles, list) or len(obstacles) > 100:
+        raise ValueError("지장물은 최대 100개의 배열로 입력하세요.")
+    validated = []
+    for index, obstacle in enumerate(obstacles, 1):
+        try:
+            if not isinstance(obstacle, dict):
+                raise ValueError("객체 형식으로 입력하세요.")
+            name = obstacle.get("name")
+            if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
+                raise ValueError("이름은 1~100자로 입력하세요.")
+            bounds = [obstacle.get(key) for key in ("min", "max")]
+            if any(not isinstance(point, list) or len(point) != 3 for point in bounds):
+                raise ValueError("min/max는 [측점, 횡방향, 표고]입니다.")
+            lo, hi = [[number(value, -2e6, 2e6) for value in point] for point in bounds]
+            if any(a >= b for a, b in zip(lo, hi)):
+                raise ValueError("각 최소값은 최대값보다 작아야 합니다.")
+        except ValueError as error:
+            raise ValueError(f"지장물 {index}번: {error}") from error
+        validated.append({"name": name.strip(), "min": lo, "max": hi})
+    return validated
 
 
 def generate(config):
@@ -127,23 +155,26 @@ def generate(config):
         box("난간", "accessory", [start, rail-.06, deck+1], [end, rail+.06, deck+1.12])
         beam("배수관로", "accessory", [start, edge*.9, deck-1],
              [end, edge*.9, deck-1], .25)
-    for index, offset in enumerate([0] if tracks == 1 else [-2, 2], 1):
-        for name, half_width, height in (("차량한계", 1.55, 4.3), ("건축한계", 1.9, 4.9)):
-            box(f"{index}번 선로 {name}", "envelope", [start, offset-half_width, deck+.15],
+    settings = {**GAUGE_DEFAULTS, **config}
+    spacing = number(settings["track_spacing"], .1, 40)
+    base = number(settings["gauge_base"], 0, 20)
+    gauges = []
+    for prefix, name in (("vehicle", "차량한계"), ("structure", "건축한계")):
+        gauge_width = number(settings[f"{prefix}_width"], .1, 40)
+        height = number(settings[f"{prefix}_height"], .1, 40)
+        if height <= base:
+            raise ValueError(f"{name} 상단 높이는 하단 높이보다 커야 합니다.")
+        gauges.append((name, gauge_width / 2, height))
+    if gauges[1][1] < gauges[0][1] or gauges[1][2] < gauges[0][2]:
+        raise ValueError("건축한계는 차량한계를 포함해야 합니다.")
+    offsets = [0] if tracks == 1 else [-spacing / 2, spacing / 2]
+    for index, offset in enumerate(offsets, 1):
+        for name, half_width, height in gauges:
+            box(f"{index}번 선로 {name}", "envelope", [start, offset-half_width, deck+base],
                 [end, offset+half_width, deck+height], "gauge")
-    obstacles = config.get("obstacles")
-    if not isinstance(obstacles, list) or len(obstacles) > 100:
-        raise ValueError("지장물은 최대 100개의 배열로 입력하세요.")
+    obstacles = validate_obstacles(config.get("obstacles"))
     for obstacle in obstacles:
-        if not isinstance(obstacle, dict) or not isinstance(obstacle.get("name"), str) or not obstacle["name"].strip():
-            raise ValueError("지장물 이름을 입력하세요.")
-        bounds = [obstacle.get(key) for key in ("min", "max")]
-        if any(not isinstance(point, list) or len(point) != 3 for point in bounds):
-            raise ValueError("지장물의 min/max는 [측점, 횡방향, 표고]입니다.")
-        lo, hi = [[number(value, -2e6, 2e6) for value in point] for point in bounds]
-        if any(a >= b for a, b in zip(lo, hi)):
-            raise ValueError("지장물의 각 최소값은 최대값보다 작아야 합니다.")
-        box(obstacle["name"][:100], "context", lo, hi, "obstacle")
+        box(obstacle["name"], "context", obstacle["min"], obstacle["max"], "obstacle")
 
     findings = []
     for target in objects:
