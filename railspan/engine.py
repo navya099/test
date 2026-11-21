@@ -96,6 +96,31 @@ def validate_profile(points, label, minimum, maximum, *, extent=None):
     return profile
 
 
+def arch_span(length, rise, shape, hanger_count):
+    """Return normalized rib samples and uniform hanger stations."""
+    hangers = [index / (hanger_count + 1) for index in range(1, hanger_count + 1)]
+    samples = [index / 12 for index in range(13)]
+    if shape == "circular":
+        half_span = length / 2
+        radius = (half_span ** 2 + rise ** 2) / (2 * rise)
+        half_angle = math.asin(min(1, half_span / radius))
+        samples = [0, 1, *(0.5 + radius / length * math.sin(half_angle * (index / 6 - 1))
+                           for index in range(1, 12))]
+
+        def height(t):
+            if t in (0, 1):
+                return 0
+            x = (t - .5) * length
+            return math.sqrt(max(0, radius ** 2 - x ** 2)) - (radius - rise)
+    else:
+        def height(t):
+            return 4 * rise * t * (1 - t)
+
+    # Include hanger anchors in the rib tessellation, skipping coincident samples.
+    fractions = sorted(hangers + [t for t in samples if all(abs(t-h) > 1e-10 for h in hangers)])
+    return [(t, height(t)) for t in fractions], [(t, height(t)) for t in hangers]
+
+
 def generate(config):
     if not isinstance(config, dict):
         raise ValueError("프로젝트는 JSON 객체여야 합니다.")
@@ -175,6 +200,21 @@ def generate(config):
             height = alignment.elevation_at(station) - terrain.at(station)
             if not 4 - 1e-8 <= height <= 150 + 1e-8:
                 raise ValueError(f"측점 {station:g} m의 슬래브와 지반 표고 차({height:.3f} m)는 4~150 m여야 합니다.")
+    arch = None
+    if kind == "arch":
+        shape = config.get("arch_shape", "parabolic")
+        if shape not in ("parabolic", "circular"):
+            raise ValueError("아치 축선은 포물선 또는 원호를 선택하세요.")
+        hanger_count = number(config.get("arch_hanger_count", 5), 1, 24)
+        if hanger_count != int(hanger_count):
+            raise ValueError("리브당 행어 수는 정수로 입력하세요.")
+        arch = {
+            "shape": shape,
+            "rise": rise,
+            "rib_thickness": number(config.get("arch_rib_thickness", .65), .05, 5),
+            "hanger_count": int(hanger_count),
+        }
+
     tower_ids = set()
     track_centers = {}
     box("슬래브", "deck", [start, -half, girder_top], [end, half, deck])
@@ -190,17 +230,19 @@ def generate(config):
             for x, y in ((a, a + (b-a)*.18), (b - (b-a)*.18, b)):
                 beam(f"변단면 헌치 S{index}", "girder",
                      [x, 0, girder_bottom - .2], [y, 0, girder_bottom - .2], .4)
-        if kind == "arch":
+        if arch is not None:
+            length = b - a
+            if shape == "circular" and rise > length / 2:
+                raise ValueError(f"원호 아치 S{index}의 라이즈는 경간의 절반({length / 2:g} m) 이하여야 합니다.")
+            rib, hangers = arch_span(length, rise, shape, arch["hanger_count"])
             for side in (-1, 1):
                 y = side * (half - .35)
-                points = []
-                for step in range(13):
-                    t = step / 12
-                    points.append([a + (b-a)*t, y, deck + 4*rise*t*(1-t)])
+                points = [[a + length*t, y, deck + height] for t, height in rib]
                 for first, second in zip(points, points[1:]):
-                    beam(f"아치 리브 S{index}", "special", first, second, .65)
-                for point in points[2:-1:2]:
-                    beam(f"행어 S{index}", "special", [point[0], y, deck], point, .16)
+                    beam(f"아치 리브 S{index}", "special", first, second, arch["rib_thickness"])
+                for t, height in hangers:
+                    x = a + length*t
+                    beam(f"행어 S{index}", "special", [x, y, deck], [x, y, deck+height], .16)
     for index, station in enumerate(stations):
         label = f"교대 A{1 if index == 0 else 2}" if index in (0, len(stations)-1) else f"교각 P{index}"
         support = girder_bottom + (alignment.elevation_at(station) - deck)
@@ -369,6 +411,6 @@ def generate(config):
             "length": end-start, "kind": TYPES[kind],
             "ground_line": ground_line,
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
-            "dimensions": dimensions, "accessories": accessories,
+            "dimensions": dimensions, "accessories": accessories, "arch": arch,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}
