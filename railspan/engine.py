@@ -2,6 +2,7 @@
 import math
 
 from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, StationProfile, bounds, separation
+from .horizontal import curvature
 from .vertical_profile import VerticalCurve
 
 TYPES = {"psc": "PSC 거더교", "box": "ST BOX 거더교", "arch": "아치교",
@@ -104,17 +105,20 @@ def validate_plan(rows, start, end):
     previous = start
     total_turn = 0
     for index, row in enumerate(rows, 1):
-        if not isinstance(row, list) or len(row) != 2:
-            raise ValueError(f"평면 선형 {index}행에 끝 측점과 반경을 입력하세요.")
+        if not isinstance(row, list) or len(row) not in (2, 3):
+            raise ValueError(f"평면 선형 {index}행은 ‘끝 측점, 반경’ 또는 ‘끝 측점, 시작 반경, 끝 반경’으로 입력하세요.")
         stop = number(row[0], -2e6, 2e6)
-        radius = number(row[1], -1e6, 1e6)
+        radii = [number(value, -1e6, 1e6) for value in row[1:]]
         if stop - previous < 1e-6 or stop > end + 1e-8:
             raise ValueError(f"평면 선형 {index}행 끝 측점은 이전 측점보다 크고 교량 종점 이하여야 합니다.")
-        if radius:
-            if abs(radius) < 60:
-                raise ValueError(f"평면 선형 {index}행 곡선 반경의 절댓값은 60 m 이상이어야 합니다.")
-            total_turn += (stop - previous) / abs(radius)
-        plan.append([stop, radius])
+        if any(radius and abs(radius) < 60 for radius in radii):
+            raise ValueError(f"평면 선형 {index}행 곡선 반경의 절댓값은 60 m 이상이어야 합니다.")
+        if len(radii) == 2 and (radii[0] == radii[1] or radii[0] * radii[1] < 0):
+            raise ValueError(f"평면 선형 {index}행의 완화곡선 반경은 서로 달라야 하며 좌·우 방향을 한 구간에서 바꿀 수 없습니다.")
+        if plan and (len(row) == 3 or len(plan[-1]) == 3) and plan[-1][-1] != radii[0]:
+            raise ValueError(f"측점 {previous:g} m에서 완화곡선과 인접 구간의 접속 반경이 같아야 합니다.")
+        total_turn += (stop - previous) * sum(abs(curvature(radius)) for radius in radii) / len(radii)
+        plan.append([stop, *radii])
         previous = stop
     if plan:
         if abs(previous - end) > 1e-8:
@@ -283,11 +287,19 @@ def generate(config):
     curves, curve_inputs = build_vertical_curves(config.get("vertical_curves", []), profile)
     alignment = Alignment(start, radius, cant, deck, profile, curves, cant_profile=cant_points, plan_rows=plan_rows)
     curved = alignment.has_curve
+    zero_cant = set()
+    for segment in alignment.plan:
+        if segment.transition:
+            if not segment.radius:
+                zero_cant.add(segment.start)
+            if not segment.end_radius:
+                zero_cant.add(segment.end)
     for current, following in zip(alignment.plan, alignment.plan[1:]):
-        current_direction = (current.radius > 0) - (current.radius < 0)
-        next_direction = (following.radius > 0) - (following.radius < 0)
-        if current_direction != next_direction and alignment.cant.at(current.end) > 1e-8:
-            raise ValueError(f"직선·곡선 또는 곡선 방향이 바뀌는 측점 {current.end:g} m의 캔트는 0 mm여야 합니다.")
+        if current.direction != following.direction:
+            zero_cant.add(current.end)
+    for station in sorted(zero_cant):
+        if alignment.cant.at(station) > 1e-8:
+            raise ValueError(f"측점 {station:g} m에서 직선과 접속하거나 곡선 방향이 바뀌므로 캔트는 0 mm여야 합니다.")
     terrain = StationProfile(ground_points, ground)
     if ground_points or curves:
         check_profile_height(alignment.profile, terrain, start, end)

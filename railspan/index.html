@@ -124,10 +124,10 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <label>기본 반경 (m)<input type="number" step="any" name="curve_radius" required></label>
 <label>기본 캔트 (mm)<input type="number" min="0" max="200" step="any" name="cant_mm" required></label>
 </div>
-<label>평면 선형 구간 · 구간 끝 측점 (m), 반경 (m)
-<textarea name="plan_segments" rows="4" placeholder="20, 0&#10;65, -250&#10;110, 300"></textarea>
+<label>평면 선형 구간 (m)
+<textarea name="plan_segments" rows="5" placeholder="20, 0&#10;40, 0, -250&#10;75, -250&#10;95, -250, 0&#10;110, 0"></textarea>
 </label>
-<p class="muted">교량 시작 측점부터 순서대로 입력하고, 마지막 줄은 교량 종점으로 끝내세요. 비워 두면 기본 반경을 전 구간에 적용합니다.</p>
+<p class="muted">직선·원곡선은 끝 측점과 반경을, 완화곡선은 끝 측점과 시작·끝 반경을 쉼표로 구분해 입력하세요. 마지막 줄은 교량 종점으로 끝내고, 비워 두면 기본 반경을 적용합니다.</p>
 <label>측점별 캔트 · 측점 (m), 캔트 (mm)
 <textarea name="cant_profile" rows="4" placeholder="0, 0&#10;23, 120&#10;87, 120&#10;110, 0"></textarea>
 </label>
@@ -290,9 +290,10 @@ async function generate(data){
     focus = undefined;
     const radius = model.alignment.curve_radius;
     const plan = model.alignment.plan_segments;
-    const hasCurve = plan.length ? plan.some(([, r]) => r !== 0) : radius !== 0;
+    const hasCurve = plan.length ? plan.some(row => row.slice(1).some(r => r !== 0)) : radius !== 0;
     const route = plan.length ? '평면 선형 ' + plan.length + '구간' : radius ? (radius < 0 ? '좌곡선 R ' : '우곡선 R ') + Math.abs(radius) + ' m' : '직선';
     el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m · ' + route + (model.alignment.profile.length ? ' · 종단 입력' : '');
+    if(plan.some(row => row.length === 3)) el('modelTitle').textContent += ' · 완화곡선';
     if(hasCurve && model.alignment.cant_profile.length) el('modelTitle').textContent += ' · 가변 캔트';
     el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '곡선·종단·캔트 및 선형 부재의 외접 상자 판정은 간섭 후보입니다.';
     el('csv').disabled = false;

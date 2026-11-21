@@ -47,7 +47,7 @@ class Alignment:
         self.center_offset = -radius  # Positive Y points left in the tangent frame.
         self.plan = build_plan(start, plan_rows)
         self.plan_breaks = tuple(segment.start for segment in self.plan[1:])
-        self.has_curve = any(segment.radius != 0 for segment in self.plan) if self.plan else bool(radius)
+        self.has_curve = any(segment.direction for segment in self.plan) if self.plan else bool(radius)
         self.deck = deck
         self.profile = StationProfile(profile, deck, curves)
         self.cant = StationProfile(cant_profile, cant_mm)
@@ -57,10 +57,10 @@ class Alignment:
 
     def roll_at(self, station):
         segment = self.segment_at(station)
-        radius = segment.radius if segment else -self.center_offset
-        if not radius:
+        signed_curvature = segment.curvature_at(station) if segment else self.center_offset
+        if not signed_curvature:
             return 0.0
-        return math.copysign(math.atan2(self.cant.at(station), 1435), radius)
+        return math.copysign(math.atan2(self.cant.at(station), 1435), -signed_curvature)
 
     def elevation_at(self, station):
         return self.profile.at(station)
