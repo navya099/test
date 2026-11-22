@@ -39,6 +39,8 @@ def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str 
         gridspec_kw={"height_ratios": [3.2, 1.0], "hspace": 0.14}
     )
 
+    max_spd = max(tps.speed_limit) if tps.speed_limit else 80.0
+
     # 1) 제한속도 프로파일
     x_grid = list(range(tps.length + 1))
     ax_spd.step(
@@ -79,11 +81,12 @@ def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str 
         ax_spd.axvline(seg.coast_start_x, color="#2563EB", linestyle=":", linewidth=1.0, alpha=0.55)
 
     # 3) 정거장 위치 및 역명 표기
+    label_y = max_spd * 1.07
     for st in stations:
         ax_spd.axvline(st.position_m, color="#94A3B8", linestyle="-", linewidth=0.9, alpha=0.6)
         ax_grad.axvline(st.position_m, color="#94A3B8", linestyle="-", linewidth=0.9, alpha=0.6)
         ax_spd.text(
-            st.position_m, 86.5, st.name,
+            st.position_m, label_y, st.name,
             ha="center", va="bottom", fontsize=9.5, fontweight="bold",
             color="#0F172A", bbox=dict(boxstyle="round,pad=0.2", fc="#F8FAFC", ec="#CBD5E1", lw=0.8)
         )
@@ -97,7 +100,7 @@ def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str 
     ]
     ax_spd.legend(handles=legend_handles, loc="lower right", ncol=3, fontsize=8.8, frameon=True, facecolor="white")
 
-    ax_spd.set_ylim(0, 96)
+    ax_spd.set_ylim(0, max_spd * 1.2)
     ax_spd.set_xlim(0, tps.length)
     ax_spd.set_ylabel("속도 (km/h)", fontsize=10.5, fontweight="bold")
     ax_spd.set_title(
@@ -108,13 +111,16 @@ def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str 
 
     # 4) 하단 선로 구배(‰) 프로파일
     grads = tps.gradient
+    min_g = min(grads) if grads else -10.0
+    max_g = max(grads) if grads else 10.0
+    pad_g = max(5.0, (max_g - min_g) * 0.15)
     ax_grad.fill_between(x_grid, grads, 0, where=[g >= 0 for g in grads], step="post", color="#FCA5A5", alpha=0.6, label="상구배 (+)")
     ax_grad.fill_between(x_grid, grads, 0, where=[g < 0 for g in grads], step="post", color="#93C5FD", alpha=0.6, label="하구배 (-)")
     ax_grad.step(x_grid, grads, where="post", color="#334155", linewidth=1.0)
     ax_grad.axhline(0, color="#64748B", linewidth=0.8)
     ax_grad.set_ylabel("구배 (‰)", fontsize=10, fontweight="bold")
     ax_grad.set_xlabel("노선 거리 (m)", fontsize=10.5, fontweight="bold")
-    ax_grad.set_ylim(-20, 30)
+    ax_grad.set_ylim(min_g - pad_g, max_g + pad_g * 1.4)
     ax_grad.legend(loc="upper right", ncol=2, fontsize=8.5, frameon=True)
     ax_grad.grid(True, linestyle="--", alpha=0.35)
 
