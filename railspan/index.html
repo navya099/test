@@ -124,10 +124,22 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <label>기본 반경 (m)<input type="number" step="any" name="curve_radius" required></label>
 <label>기본 캔트 (mm)<input type="number" min="0" max="200" step="any" name="cant_mm" required></label>
 </div>
+<div class="toolbar">
+<button type="button" id="planCsv">평면 선형 CSV 가져오기</button>
+<a class="file-link" href="/plan-example.csv" download="railspan-plan.csv">예제 CSV</a>
+<input type="file" id="planFile" accept=".csv,text/csv" hidden>
+</div>
+<p id="planImportStatus" class="muted" role="status"></p>
 <label>평면 선형 구간 (m)
 <textarea name="plan_segments" rows="5" placeholder="20, 0&#10;40, 0, -250&#10;75, -250&#10;95, -250, 0&#10;110, 0"></textarea>
 </label>
 <p class="muted">직선·원곡선은 끝 측점과 반경을, 완화곡선은 끝 측점과 시작·끝 반경을 쉼표로 구분해 입력하세요. 마지막 줄은 교량 종점으로 끝내고, 비워 두면 기본 반경을 적용합니다.</p>
+<div class="toolbar">
+<button type="button" id="cantCsv">캔트 CSV 가져오기</button>
+<a class="file-link" href="/cant-example.csv" download="railspan-cant.csv">예제 CSV</a>
+<input type="file" id="cantFile" accept=".csv,text/csv" hidden>
+</div>
+<p id="cantImportStatus" class="muted" role="status"></p>
 <label>측점별 캔트 · 측점 (m), 캔트 (mm)
 <textarea name="cant_profile" rows="4" placeholder="0, 0&#10;23, 120&#10;87, 120&#10;110, 0"></textarea>
 </label>
@@ -236,7 +248,7 @@ function toggleFields(){
   el('riseLabel').style.display = ['arch','cable','ed'].includes(field('kind').value) ? 'grid' : 'none';
 }
 function fill(data){
-  for(const id of ['importStatus','profileImportStatus','groundImportStatus']){
+  for(const id of ['importStatus','profileImportStatus','groundImportStatus','planImportStatus','cantImportStatus']){
     el(id).textContent = '';
   }
   field('kind').value = data.kind;
@@ -492,6 +504,10 @@ bindCsvImport('profileCsv','profileFile','profileImportStatus','profile_points',
   formatProfile,'종단 측점');
 bindCsvImport('groundCsv','groundFile','groundImportStatus','ground_profile','/profiles/import',
   formatProfile,'지반 측점');
+bindCsvImport('planCsv','planFile','planImportStatus','plan_segments','/plan/import',
+  formatProfile,'평면 선형 구간');
+bindCsvImport('cantCsv','cantFile','cantImportStatus','cant_profile','/cant/import',
+  formatProfile,'캔트 측점');
 el('save').onclick = () => {
   try { download('bridge-project.json','application/json',JSON.stringify(config(),null,2)); }
   catch(error){ report(error); }

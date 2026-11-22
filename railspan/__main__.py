@@ -7,9 +7,12 @@ from pathlib import Path
 from .engine import EXAMPLE, generate
 from .ifc_export import export_ifc
 from .obstacle_csv import example_csv, read_obstacles
-from .profile_csv import EXAMPLES as PROFILE_EXAMPLES, profile_example, read_profile
+from .profile_csv import EXAMPLES as ALIGNMENT_EXAMPLES, alignment_example, read_cant, read_plan, read_profile
 
-CSV_IMPORTS = {"/obstacles/import": read_obstacles, "/profiles/import": read_profile}
+CSV_IMPORTS = {
+    "/obstacles/import": read_obstacles, "/profiles/import": read_profile,
+    "/plan/import": read_plan, "/cant/import": read_cant,
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -31,8 +34,8 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(200, EXAMPLE)
         elif self.path == "/obstacles-example.csv":
             self.reply(200, example_csv(), "text/csv; charset=utf-8")
-        elif self.path in PROFILE_EXAMPLES:
-            self.reply(200, profile_example(PROFILE_EXAMPLES[self.path]), "text/csv; charset=utf-8")
+        elif self.path in ALIGNMENT_EXAMPLES:
+            self.reply(200, alignment_example(*ALIGNMENT_EXAMPLES[self.path]), "text/csv; charset=utf-8")
         else:
             self.send_error(404)
 

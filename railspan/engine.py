@@ -98,7 +98,7 @@ def validate_profile(points, label, minimum, maximum, *, extent=None, value_labe
     return profile
 
 
-def validate_plan(rows, start, end):
+def validate_plan(rows, start=None, end=None):
     if not isinstance(rows, list) or len(rows) > 100:
         raise ValueError("평면 선형 구간은 최대 100개까지 입력할 수 있습니다.")
     plan = []
@@ -109,7 +109,7 @@ def validate_plan(rows, start, end):
             raise ValueError(f"평면 선형 {index}행은 ‘끝 측점, 반경’ 또는 ‘끝 측점, 시작 반경, 끝 반경’으로 입력하세요.")
         stop = number(row[0], -2e6, 2e6)
         radii = [number(value, -1e6, 1e6) for value in row[1:]]
-        if stop - previous < 1e-6 or stop > end + 1e-8:
+        if (previous is not None and stop - previous < 1e-6) or (end is not None and stop > end + 1e-8):
             raise ValueError(f"평면 선형 {index}행 끝 측점은 이전 측점보다 크고 교량 종점 이하여야 합니다.")
         if any(radius and abs(radius) < 60 for radius in radii):
             raise ValueError(f"평면 선형 {index}행 곡선 반경의 절댓값은 60 m 이상이어야 합니다.")
@@ -117,10 +117,11 @@ def validate_plan(rows, start, end):
             raise ValueError(f"평면 선형 {index}행의 완화곡선 반경은 서로 달라야 하며 좌·우 방향을 한 구간에서 바꿀 수 없습니다.")
         if plan and (len(row) == 3 or len(plan[-1]) == 3) and plan[-1][-1] != radii[0]:
             raise ValueError(f"측점 {previous:g} m에서 완화곡선과 인접 구간의 접속 반경이 같아야 합니다.")
-        total_turn += (stop - previous) * sum(abs(curvature(radius)) for radius in radii) / len(radii)
+        if previous is not None:
+            total_turn += (stop - previous) * sum(abs(curvature(radius)) for radius in radii) / len(radii)
         plan.append([stop, *radii])
         previous = stop
-    if plan:
+    if plan and end is not None:
         if abs(previous - end) > 1e-8:
             raise ValueError(f"마지막 평면 선형 구간은 교량 종점({end:g} m)에서 끝나야 합니다.")
         plan[-1][0] = end
