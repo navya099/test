@@ -8,7 +8,7 @@ class Station:
     name: str
     position_m: int          # 역 중심(정차 목표) 거리 (m)
     dwell_time_sec: int = 30 # 기본 정차 시간 (초)
-    is_pass: bool = False    # 급행 열차 통과 여부 (확장 대비)
+    is_pass: bool = False    # 급행 열차 통과 여부
 
 @dataclass
 class SegmentRunResult:
@@ -22,6 +22,7 @@ class SegmentRunResult:
     energy_kwh: float
     energy_saved_pct: float
     to_pos_m: int = 0
+    passed_stations: List[str] = field(default_factory=list)
     history: List = field(default_factory=list)
 
 @dataclass
@@ -30,7 +31,7 @@ class TrainSchedule:
     stops: List[Dict] # [{"station": str, "pos_m": int, "arr_sec": int, "dep_sec": int}, ...]
 
 def reverse_stations(stations: List[Station], total_length_m: int) -> List[Station]:
-    """상·하행 반전용 정거장 리스트 변환 (position_m -> total_length_m - position_m)"""
+    """상·하행 반전용 정거장 리스트 변환 (position_m -> total_length_m - position_m, is_pass 유지)"""
     sorted_desc = sorted(stations, key=lambda st: st.position_m, reverse=True)
     reversed_list: List[Station] = []
     for idx, st in enumerate(sorted_desc):
@@ -40,7 +41,7 @@ def reverse_stations(stations: List[Station], total_length_m: int) -> List[Stati
                 name=st.name,
                 position_m=total_length_m - st.position_m,
                 dwell_time_sec=0 if is_endpoint else st.dwell_time_sec,
-                is_pass=st.is_pass,
+                is_pass=False if is_endpoint else st.is_pass,
             )
         )
     return reversed_list
@@ -63,12 +64,18 @@ def format_sec_to_bve_time(total_sec: int) -> str:
 
 class LineTimetableGenerator:
     def __init__(self, tps: AdvancedUrbanTPS, stations: List[Station]):
-        if len(stations) < 2:
-            raise ValueError("최소 2개 이상의 정거장이 필요합니다.")
         self.tps = tps
         self.stations = sorted(stations, key=lambda st: st.position_m)
+        if len(self.stations) < 2:
+            raise ValueError("최소 2개 이상의 정거장이 필요합니다.")
         if self.stations[-1].position_m > self.tps.length:
             raise ValueError("종착역 위치가 노선 총 연장을 초과합니다.")
+
+        # 시발역·종착역은 정차역이어야 함
+        self.stop_stations = [st for st in self.stations if not st.is_pass]
+        if len(self.stop_stations) < 2:
+            raise ValueError("정차역(is_pass=False)이 최소 2개 이상 필요합니다.")
+
         self.standard_segments: List[SegmentRunResult] = []
 
     def build_standard_run_profile(
@@ -78,16 +85,21 @@ class LineTimetableGenerator:
         record_history: bool = False
     ) -> List[SegmentRunResult]:
         """
-        전 역간 연속 시뮬레이션을 수행하여 표준 운전 시분표(기준 운전선도) 생성.
-        round_to_5sec=True 일 경우 실제 철도 다이어처럼 5초 단위로 시분 올림 후 타행 재최적화.
+        정차역(is_pass=False) 간 연속 시뮬레이션을 수행하여 표준 운전 시분표 생성.
+        is_pass=True인 역은 정차하지 않고 연속 통과하며, 통과역 목록을 SegmentRunResult에 기록.
         """
         self.standard_segments.clear()
 
-        for i in range(len(self.stations) - 1):
-            st_from = self.stations[i]
-            st_to = self.stations[i + 1]
+        for i in range(len(self.stop_stations) - 1):
+            st_from = self.stop_stations[i]
+            st_to = self.stop_stations[i + 1]
             start_x = st_from.position_m
             stop_x = st_to.position_m
+
+            passed = [
+                st.name for st in self.stations
+                if st.is_pass and start_x < st.position_m < stop_x
+            ]
 
             opt_res = self.tps.optimize_coasting_for_target_time(
                 start_x,
@@ -103,7 +115,7 @@ class LineTimetableGenerator:
                     start_x, stop_x, target_time_sec=scheduled_sec, record_history=record_history
                 )
 
-            dwell = 0 if i == len(self.stations) - 2 else st_to.dwell_time_sec
+            dwell = 0 if i == len(self.stop_stations) - 2 else st_to.dwell_time_sec
 
             seg_result = SegmentRunResult(
                 from_station=st_from.name,
@@ -116,6 +128,7 @@ class LineTimetableGenerator:
                 energy_kwh=opt_res["energy_kwh"],
                 energy_saved_pct=opt_res["energy_saved_pct"],
                 to_pos_m=stop_x,
+                passed_stations=passed,
                 history=opt_res["history"]
             )
             self.standard_segments.append(seg_result)
@@ -155,7 +168,7 @@ class LineTimetableGenerator:
             stops_data = []
 
             t_cursor = curr_dep_sec
-            first_st = self.stations[0]
+            first_st = self.stop_stations[0]
             stops_data.append({
                 "station": first_st.name,
                 "pos_m": first_st.position_m,

@@ -5,17 +5,18 @@ from demo import plot_run_curve
 
 
 def print_profile_summary(title: str, std_profile):
-    print("\n" + "=" * 86)
+    print("\n" + "=" * 92)
     print(f" {title}")
-    print("=" * 86)
+    print("=" * 92)
     total_dist = 0
     total_run = 0.0
     total_dwell = 0
     total_kwh = 0.0
 
     for seg in std_profile:
+        pass_note = f" [통과: {', '.join(seg.passed_stations)}]" if seg.passed_stations else ""
         print(
-            f"{seg.from_station} -> {seg.to_station} ({seg.distance_m}m) | "
+            f"{seg.from_station} -> {seg.to_station} ({seg.distance_m}m){pass_note} | "
             f"최단 {seg.min_time_sec:.1f}s | 계획 {seg.scheduled_time_sec:.1f}s | "
             f"타행 {seg.coast_start_x:.1f}m | 전력 {seg.energy_kwh:.2f}kWh (-{seg.energy_saved_pct:.1f}%)"
         )
@@ -26,7 +27,7 @@ def print_profile_summary(title: str, std_profile):
 
     total_trip = total_run + total_dwell
     comm_spd = (total_dist / total_trip) * 3.6 if total_trip > 0 else 0.0
-    print("-" * 86)
+    print("-" * 92)
     print(
         f"▶ 합계: {total_dist}m | 순수주행 {int(total_run)}초 + 정차 {total_dwell}초 "
         f"= 총 {int(total_trip)}초 ({int(total_trip // 60)}분 {int(total_trip % 60)}초) "
@@ -59,35 +60,41 @@ def main():
         f"최소 반경 {summary.min_radius_m:.1f} m | 구배 {summary.min_gradient_permille:.2f}‰ ~ {summary.max_gradient_permille:.2f}‰)"
     )
 
-    # 3. 정거장 위치 정의 (구래 -> 김포공항)
-    stations_down = [
+    # 3. 정거장 정의 (급행 예시: 대포리, 서부면허시험장, 동양 통과)
+    express_stations_down = [
         Station("구래", 0, dwell_time_sec=0),
-        Station("대포리", 2805, dwell_time_sec=30),
+        Station("대포리", 2805, dwell_time_sec=30, is_pass=True),
         Station("검단사거리", 6185, dwell_time_sec=30),
         Station("검단3동", 9512, dwell_time_sec=30),
-        Station("서부면허시험장", 11260, dwell_time_sec=30),
+        Station("서부면허시험장", 11260, dwell_time_sec=30, is_pass=True),
         Station("계양", 14185, dwell_time_sec=30),
-        Station("동양", 16427, dwell_time_sec=30),
+        Station("동양", 16427, dwell_time_sec=30, is_pass=True),
         Station("김포공항", 19600, dwell_time_sec=0),
     ]
 
-    # 4. 하행(구래 -> 김포공항) 시뮬레이션
-    gen_down = LineTimetableGenerator(tps_down, stations_down)
-    prof_down = gen_down.build_standard_run_profile(
+    # 4. 급행 하행 (구래 -> 김포공항)
+    gen_exp_down = LineTimetableGenerator(tps_down, express_stations_down)
+    prof_exp_down = gen_exp_down.build_standard_run_profile(
         margin_ratio=0.05, round_to_5sec=True, record_history=True
     )
-    print_profile_summary("[하행] 구래 -> 김포공항 표준 운전 시분표 (열차 길이 120m 반영)", prof_down)
-    plot_run_curve(tps_down, stations_down, prof_down, save_path="gurae_to_gimpo.png")
+    print_profile_summary("[급행 하행] 구래 -> 김포공항 (대포리·서부면허시험장·동양 통과)", prof_exp_down)
+    plot_run_curve(
+        tps_down, express_stations_down, prof_exp_down,
+        save_path="gurae_to_gimpo_express.png", title_suffix="급행 하행"
+    )
 
-    # 5. 상행(김포공항 -> 구래) 선형 및 정거장 반전 시뮬레이션
+    # 5. 급행 상행 (김포공항 -> 구래)
     tps_up = tps_down.create_reversed()
-    stations_up = reverse_stations(stations_down, tps_down.length)
-    gen_up = LineTimetableGenerator(tps_up, stations_up)
-    prof_up = gen_up.build_standard_run_profile(
+    express_stations_up = reverse_stations(express_stations_down, tps_down.length)
+    gen_exp_up = LineTimetableGenerator(tps_up, express_stations_up)
+    prof_exp_up = gen_exp_up.build_standard_run_profile(
         margin_ratio=0.05, round_to_5sec=True, record_history=True
     )
-    print_profile_summary("[상행] 김포공항 -> 구래 표준 운전 시분표 (선형 반전)", prof_up)
-    plot_run_curve(tps_up, stations_up, prof_up, save_path="gimpo_to_gurae.png")
+    print_profile_summary("[급행 상행] 김포공항 -> 구래 (동양·서부면허시험장·대포리 통과)", prof_exp_up)
+    plot_run_curve(
+        tps_up, express_stations_up, prof_exp_up,
+        save_path="gimpo_to_gurae_express.png", title_suffix="급행 상행"
+    )
 
 
 if __name__ == "__main__":

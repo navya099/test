@@ -30,8 +30,8 @@ def configure_korean_font():
             break
     plt.rcParams["axes.unicode_minus"] = False
 
-def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str = "run_curve.png"):
-    """속도-거리 운전선도(Run Curve) 및 선로 구배 프로파일 시각화"""
+def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str = "run_curve.png", title_suffix: str = ""):
+    """속도-거리 운전선도(Run Curve) 및 선로 구배 프로파일 시각화 (통과역 구분 표시 지원)"""
     configure_korean_font()
 
     fig, (ax_spd, ax_grad) = plt.subplots(
@@ -80,16 +80,25 @@ def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str 
         # 타행 개시 지점 마커
         ax_spd.axvline(seg.coast_start_x, color="#2563EB", linestyle=":", linewidth=1.0, alpha=0.55)
 
-    # 3) 정거장 위치 및 역명 표기
+    # 3) 정거장 위치 및 역명 표기 (정차역 vs 통과역 구분)
     label_y = max_spd * 1.07
     for st in stations:
-        ax_spd.axvline(st.position_m, color="#94A3B8", linestyle="-", linewidth=0.9, alpha=0.6)
-        ax_grad.axvline(st.position_m, color="#94A3B8", linestyle="-", linewidth=0.9, alpha=0.6)
-        ax_spd.text(
-            st.position_m, label_y, st.name,
-            ha="center", va="bottom", fontsize=9.5, fontweight="bold",
-            color="#0F172A", bbox=dict(boxstyle="round,pad=0.2", fc="#F8FAFC", ec="#CBD5E1", lw=0.8)
-        )
+        if getattr(st, "is_pass", False):
+            ax_spd.axvline(st.position_m, color="#CBD5E1", linestyle="-.", linewidth=0.9, alpha=0.7)
+            ax_grad.axvline(st.position_m, color="#CBD5E1", linestyle="-.", linewidth=0.9, alpha=0.7)
+            ax_spd.text(
+                st.position_m, label_y * 0.96, f"{st.name}\n(통과)",
+                ha="center", va="bottom", fontsize=8.2,
+                color="#64748B", bbox=dict(boxstyle="round,pad=0.18", fc="#F1F5F9", ec="#CBD5E1", ls="--", lw=0.7)
+            )
+        else:
+            ax_spd.axvline(st.position_m, color="#94A3B8", linestyle="-", linewidth=0.9, alpha=0.6)
+            ax_grad.axvline(st.position_m, color="#94A3B8", linestyle="-", linewidth=0.9, alpha=0.6)
+            ax_spd.text(
+                st.position_m, label_y, st.name,
+                ha="center", va="bottom", fontsize=9.5, fontweight="bold",
+                color="#0F172A", bbox=dict(boxstyle="round,pad=0.2", fc="#F8FAFC", ec="#CBD5E1", lw=0.8)
+            )
 
     legend_handles = [
         Line2D([0], [0], color=col, lw=2.4, label=lbl)
@@ -100,13 +109,13 @@ def plot_run_curve(tps: AdvancedUrbanTPS, stations, std_profile, save_path: str 
     ]
     ax_spd.legend(handles=legend_handles, loc="lower right", ncol=3, fontsize=8.8, frameon=True, facecolor="white")
 
-    ax_spd.set_ylim(0, max_spd * 1.2)
+    ax_spd.set_ylim(0, max_spd * 1.22)
     ax_spd.set_xlim(0, tps.length)
     ax_spd.set_ylabel("속도 (km/h)", fontsize=10.5, fontweight="bold")
-    ax_spd.set_title(
-        f"전 역간 운전선도(Run Curve) 및 선로 구배 프로파일 — {tps.train.name}",
-        fontsize=13, fontweight="bold", pad=16
-    )
+    title = f"전 역간 운전선도(Run Curve) 및 선로 구배 프로파일 — {tps.train.name}"
+    if title_suffix:
+        title += f" ({title_suffix})"
+    ax_spd.set_title(title, fontsize=13, fontweight="bold", pad=16)
     ax_spd.grid(True, linestyle="--", alpha=0.35)
 
     # 4) 하단 선로 구배(‰) 프로파일
