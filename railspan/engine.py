@@ -494,20 +494,25 @@ def generate(config):
         return cells_by_id.get(item["id"], [(item["min"], item["max"], None)])
 
     findings = []
+    vertical_clearances = []
     parts = [item for item in objects if item["role"] == "bridge"]
     for target in objects:
         if target["role"] == "bridge":
             continue
         limit = target["required_clearance"]
         mode = target["clearance_mode"]
-        measure = vertical_separation if mode == "vertical" else separation
-        threshold = max(limit, 1e-8)
+        vertical = mode == "vertical"
+        measure = vertical_separation if vertical else separation
+        violation_threshold = max(limit, 1e-8)
+        zone_minimum = math.inf
+        controlling = None
+        target_cells = cells(target)
         for part in parts:
+            threshold = max(violation_threshold, zone_minimum) if vertical else violation_threshold
             if measure(part["min"], part["max"], target["min"], target["max"]) > threshold:
                 continue
             best = math.inf
             center = None
-            target_cells = cells(target)
             for lo, hi, _ in cells(part):
                 if measure(lo, hi, target["min"], target["max"]) > min(best, threshold):
                     continue
@@ -517,29 +522,51 @@ def generate(config):
                         best = gap
                         center = [(max(a, min(b, c)) + max(a, min(b, d))) / 2
                                   for a, b, c, d in zip(lo, hi, t_lo, t_hi)]
-            if best > 1e-8 and best >= limit:
+            if center is None:
                 continue
-            status = "중첩" if best < -1e-8 else "접촉" if best <= 1e-8 else "이격 미달"
+            violation = best <= 1e-8 or best < limit
+            new_minimum = vertical and best < zone_minimum
+            if not violation and not new_minimum:
+                continue
+            if not violation:
+                status = "충족"
+            elif best < -1e-8:
+                status = "중첩"
+            elif best <= 1e-8:
+                status = "접촉"
+            else:
+                status = "이격 미달"
             approximate = "axis" in part or "mesh" in part or "mesh" in target
             if approximate:
-                status += " 후보 (외접 상자)"
+                status += " 후보 (외접 상자)" if violation else " (외접 상자)"
             station = alignment.station_at(center)
             if part["id"] in station_ranges:
                 lo_station, hi_station = station_ranges[part["id"]]
                 station = max(lo_station, min(hi_station, station))
-            findings.append({"part": part["id"], "target": target["id"], "status": status,
-                             "station": round(station, 3), "category": target["category"],
-                             "approximate": approximate,
-                             "distance": round(best if mode == "vertical" else max(0, best), 4),
-                             "required": limit, "clearance_mode": mode,
-                             "point": center})
+            entry = {
+                "part": part["id"], "target": target["id"], "status": status,
+                "station": round(station, 3), "category": target["category"],
+                "approximate": approximate, "distance": round(best if vertical else max(0, best), 4),
+                "required": limit, "clearance_mode": mode, "point": center,
+            }
+            if violation:
+                findings.append(entry)
+            if new_minimum:
+                zone_minimum = best
+                controlling = entry
+        if vertical:
+            vertical_clearances.append(controlling or {
+                "target": target["id"], "category": target["category"], "required": limit,
+                "status": "해당 부재 없음", "part": None, "station": None, "distance": None,
+            })
     count = max(1, math.ceil((end - start) / 5)) if curved else 1
     ground_stations = sorted({start, end, *stations, *alignment.plan_breaks,
                               *(start + (end - start) * step / count for step in range(1, count)),
                               *(s for s in terrain.stations if start < s < end)})
     ground_line = [alignment.point([s, 0, terrain.at(s)], follow_profile=False)
                    for s in ground_stations]
-    return {"objects": objects, "findings": findings, "stations": stations,
+    return {"objects": objects, "findings": findings, "vertical_clearances": vertical_clearances,
+            "stations": stations,
             "length": end-start, "kind": TYPES[kind],
             "ground_line": ground_line,
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,

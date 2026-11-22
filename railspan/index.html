@@ -192,6 +192,13 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <p class="muted" id="status"></p>
 <div class="scroll"><table><thead><tr><th>측점 (m)</th><th>판정</th><th>부재</th><th>대상 유형</th><th>검토 대상</th><th>이격 방식</th><th>거리 / 요구 (m)</th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
+<section class="results" aria-labelledby="verticalTitle">
+<div class="toolbar"><h2 id="verticalTitle">구역별 최소 수직 이격</h2><button id="verticalCsv" disabled>수직 이격 요약 CSV</button></div>
+<p id="verticalEmpty" class="muted">수직 이격 검토 구역이 없습니다.</p>
+<div class="scroll" id="verticalTable" hidden><table>
+<thead><tr><th>검토 구역</th><th>대상 유형</th><th>판정</th><th>측점 (m)</th><th>최소 이격 부재</th><th>최소 / 요구 (m)</th></tr></thead>
+<tbody id="verticalRows"></tbody></table></div>
+</section>
 <section class="results" aria-labelledby="alternativesTitle">
 <h2 id="alternativesTitle">교량 대안 비교</h2>
 <form id="alternativeForm">
@@ -317,6 +324,7 @@ async function generate(data){
     filter.value = Object.hasOwn(model.target_categories,previous) ? previous : '';
     filter.disabled = false;
     renderFindings();
+    renderVerticalClearances();
     zoom = 1;
     draw();
   } catch(error) { if(id === request) report(error); }
@@ -332,23 +340,47 @@ function renderFindings(){
   el('rows').replaceChildren();
   for(const hit of hits){
     const row = el('rows').insertRow();
-    const button = document.createElement('button');
     const target = result.objects[hit.target-1];
-    button.textContent = hit.station;
-    button.onclick = () => {
-      selected = [hit.part, hit.target];
-      focus = hit.point;
-      zoom = 2;
-      if(target.role === 'gauge') gauge = true;
-      if(target.role === 'obstacle') context = true;
-      layerButtons();
-      draw();
-    };
-    row.insertCell().append(button);
+    row.insertCell().append(stationButton(hit));
     for(const value of [hit.status, result.objects[hit.part-1].name, result.target_categories[hit.category],
       target.name, clearanceModeLabel(hit), hit.distance+' / '+hit.required]){
       row.insertCell().textContent = value;
     }
+  }
+}
+function stationButton(hit){
+  const button = document.createElement('button');
+  const target = result.objects[hit.target-1];
+  button.textContent = hit.station;
+  button.setAttribute('aria-label', target.name + ' 측점 ' + hit.station + ' m');
+  button.onclick = () => {
+    selected = [hit.part, hit.target];
+    focus = hit.point;
+    zoom = 2;
+    if(target.role === 'gauge') gauge = true;
+    if(target.role === 'obstacle') context = true;
+    layerButtons();
+    draw();
+  };
+  return button;
+}
+function renderVerticalClearances(){
+  const entries = result.vertical_clearances;
+  el('verticalCsv').disabled = !entries.length;
+  el('verticalEmpty').hidden = entries.length > 0;
+  el('verticalTable').hidden = !entries.length;
+  const rows = el('verticalRows');
+  rows.replaceChildren();
+  for(const item of entries){
+    const row = rows.insertRow();
+    row.insertCell().textContent = result.objects[item.target-1].name;
+    row.insertCell().textContent = result.target_categories[item.category];
+    row.insertCell().textContent = item.status;
+    const station = row.insertCell();
+    if(item.part === null) station.textContent = '—';
+    else station.append(stationButton(item));
+    row.insertCell().textContent = item.part === null ? '—' : result.objects[item.part-1].name;
+    row.insertCell().textContent = (item.distance ?? '—') + ' / ' + item.required;
   }
 }
 el('targetCategory').onchange = renderFindings;
@@ -532,9 +564,19 @@ el('csv').onclick = () => {
     ...result.findings.map(hit => [hit.station, hit.status, result.objects[hit.part-1].name,
       result.target_categories[hit.category], result.objects[hit.target-1].name, clearanceModeLabel(hit), hit.distance, hit.required]),
     ...result.missing.map(message => ['', '판정 불가', '', '', message, '', '', ''])];
-  const quote = value => '"' + (typeof value === 'string' && /^[\s]*[=+@-]/.test(value) ? "'" : '') + String(value).replaceAll('"','""') + '"';
-  download('bridge-review.csv','text/csv;charset=utf-8','\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n'));
+  downloadCsv('bridge-review.csv', rows);
 };
+el('verticalCsv').onclick = () => {
+  const rows = [['검토 구역','대상 유형','판정','측점 (m)','최소 이격 부재','최소 이격 (m)','요구 이격 (m)'],
+    ...result.vertical_clearances.map(item => [result.objects[item.target-1].name,
+      result.target_categories[item.category], item.status, item.station ?? '',
+      item.part === null ? '' : result.objects[item.part-1].name, item.distance ?? '', item.required])];
+  downloadCsv('bridge-vertical-clearance.csv', rows);
+};
+function downloadCsv(name, rows){
+  const quote = value => '"' + (typeof value === 'string' && /^[\s]*[=+@-]/.test(value) ? "'" : '') + String(value).replaceAll('"','""') + '"';
+  download(name,'text/csv;charset=utf-8','\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n'));
+}
 const colors = {deck:'#9eb2c9',girder:'#42668d',pier:'#788ca3',bearing:'#bf905c',foundation:'#a98b6d',
   special:'#3469ae',accessory:'#244767',context:'#2a9d8f',envelope:'#e4a03d'};
 const faces = [[0,2,3,1],[4,5,7,6],[0,1,5,4],[2,6,7,3],[0,4,6,2],[1,3,7,5]];
