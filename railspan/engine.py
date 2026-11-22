@@ -1,7 +1,7 @@
 """Metre-based geometry and clearance checks for conceptual bridge review."""
 import math
 
-from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, StationProfile, bounds, separation
+from .alignment import DEFAULTS as ALIGNMENT_DEFAULTS, Alignment, StationProfile, bounds, separation, vertical_separation
 from .horizontal import curvature
 from .vertical_profile import VerticalCurve
 
@@ -24,8 +24,8 @@ EXAMPLE = {
     "kind": "psc", "start": 0, "spans": [30, 50, 30], "width": 11,
     "deck": 15, "ground": 0, "rise": 12, "tracks": 2, "clearance": 0.5,
     "obstacles": [
-        {"name": "도로 통과 공간", "category": "road", "min": [25, -18, 0], "max": [36, 18, 7]},
-        {"name": "하천 검토 구역", "category": "waterway", "min": [48, -24, -1], "max": [72, 24, 3]},
+        {"name": "도로 통과 공간", "category": "road", "clearance_mode": "vertical", "min": [25, -18, 0], "max": [36, 18, 7]},
+        {"name": "하천 검토 구역", "category": "waterway", "clearance_mode": "vertical", "min": [48, -24, -1], "max": [72, 24, 3]},
         {"name": "지하 매설물", "category": "utility", "clearance": 1.0, "min": [78, -15, -1.4], "max": [82, 15, -0.8]},
     ],
 }
@@ -65,6 +65,13 @@ def validate_obstacles(obstacles):
                 raise ValueError(f"유형 코드는 {', '.join(OBSTACLE_CATEGORIES)} 중 하나여야 합니다.")
             clearance = obstacle.get("clearance")
             result = {"name": name.strip(), "min": lo, "max": hi, "category": category}
+            if "clearance_mode" in obstacle:
+                mode = obstacle["clearance_mode"]
+                if mode not in ("spatial", "vertical"):
+                    raise ValueError("이격 방식은 spatial 또는 vertical을 입력하세요.")
+                if mode == "vertical" and category not in ("road", "waterway"):
+                    raise ValueError("수직 이격은 도로 또는 하천 유형에 적용할 수 있습니다.")
+                result["clearance_mode"] = mode
             if clearance is not None:
                 try:
                     result["clearance"] = number(clearance, 0, 100)
@@ -457,13 +464,14 @@ def generate(config):
         for name, half_width, height in gauges:
             box(f"{index}번 선로 {name}", "envelope", [start, offset-half_width, deck+base],
                 [end, offset+half_width, deck+height], "gauge")
-            objects[-1].update(category="gauge", required_clearance=0)
+            objects[-1].update(category="gauge", required_clearance=0, clearance_mode="spatial")
             track_centers[objects[-1]["id"]] = offset
     obstacles = validate_obstacles(config.get("obstacles"))
     for obstacle in obstacles:
         box(obstacle["name"], "context", obstacle["min"], obstacle["max"], "obstacle")
         objects[-1].update(category=obstacle["category"],
-                           required_clearance=obstacle.get("clearance", clearance))
+                           required_clearance=obstacle.get("clearance", clearance),
+                           clearance_mode=obstacle.get("clearance_mode", "spatial"))
 
     cells_by_id = {}
     station_ranges = {}
@@ -491,18 +499,20 @@ def generate(config):
         if target["role"] == "bridge":
             continue
         limit = target["required_clearance"]
+        mode = target["clearance_mode"]
+        measure = vertical_separation if mode == "vertical" else separation
         threshold = max(limit, 1e-8)
         for part in parts:
-            if separation(part["min"], part["max"], target["min"], target["max"]) > threshold:
+            if measure(part["min"], part["max"], target["min"], target["max"]) > threshold:
                 continue
             best = math.inf
             center = None
             target_cells = cells(target)
             for lo, hi, _ in cells(part):
-                if separation(lo, hi, target["min"], target["max"]) > min(best, threshold):
+                if measure(lo, hi, target["min"], target["max"]) > min(best, threshold):
                     continue
                 for t_lo, t_hi, _ in target_cells:
-                    gap = separation(lo, hi, t_lo, t_hi)
+                    gap = measure(lo, hi, t_lo, t_hi)
                     if gap < best:
                         best = gap
                         center = [(max(a, min(b, c)) + max(a, min(b, d))) / 2
@@ -520,7 +530,8 @@ def generate(config):
             findings.append({"part": part["id"], "target": target["id"], "status": status,
                              "station": round(station, 3), "category": target["category"],
                              "approximate": approximate,
-                             "distance": round(max(0, best), 4), "required": limit,
+                             "distance": round(best if mode == "vertical" else max(0, best), 4),
+                             "required": limit, "clearance_mode": mode,
                              "point": center})
     count = max(1, math.ceil((end - start) / 5)) if curved else 1
     ground_stations = sorted({start, end, *stations, *alignment.plan_breaks,

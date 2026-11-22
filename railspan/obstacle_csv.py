@@ -6,7 +6,7 @@ from .engine import EXAMPLE, validate_obstacles
 
 COLUMNS = ("name", "station_min", "offset_min", "elevation_min",
            "station_max", "offset_max", "elevation_max")
-OPTIONAL_COLUMNS = ("category", "clearance_m")
+OPTIONAL_COLUMNS = ("category", "clearance_m", "clearance_mode")
 
 
 def example_csv():
@@ -15,7 +15,8 @@ def example_csv():
     writer.writerow(COLUMNS + OPTIONAL_COLUMNS)
     for obstacle in EXAMPLE["obstacles"]:
         writer.writerow([obstacle["name"], *obstacle["min"], *obstacle["max"],
-                         obstacle.get("category", "other"), obstacle.get("clearance", "")])
+                         obstacle.get("category", "other"), obstacle.get("clearance", ""),
+                         obstacle.get("clearance_mode", "")])
     return stream.getvalue().encode("utf-8-sig")
 
 
@@ -45,6 +46,9 @@ def read_obstacles(payload):
                 clearance = fields.get("clearance_m", "").strip()
                 if category:
                     obstacle["category"] = category
+                mode = fields.get("clearance_mode", "").strip()
+                if mode:
+                    obstacle["clearance_mode"] = mode
                 if clearance:
                     try:
                         obstacle["clearance"] = float(clearance)

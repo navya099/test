@@ -160,3 +160,13 @@ def separation(lo, hi, target_lo, target_hi):
         return gap
     return math.hypot(*(max(a - d, c - b, 0)
                         for a, b, c, d in zip(lo, hi, target_lo, target_hi)))
+
+
+def vertical_separation(lo, hi, target_lo, target_hi):
+    """Signed headroom above a review zone with an overlapping XY footprint."""
+    if any(min(b, d) - max(a, c) <= 1e-8
+           for a, b, c, d in zip(lo[:2], hi[:2], target_lo[:2], target_hi[:2])):
+        return math.inf
+    if hi[2] <= target_lo[2] + 1e-8:
+        return math.inf
+    return lo[2] - target_hi[2]

@@ -76,6 +76,7 @@ def export_ifc(model, ifc):
             attributes.extend([
                 ("TargetCategory", "IfcLabel", model["target_categories"][item["category"]]),
                 ("RequiredClearance", "IfcLengthMeasure", float(item["required_clearance"])),
+                ("ClearanceMode", "IfcLabel", item["clearance_mode"]),
             ])
         properties = [create("IfcPropertySingleValue", Name=name, NominalValue=create(type_name, value))
                       for name, type_name, value in attributes]
