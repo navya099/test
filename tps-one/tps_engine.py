@@ -1,4 +1,5 @@
 import math
+from collections import deque
 from dataclasses import dataclass
 from typing import List, Optional, Dict
 
@@ -6,6 +7,7 @@ from typing import List, Optional, Dict
 class TrainSpec:
     name: str = "Standard_EMU_6Car"
     mass_ton: float = 180.0          # 공차+승객 중량 (ton)
+    length_m: float = 120.0          # 열차 편성 길이 (m, 예: 6량 약 120m)
     rotational_factor: float = 1.08  # 회전 질량 계수
     max_speed_kmh: float = 80.0      # 영업 최고속도 (km/h)
     max_accel_ms2: float = 0.83      # 기동 가속도 (3.0 km/h/s)
@@ -22,6 +24,11 @@ class AdvancedUrbanTPS:
         self.curve_r = [float('inf')] * (total_length_m + 1)
         self.speed_limit = [train.max_speed_kmh] * (total_length_m + 1)
 
+        # 열차 길이를 반영한 실효 선형 캐시
+        self._eff_gradient: Optional[List[float]] = None
+        self._eff_inv_r: Optional[List[float]] = None
+        self._eff_speed_limit: Optional[List[float]] = None
+
     def set_track_segment(
         self, start_m: int, end_m: int,
         grad: float = 0.0, radius: float = float('inf'), limit: Optional[float] = None
@@ -31,13 +38,87 @@ class AdvancedUrbanTPS:
             self.curve_r[x] = radius
             if limit is not None:
                 self.speed_limit[x] = min(self.speed_limit[x], limit)
+        self._invalidate_cache()
+
+    def _invalidate_cache(self):
+        self._eff_gradient = None
+        self._eff_inv_r = None
+        self._eff_speed_limit = None
+
+    def prepare_track(self):
+        """
+        열차 편성 길이(train.length_m)를 반영한 실효 구배, 실효 곡률(1/R), 실효 제한속도 사전 계산.
+        선두부 위치 x 기준 [max(0, x - L), x] 구간에 대해 구배·곡률은 평균, 제한속도는 최솟값을 적용.
+        """
+        n = self.length + 1
+        train_len = max(0, int(round(self.train.length_m)))
+
+        if train_len <= 1:
+            self._eff_gradient = list(self.gradient)
+            self._eff_inv_r = [
+                (1.0 / r if (not math.isinf(r) and r > 0) else 0.0)
+                for r in self.curve_r
+            ]
+            self._eff_speed_limit = list(self.speed_limit)
+            return
+
+        # 1) 누적합(Prefix Sum)으로 [max(0, x - L), x] 구배·곡률 평균 O(N) 계산
+        pref_grad = [0.0] * (n + 1)
+        pref_inv_r = [0.0] * (n + 1)
+        for i in range(n):
+            pref_grad[i + 1] = pref_grad[i] + self.gradient[i]
+            r = self.curve_r[i]
+            inv_r = (1.0 / r) if (not math.isinf(r) and r > 0) else 0.0
+            pref_inv_r[i + 1] = pref_inv_r[i] + inv_r
+
+        eff_grad = [0.0] * n
+        eff_inv_r = [0.0] * n
+        for x in range(n):
+            lo = max(0, x - train_len)
+            cnt = x - lo + 1
+            eff_grad[x] = (pref_grad[x + 1] - pref_grad[lo]) / cnt
+            eff_inv_r[x] = (pref_inv_r[x + 1] - pref_inv_r[lo]) / cnt
+
+        # 2) 슬라이딩 윈도우 최솟값(Deque)으로 [max(0, x - L), x] 실효 제한속도 O(N) 계산
+        eff_limit = [0.0] * n
+        dq = deque()
+        for x in range(n):
+            lo = max(0, x - train_len)
+            while dq and dq[0] < lo:
+                dq.popleft()
+            v = self.speed_limit[x]
+            while dq and self.speed_limit[dq[-1]] >= v:
+                dq.pop()
+            dq.append(x)
+            eff_limit[x] = self.speed_limit[dq[0]]
+
+        self._eff_gradient = eff_grad
+        self._eff_inv_r = eff_inv_r
+        self._eff_speed_limit = eff_limit
+
+    def _ensure_prepared(self):
+        if self._eff_gradient is None or self._eff_inv_r is None or self._eff_speed_limit is None:
+            self.prepare_track()
+
+    def create_reversed(self, new_train: Optional[TrainSpec] = None) -> "AdvancedUrbanTPS":
+        """
+        상·하행 반전된 선형(x' = length - x, 구배 부호 반전)을 가지는 새 TPS 객체 반환
+        """
+        rev_train = new_train if new_train is not None else self.train
+        rev = AdvancedUrbanTPS(rev_train, self.length)
+        rev.gradient = [-g for g in reversed(self.gradient)]
+        rev.curve_r = list(reversed(self.curve_r))
+        rev.speed_limit = [min(lim, rev_train.max_speed_kmh) for lim in reversed(self.speed_limit)]
+        rev.prepare_track()
+        return rev
 
     def get_resistance_acc(self, x: int, v_ms: float) -> float:
+        self._ensure_prepared()
         v_kmh = v_ms * 3.6
         # Davis 식(kgf/ton) -> 9.81을 곱해 N/ton으로 단위 통일
         r_run = 9.81 * (1.5 + 0.03 * v_kmh + 0.0005 * (v_kmh ** 2))
-        r_grad = 9.81 * self.gradient[x]
-        r_curve = 9.81 * (600.0 / self.curve_r[x]) if self.curve_r[x] > 0 else 0.0
+        r_grad = 9.81 * self._eff_gradient[x]
+        r_curve = 9.81 * (600.0 * self._eff_inv_r[x])
         return (r_run + r_grad + r_curve) / (1000.0 * self.train.rotational_factor)
 
     def get_tractive_acc(self, v_ms: float) -> float:
@@ -49,7 +130,8 @@ class AdvancedUrbanTPS:
 
     def compute_braking_profile(self, start_x: int, stop_x: int) -> List[float]:
         """start_x ~ stop_x 구간에 대한 역산 제동 속도 프로파일"""
-        v_limit_ms = [v / 3.6 for v in self.speed_limit]
+        self._ensure_prepared()
+        v_limit_ms = [v / 3.6 for v in self._eff_speed_limit]
         v_limit_ms[stop_x] = 0.0
         for x in range(stop_x - 1, start_x - 1, -1):
             v_next = v_limit_ms[x + 1]
@@ -63,6 +145,7 @@ class AdvancedUrbanTPS:
         self, start_x: int, stop_x: int, coast_start_x: float,
         min_remotoring_kmh: float = 35.0, record_history: bool = False
     ) -> Optional[Dict]:
+        self._ensure_prepared()
         brake_profile = self.compute_braking_profile(start_x, stop_x)
         dt = 0.1
         t = 0.0
@@ -76,7 +159,7 @@ class AdvancedUrbanTPS:
         while x < stop_x and t < 1800:
             idx = min(int(x), stop_x)
             v_brake_limit = brake_profile[idx]
-            v_track_limit = self.speed_limit[idx] / 3.6
+            v_track_limit = self._eff_speed_limit[idx] / 3.6
             is_braking_zone = (v_brake_limit < v_track_limit - 1e-3) or ((stop_x - x) < 10.0)
 
             if is_braking_zone and v >= v_brake_limit - 0.05:

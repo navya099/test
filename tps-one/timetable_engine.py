@@ -29,6 +29,22 @@ class TrainSchedule:
     train_number: str
     stops: List[Dict] # [{"station": str, "pos_m": int, "arr_sec": int, "dep_sec": int}, ...]
 
+def reverse_stations(stations: List[Station], total_length_m: int) -> List[Station]:
+    """상·하행 반전용 정거장 리스트 변환 (position_m -> total_length_m - position_m)"""
+    sorted_desc = sorted(stations, key=lambda st: st.position_m, reverse=True)
+    reversed_list: List[Station] = []
+    for idx, st in enumerate(sorted_desc):
+        is_endpoint = (idx == 0 or idx == len(sorted_desc) - 1)
+        reversed_list.append(
+            Station(
+                name=st.name,
+                position_m=total_length_m - st.position_m,
+                dwell_time_sec=0 if is_endpoint else st.dwell_time_sec,
+                is_pass=st.is_pass,
+            )
+        )
+    return reversed_list
+
 def format_sec_to_hhmmss(total_sec: int) -> str:
     """초 단위 시간을 HH:MM:SS 문자열로 변환 (24시 이후 심야 운행 지원)"""
     total_sec = int(round(total_sec))
