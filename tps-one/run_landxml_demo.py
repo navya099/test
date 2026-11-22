@@ -41,7 +41,7 @@ def main():
     # 1. 차량 제원 설정 (편성 길이 120m 반영)
     train = TrainSpec(
         name="Express_EMU_100 (120m)",
-        length_m=120.0,
+        length_m=240.0,
         max_speed_kmh=100.0,
         base_power_kw=2200.0,
     )
@@ -63,16 +63,32 @@ def main():
         print(f"  {c['start_m']:>5}m ~ {c['end_m']:>5}m | 최소 R={c['min_radius_m']:>6.1f}m | 제한속도 {c['speed_limit_kmh']:>5.1f} km/h")
 
     # 4. 필요 시 특정 구간 제한속도 직접 변경 (예: 5000~5300m 구간을 80 km/h로 하향, 또는 10000~10250m 구간 95 km/h로 상향)
-    # tps_down.set_speed_limit_zone(5000, 5300, limit_kmh=80.0, override=True)
+
+    tps_down.set_speed_limit_zone(1996, 2553, limit_kmh=90.0, override=True)
+    tps_down.set_speed_limit_zone(2629, 3179, limit_kmh=75.0, override=True)
+    tps_down.set_speed_limit_zone(5473, 5982, limit_kmh=70.0, override=True)
+    tps_down.set_speed_limit_zone(10284, 10749, limit_kmh=70.0, override=True)
+    tps_down.set_speed_limit_zone(12281, 12692, limit_kmh=90.0, override=True)
+    tps_down.set_speed_limit_zone(20755, 21041, limit_kmh=55.0, override=True)
     # tps_down.set_speed_limit_zone(10000, 10250, limit_kmh=95.0, override=True)
     tps_down.prepare_track()
 
     # 5. 정거장 정의 (급행 예시: 대포리, 서부면허시험장, 동양 통과)
+    normal_stations_down = [
+        Station("구래", 0, dwell_time_sec=0),
+        Station("대포리", 2805, dwell_time_sec=30),
+        Station("검단사거리", 6185, dwell_time_sec=30),
+        Station("검단3동", 9512, dwell_time_sec=30),
+        Station("서부면허시험장", 11260, dwell_time_sec=30),
+        Station("계양", 14185, dwell_time_sec=30),
+        Station("동양", 16427, dwell_time_sec=30),
+        Station("김포공항", 19600, dwell_time_sec=0),
+    ]
     express_stations_down = [
         Station("구래", 0, dwell_time_sec=0),
         Station("대포리", 2805, dwell_time_sec=30, is_pass=True),
         Station("검단사거리", 6185, dwell_time_sec=30),
-        Station("검단3동", 9512, dwell_time_sec=30),
+        Station("검단3동", 9512, dwell_time_sec=30, is_pass=True),
         Station("서부면허시험장", 11260, dwell_time_sec=30, is_pass=True),
         Station("계양", 14185, dwell_time_sec=30),
         Station("동양", 16427, dwell_time_sec=30, is_pass=True),
@@ -103,6 +119,28 @@ def main():
         save_path="gimpo_to_gurae_express.png", title_suffix="급행 상행"
     )
 
+    #일반 하행
+    gen_down = LineTimetableGenerator(tps_down, normal_stations_down)
+    prof_down = gen_down.build_standard_run_profile(
+        margin_ratio=0.05, round_to_5sec=True, record_history=True
+    )
+    print_profile_summary("[보통 하행] 구래 -> 김포공항", prof_down)
+    plot_run_curve(
+        tps_down, normal_stations_down, prof_down,
+        save_path="gurae_to_gimpo.png", title_suffix="보통 하행"
+    )
+
+    # 일반 상행
+    normal_stations_up = reverse_stations(normal_stations_down, tps_down.length)
+    gen_up = LineTimetableGenerator(tps_up, normal_stations_up)
+    prof_up = gen_up.build_standard_run_profile(
+        margin_ratio=0.05, round_to_5sec=True, record_history=True
+    )
+    print_profile_summary("[보통 상행] 김포공항 -> 구래", prof_up)
+    plot_run_curve(
+        tps_up, normal_stations_up, prof_up,
+        save_path="gimpo_to_gurae.png", title_suffix="보통 상행"
+    )
 
 if __name__ == "__main__":
     main()
