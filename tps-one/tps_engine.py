@@ -1,7 +1,7 @@
 import math
 from collections import deque
 from dataclasses import dataclass
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple, Union
 
 @dataclass
 class TrainSpec:
@@ -39,6 +39,100 @@ class AdvancedUrbanTPS:
             if limit is not None:
                 self.speed_limit[x] = min(self.speed_limit[x], limit)
         self._invalidate_cache()
+
+    def set_speed_limit_zone(
+        self, start_m: int, end_m: int, limit_kmh: float, override: bool = True
+    ):
+        """특정 거리 구간의 제한속도를 직접 변경 (override=True면 기존 제한속도 덮어쓰기)"""
+        capped = min(limit_kmh, self.train.max_speed_kmh)
+        for x in range(max(0, start_m), min(self.length + 1, end_m + 1)):
+            if override:
+                self.speed_limit[x] = capped
+            else:
+                self.speed_limit[x] = min(self.speed_limit[x], capped)
+        self._invalidate_cache()
+
+    def apply_curve_speed_limits(
+        self,
+        factor: Optional[float] = 4.5,
+        cant_sum_mm: Optional[float] = None,
+        speed_table: Optional[Union[Dict[float, float], List[Tuple[float, float]]]] = None,
+        round_step_kmh: Optional[float] = 5.0,
+        reset_to_train_max: bool = False,
+    ):
+        """
+        곡선반경(self.curve_r) 기반 제한속도 일괄 자동계산/적용.
+        우선순위: speed_table > cant_sum_mm(V=sqrt(R*(C+Cd)/11.8)) > factor(V=factor*sqrt(R))
+        - round_step_kmh: 5.0 지정 시 5 km/h 단위로 내림 처리 (예: 71.1 -> 70 km/h)
+        """
+        if reset_to_train_max:
+            self.speed_limit = [self.train.max_speed_kmh] * (self.length + 1)
+
+        sorted_table: Optional[List[Tuple[float, float]]] = None
+        if speed_table is not None:
+            items = speed_table.items() if isinstance(speed_table, dict) else speed_table
+            sorted_table = sorted(items, key=lambda pair: pair[0])
+
+        for x in range(self.length + 1):
+            r = self.curve_r[x]
+            if math.isinf(r) or r <= 0:
+                continue
+
+            v_curve: Optional[float] = None
+            if sorted_table is not None:
+                for r_max, v_lim in sorted_table:
+                    if r <= r_max:
+                        v_curve = float(v_lim)
+                        break
+            elif cant_sum_mm is not None:
+                v_curve = math.sqrt((r * cant_sum_mm) / 11.8)
+            elif factor is not None:
+                v_curve = factor * math.sqrt(r)
+
+            if v_curve is not None:
+                if round_step_kmh and round_step_kmh > 0:
+                    v_curve = math.floor((v_curve + 1e-6) / round_step_kmh) * round_step_kmh
+                self.speed_limit[x] = min(self.speed_limit[x], v_curve)
+
+        self._invalidate_cache()
+
+    def get_curve_summary(self, min_radius_threshold: float = 1e6) -> List[Dict]:
+        """노선 내 곡선(완화곡선 포함) 구간별 최소 반경 및 적용된 제한속도 요약 반환"""
+        zones: List[Dict] = []
+        in_curve = False
+        start_x = 0
+        min_r = float("inf")
+        min_lim = float("inf")
+
+        for x in range(self.length + 1):
+            r = self.curve_r[x]
+            is_c = (not math.isinf(r)) and (r < min_radius_threshold)
+            if is_c:
+                if not in_curve:
+                    in_curve = True
+                    start_x = x
+                    min_r = r
+                    min_lim = self.speed_limit[x]
+                else:
+                    min_r = min(min_r, r)
+                    min_lim = min(min_lim, self.speed_limit[x])
+            elif in_curve:
+                zones.append({
+                    "start_m": start_x,
+                    "end_m": x - 1,
+                    "min_radius_m": round(min_r, 1),
+                    "speed_limit_kmh": round(min_lim, 1),
+                })
+                in_curve = False
+
+        if in_curve:
+            zones.append({
+                "start_m": start_x,
+                "end_m": self.length,
+                "min_radius_m": round(min_r, 1),
+                "speed_limit_kmh": round(min_lim, 1),
+            })
+        return zones
 
     def _invalidate_cache(self):
         self._eff_gradient = None
@@ -173,7 +267,6 @@ class AdvancedUrbanTPS:
                 else:
                     acc = -(self.train.service_decel_ms2 + res_acc)
             elif x >= coast_start_x:
-                # 히스테리시스: 35km/h 미만에서 재역행 후 45km/h 이상에서 다시 타행 진입
                 if not is_coasting:
                     if v >= (min_remotoring_kmh + 10.0) / 3.6 or (stop_x - x) <= 150.0:
                         is_coasting = True

@@ -1,7 +1,7 @@
 import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from tps_engine import TrainSpec, AdvancedUrbanTPS
 
 
@@ -81,7 +81,7 @@ def _parse_coord_geom(coord_geom_elem: ET.Element, sta_start: float, total_len_m
 
 def _parse_prof_align(prof_align_elem: ET.Element, sta_start: float, total_len_m: int) -> Tuple[List[float], int]:
     """<ProfAlign>의 PVI 및 ParaCurve를 1m 격자 구배(‰) 배열로 변환"""
-    pvis: List[Tuple[float, float, float]] = []  # (dist_m, elev_m, vc_len_m)
+    pvis: List[Tuple[float, float, float]] = []
 
     for child in prof_align_elem:
         tag = _strip_ns(child.tag)
@@ -100,7 +100,6 @@ def _parse_prof_align(prof_align_elem: ET.Element, sta_start: float, total_len_m
     if len(pvis) < 2:
         return gradient, len(pvis)
 
-    # 각 직선 구간 구배(‰) 계산
     seg_grades: List[float] = []
     for i in range(len(pvis) - 1):
         ds = pvis[i + 1][0] - pvis[i][0]
@@ -108,14 +107,12 @@ def _parse_prof_align(prof_align_elem: ET.Element, sta_start: float, total_len_m
         g = (de / ds) * 1000.0 if abs(ds) > 1e-6 else 0.0
         seg_grades.append(g)
 
-    # 기본 직선 구배 채우기
     for i in range(len(pvis) - 1):
         x0 = max(0, int(math.floor(pvis[i][0])))
         x1 = min(total_len_m, int(math.ceil(pvis[i + 1][0])))
         for x in range(x0, x1 + 1):
             gradient[x] = seg_grades[i]
 
-    # 종단곡선(ParaCurve) 구간 선형 구배 보간
     for i in range(1, len(pvis) - 1):
         sta_i, _, vc_len = pvis[i]
         if vc_len <= 0:
@@ -161,13 +158,19 @@ def load_landxml_to_tps(
     train: TrainSpec,
     alignment_name: Optional[str] = None,
     curve_speed_factor: Optional[float] = 4.5,
+    cant_sum_mm: Optional[float] = None,
+    curve_speed_table: Optional[Union[Dict[float, float], List[Tuple[float, float]]]] = None,
+    round_step_kmh: Optional[float] = 5.0,
     apply_design_speed: bool = True,
 ) -> Tuple[AdvancedUrbanTPS, LandXMLSummary]:
     """
     LandXML 파일을 읽어 AdvancedUrbanTPS 인스턴스와 선형 요약 정보를 반환합니다.
 
-    - curve_speed_factor: 곡선 제한속도 자동 산출 계수 (V_max = factor * sqrt(R), None이면 미적용)
-    - apply_design_speed: XML 내 설계속도(SpeedStation)를 speed_limit에 반영할지 여부
+    곡선 제한속도 계산 우선순위:
+    1) curve_speed_table: 반경 상한별 제한속도 테이블 (예: {250: 65, 400: 85, 600: 95})
+    2) cant_sum_mm: 캔트+부족캔트 공식 V = sqrt(R * cant_sum_mm / 11.8)
+    3) curve_speed_factor: 계수 공식 V = factor * sqrt(R) (None이면 곡선 제한속도 자동적용 안 함)
+    - round_step_kmh: 산출 속도를 지정 단위(기본 5 km/h)로 내림 처리 (None이면 소수점 유지)
     """
     tree = ET.parse(xml_path)
     root = tree.getroot()
@@ -217,13 +220,14 @@ def load_landxml_to_tps(
             for x in range(x0, x1 + 1):
                 tps.speed_limit[x] = min(tps.speed_limit[x], spd)
 
-    # 4. 곡선 반경 기반 제한속도 오버레이
-    if curve_speed_factor is not None:
-        for x in range(total_len_m + 1):
-            r = tps.curve_r[x]
-            if not math.isinf(r) and r > 0:
-                v_curve = round(curve_speed_factor * math.sqrt(r), 1)
-                tps.speed_limit[x] = min(tps.speed_limit[x], v_curve)
+    # 4. 곡선 반경 기반 제한속도 자동 계산/적용
+    tps.apply_curve_speed_limits(
+        factor=curve_speed_factor,
+        cant_sum_mm=cant_sum_mm,
+        speed_table=curve_speed_table,
+        round_step_kmh=round_step_kmh,
+    )
+    tps.prepare_track()
 
     finite_radii = [r for r in tps.curve_r if not math.isinf(r)]
     summary = LandXMLSummary(

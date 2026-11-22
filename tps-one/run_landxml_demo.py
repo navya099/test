@@ -36,7 +36,7 @@ def print_profile_summary(title: str, std_profile):
 
 
 def main():
-    xml_path = "실시설계-1구간.xml"
+    xml_path = "c:temp/landxml/실시설계-1구간.xml"
 
     # 1. 차량 제원 설정 (편성 길이 120m 반영)
     train = TrainSpec(
@@ -46,21 +46,28 @@ def main():
         base_power_kw=2200.0,
     )
 
-    # 2. LandXML 파싱 -> 하행(정방향: 구래 -> 김포공항) TPS 구성
+    # 2. LandXML 파싱 + 곡선반경별 제한속도 자동계산 (예: 5 km/h 단위 내림)
+    #    - 계수 공식 대신 테이블을 쓰려면 curve_speed_table={250: 65, 400: 85, 500: 90, 600: 95} 전달
+    #    - 캔트 공식(V=sqrt(R*(C+Cd)/11.8))을 쓰려면 cant_sum_mm=240.0 전달
     tps_down, summary = load_landxml_to_tps(
         xml_path=xml_path,
         train=train,
         curve_speed_factor=4.5,
+        round_step_kmh=5.0,
         apply_design_speed=True,
     )
+
+    # 3. 곡선 구간 및 자동 계산된 제한속도 확인
+    print("\n=== 자동 계산된 곡선 구간별 제한속도 요약 ===")
+    for c in tps_down.get_curve_summary():
+        print(f"  {c['start_m']:>5}m ~ {c['end_m']:>5}m | 최소 R={c['min_radius_m']:>6.1f}m | 제한속도 {c['speed_limit_kmh']:>5.1f} km/h")
+
+    # 4. 필요 시 특정 구간 제한속도 직접 변경 (예: 5000~5300m 구간을 80 km/h로 하향, 또는 10000~10250m 구간 95 km/h로 상향)
+    # tps_down.set_speed_limit_zone(5000, 5300, limit_kmh=80.0, override=True)
+    # tps_down.set_speed_limit_zone(10000, 10250, limit_kmh=95.0, override=True)
     tps_down.prepare_track()
 
-    print(
-        f"LandXML 선형명: {summary.alignment_name} (총 연장 {summary.length_m:.2f} m | "
-        f"최소 반경 {summary.min_radius_m:.1f} m | 구배 {summary.min_gradient_permille:.2f}‰ ~ {summary.max_gradient_permille:.2f}‰)"
-    )
-
-    # 3. 정거장 정의 (급행 예시: 대포리, 서부면허시험장, 동양 통과)
+    # 5. 정거장 정의 (급행 예시: 대포리, 서부면허시험장, 동양 통과)
     express_stations_down = [
         Station("구래", 0, dwell_time_sec=0),
         Station("대포리", 2805, dwell_time_sec=30, is_pass=True),
@@ -72,7 +79,7 @@ def main():
         Station("김포공항", 19600, dwell_time_sec=0),
     ]
 
-    # 4. 급행 하행 (구래 -> 김포공항)
+    # 6. 급행 하행 (구래 -> 김포공항)
     gen_exp_down = LineTimetableGenerator(tps_down, express_stations_down)
     prof_exp_down = gen_exp_down.build_standard_run_profile(
         margin_ratio=0.05, round_to_5sec=True, record_history=True
@@ -83,7 +90,7 @@ def main():
         save_path="gurae_to_gimpo_express.png", title_suffix="급행 하행"
     )
 
-    # 5. 급행 상행 (김포공항 -> 구래)
+    # 7. 급행 상행 (김포공항 -> 구래)
     tps_up = tps_down.create_reversed()
     express_stations_up = reverse_stations(express_stations_down, tps_down.length)
     gen_exp_up = LineTimetableGenerator(tps_up, express_stations_up)
