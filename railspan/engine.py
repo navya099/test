@@ -12,6 +12,11 @@ OBSTACLE_CATEGORIES = {
     "rail": "철도시설물", "other": "기타 지장물",
 }
 TARGET_CATEGORIES = {**OBSTACLE_CATEGORIES, "gauge": "차량·건축한계"}
+MEMBER_GROUPS = {
+    "deck": "슬래브", "girder": "거더", "pier": "교각·교대·코핑",
+    "bearing": "받침", "foundation": "기초", "special": "아치·케이블·주탑",
+    "accessory": "부속품",
+}
 ACCESSORY_SIDES = {"none": (), "left": (1,), "right": (-1,), "both": (-1, 1)}
 
 GAUGE_DEFAULTS = {
@@ -250,6 +255,8 @@ def generate(config):
     def box(name, group, lo, hi, role="bridge"):
         objects.append({"id": len(objects) + 1, "name": name, "group": group,
                         "role": role, "min": lo, "max": hi})
+        if role == "bridge":
+            objects[-1]["station_range"] = [lo[0], hi[0]]
 
     def beam(name, group, a, b, thickness):
         radius = thickness / 2
@@ -474,7 +481,6 @@ def generate(config):
                            clearance_mode=obstacle.get("clearance_mode", "spatial"))
 
     cells_by_id = {}
-    station_ranges = {}
     if curved or profile:
         for item in objects:
             if item["role"] == "obstacle":
@@ -482,7 +488,6 @@ def generate(config):
             follows = item["group"] not in ("foundation", "pier", "bearing") and item["id"] not in tower_ids
             if not curved and not follows:
                 continue
-            station_ranges[item["id"]] = (item["min"][0], item["max"][0])
             cells = list(alignment.cells(item, track_centers.get(item["id"]), follow_profile=follows))
             item["mesh"] = [cell[2] for cell in cells]
             item["min"], item["max"] = bounds(vertex for cell in cells for vertex in cell[2])
@@ -540,8 +545,8 @@ def generate(config):
             if approximate:
                 status += " 후보 (외접 상자)" if violation else " (외접 상자)"
             station = alignment.station_at(center)
-            if part["id"] in station_ranges:
-                lo_station, hi_station = station_ranges[part["id"]]
+            if "mesh" in part:
+                lo_station, hi_station = part["station_range"]
                 station = max(lo_station, min(hi_station, station))
             entry = {
                 "part": part["id"], "target": target["id"], "status": status,
@@ -570,6 +575,7 @@ def generate(config):
             "length": end-start, "kind": TYPES[kind],
             "ground_line": ground_line,
             "ground_profile": ground_points, "target_categories": TARGET_CATEGORIES,
+            "member_groups": MEMBER_GROUPS,
             "dimensions": dimensions, "accessories": accessories, "arch": arch, "cables": cables,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile,
                           "vertical_curves": curve_inputs, "cant_profile": cant_points,

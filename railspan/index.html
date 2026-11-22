@@ -199,6 +199,15 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <thead><tr><th>검토 구역</th><th>대상 유형</th><th>판정</th><th>측점 (m)</th><th>최소 이격 부재</th><th>최소 / 요구 (m)</th></tr></thead>
 <tbody id="verticalRows"></tbody></table></div>
 </section>
+<section class="results" aria-labelledby="membersTitle">
+<div class="toolbar"><h2 id="membersTitle">부재 목록</h2><button id="membersCsv" disabled>전체 부재 CSV</button></div>
+<label>부재 유형<select id="memberGroup" disabled><option value="">전체</option></select></label>
+<p id="memberCount" class="muted" role="status"></p>
+<div class="scroll"><table>
+<thead><tr><th>부재 ID</th><th>유형</th><th>부재명</th><th>시작 측점 (m)</th><th>끝 측점 (m)</th><th>최저 표고 (m)</th><th>최고 표고 (m)</th></tr></thead>
+<tbody id="memberRows"></tbody>
+</table></div>
+</section>
 <section class="results" aria-labelledby="alternativesTitle">
 <h2 id="alternativesTitle">교량 대안 비교</h2>
 <form id="alternativeForm">
@@ -325,6 +334,14 @@ async function generate(data){
     filter.disabled = false;
     renderFindings();
     renderVerticalClearances();
+    const memberGroup = el('memberGroup');
+    const previousGroup = memberGroup.value;
+    memberGroup.replaceChildren(new Option('전체',''),
+      ...Object.entries(model.member_groups).map(([code,label]) => new Option(label,code)));
+    memberGroup.value = Object.hasOwn(model.member_groups,previousGroup) ? previousGroup : '';
+    memberGroup.disabled = false;
+    el('membersCsv').disabled = false;
+    renderMembers();
     zoom = 1;
     draw();
   } catch(error) { if(id === request) report(error); }
@@ -353,17 +370,49 @@ function stationButton(hit){
   const target = result.objects[hit.target-1];
   button.textContent = hit.station;
   button.setAttribute('aria-label', target.name + ' 측점 ' + hit.station + ' m');
-  button.onclick = () => {
-    selected = [hit.part, hit.target];
-    focus = hit.point;
-    zoom = 2;
-    if(target.role === 'gauge') gauge = true;
-    if(target.role === 'obstacle') context = true;
-    layerButtons();
-    draw();
-  };
+  button.onclick = () => highlight([hit.part, hit.target], hit.point);
   return button;
 }
+function highlight(ids, point){
+  selected = ids;
+  focus = point;
+  zoom = 2;
+  for(const id of ids){
+    const role = result.objects[id-1].role;
+    if(role === 'gauge') gauge = true;
+    if(role === 'obstacle') context = true;
+  }
+  layerButtons();
+  draw();
+  canvas.scrollIntoView({block:'nearest'});
+}
+function memberValues(member){
+  const metres = value => Number(value.toFixed(3));
+  return [result.member_groups[member.group], member.name,
+    ...member.station_range.map(metres), metres(member.min[2]), metres(member.max[2])];
+}
+function renderMembers(){
+  const group = el('memberGroup').value;
+  const all = result.objects.filter(object => object.role === 'bridge');
+  const members = group ? all.filter(member => member.group === group) : all;
+  el('memberCount').textContent = members.length + ' / ' + all.length + '개 부재';
+  const rows = el('memberRows');
+  rows.replaceChildren();
+  for(const member of members){
+    const row = rows.insertRow();
+    const button = document.createElement('button');
+    button.textContent = member.id;
+    button.setAttribute('aria-label', member.name + ' 부재 ' + member.id + ' 보기');
+    button.onclick = () => {
+      const vertices = member.mesh?.[Math.floor(member.mesh.length / 2)] ?? corners(member);
+      const point = [0,1,2].map(axis => vertices.reduce((sum,p) => sum+p[axis],0)/vertices.length);
+      highlight([member.id],point);
+    };
+    row.insertCell().append(button);
+    for(const value of memberValues(member)) row.insertCell().textContent = value;
+  }
+}
+el('memberGroup').onchange = renderMembers;
 function renderVerticalClearances(){
   const entries = result.vertical_clearances;
   el('verticalCsv').disabled = !entries.length;
@@ -573,6 +622,11 @@ el('verticalCsv').onclick = () => {
       item.part === null ? '' : result.objects[item.part-1].name, item.distance ?? '', item.required])];
   downloadCsv('bridge-vertical-clearance.csv', rows);
 };
+el('membersCsv').onclick = () => downloadCsv('bridge-members.csv', [
+  ['부재 ID','유형','부재명','시작 측점 (m)','끝 측점 (m)','최저 표고 (m)','최고 표고 (m)'],
+  ...result.objects.filter(object => object.role === 'bridge')
+    .map(member => [member.id, ...memberValues(member)]),
+]);
 function downloadCsv(name, rows){
   const quote = value => '"' + (typeof value === 'string' && /^[\s]*[=+@-]/.test(value) ? "'" : '') + String(value).replaceAll('"','""') + '"';
   download(name,'text/csv;charset=utf-8','\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n'));
