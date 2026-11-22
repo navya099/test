@@ -30,10 +30,15 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <form id="design">
 <label>교량 형식<select name="kind"><option value="psc">PSC 거더교</option><option value="box">ST BOX 거더교</option><option value="arch">아치교</option><option value="cable">사장교</option><option value="ed">ED교</option></select></label>
 <div class="pair">
-<label>시작 측점 (m)<input type="number" step="any" name="start" required></label>
+<label id="startLabel">시작 측점 (m)<input type="number" step="any" name="start" required></label>
 <label>상부 폭 (m)<input type="number" step="any" name="width" required></label>
 </div>
-<label>경간 길이 (m, 쉼표 구분)<input name="spans" placeholder="30, 50, 30"></label>
+<label>경간 배치 방식<select name="span_mode"><option value="lengths">경간 길이</option><option value="stations">교대·교각 측점</option></select></label>
+<label id="spanLengthsLabel">경간 길이 (m, 쉼표 구분)<input name="spans" placeholder="30, 50, 30"></label>
+<label id="supportStationsLabel" style="display:none">교대·교각 측점 (m, 쉼표 구분)
+<input name="support_stations" placeholder="0, 30, 80, 110">
+<span class="muted">시점 교대부터 종점 교대까지 측점 순서대로 입력하세요.</span>
+</label>
 <div class="pair" id="automatic" hidden>
 <label>총연장 (m)<input type="number" step="any" name="length" value="110"></label>
 <label>기준 경간 (m)<input type="number" step="any" name="nominal" value="40"></label>
@@ -260,7 +265,12 @@ function toggleFields(){
     for(const control of settings.querySelectorAll('input, select')) control.disabled = !active;
   }
   field('girder_depth').placeholder = field('kind').value === 'psc' ? '1.7' : '2.2';
-  el('automatic').style.display = field('spans').value.trim() ? 'none' : 'grid';
+  const stationMode = field('span_mode').value === 'stations';
+  for(const id of ['startLabel','spanLengthsLabel']) el(id).style.display = stationMode ? 'none' : 'grid';
+  el('supportStationsLabel').style.display = stationMode ? 'grid' : 'none';
+  field('start').disabled = stationMode;
+  field('support_stations').required = stationMode;
+  el('automatic').style.display = stationMode || field('spans').value.trim() ? 'none' : 'grid';
   el('riseLabel').style.display = ['arch','cable','ed'].includes(field('kind').value) ? 'grid' : 'none';
 }
 function fill(data){
@@ -274,6 +284,10 @@ function fill(data){
   field('arch_hanger_count').value = data.arch_hanger_count ?? 5;
   for(const key of accessorySides) field(key).value = data[key] ?? 'both';
   for(const key of keys) field(key).value = data[key] ?? ({length:110,nominal:40,...defaults}[key] ?? '');
+  const supports = Array.isArray(data.support_stations) ? data.support_stations : [];
+  field('span_mode').value = supports.length ? 'stations' : 'lengths';
+  field('support_stations').value = supports.join(', ');
+  if(supports.length) field('start').value = supports[0];
   field('spans').value = Array.isArray(data.spans) ? data.spans.join(', ') : '';
   for(const [key, name] of Object.entries(profileFields)){
     field(name).value = Array.isArray(data[key])
@@ -296,8 +310,18 @@ function config(){
     data[key] = field(name).value.split(/\r?\n/).filter(line => line.trim())
       .map(line => line.split(',').map(value => value.trim() ? Number(value) : null));
   }
-  const spans = field('spans').value.trim();
-  data.spans = spans ? spans.split(',').map(text => text.trim() ? Number(text) : null) : [];
+  const parseList = name => {
+    const input = field(name).value.trim();
+    return input ? input.split(',').map(text => text.trim() ? Number(text) : null) : [];
+  };
+  if(field('span_mode').value === 'stations'){
+    data.support_stations = parseList('support_stations');
+    if(data.support_stations.length < 2) throw new Error('시점과 종점 교대 측점을 모두 입력하세요.');
+    data.spans = [];
+    data.start = data.support_stations[0];
+  } else {
+    data.spans = parseList('spans');
+  }
   return data;
 }
 function report(error){ el('error').textContent = error.message; }

@@ -224,23 +224,27 @@ def arch_span(length, rise, shape, hanger_count):
     return [(t, height(t)) for t in fractions], [(t, height(t)) for t in hangers]
 
 
-def generate(config):
-    if not isinstance(config, dict):
-        raise ValueError("프로젝트는 JSON 객체여야 합니다.")
-    kind = config.get("kind")
-    if kind not in TYPES:
-        raise ValueError("교량 형식을 선택하세요.")
-    start = number(config.get("start"), -1e6, 1e6)
-    width = number(config.get("width"), 5, 40)
-    ground = number(config.get("ground"), -1000, 8000)
-    rise = number(config.get("rise"), 1, 150)
-    tracks = number(config.get("tracks"), 1, 2)
-    if tracks not in (1, 2):
-        raise ValueError("단선 또는 복선을 선택하세요.")
-    clearance = number(config.get("clearance"), 0, 100)
-    lengths = config.get("spans")
+def bridge_stations(config):
+    lengths = config.get("spans", [])
     if not isinstance(lengths, list) or len(lengths) > 30:
         raise ValueError("경간은 최대 30개입니다.")
+    supports = config.get("support_stations", [])
+    if not isinstance(supports, list) or len(supports) == 1 or len(supports) > 31:
+        raise ValueError("교대·교각 측점은 시·종점을 포함해 2~31개 입력하세요.")
+    if supports:
+        if lengths:
+            raise ValueError("교대·교각 측점과 경간 길이 중 하나만 입력하세요.")
+        stations = [number(supports[0], -1e6, 1e6)]
+        for index, value in enumerate(supports[1:], 1):
+            station = number(value, -1e6, 1_015_000)
+            length = station - stations[-1]
+            if not 5-1e-8 <= length <= 500+1e-8:
+                raise ValueError(f"S{index} 경간은 5~500 m여야 합니다 "
+                                 f"({stations[-1]:g} ~ {station:g} m). 측점 순서와 간격을 확인하세요.")
+            stations.append(station)
+        return stations
+
+    start = number(config.get("start"), -1e6, 1e6)
     stations = [start]
     for length in lengths:
         stations.append(stations[-1] + number(length, 5, 500))
@@ -250,6 +254,24 @@ def generate(config):
         stations.extend(end for _, end in span_ranges(start, start + total, nominal))
     if len(stations) > 31:
         raise ValueError("경간은 최대 30개입니다.")
+    return stations
+
+
+def generate(config):
+    if not isinstance(config, dict):
+        raise ValueError("프로젝트는 JSON 객체여야 합니다.")
+    kind = config.get("kind")
+    if kind not in TYPES:
+        raise ValueError("교량 형식을 선택하세요.")
+    stations = bridge_stations(config)
+    start = stations[0]
+    width = number(config.get("width"), 5, 40)
+    ground = number(config.get("ground"), -1000, 8000)
+    rise = number(config.get("rise"), 1, 150)
+    tracks = number(config.get("tracks"), 1, 2)
+    if tracks not in (1, 2):
+        raise ValueError("단선 또는 복선을 선택하세요.")
+    clearance = number(config.get("clearance"), 0, 100)
     objects = []
 
     def box(name, group, lo, hi, role="bridge"):
