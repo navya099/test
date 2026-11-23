@@ -15,6 +15,47 @@ class TrainSpec:
     base_power_kw: float = 1400.0    # 정격 출력 (kW)
     motor_efficiency: float = 0.88   # 견인전동기/인버터 효율
     regen_efficiency: float = 0.35   # 회생제동 회수율
+    # 실제 차량 F-v 견인력 곡선 테이블: [(속도_kmh, 견인력_kN), ...]
+    # 지정 시 base_power_kw / max_accel_ms2 대신 이 테이블을 선형 보간하여 가속도 산출
+    tractive_effort_table: Optional[List[Tuple[float, float]]] = None
+
+
+def build_vvvf_tractive_table(
+    mass_ton: float,
+    rotational_factor: float = 1.08,
+    max_accel_ms2: float = 0.83,
+    base_power_kw: float = 2200.0,
+    weak_field_start_kmh: float = 70.0,
+    max_speed_kmh: float = 100.0,
+    step_kmh: float = 5.0,
+) -> List[Tuple[float, float]]:
+    """
+    표준 3영역 VVVF 전동차 F-v 견인력 테이블 생성 헬퍼:
+    1) 정토크 영역 (0 ~ v_base): 기동 가속도 기반 일정 견인력
+    2) 정출력 영역 (v_base ~ v_weak): F = P / v
+    3) 특성영역/약계자 (v_weak ~ v_max): F ∝ 1 / v^2 (고속 가속력 저감 반영)
+    """
+    eff_mass_ton = mass_ton * rotational_factor
+    f_max_kn = eff_mass_ton * max_accel_ms2
+    v_weak_ms = weak_field_start_kmh / 3.6
+    f_at_weak_kn = min(f_max_kn, base_power_kw / max(0.1, v_weak_ms))
+
+    table: List[Tuple[float, float]] = []
+    v_kmh = 0.0
+    while v_kmh <= max_speed_kmh + 1e-6:
+        if v_kmh < 0.5:
+            f_kn = f_max_kn
+        else:
+            v_ms = v_kmh / 3.6
+            if v_kmh <= weak_field_start_kmh:
+                f_kn = min(f_max_kn, base_power_kw / v_ms)
+            else:
+                f_kn = min(f_max_kn, f_at_weak_kn * ((weak_field_start_kmh / v_kmh) ** 2))
+        table.append((round(v_kmh, 1), round(f_kn, 2)))
+        v_kmh += step_kmh
+
+    return table
+
 
 class AdvancedUrbanTPS:
     def __init__(self, train: TrainSpec, total_length_m: int):
@@ -28,6 +69,10 @@ class AdvancedUrbanTPS:
         self._eff_gradient: Optional[List[float]] = None
         self._eff_inv_r: Optional[List[float]] = None
         self._eff_speed_limit: Optional[List[float]] = None
+        self._sorted_fv_table: Optional[List[Tuple[float, float]]] = (
+            sorted(train.tractive_effort_table, key=lambda p: p[0])
+            if train.tractive_effort_table else None
+        )
 
     def set_track_segment(
         self, start_m: int, end_m: int,
@@ -63,7 +108,6 @@ class AdvancedUrbanTPS:
         """
         곡선반경(self.curve_r) 기반 제한속도 일괄 자동계산/적용.
         우선순위: speed_table > cant_sum_mm(V=sqrt(R*(C+Cd)/11.8)) > factor(V=factor*sqrt(R))
-        - round_step_kmh: 5.0 지정 시 5 km/h 단위로 내림 처리 (예: 71.1 -> 70 km/h)
         """
         if reset_to_train_max:
             self.speed_limit = [self.train.max_speed_kmh] * (self.length + 1)
@@ -142,7 +186,6 @@ class AdvancedUrbanTPS:
     def prepare_track(self):
         """
         열차 편성 길이(train.length_m)를 반영한 실효 구배, 실효 곡률(1/R), 실효 제한속도 사전 계산.
-        선두부 위치 x 기준 [max(0, x - L), x] 구간에 대해 구배·곡률은 평균, 제한속도는 최솟값을 적용.
         """
         n = self.length + 1
         train_len = max(0, int(round(self.train.length_m)))
@@ -156,7 +199,6 @@ class AdvancedUrbanTPS:
             self._eff_speed_limit = list(self.speed_limit)
             return
 
-        # 1) 누적합(Prefix Sum)으로 [max(0, x - L), x] 구배·곡률 평균 O(N) 계산
         pref_grad = [0.0] * (n + 1)
         pref_inv_r = [0.0] * (n + 1)
         for i in range(n):
@@ -173,7 +215,6 @@ class AdvancedUrbanTPS:
             eff_grad[x] = (pref_grad[x + 1] - pref_grad[lo]) / cnt
             eff_inv_r[x] = (pref_inv_r[x + 1] - pref_inv_r[lo]) / cnt
 
-        # 2) 슬라이딩 윈도우 최솟값(Deque)으로 [max(0, x - L), x] 실효 제한속도 O(N) 계산
         eff_limit = [0.0] * n
         dq = deque()
         for x in range(n):
@@ -195,9 +236,7 @@ class AdvancedUrbanTPS:
             self.prepare_track()
 
     def create_reversed(self, new_train: Optional[TrainSpec] = None) -> "AdvancedUrbanTPS":
-        """
-        상·하행 반전된 선형(x' = length - x, 구배 부호 반전)을 가지는 새 TPS 객체 반환
-        """
+        """상·하행 반전된 선형(x' = length - x, 구배 부호 반전)을 가지는 새 TPS 객체 반환"""
         rev_train = new_train if new_train is not None else self.train
         rev = AdvancedUrbanTPS(rev_train, self.length)
         rev.gradient = [-g for g in reversed(self.gradient)]
@@ -209,18 +248,40 @@ class AdvancedUrbanTPS:
     def get_resistance_acc(self, x: int, v_ms: float) -> float:
         self._ensure_prepared()
         v_kmh = v_ms * 3.6
-        # Davis 식(kgf/ton) -> 9.81을 곱해 N/ton으로 단위 통일
         r_run = 9.81 * (1.5 + 0.03 * v_kmh + 0.0005 * (v_kmh ** 2))
         r_grad = 9.81 * self._eff_gradient[x]
         r_curve = 9.81 * (600.0 * self._eff_inv_r[x])
         return (r_run + r_grad + r_curve) / (1000.0 * self.train.rotational_factor)
 
-    def get_tractive_acc(self, v_ms: float) -> float:
+    def get_tractive_force_kn(self, v_ms: float) -> float:
+        """현재 속도에서의 견인력(kN) 반환 (F-v 테이블 우선, 미지정 시 정출력 모델)"""
+        eff_mass_ton = self.train.mass_ton * self.train.rotational_factor
+        if self._sorted_fv_table:
+            v_kmh = max(0.0, v_ms * 3.6)
+            tbl = self._sorted_fv_table
+            if v_kmh <= tbl[0][0]:
+                return tbl[0][1]
+            if v_kmh >= tbl[-1][0]:
+                return tbl[-1][1]
+            for i in range(len(tbl) - 1):
+                v0, f0 = tbl[i]
+                v1, f1 = tbl[i + 1]
+                if v0 <= v_kmh <= v1:
+                    if abs(v1 - v0) < 1e-6:
+                        return f0
+                    ratio = (v_kmh - v0) / (v1 - v0)
+                    return f0 + ratio * (f1 - f0)
+            return tbl[-1][1]
+
+        f_max_kn = eff_mass_ton * self.train.max_accel_ms2
         if v_ms < 0.1:
-            return self.train.max_accel_ms2
-        power_limit_force_n = (self.train.base_power_kw * 1000.0) / v_ms
-        power_limit_acc = power_limit_force_n / (self.train.mass_ton * 1000.0 * self.train.rotational_factor)
-        return min(self.train.max_accel_ms2, power_limit_acc)
+            return f_max_kn
+        f_power_kn = self.train.base_power_kw / v_ms
+        return min(f_max_kn, f_power_kn)
+
+    def get_tractive_acc(self, v_ms: float) -> float:
+        f_kn = self.get_tractive_force_kn(v_ms)
+        return (f_kn * 1000.0) / (self.train.mass_ton * 1000.0 * self.train.rotational_factor)
 
     def compute_braking_profile(self, start_x: int, stop_x: int) -> List[float]:
         """start_x ~ stop_x 구간에 대한 역산 제동 속도 프로파일"""
