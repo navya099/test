@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/railway-station-massing-input.schema.json",
+  "title": "Railway Station Competition Massing Input Schema",
+  "description": "철도역사 설계공모 지침서 기반 자동 매스 생성 프로그램 입력 스키마",
+  "type": "object",
+  "required": [
+    "project_meta",
+    "site_constraints",
+    "fixed_structures",
+    "demand_and_staffing",
+    "space_program",
+    "design_and_performance_rules"
+  ],
+  "properties": {
+    "project_meta": {
+      "type": "object",
+      "required": ["title", "authority", "station_type", "location"],
+      "properties": {
+        "title": { "type": "string" },
+        "authority": { "type": "string" },
+        "station_type": {
+          "type": "string",
+          "enum": ["over_track", "ground", "underground", "extension"]
+        },
+        "location": { "type": "string" },
+        "total_budget_krw_100m": { "type": "number", "minimum": 0 },
+        "project_period": { "type": "string" }
+      }
+    },
+    "site_constraints": {
+      "type": "object",
+      "required": ["site_area_m2", "boundary_strict", "track_info"],
+      "properties": {
+        "site_area_m2": { "type": "number", "exclusiveMinimum": 0 },
+        "boundary_strict": { "type": "boolean" },
+        "boundary_vertices_count": { "type": "integer", "minimum": 3 },
+        "adjacent_roads": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "adjacent_land_use": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["direction", "zone_type"],
+            "properties": {
+              "direction": { "type": "string" },
+              "zone_type": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "track_info": {
+          "type": "object",
+          "required": ["line_name", "platform_type", "track_count"],
+          "properties": {
+            "line_name": { "type": "string" },
+            "platform_type": { "type": "string" },
+            "track_count": { "type": "integer", "minimum": 1 },
+            "track_clearance_required": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "fixed_structures": {
+      "type": "object",
+      "required": ["platforms", "overpass_corridor"],
+      "properties": {
+        "platforms": {
+          "type": "object",
+          "required": ["count", "length_m", "width_m", "total_area_m2", "immutable"],
+          "properties": {
+            "count": { "type": "integer", "minimum": 1 },
+            "length_m": { "type": "number", "exclusiveMinimum": 0 },
+            "width_m": { "type": "number", "exclusiveMinimum": 0 },
+            "total_area_m2": { "type": "number", "exclusiveMinimum": 0 },
+            "immutable": { "type": "boolean" }
+          }
+        },
+        "overpass_corridor": {
+          "type": "object",
+          "required": ["area_m2", "type"],
+          "properties": {
+            "area_m2": { "type": "number", "minimum": 0 },
+            "type": { "type": "string" }
+          }
+        },
+        "screen_door_length_m": { "type": "number", "minimum": 0 }
+      }
+    },
+    "demand_and_staffing": {
+      "type": "object",
+      "required": ["daily_passengers", "peak_hour_passengers", "staff_count"],
+      "properties": {
+        "daily_passengers": {
+          "type": "object",
+          "required": ["boarding", "alighting"],
+          "properties": {
+            "boarding": { "type": "integer", "minimum": 0 },
+            "alighting": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "peak_hour_passengers": {
+          "type": "object",
+          "required": ["boarding", "alighting"],
+          "properties": {
+            "boarding": { "type": "integer", "minimum": 0 },
+            "alighting": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "staff_count": {
+          "type": "object",
+          "required": ["total", "station_staff", "support_staff"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 0 },
+            "station_staff": { "type": "integer", "minimum": 0 },
+            "support_staff": { "type": "integer", "minimum": 0 },
+            "shift_pattern": { "type": "string" }
+          }
+        }
+      }
+    },
+    "space_program": {
+      "type": "object",
+      "required": ["total_target_area_m2", "area_tolerance_ratio", "categories"],
+      "properties": {
+        "total_target_area_m2": { "type": "number", "exclusiveMinimum": 0 },
+        "area_tolerance_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["category_id", "category_name", "subtotal_m2", "adjacency_group", "rooms"],
+            "properties": {
+              "category_id": { "type": "string" },
+              "category_name": { "type": "string" },
+              "subtotal_m2": { "type": "number", "minimum": 0 },
+              "adjacency_group": { "type": "string" },
+              "zoning_rule": { "type": "string" },
+              "rooms": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["name", "area_m2"],
+                  "properties": {
+                    "name": { "type": "string" },
+                    "area_m2": { "type": "number", "minimum": 0 },
+                    "count": { "type": "integer", "minimum": 1 },
+                    "notes": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "design_and_performance_rules": {
+      "type": "object",
+      "required": ["accessibility", "safety", "sustainability", "expandability", "bim_mandatory"],
+      "properties": {
+        "accessibility": {
+          "type": "object",
+          "properties": {
+            "bf_grade": { "type": "string" },
+            "separate_vehicle_pedestrian": { "type": "boolean" }
+          }
+        },
+        "safety": {
+          "type": "object",
+          "properties": {
+            "cpted_required": { "type": "boolean" },
+            "fall_and_high_voltage_protection": { "type": "boolean" }
+          }
+        },
+        "sustainability": {
+          "type": "object",
+          "properties": {
+            "zeb_grade_min": { "type": "integer", "minimum": 1, "maximum": 5 },
+            "renewable_energy_mandatory": { "type": "boolean" },
+            "natural_daylight_priority": { "type": "boolean" },
+            "stormwater_management": { "type": "boolean" }
+          }
+        },
+        "expandability": {
+          "type": "object",
+          "properties": {
+            "future_extension_required": { "type": "boolean" },
+            "flexible_interior_walls": { "type": "boolean" }
+          }
+        },
+        "bim_mandatory": { "type": "boolean" }
+      }
+    }
+  }
+}

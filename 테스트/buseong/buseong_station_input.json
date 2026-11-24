@@ -1,0 +1,147 @@
+{
+  "project_meta": {
+    "title": "수도권전철 부성역사 신축 설계공모",
+    "authority": "국가철도공단",
+    "station_type": "over_track",
+    "location": "충청남도 천안시 서북구 부대동 430 일원",
+    "total_budget_krw_100m": 403,
+    "project_period": "2022-06 ~ 2029-09"
+  },
+  "site_constraints": {
+    "site_area_m2": 22500,
+    "boundary_strict": true,
+    "boundary_vertices_count": 6,
+    "adjacent_roads": [
+      "국도 1호선(천안대로)",
+      "국도 34호선(삼사로)",
+      "지방도 624호선(산동로)"
+    ],
+    "adjacent_land_use": [
+      {
+        "direction": "east",
+        "zone_type": "제1종일반주거지역 · 준주거지역",
+        "description": "부성지구 도시개발사업 및 성성지구 도시개발사업 연계, 공주대학교 천안캠퍼스 인접"
+      },
+      {
+        "direction": "west",
+        "zone_type": "농경지 · 수변생태공원 방향",
+        "description": "업성저수지 수변생태공원 방향 인접"
+      }
+    ],
+    "track_info": {
+      "line_name": "수도권전철 1호선(경부선) 직산~두정 간",
+      "platform_type": "상대식승강장(2홈 2선)",
+      "track_count": 2,
+      "track_clearance_required": true
+    }
+  },
+  "fixed_structures": {
+    "platforms": {
+      "count": 2,
+      "length_m": 220,
+      "width_m": 7.5,
+      "total_area_m2": 3300.0,
+      "immutable": true
+    },
+    "overpass_corridor": {
+      "area_m2": 450.0,
+      "type": "선상연결통로"
+    },
+    "screen_door_length_m": 440
+  },
+  "demand_and_staffing": {
+    "daily_passengers": {
+      "boarding": 6032,
+      "alighting": 6142
+    },
+    "peak_hour_passengers": {
+      "boarding": 595,
+      "alighting": 605
+    },
+    "staff_count": {
+      "total": 16,
+      "station_staff": 9,
+      "support_staff": 7,
+      "shift_pattern": "4조2교대"
+    }
+  },
+  "space_program": {
+    "total_target_area_m2": 1091.11,
+    "area_tolerance_ratio": 0.10,
+    "categories": [
+      {
+        "category_id": "passenger",
+        "category_name": "여객시설",
+        "subtotal_m2": 365.77,
+        "adjacency_group": "public_concourse",
+        "zoning_rule": "대합실 중심 여객 동선 최적화 및 편의시설 집중 배치",
+        "rooms": [
+          { "name": "콘코스 및 대합실", "area_m2": 211.30 },
+          { "name": "여객화장실", "area_m2": 139.47 },
+          { "name": "수유실", "area_m2": 15.00 }
+        ]
+      },
+      {
+        "category_id": "operations",
+        "category_name": "역무시설",
+        "subtotal_m2": 145.74,
+        "adjacency_group": "station_ops_cluster",
+        "zoning_rule": "유지관리·보안 원활화를 위해 상호 인접 배치",
+        "rooms": [
+          { "name": "역무실", "area_m2": 30.00 },
+          { "name": "자동발매기실", "area_m2": 10.00 },
+          { "name": "침실", "area_m2": 43.74, "count": 3, "notes": "1교대조(2) + 여성용(1)" },
+          { "name": "탕비실", "area_m2": 12.00 },
+          { "name": "공익요원/환경관리원실", "area_m2": 18.00 },
+          { "name": "창고", "area_m2": 20.00 },
+          { "name": "쓰레기수거장", "area_m2": 12.00 }
+        ]
+      },
+      {
+        "category_id": "support_mep",
+        "category_name": "지원시설",
+        "subtotal_m2": 375.00,
+        "adjacency_group": "mep_utility_zone",
+        "zoning_rule": "설비 하중·소음 분리 및 유지관리 동선 확보",
+        "rooms": [
+          { "name": "통신기기실", "area_m2": 50.00 },
+          { "name": "역무통신실", "area_m2": 35.00 },
+          { "name": "통신전원실", "area_m2": 20.00 },
+          { "name": "전기실", "area_m2": 170.00 },
+          { "name": "기계실", "area_m2": 100.00 }
+        ]
+      },
+      {
+        "category_id": "circulation",
+        "category_name": "교통면적",
+        "subtotal_m2": 204.60,
+        "adjacency_group": "circulation_spine",
+        "zoning_rule": "승강장 수직동선 및 선상연결통로 연계 코어",
+        "rooms": [
+          { "name": "교통 및 공용", "area_m2": 204.60 }
+        ]
+      }
+    ]
+  },
+  "design_and_performance_rules": {
+    "accessibility": {
+      "bf_grade": "우수",
+      "separate_vehicle_pedestrian": true
+    },
+    "safety": {
+      "cpted_required": true,
+      "fall_and_high_voltage_protection": true
+    },
+    "sustainability": {
+      "zeb_grade_min": 4,
+      "renewable_energy_mandatory": true,
+      "natural_daylight_priority": true,
+      "stormwater_management": true
+    },
+    "expandability": {
+      "future_extension_required": true,
+      "flexible_interior_walls": true
+    },
+    "bim_mandatory": true
+  }
+}
