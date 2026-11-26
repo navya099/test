@@ -1,5 +1,5 @@
 """
-철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (출입문·창문 분리 + 선두차/객차 + 4량 편성 + 기본도 10장 DXF)
+철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (곡면 밀착 출입문 · 선두차/객차 · 편성 · 기본도 10장)
 
 필수 패키지 설치 (Windows PowerShell / CMD):
     pip install PySide6 pyvista pyvistaqt numpy ezdxf
@@ -65,7 +65,6 @@ def compute_door_positions(
     door_pos_pct: float,
     car_mode: str = "cab",
 ) -> tuple[list[float], float]:
-    """출입문 설치 X 좌표 2개소(양단 대칭 비율)와 유효 객실 길이를 반환한다."""
     effective_len = total_length if car_mode == "coach" else max(total_length - cab_length, 2000.0)
     ratio = min(max(door_pos_pct / 100.0, 0.10), 0.40)
     door_xs = [effective_len * ratio, effective_len * (1.0 - ratio)]
@@ -81,9 +80,8 @@ def compute_seat_positions(
     door_pos_pct: float,
     car_mode: str = "cab",
 ) -> tuple[list[tuple[float, float, float]], float]:
-    """출입문 위치(door_pos_pct) 및 출입문 폭(door_width)과 간섭하지 않도록 좌석 자동 배열"""
     door_centers, effective_len = compute_door_positions(total_length, cab_length, door_pos_pct, car_mode)
-    door_clearance = door_width + 260.0  # 도어 포켓 및 승하차 여유 폭
+    door_clearance = door_width + 260.0
 
     raw_zones = [
         (700.0, door_centers[0] - door_clearance / 2.0),
@@ -227,74 +225,102 @@ def grid_to_closed_surface(
     return closed
 
 
+def _make_curved_wall_panel(
+    x0: float,
+    x1: float,
+    z_vals: np.ndarray,
+    y_surf_vals: np.ndarray,
+    side_sign: float,
+    inner_offset: float,
+    outer_offset: float,
+) -> pv.PolyData:
+    """
+    실제 차체 단면 곡선(y_surf_vals)을 따라 휘어지는 닫힌 3D 곡면 패널(솔리드)을 생성한다.
+    """
+    nz = len(z_vals)
+    Xg = np.zeros((2, 2, nz), dtype=float)
+    Yg = np.zeros((2, 2, nz), dtype=float)
+    Zg = np.zeros((2, 2, nz), dtype=float)
+
+    Xg[0, :, :] = x0
+    Xg[1, :, :] = x1
+
+    for k in range(nz):
+        Yg[:, 0, k] = side_sign * (y_surf_vals[k] + inner_offset)
+        Yg[:, 1, k] = side_sign * (y_surf_vals[k] + outer_offset)
+        Zg[:, :, k] = z_vals[k]
+
+    return pv.StructuredGrid(Xg, Yg, Zg).extract_surface()
+
+
 def build_doors_and_windows_mesh(
     total_length: float,
     cab_length: float,
-    width: float,
     floor_z: float,
     wall_height: float,
-    side_bulge: float,
     door_width: float,
     door_height: float,
     door_pos_pct: float,
     door_win_w: float,
     door_win_h: float,
+    Y_grid: np.ndarray,
+    Z_grid: np.ndarray,
     car_mode: str = "cab",
 ) -> tuple[pv.PolyData, pv.PolyData]:
     """
-    분리된 출입문 도어 리프(Frame) 메쉬와 내부 유리창(Glass) 메쉬를 생성한다.
-    측면 배부름(side_bulge)에 맞춰 도어 위치 Y를 외피 측벽에 밀착시킨다.
+    실제 3D 차체 외피 격자(Y_grid[0], Z_grid[0])에서 측벽 단면 곡률을 직접 샘플링하여
+    차량 단면과 100% 일치하게 휘어지는 출입문 도어 리프 및 내부 창문 메쉬를 생성한다.
     """
     door_xs, _ = compute_door_positions(total_length, cab_length, door_pos_pct, car_mode)
 
-    # 유효 창 크기 및 도어 높이 안전 클램핑
-    eff_door_h = min(door_height, wall_height - 100.0)
+    # 객실부 우측 단면(j = mid_u .. nu-1)의 (Z, Y) 곡선 추출 및 Z 오름차순 정렬
+    mid_u = Y_grid.shape[1] // 2
+    z_profile = Z_grid[0, mid_u:][::-1]
+    y_profile = Y_grid[0, mid_u:][::-1]
+
+    eff_door_h = min(door_height, wall_height - 80.0)
     eff_win_w = min(door_win_w, door_width - 180.0)
     eff_win_h = min(door_win_h, eff_door_h - 280.0)
 
-    # 측벽 허리선 부근의 외측 Y 좌표
-    y_wall = (width / 2.0) + max(side_bulge * 0.65, 0.0)
-    door_z0 = floor_z + 60.0
+    door_z0 = floor_z + 40.0
     door_z1 = door_z0 + eff_door_h
-
-    # 도어 내부 창문 Z 범위 (도어 상단 기준 적정 여백)
     win_z1 = door_z1 - 140.0
     win_z0 = max(win_z1 - eff_win_h, door_z0 + 180.0)
+
+    z_door_samples = np.linspace(door_z0, door_z1, 14)
+    y_door_curve = np.interp(z_door_samples, z_profile, y_profile)
+
+    z_win_samples = np.linspace(win_z0, win_z1, 10)
+    y_win_curve = np.interp(z_win_samples, z_profile, y_profile)
 
     door_meshes = []
     win_meshes = []
 
     for dx in door_xs:
         for side_sign in (-1.0, 1.0):
-            y_in = side_sign * (y_wall - 15.0)
-            y_out = side_sign * (y_wall + 25.0)
-            y_min, y_max = min(y_in, y_out), max(y_in, y_out)
-
-            # 도어 패널(양개형 중앙 분할선 표현을 위해 좌/우 2짝으로 생성)
-            leaf_gap = 12.0
+            leaf_gap = 10.0
             half_dw = door_width / 2.0
             for leaf_sign in (-1.0, 1.0):
                 if leaf_sign < 0:
                     lx0, lx1 = dx - half_dw, dx - leaf_gap
                 else:
                     lx0, lx1 = dx + leaf_gap, dx + half_dw
-                leaf_box = pv.Box(bounds=(lx0, lx1, y_min, y_max, door_z0, door_z1))
-                door_meshes.append(leaf_box)
 
-                # 각 도어 리프 내부의 창문 유리
+                # 도어 리프: 차체 단면 곡선(y_door_curve)을 따라 -6mm ~ +16mm 두께로 밀착
+                leaf_panel = _make_curved_wall_panel(
+                    lx0, lx1, z_door_samples, y_door_curve, side_sign, inner_offset=-6.0, outer_offset=16.0
+                )
+                door_meshes.append(leaf_panel)
+
+                # 내부 창문: 동일 곡률을 따라 +10mm ~ +22mm 위치에 밀착
                 leaf_cx = (lx0 + lx1) / 2.0
                 half_ww = min(eff_win_w / 2.0, (lx1 - lx0) / 2.0 - 45.0)
                 if half_ww > 40.0 and win_z1 > win_z0 + 50.0:
-                    wy_in = side_sign * (y_wall - 20.0)
-                    wy_out = side_sign * (y_wall + 32.0)
-                    win_box = pv.Box(
-                        bounds=(
-                            leaf_cx - half_ww, leaf_cx + half_ww,
-                            min(wy_in, wy_out), max(wy_in, wy_out),
-                            win_z0, win_z1,
-                        )
+                    win_panel = _make_curved_wall_panel(
+                        leaf_cx - half_ww, leaf_cx + half_ww,
+                        z_win_samples, y_win_curve, side_sign, inner_offset=10.0, outer_offset=22.0
                     )
-                    win_meshes.append(win_box)
+                    win_meshes.append(win_panel)
 
     doors_merged = door_meshes[0].merge(door_meshes[1:]) if door_meshes else pv.PolyData()
     wins_merged = win_meshes[0].merge(win_meshes[1:]) if win_meshes else pv.PolyData()
@@ -467,7 +493,6 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
     bogie_xs = compute_bogie_positions(total_len, bogie_rear_x, bogie_front_margin, car_mode=mode)
     mid_u = X.shape[1] // 2
 
-    # 측면 블록 (출입문 + 내부 창문 파라미터 정확 반영)
     blk_side = doc.blocks.new(name=f"{block_prefix}_SIDE")
     top_profile = [(float(X[i, mid_u]), float(Z[i, mid_u])) for i in range(X.shape[0])]
     bot_profile = [(float(X[i, 0]), float(Z[i, 0])) for i in reversed(range(X.shape[0]))]
@@ -477,24 +502,22 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
     cant_line = [(float(X[i, cant_idx]), float(Z[i, cant_idx])) for i in range(X.shape[0])]
     blk_side.add_lwpolyline(cant_line, dxfattribs={"layer": "CAR_BODY"})
 
-    eff_door_h = min(door_height, wall_height - 100.0)
+    eff_door_h = min(door_height, wall_height - 80.0)
     eff_win_w = min(door_win_w, door_width - 180.0)
     eff_win_h = min(door_win_h, eff_door_h - 280.0)
-    dz0 = floor_z + 60.0
+    dz0 = floor_z + 40.0
     dz1 = dz0 + eff_door_h
     wz1 = dz1 - 140.0
     wz0 = max(wz1 - eff_win_h, dz0 + 180.0)
 
     for dx in door_xs:
         half_dw = door_width / 2.0
-        # 출입문 외곽 + 중앙 분할선
         blk_side.add_lwpolyline(
             [(dx - half_dw, dz0), (dx + half_dw, dz0), (dx + half_dw, dz1), (dx - half_dw, dz1)],
             close=True,
             dxfattribs={"layer": "DOORS"},
         )
         blk_side.add_line((dx, dz0), (dx, dz1), dxfattribs={"layer": "DOORS"})
-        # 도어 좌/우 리프 내부 창문
         for leaf_sign in (-1.0, 1.0):
             lcx = dx + leaf_sign * (half_dw / 2.0)
             hw = min(eff_win_w / 2.0, half_dw / 2.0 - 45.0)
@@ -524,7 +547,6 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
         close=True, dxfattribs={"layer": "UNDER_EQUIP"}
     )
 
-    # 평면 블록
     blk_plan = doc.blocks.new(name=f"{block_prefix}_PLAN")
     y_max_arr = np.max(Y, axis=1)
     y_min_arr = np.min(Y, axis=1)
@@ -533,7 +555,6 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
     blk_plan.add_lwpolyline(plan_top + plan_bot, close=True, dxfattribs={"layer": "CAR_BODY"})
     blk_plan.add_line((0.0, 0.0), (total_len, 0.0), dxfattribs={"layer": "CAR_CENTER"})
 
-    # 평면 출입문 개구부 마커
     hw_plan = width / 2.0
     for dx in door_xs:
         for side_s in (-1.0, 1.0):
@@ -678,7 +699,7 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
 class RailcarConceptWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (출입문 분리 · 선두차/객차 · 편성)")
+        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (곡면 밀착 출입문 · 선두차/객차)")
         self.resize(1460, 920)
 
         self.params = {
@@ -694,7 +715,6 @@ class RailcarConceptWindow(QMainWindow):
             "bogie_rear_x": 3200.0,
             "bogie_front_margin": 5500.0,
             "seat_pitch": 920.0,
-            # 출입문 & 내부 창문 파라미터
             "door_width": 1300.0,
             "door_height": 1900.0,
             "door_pos_pct": 25.0,
@@ -722,7 +742,6 @@ class RailcarConceptWindow(QMainWindow):
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
 
-        # 0) 차량 모드 & 4량 편성 토글
         grp_mode = QGroupBox("차량 유형 및 편성 미리보기")
         vlay_mode = QVBoxLayout(grp_mode)
         hlay_car_type = QHBoxLayout()
@@ -740,7 +759,6 @@ class RailcarConceptWindow(QMainWindow):
         vlay_mode.addLayout(hlay_car_type)
         vlay_mode.addWidget(self.chk_consist)
 
-        # 1) 차종 콘셉트 프리셋
         grp_preset = QGroupBox("선두부 · 단면 콘셉트 프리셋")
         hlay_preset = QHBoxLayout(grp_preset)
         btn_ktx = QPushButton("KTX-이음형")
@@ -753,7 +771,6 @@ class RailcarConceptWindow(QMainWindow):
         hlay_preset.addWidget(btn_itx)
         hlay_preset.addWidget(btn_metro)
 
-        # 2) 외형 높이 & 측면 & 선두부 파라미터
         grp_shape = QGroupBox("외형 치수 · 높이 · 측면 곡면 (실시간)")
         form_shape = QFormLayout(grp_shape)
 
@@ -767,7 +784,6 @@ class RailcarConceptWindow(QMainWindow):
         self._add_slider_row(form_shape, "width", "차체 폭:", 2600, 3400, "mm")
         self._add_slider_row(form_shape, "total_length", "차량 전장:", 15000, 26000, "mm")
 
-        # 3) 출입문 및 내부 창문 파라미터 그룹 (분리)
         grp_door = QGroupBox("출입문 및 내부 창문 제어 (실시간)")
         form_door = QFormLayout(grp_door)
 
@@ -777,7 +793,6 @@ class RailcarConceptWindow(QMainWindow):
         self._add_slider_row(form_door, "door_win_w", "내부 창문 폭:", 200, 700, "mm")
         self._add_slider_row(form_door, "door_win_h", "내부 창문 높이:", 400, 1350, "mm")
 
-        # 4) 대차 위치 및 실내 좌석 배치
         grp_bogie_int = QGroupBox("대차 위치 · 실내 좌석 배치")
         form_bi = QFormLayout(grp_bogie_int)
 
@@ -795,7 +810,6 @@ class RailcarConceptWindow(QMainWindow):
         self.lbl_seat_count = QLabel("배치 좌석: - 석")
         form_bi.addRow("배치 결과:", self.lbl_seat_count)
 
-        # 5) 외벽 표시 / 단면 컷 토글
         grp_view = QGroupBox("외벽 투시 및 단면 컷 모드")
         vlay_view = QVBoxLayout(grp_view)
         self.view_btn_group = QButtonGroup(self)
@@ -814,7 +828,6 @@ class RailcarConceptWindow(QMainWindow):
             self.view_btn_group.addButton(rb)
             vlay_view.addWidget(rb)
 
-        # 6) 기본도 10장 DXF 내보내기
         grp_export = QGroupBox("도면 출력 (기본도 10장)")
         vlay_exp = QVBoxLayout(grp_export)
         btn_export_dxf = QPushButton("기본도 10장 DXF 내보내기 (편성·출입문 포함)")
@@ -959,15 +972,15 @@ class RailcarConceptWindow(QMainWindow):
         doors, door_wins = build_doors_and_windows_mesh(
             total_length=p["total_length"],
             cab_length=p["cab_length"],
-            width=p["width"],
             floor_z=p["floor_z"],
             wall_height=p["wall_height"],
-            side_bulge=p["side_bulge"],
             door_width=p["door_width"],
             door_height=p["door_height"],
             door_pos_pct=p["door_pos_pct"],
             door_win_w=p["door_win_w"],
             door_win_h=p["door_win_h"],
+            Y_grid=Y,
+            Z_grid=Z,
             car_mode=mode,
         )
         return ext, uf, seats, seat_cnt, doors, door_wins
