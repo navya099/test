@@ -1,5 +1,5 @@
 """
-철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (출입문·창문 실제 오프닝 타공 · 선두차/객차 · 기본도 10장)
+철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (운전실 전면·측면창 + 객실창 + 출입문 + 편성)
 
 필수 패키지 설치 (Windows PowerShell / CMD):
     pip install PySide6 pyvista pyvistaqt numpy ezdxf
@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 
 
 # =============================================================================
-# 1. 지오메트리 & 좌석/대차/출입문/측면창문 좌표 계산 엔진
+# 1. 지오메트리 & 좌석/대차/출입문/창문 좌표 계산 엔진
 # =============================================================================
 def _superellipse_profile(t: float, exp_p: float, round_q: float = 2.4) -> float:
     t = min(max(t, 0.0), 1.0)
@@ -79,6 +79,7 @@ def compute_door_positions(
 def compute_door_opening_boxes(
     total_length: float,
     cab_length: float,
+    width: float,
     floor_z: float,
     wall_height: float,
     door_width: float,
@@ -86,8 +87,8 @@ def compute_door_opening_boxes(
     door_pos_pct: float,
     door_count: int = 2,
     car_mode: str = "cab",
-) -> list[tuple[float, float, float, float]]:
-    """차체 외피에 실제로 뚫어낼 출입문 오프닝 박스 [(x0, x1, z0, z1), ...] 반환"""
+) -> list[tuple[float, float, float, float, float, float]]:
+    """6면체 바운딩 (x0, x1, y0, y1, z0, z1) 출입문 오프닝 목록 반환"""
     door_xs, _ = compute_door_positions(
         total_length, cab_length, door_pos_pct, door_count=door_count, car_mode=car_mode
     )
@@ -95,7 +96,8 @@ def compute_door_opening_boxes(
     dz0 = floor_z + 40.0
     dz1 = dz0 + eff_door_h
     half_dw = door_width / 2.0
-    return [(dx - half_dw, dx + half_dw, dz0, dz1) for dx in door_xs]
+    y_lim = width * 0.9
+    return [(dx - half_dw, dx + half_dw, -y_lim, y_lim, dz0, dz1) for dx in door_xs]
 
 
 def _compute_bay_zones(
@@ -122,6 +124,7 @@ def _compute_bay_zones(
 def compute_side_window_boxes(
     total_length: float,
     cab_length: float,
+    width: float,
     floor_z: float,
     wall_height: float,
     door_width: float,
@@ -132,7 +135,7 @@ def compute_side_window_boxes(
     side_win_h: float,
     side_win_z_offset: float,
     car_mode: str = "cab",
-) -> list[tuple[float, float, float, float]]:
+) -> list[tuple[float, float, float, float, float, float]]:
     if side_win_count <= 0:
         return []
 
@@ -166,7 +169,8 @@ def compute_side_window_boxes(
         z0 = max(floor_z + 500.0, max_z1 - 400.0)
         z1 = max_z1
 
-    win_boxes: list[tuple[float, float, float, float]] = []
+    y_lim = width * 0.9
+    win_boxes: list[tuple[float, float, float, float, float, float]] = []
     for (zs, ze), cnt in zip(valid_zones, raw_alloc):
         if cnt <= 0:
             continue
@@ -177,9 +181,55 @@ def compute_side_window_boxes(
             continue
         for k in range(cnt):
             cx = zs + slot_w * (k + 0.5)
-            win_boxes.append((cx - actual_w / 2.0, cx + actual_w / 2.0, z0, z1))
+            win_boxes.append((cx - actual_w / 2.0, cx + actual_w / 2.0, -y_lim, y_lim, z0, z1))
 
     return win_boxes
+
+
+def compute_cab_window_boxes(
+    total_length: float,
+    cab_length: float,
+    width: float,
+    floor_z: float,
+    wall_height: float,
+    roof_crown: float,
+    side_win_z_offset: float,
+    side_win_h: float,
+    car_mode: str = "cab",
+) -> list[tuple[float, float, float, float, float, float]]:
+    """
+    동력차(선두차 car_mode=='cab')인 경우
+    1) 전면 운전실 유리창(Front Windshield) 1개
+    2) 운전실 좌·우 측면창(Cab Side Windows) 2개
+    의 3D 바운딩 박스 목록을 반환한다.
+    """
+    if car_mode != "cab":
+        return []
+
+    body_len = max(total_length - cab_length, 2000.0)
+    boxes: list[tuple[float, float, float, float, float, float]] = []
+
+    # 1) 전면 운전실 창문 (선두부 경사면 중앙)
+    fw_x0 = body_len + cab_length * 0.18
+    fw_x1 = body_len + cab_length * 0.68
+    fw_y_half = min(width * 0.28, 860.0)
+    fw_z0 = floor_z + 1050.0
+    fw_z1 = floor_z + wall_height + roof_crown + 100.0
+    boxes.append((fw_x0, fw_x1, -fw_y_half, fw_y_half, fw_z0, fw_z1))
+
+    # 2) 운전실 옆 창문 (선두부 시작 직후 좌/우 측벽)
+    cs_x0 = body_len + 120.0
+    cs_x1 = body_len + min(cab_length * 0.30, 1020.0)
+    cs_z0 = floor_z + side_win_z_offset + 60.0
+    cs_z1 = min(cs_z0 + min(side_win_h * 0.85, 720.0), floor_z + wall_height - 200.0)
+    if cs_x1 > cs_x0 + 200.0 and cs_z1 > cs_z0 + 150.0:
+        y_lim = width * 0.9
+        y_inner = width * 0.26
+        # 좌측(-Y) / 우측(+Y) 운전실 옆창
+        boxes.append((cs_x0, cs_x1, -y_lim, -y_inner, cs_z0, cs_z1))
+        boxes.append((cs_x0, cs_x1, y_inner, y_lim, cs_z0, cs_z1))
+
+    return boxes
 
 
 def compute_seat_positions(
@@ -332,17 +382,27 @@ def grid_to_closed_surface(
     return closed
 
 
-def cutout_openings(
+def cutout_openings_and_extract_cab_glass(
     ext_surf: pv.PolyData,
-    opening_boxes: list[tuple[float, float, float, float]],
-    width: float,
-) -> pv.PolyData:
-    """실제 차체 외피 메쉬에서 출입문 오프닝 및 측면 창문 오프닝을 clip_box로 관통해 뚫는다."""
+    opening_boxes: list[tuple[float, float, float, float, float, float]],
+    cab_win_boxes: list[tuple[float, float, float, float, float, float]],
+) -> tuple[pv.PolyData, pv.PolyData]:
+    """
+    차체 외피에서 출입문·객실창·운전실창 오프닝을 모두 관통해 뚫고,
+    운전실 전면/측면 창문 자리에서 파낸 곡면 조각을 그대로 곡면 유리창 메쉬로 반환한다.
+    """
+    cab_glass_parts = []
+    for box in cab_win_boxes:
+        patch = ext_surf.clip_box(bounds=box, invert=False)
+        if patch.n_points > 0:
+            cab_glass_parts.append(patch)
+
     result = ext_surf
-    y_lim = width * 0.9
-    for x0, x1, z0, z1 in opening_boxes:
-        result = result.clip_box(bounds=(x0, x1, -y_lim, y_lim, z0, z1), invert=True)
-    return result
+    for box in opening_boxes + cab_win_boxes:
+        result = result.clip_box(bounds=box, invert=True)
+
+    cab_glass = cab_glass_parts[0].merge(cab_glass_parts[1:]) if cab_glass_parts else pv.PolyData()
+    return result, cab_glass
 
 
 def _make_curved_wall_panel(
@@ -371,7 +431,7 @@ def _make_curved_wall_panel(
 
 
 def build_side_window_glass_mesh(
-    win_boxes: list[tuple[float, float, float, float]],
+    win_boxes: list[tuple[float, float, float, float, float, float]],
     Y_grid: np.ndarray,
     Z_grid: np.ndarray,
 ) -> pv.PolyData:
@@ -383,7 +443,7 @@ def build_side_window_glass_mesh(
     y_profile = Y_grid[0, mid_u:][::-1]
 
     glass_meshes = []
-    for wx0, wx1, wz0, wz1 in win_boxes:
+    for wx0, wx1, _, _, wz0, wz1 in win_boxes:
         z_samples = np.linspace(wz0, wz1, 10)
         y_curve = np.interp(z_samples, z_profile, y_profile)
         for side_sign in (-1.0, 1.0):
@@ -413,10 +473,6 @@ def build_doors_and_windows_mesh(
     door_open: bool = False,
     car_mode: str = "cab",
 ) -> tuple[pv.PolyData, pv.PolyData]:
-    """
-    도어 리프 자체에도 내부 창문 구멍(clip_box)을 뚫어 도어 유리창 너머로 실내가 비치도록 하며,
-    door_open=True 시 도어를 외측 포켓 방향으로 슬라이딩 개방해 출입문 오프닝을 확인한다.
-    """
     door_xs, _ = compute_door_positions(
         total_length, cab_length, door_pos_pct, door_count=door_count, car_mode=car_mode
     )
@@ -458,7 +514,6 @@ def build_doors_and_windows_mesh(
                 half_ww = min(door_win_w / 2.0, half_dw - 90.0)
                 if half_ww > 40.0 and win_z1 > win_z0 + 50.0:
                     wx0, wx1 = dx - slide - half_ww, dx - slide + half_ww
-                    # 도어 리프 내부 창문 구멍 실제 타공
                     leaf_panel = leaf_panel.clip_box(bounds=(wx0, wx1, -y_lim, y_lim, win_z0, win_z1), invert=True)
                     win_meshes.append(
                         _make_curved_wall_panel(
@@ -485,7 +540,6 @@ def build_doors_and_windows_mesh(
                     half_ww = min(door_win_w / 2.0, (lx1 - lx0) / 2.0 - 45.0)
                     if half_ww > 40.0 and win_z1 > win_z0 + 50.0:
                         wx0, wx1 = leaf_cx - half_ww, leaf_cx + half_ww
-                        # 도어 리프 내부 창문 구멍 실제 타공
                         leaf_panel = leaf_panel.clip_box(bounds=(wx0, wx1, -y_lim, y_lim, win_z0, win_z1), invert=True)
                         win_meshes.append(
                             _make_curved_wall_panel(
@@ -662,18 +716,21 @@ def _create_car_blocks_from_3d(
         total_len, cab_len, width, floor_z, wall_height, roof_crown, nose_exp, side_bulge, skirt_taper, car_mode=mode
     )
     win_boxes = compute_side_window_boxes(
-        total_len, cab_len, floor_z, wall_height,
+        total_len, cab_len, width, floor_z, wall_height,
         door_width, door_pos_pct, door_count,
         side_win_count, side_win_w, side_win_h, side_win_z_offset, car_mode=mode
     )
     door_boxes = compute_door_opening_boxes(
-        total_len, cab_len, floor_z, wall_height,
+        total_len, cab_len, width, floor_z, wall_height,
         door_width, door_height, door_pos_pct, door_count=door_count, car_mode=mode
     )
-    ext_surf = cutout_openings(
-        grid_to_closed_surface(grid, X, Y, Z, close_front=(mode == "coach")),
-        win_boxes + door_boxes,
-        width,
+    cab_win_boxes = compute_cab_window_boxes(
+        total_len, cab_len, width, floor_z, wall_height, roof_crown,
+        side_win_z_offset, side_win_h, car_mode=mode
+    )
+    ext_closed = grid_to_closed_surface(grid, X, Y, Z, close_front=(mode == "coach"))
+    ext_surf, cab_glass = cutout_openings_and_extract_cab_glass(
+        ext_closed, win_boxes + door_boxes, cab_win_boxes
     )
     uf_mesh = build_floor_and_underframe_mesh(
         total_len, floor_z, bogie_rear_x, bogie_front_margin, skirt_taper, X, Y, car_mode=mode
@@ -695,9 +752,17 @@ def _create_car_blocks_from_3d(
     cant_line = [(float(X[i, cant_idx]), float(Z[i, cant_idx])) for i in range(X.shape[0])]
     blk_side.add_lwpolyline(cant_line, dxfattribs={"layer": "CAR_BODY"})
 
-    for wx0, wx1, wz0, wz1 in win_boxes:
+    # 객실 측면 창문 + 동력차 운전실 옆 창문 DXF 반영
+    for wx0, wx1, _, _, wz0, wz1 in win_boxes:
         blk_side.add_lwpolyline(
             [(wx0, wz0), (wx1, wz0), (wx1, wz1), (wx0, wz1)],
+            close=True,
+            dxfattribs={"layer": "SIDE_WINDOWS"},
+        )
+    if mode == "cab" and len(cab_win_boxes) >= 2:
+        cs_x0, cs_x1, _, _, cs_z0, cs_z1 = cab_win_boxes[1]
+        blk_side.add_lwpolyline(
+            [(cs_x0, cs_z0), (cs_x1, cs_z0), (cs_x1, cs_z1), (cs_x0, cs_z1)],
             close=True,
             dxfattribs={"layer": "SIDE_WINDOWS"},
         )
@@ -771,14 +836,14 @@ def _create_car_blocks_from_3d(
                 (dx + door_width / 2.0, side_s * hw_plan),
                 dxfattribs={"layer": "DOORS"},
             )
-    for wx0, wx1, _, _ in win_boxes:
+    for wx0, wx1, _, _, _, _ in win_boxes:
         for side_s in (-1.0, 1.0):
             blk_plan.add_line((wx0, side_s * hw_plan), (wx1, side_s * hw_plan), dxfattribs={"layer": "SIDE_WINDOWS"})
 
     plan_seats_slice = seats_mesh.slice(normal=(0, 0, 1), origin=(0, 0, floor_z + 400.0))
     _write_pv_slice_to_dxf(blk_plan, plan_seats_slice, axis_u=0, axis_v=1, layer="INTERIOR")
 
-    return ext_surf, uf_mesh, seats_mesh, X, Y, Z, bogie_xs, eff_len
+    return ext_surf, uf_mesh, seats_mesh, cab_glass, X, Y, Z, bogie_xs, eff_len
 
 
 def export_10_basic_drawings_dxf(
@@ -817,7 +882,7 @@ def export_10_basic_drawings_dxf(
     coach_data = _create_car_blocks_from_3d(doc, params, door_count, door_leaf_mode, "coach", "BLK_CAR_M")
 
     active_prefix = "BLK_CAR_M" if car_mode == "coach" else "BLK_CAR_MC"
-    ext_surf, uf_mesh, seats_mesh, X, Y, Z, bogie_xs, eff_len = (
+    ext_surf, uf_mesh, seats_mesh, cab_glass, X, Y, Z, bogie_xs, eff_len = (
         coach_data if car_mode == "coach" else mc_data
     )
 
@@ -863,6 +928,14 @@ def export_10_basic_drawings_dxf(
         pts_yz = [(float(Y[ci, j] + front_offset_x), float(Z[ci, j] + 35000.0)) for j in range(X.shape[1])]
         msp.add_lwpolyline(pts_yz, dxfattribs={"layer": "CAR_BODY"})
     _write_pv_slice_to_dxf(msp, uf_mesh.slice(normal=(1, 0, 0), origin=(bogie_xs[0], 0, 0)), 1, 2, front_offset_x, 35000.0, "BOGIE")
+    # 정면도 운전실 유리창 외곽선 투영
+    if car_mode == "cab" and cab_glass.n_points > 0:
+        b = cab_glass.bounds  # xmin, xmax, ymin, ymax, zmin, zmax
+        msp.add_lwpolyline(
+            [(b[2] + front_offset_x, b[4] + 35000.0), (b[3] + front_offset_x, b[4] + 35000.0),
+             (b[3] + front_offset_x, b[5] + 35000.0), (b[2] + front_offset_x, b[5] + 35000.0)],
+            close=True, dxfattribs={"layer": "SIDE_WINDOWS"}
+        )
 
     _write_pv_slice_to_dxf(msp, ext_surf.slice(normal=(0, 1, 0), origin=(0, 0, 0)), 0, 2, 0.0, 48000.0, "CAR_BODY")
     _write_pv_slice_to_dxf(msp, uf_mesh.slice(normal=(0, 1, 0), origin=(0, 0, 0)), 0, 2, 0.0, 48000.0, "BOGIE")
@@ -913,7 +986,7 @@ def export_10_basic_drawings_dxf(
 class RailcarConceptWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (출입문·창문 실제 오프닝 타공)")
+        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (운전실 전면·옆창 + 객실창 + 출입문)")
         self.resize(1460, 920)
 
         self.params = {
@@ -1202,7 +1275,7 @@ class RailcarConceptWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "내보내기 완료",
-                f"출입문 오프닝과 창문이 반영된 기본도 10장이 저장되었습니다.\n\n경로: {save_path}",
+                f"운전실 창문과 출입문 오프닝이 반영된 기본도 10장이 저장되었습니다.\n\n경로: {save_path}",
             )
         except ImportError:
             QMessageBox.critical(
@@ -1230,6 +1303,7 @@ class RailcarConceptWindow(QMainWindow):
         win_boxes = compute_side_window_boxes(
             total_length=p["total_length"],
             cab_length=p["cab_length"],
+            width=p["width"],
             floor_z=p["floor_z"],
             wall_height=p["wall_height"],
             door_width=p["door_width"],
@@ -1244,6 +1318,7 @@ class RailcarConceptWindow(QMainWindow):
         door_boxes = compute_door_opening_boxes(
             total_length=p["total_length"],
             cab_length=p["cab_length"],
+            width=p["width"],
             floor_z=p["floor_z"],
             wall_height=p["wall_height"],
             door_width=p["door_width"],
@@ -1252,9 +1327,22 @@ class RailcarConceptWindow(QMainWindow):
             door_count=self.door_count,
             car_mode=mode,
         )
+        cab_win_boxes = compute_cab_window_boxes(
+            total_length=p["total_length"],
+            cab_length=p["cab_length"],
+            width=p["width"],
+            floor_z=p["floor_z"],
+            wall_height=p["wall_height"],
+            roof_crown=p["roof_crown"],
+            side_win_z_offset=p["side_win_z_offset"],
+            side_win_h=p["side_win_h"],
+            car_mode=mode,
+        )
         ext_closed = grid_to_closed_surface(grid, X, Y, Z, close_front=(mode == "coach"))
-        # 차체 외벽에 측면 창문 + 출입문 오프닝 모두 실제 관통 타공
-        ext = cutout_openings(ext_closed, win_boxes + door_boxes, p["width"])
+        # 객실창 + 출입문 + (동력차 시) 운전실 전면·옆창 모두 관통하고 운전실 곡면 유리 추출
+        ext, cab_glass = cutout_openings_and_extract_cab_glass(
+            ext_closed, win_boxes + door_boxes, cab_win_boxes
+        )
         side_glass = build_side_window_glass_mesh(win_boxes, Y, Z)
 
         uf = build_floor_and_underframe_mesh(
@@ -1296,9 +1384,9 @@ class RailcarConceptWindow(QMainWindow):
             door_open=self.door_open,
             car_mode=mode,
         )
-        all_glass = door_wins.merge(side_glass) if (door_wins.n_points > 0 and side_glass.n_points > 0) else (
-            side_glass if side_glass.n_points > 0 else door_wins
-        )
+
+        glass_parts = [g for g in (door_wins, side_glass, cab_glass) if g.n_points > 0]
+        all_glass = glass_parts[0].merge(glass_parts[1:]) if glass_parts else pv.PolyData()
         return ext, uf, seats, seat_cnt, doors, all_glass
 
     def _update_all_geometry(self, reset_camera: bool = False):
