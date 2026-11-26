@@ -1,8 +1,8 @@
 """
-철도차량 디자인 콘셉트용 3D 파라메트릭 통합 프로토타입 (Windows / Python)
+철도차량 디자인 콘셉트용 3D 파라메트릭 통합 프로토타입 + 기본도 10장 DXF 내보내기 (Windows / Python)
 
 필수 패키지 설치 (Windows PowerShell / CMD):
-    pip install PySide6 pyvista pyvistaqt numpy
+    pip install PySide6 pyvista pyvistaqt numpy ezdxf
 
 실행 방법:
     python railcar_concept_prototype.py
@@ -18,11 +18,14 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
+    QPushButton,
     QRadioButton,
     QSlider,
     QVBoxLayout,
@@ -31,8 +34,84 @@ from PySide6.QtWidgets import (
 
 
 # =============================================================================
-# 1. 지오메트리 생성 엔진 (외형 Loft 곡면 + 실내 좌석 자동 배열)
+# 1. 지오메트리 & 좌석 좌표 계산 엔진 (3D 뷰포트와 2D DXF가 동일 로직 공유)
 # =============================================================================
+def compute_seat_positions(
+    total_length: float,
+    cab_length: float,
+    width: float,
+    seat_pitch: float,
+) -> tuple[list[tuple[float, float, float]], float]:
+    """
+    차체 치수와 출입문 간섭을 고려한 좌석 중심 좌표 (x, y, seat_depth) 목록을 계산한다.
+    반환값: ([(x, y, depth), ...], body_len)
+    """
+    body_len = max(total_length - cab_length, 2000.0)
+    door_centers = [body_len * 0.25, body_len * 0.75]
+    door_clearance = 1500.0
+
+    raw_zones = [
+        (800.0, door_centers[0] - door_clearance / 2.0),
+        (door_centers[0] + door_clearance / 2.0, door_centers[1] - door_clearance / 2.0),
+        (door_centers[1] + door_clearance / 2.0, body_len - 800.0),
+    ]
+
+    aisle_half = 320.0
+    seat_depth = max(min((width * 0.44 - aisle_half), 950.0), 480.0)
+    y_left = -(aisle_half + seat_depth / 2.0)
+    y_right = +(aisle_half + seat_depth / 2.0)
+
+    positions: list[tuple[float, float, float]] = []
+    for z_start, z_end in raw_zones:
+        usable_len = z_end - z_start
+        if usable_len < 600.0:
+            continue
+        n_rows = int(usable_len // seat_pitch)
+        if n_rows <= 0:
+            continue
+        start_offset = z_start + (usable_len - (n_rows - 1) * seat_pitch) / 2.0
+        for r in range(n_rows):
+            sx = start_offset + r * seat_pitch
+            positions.append((sx, y_left, seat_depth))
+            positions.append((sx, y_right, seat_depth))
+
+    return positions, body_len
+
+
+def compute_nose_profile_curves(
+    total_length: float,
+    cab_length: float,
+    width: float,
+    floor_z: float,
+    cant_z: float,
+    roof_crown: float,
+    nose_exp: float,
+    n_pts: int = 20,
+) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """
+    2D DXF 입면도/평면도용 선두부 상부 루프 윤곽(X, Z)과 평면 폭 윤곽(X, Y)을 반환한다.
+    """
+    body_len = max(total_length - cab_length, 2000.0)
+    half_w = width / 2.0
+    t_vals = np.linspace(0.0, 1.0, n_pts)
+
+    side_roof_pts: list[tuple[float, float]] = []
+    plan_half_pts: list[tuple[float, float]] = []
+
+    for t in t_vals:
+        x_val = body_len + t * cab_length
+        w_scale = max(1.0 - (t ** nose_exp), 0.10)
+        h_scale = 1.0 - 0.52 * (t ** (nose_exp + 0.25))
+
+        curr_cant_z = floor_z + (cant_z - floor_z) * h_scale
+        curr_crown = roof_crown * (1.0 - 0.65 * t)
+
+        side_roof_pts.append((float(x_val), float(curr_cant_z + curr_crown)))
+        plan_half_pts.append((float(x_val), float(half_w * w_scale)))
+
+    return side_roof_pts, plan_half_pts
+
+
 def build_carbody_exterior_mesh(
     total_length: float,
     cab_length: float,
@@ -45,35 +124,21 @@ def build_carbody_exterior_mesh(
     nx_body: int = 20,
     nu: int = 32,
 ) -> pv.StructuredGrid:
-    """
-    객실부(일정 단면) + 선두부(정면 방향 수렴 Loft)의 외피 곡면을
-    단일 StructuredGrid로 생성한다.
-    """
+    """객실부 + 선두부(정면 방향 수렴 Loft)의 외피 곡면을 StructuredGrid로 생성"""
     body_length = max(total_length - cab_length, 2000.0)
-
-    # X 좌표 분포: [0 .. body_length] 객실부, [body_length .. total_length] 선두부
     x_body = np.linspace(0.0, body_length, nx_body, endpoint=False)
     x_cab = np.linspace(body_length, total_length, nx_cab)
     x_stations = np.concatenate([x_body, x_cab])
-
-    # 둘레 파라미터 u in [0, 1]: 하단 우측 -> 측벽 -> 지붕 -> 좌측 측벽 -> 하단 좌측
-    # 단면을 폐곡선 형태로 표현하기 위해 각도 theta in [-pi*0.75, +pi*0.75] 매핑
-    u = np.linspace(-1.0, 1.0, nu)  # -1: 좌측 하부, 0: 지붕 중앙, +1: 우측 하부
+    u = np.linspace(-1.0, 1.0, nu)
 
     nx = len(x_stations)
     X = np.zeros((nx, nu), dtype=float)
     Y = np.zeros((nx, nu), dtype=float)
     Z = np.zeros((nx, nu), dtype=float)
-
     half_w = width / 2.0
 
     for i, x_val in enumerate(x_stations):
-        if x_val <= body_length:
-            t = 0.0
-        else:
-            t = (x_val - body_length) / cab_length  # 0.0 -> 1.0 (선두 끝단)
-
-        # 정면 방향 수렴 곡률 (nose_exp가 클수록 끝단이 둥글게 유지되다 급격히 좁아짐)
+        t = 0.0 if x_val <= body_length else (x_val - body_length) / cab_length
         w_scale = max(1.0 - (t ** nose_exp), 0.10)
         h_scale = 1.0 - 0.52 * (t ** (nose_exp + 0.25))
 
@@ -81,7 +146,6 @@ def build_carbody_exterior_mesh(
         curr_cant_z = floor_z + (cant_z - floor_z) * h_scale
         curr_crown = roof_crown * (1.0 - 0.65 * t)
 
-        # 단면 둘레 좌표 (Y, Z) 계산: |u| <= 0.45는 지붕 아치, 그 외는 측벽
         y_row = np.zeros(nu)
         z_row = np.zeros(nu)
 
@@ -90,20 +154,16 @@ def build_carbody_exterior_mesh(
             sign_u = 1.0 if u_val >= 0 else -1.0
 
             if abs_u <= 0.45:
-                # 상부 지붕 곡면 (포물선 크라운)
-                frac = u_val / 0.45  # -1 ~ +1
+                frac = u_val / 0.45
                 y_row[j] = frac * (curr_half_w * 0.88)
                 z_row[j] = curr_cant_z + curr_crown * (1.0 - frac ** 2)
             elif abs_u <= 0.85:
-                # 측벽 (캔트레일 -> 하부 스커트 상단, 미세한 텀블홈 반영)
-                wall_frac = (abs_u - 0.45) / 0.40  # 0(상단) -> 1(하단)
+                wall_frac = (abs_u - 0.45) / 0.40
                 y_top = curr_half_w * 0.88
                 y_mid = curr_half_w
-                # 허리 부근에서 최대폭, 하부로 갈수록 약간 안쪽으로 들어감
                 y_row[j] = sign_u * (y_top + (y_mid - y_top) * np.sin(wall_frac * np.pi * 0.65))
                 z_row[j] = curr_cant_z - wall_frac * (curr_cant_z - (floor_z + 180.0))
             else:
-                # 하부 스커트 마감
                 skirt_frac = (abs_u - 0.85) / 0.15
                 y_row[j] = sign_u * curr_half_w * (1.0 - 0.12 * skirt_frac)
                 z_row[j] = (floor_z + 180.0) - 180.0 * skirt_frac
@@ -121,13 +181,12 @@ def build_floor_and_underframe_mesh(
     width: float,
     floor_z: float,
 ) -> pv.PolyData:
-    """객실 바닥판 + 심플 대차(Bogie) 매스 2기 생성"""
+    """객실 바닥판 + 디자인 비례 확인용 대차(Bogie) 매스 2기 생성"""
     body_len = max(total_length - cab_length, 2000.0)
     floor_box = pv.Box(
         bounds=(0.0, total_length - 300.0, -width * 0.44, width * 0.44, floor_z - 120.0, floor_z)
     )
 
-    # 디자인 비례 확인용 대차 매스 (전위/후위 대차 중심)
     bogie_x_positions = [3200.0, max(body_len - 1800.0, 6500.0)]
     meshes = [floor_box]
     for bx in bogie_x_positions:
@@ -152,63 +211,28 @@ def build_interior_seats_mesh(
     floor_z: float,
     seat_pitch: float,
 ) -> tuple[pv.PolyData, int]:
-    """
-    차체 길이, 폭, 출입문(2개소 가정) 위치에 맞춰 객실 좌석을 자동 배열한다.
-    반환값: (병합된 좌석 PolyData, 배치된 총 좌석 블록 수)
-    """
-    body_len = max(total_length - cab_length, 2000.0)
-    # 출입문 2개소 중심 위치 및 도어 포켓 여유 폭 (출입문 간섭 회피)
-    door_centers = [body_len * 0.25, body_len * 0.75]
-    door_clearance = 1500.0
-
-    # 좌석 배치 가능 구간(Bay) 계산
-    raw_zones = [
-        (800.0, door_centers[0] - door_clearance / 2.0),
-        (door_centers[0] + door_clearance / 2.0, door_centers[1] - door_clearance / 2.0),
-        (door_centers[1] + door_clearance / 2.0, body_len - 800.0),
-    ]
-
-    # 차체 폭이 2900mm 이상이면 2+2(양측 2열), 미만이면 2+1 또는 1+1 형태로 폭 자동 조정
-    aisle_half = 320.0
-    seat_depth = max(min((width * 0.44 - aisle_half), 950.0), 480.0)
-    y_left = -(aisle_half + seat_depth / 2.0)
-    y_right = +(aisle_half + seat_depth / 2.0)
+    """compute_seat_positions() 좌표를 기반으로 3D 실내 좌석 및 운전실 콘솔 메쉬 생성"""
+    positions, body_len = compute_seat_positions(total_length, cab_length, width, seat_pitch)
 
     seat_meshes = []
-    seat_count = 0
+    for sx, sy, seat_depth in positions:
+        cushion = pv.Box(
+            bounds=(
+                sx - 220.0, sx + 220.0,
+                sy - seat_depth / 2.0, sy + seat_depth / 2.0,
+                floor_z + 360.0, floor_z + 440.0,
+            )
+        )
+        backrest = pv.Box(
+            bounds=(
+                sx - 220.0, sx - 130.0,
+                sy - seat_depth / 2.0, sy + seat_depth / 2.0,
+                floor_z + 440.0, floor_z + 1080.0,
+            )
+        )
+        seat_meshes.append(cushion)
+        seat_meshes.append(backrest)
 
-    for z_start, z_end in raw_zones:
-        usable_len = z_end - z_start
-        if usable_len < 600.0:
-            continue
-        n_rows = int(usable_len // seat_pitch)
-        if n_rows <= 0:
-            continue
-        start_offset = z_start + (usable_len - (n_rows - 1) * seat_pitch) / 2.0
-
-        for r in range(n_rows):
-            sx = start_offset + r * seat_pitch
-            for sy in (y_left, y_right):
-                # 좌판 + 등받이 심플 모듈
-                cushion = pv.Box(
-                    bounds=(
-                        sx - 220.0, sx + 220.0,
-                        sy - seat_depth / 2.0, sy + seat_depth / 2.0,
-                        floor_z + 360.0, floor_z + 440.0,
-                    )
-                )
-                backrest = pv.Box(
-                    bounds=(
-                        sx - 220.0, sx - 130.0,
-                        sy - seat_depth / 2.0, sy + seat_depth / 2.0,
-                        floor_z + 440.0, floor_z + 1080.0,
-                    )
-                )
-                seat_meshes.append(cushion)
-                seat_meshes.append(backrest)
-                seat_count += 1
-
-    # 운전실 콘솔 볼륨 추가 (선두부 진입 직전)
     cab_console = pv.Box(
         bounds=(
             body_len + 200.0, body_len + 950.0,
@@ -224,30 +248,204 @@ def build_interior_seats_mesh(
     merged = seat_meshes[0]
     for m in seat_meshes[1:]:
         merged = merged.merge(m)
-    return merged, seat_count
+    return merged, len(positions)
 
 
 # =============================================================================
-# 2. PySide6 + PyVistaQt 통합 메인 윈도우
+# 2. 기본도 10장 (G-01 ~ G-10) ezdxf 내보내기 엔진
+# =============================================================================
+def export_10_basic_drawings_dxf(params: dict, output_path: str) -> None:
+    """
+    현재 UI 파라미터(외형 곡면 + 실내 좌석 배열)를 반영하여
+    기본도면 10장(Paperspace 레이아웃 10개)이 담긴 DXF R2010 파일을 생성한다.
+    """
+    import ezdxf
+
+    doc = ezdxf.new("R2010", setup=True)
+    doc.units = ezdxf.units.MM
+    msp = doc.modelspace()
+
+    # 1) 레이어 정의
+    layer_defs = {
+        "CAR_BODY": {"color": 7},
+        "CAR_CENTER": {"color": 1, "linetype": "CENTER"},
+        "BOGIE": {"color": 4},
+        "INTERIOR": {"color": 3},
+        "ROOF_EQUIP": {"color": 5},
+        "UNDER_EQUIP": {"color": 30},
+        "GAUGE_LIMIT": {"color": 6, "linetype": "DASHED"},
+        "DIM": {"color": 2},
+        "VIEWPORTS": {"color": 8},
+    }
+    for lname, lattrs in layer_defs.items():
+        if lname not in doc.layers:
+            doc.layers.add(lname, **lattrs)
+
+    total_len = params["total_length"]
+    cab_len = params["cab_length"]
+    width = params["width"]
+    floor_z = params["floor_z"]
+    cant_z = params["cant_z"]
+    roof_crown = params["roof_crown"]
+    nose_exp = params["nose_exp"]
+    seat_pitch = params["seat_pitch"]
+
+    seat_positions, body_len = compute_seat_positions(total_len, cab_len, width, seat_pitch)
+    side_roof_pts, plan_half_pts = compute_nose_profile_curves(
+        total_len, cab_len, width, floor_z, cant_z, roof_crown, nose_exp
+    )
+    bogie_xs = [3200.0, max(body_len - 1800.0, 6500.0)]
+
+    # 2) [블록] 단일 차량 측면 입면 블록 (BLK_CAR_SIDE)
+    blk_side = doc.blocks.new(name="BLK_CAR_SIDE")
+    side_outline = [(0.0, floor_z), (0.0, cant_z + roof_crown)] + side_roof_pts + [
+        (total_len, floor_z),
+    ]
+    blk_side.add_lwpolyline(side_outline, close=True, dxfattribs={"layer": "CAR_BODY"})
+    # 출입문 2개소 표시
+    for dx in (body_len * 0.25, body_len * 0.75):
+        blk_side.add_lwpolyline(
+            [(dx - 650, floor_z + 100), (dx + 650, floor_z + 100), (dx + 650, floor_z + 1950), (dx - 650, floor_z + 1950)],
+            close=True,
+            dxfattribs={"layer": "CAR_BODY"},
+        )
+    # 대차 및 윤축
+    for bx in bogie_xs:
+        blk_side.add_lwpolyline(
+            [(bx - 1300, 250), (bx + 1300, 250), (bx + 1300, floor_z - 150), (bx - 1300, floor_z - 150)],
+            close=True,
+            dxfattribs={"layer": "BOGIE"},
+        )
+        for wx in (bx - 1050, bx + 1050):
+            blk_side.add_circle((wx, 430), radius=430, dxfattribs={"layer": "BOGIE"})
+    # 지붕 HVAC & 하부 전장품 심볼
+    blk_side.add_lwpolyline(
+        [(body_len * 0.42, cant_z + roof_crown), (body_len * 0.58, cant_z + roof_crown),
+         (body_len * 0.58, cant_z + roof_crown + 320), (body_len * 0.42, cant_z + roof_crown + 320)],
+        close=True, dxfattribs={"layer": "ROOF_EQUIP"}
+    )
+    blk_side.add_lwpolyline(
+        [(body_len * 0.38, 450), (body_len * 0.62, 450), (body_len * 0.62, floor_z - 120), (body_len * 0.38, floor_z - 120)],
+        close=True, dxfattribs={"layer": "UNDER_EQUIP"}
+    )
+
+    # 3) [블록] 단일 차량 평면 블록 (BLK_CAR_PLAN: 외형 + 실내 좌석)
+    blk_plan = doc.blocks.new(name="BLK_CAR_PLAN")
+    half_w = width / 2.0
+    plan_top = [(0.0, half_w)] + plan_half_pts
+    plan_bot = [(x, -y) for x, y in reversed(plan_half_pts)] + [(0.0, -half_w)]
+    blk_plan.add_lwpolyline(plan_top + plan_bot, close=True, dxfattribs={"layer": "CAR_BODY"})
+    blk_plan.add_line((0.0, 0.0), (total_len, 0.0), dxfattribs={"layer": "CAR_CENTER"})
+    # 실내 좌석 배치
+    for sx, sy, s_depth in seat_positions:
+        blk_plan.add_lwpolyline(
+            [(sx - 220, sy - s_depth / 2), (sx + 220, sy - s_depth / 2),
+             (sx + 220, sy + s_depth / 2), (sx - 220, sy + s_depth / 2)],
+            close=True, dxfattribs={"layer": "INTERIOR"}
+        )
+
+    # 4) [블록] A1 도곽 및 표제란 (841 x 594 mm)
+    blk_tb = doc.blocks.new(name="BLK_A1_TITLEBLOCK")
+    blk_tb.add_lwpolyline([(10, 10), (831, 10), (831, 584), (10, 584)], close=True)
+    blk_tb.add_lwpolyline([(591, 10), (831, 10), (831, 68), (591, 68)], close=True)
+    blk_tb.add_attdef("DWG_NO", (600, 44), dxfattribs={"height": 6})
+    blk_tb.add_attdef("DWG_TITLE", (600, 20), dxfattribs={"height": 4.5})
+
+    # 5) Modelspace 구역별 배치 (Y 좌표로 영역 분리)
+    # [구역 A: Y=0] 4량 편성도 (Mc1 - M1 - M2 - Mc2)
+    car_pitch = total_len + 500.0
+    for i in range(4):
+        is_tail = (i == 3)
+        x_ins = i * car_pitch + (total_len if is_tail else 0.0)
+        msp.add_blockref("BLK_CAR_SIDE", insert=(x_ins, 0.0), dxfattribs={"xscale": -1 if is_tail else 1})
+
+    # [구역 B: Y=15000] 대표 선두차 입면도 + 평면도 (Y=22000)
+    msp.add_blockref("BLK_CAR_SIDE", insert=(0.0, 15000.0))
+    msp.add_blockref("BLK_CAR_PLAN", insert=(0.0, 23000.0))
+    # 주요 대표 치수선 (전장)
+    msp.add_linear_dim(
+        base=(0.0, 13800.0), p1=(0.0, 15000.0 + floor_z), p2=(total_len, 15000.0 + floor_z),
+        dimstyle="Standard", dxfattribs={"layer": "DIM"}
+    ).render()
+
+    # [구역 C: Y=35000] 횡단면도 + 차량한계선
+    sec_pts = [
+        (-half_w * 0.88, 35000 + floor_z),
+        (-half_w, 35000 + floor_z + 180),
+        (-half_w, 35000 + cant_z * 0.65),
+        (-half_w * 0.88, 35000 + cant_z),
+        (0.0, 35000 + cant_z + roof_crown),
+        (half_w * 0.88, 35000 + cant_z),
+        (half_w, 35000 + cant_z * 0.65),
+        (half_w, 35000 + floor_z + 180),
+        (half_w * 0.88, 35000 + floor_z),
+    ]
+    msp.add_lwpolyline(sec_pts, close=True, dxfattribs={"layer": "CAR_BODY"})
+    # 차량한계(Gauge) 기준선
+    msp.add_lwpolyline(
+        [(-1700, 35000), (1700, 35000), (1700, 39500), (-1700, 39500)],
+        close=True, dxfattribs={"layer": "GAUGE_LIMIT"}
+    )
+
+    # 6) Paperspace 기본도 10장 정의 및 뷰포트 자동 생성
+    consist_cx = (4 * car_pitch - 500.0) / 2.0
+    car_cx = total_len / 2.0
+
+    sheets_spec = [
+        ("G-01_차량편성도", "DWG-G-01", "4량 차량편성도 (1:125)", (consist_cx, 2000.0), 125.0, ["INTERIOR"]),
+        ("G-02_일반배치도", "DWG-G-02", "선두차 일반배치도 (1:50)", (car_cx, 19500.0), 50.0, ["INTERIOR"]),
+        ("G-03_정면도", "DWG-G-03", "선두차 정면도 (1:20)", (0.0, 37200.0), 20.0, ["GAUGE_LIMIT"]),
+        ("G-04_객실횡단면도", "DWG-G-04", "객실 횡단면도 (1:20)", (0.0, 37200.0), 20.0, []),
+        ("G-05_내장재배치도", "DWG-G-05", "실내 좌석 및 내장재 배치도 (1:50)", (car_cx, 23000.0), 50.0, ["ROOF_EQUIP", "UNDER_EQUIP"]),
+        ("G-06_지붕기기배치도", "DWG-G-06", "지붕 상부 기기 배치도 (1:50)", (car_cx, 17800.0), 50.0, ["INTERIOR", "UNDER_EQUIP"]),
+        ("G-07_하부기기배치도", "DWG-G-07", "언더프레임 및 하부기기 배치도 (1:50)", (car_cx, 15800.0), 50.0, ["INTERIOR", "ROOF_EQUIP"]),
+        ("G-08_대차일반배치도", "DWG-G-08", "대차 일반배치도 (1:15)", (bogie_xs[0], 15700.0), 15.0, ["INTERIOR", "ROOF_EQUIP"]),
+        ("G-09_출입문창문배치도", "DWG-G-09", "출입문 및 측면 입면 배치도 (1:40)", (car_cx, 17200.0), 40.0, ["INTERIOR", "ROOF_EQUIP", "UNDER_EQUIP"]),
+        ("G-10_차량한계검토도", "DWG-G-10", "차량한계 및 단면 검토도 (1:20)", (0.0, 37200.0), 20.0, []),
+    ]
+
+    for layout_name, dwg_no, title, view_center, scale_denom, frozen in sheets_spec:
+        psp = doc.layouts.new(layout_name)
+        psp.page_setup(size=(841, 594), margins=(0, 0, 0, 0), units="mm")
+        psp.add_blockref("BLK_A1_TITLEBLOCK", insert=(0, 0)).add_auto_attribs(
+            {"DWG_NO": dwg_no, "DWG_TITLE": title}
+        )
+        vp_h = 400.0
+        vp = psp.add_viewport(
+            center=(420.0, 325.0),
+            size=(760.0, vp_h),
+            view_center_point=view_center,
+            view_height=vp_h * scale_denom,
+            dxfattribs={"layer": "VIEWPORTS"},
+        )
+        for flayer in frozen:
+            vp.freeze(flayer)
+
+    # 출력 시 뷰포트 외곽선 숨김
+    doc.layers.get("VIEWPORTS").off()
+    doc.saveas(output_path)
+
+
+# =============================================================================
+# 3. PySide6 + PyVistaQt 통합 메인 윈도우
 # =============================================================================
 class RailcarConceptWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("철도차량 디자인 콘셉트 3D 파라메트릭 스튜디오")
-        self.resize(1380, 820)
+        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 + 기본도 10장 DXF 출력")
+        self.resize(1380, 840)
 
-        # 초기 디자인 파라미터 (mm)
         self.params = {
             "total_length": 20000.0,
             "cab_length": 4500.0,
             "width": 3120.0,
             "floor_z": 1100.0,
             "cant_z": 3150.0,
-            "roof_crown": 580.0,   # 상부 곡면 높이
-            "nose_exp": 1.6,       # 정면 방향 수렴 곡률 지수
-            "seat_pitch": 920.0,   # 실내 좌석 피치
+            "roof_crown": 580.0,
+            "nose_exp": 1.6,
+            "seat_pitch": 920.0,
         }
-        self.view_mode = "solid"   # solid | translucent | clip_x | clip_y
+        self.view_mode = "solid"
 
         self._init_ui()
         self._init_scene()
@@ -258,12 +456,11 @@ class RailcarConceptWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
 
-        # --- 좌측 제어 패널 ---
         left_panel = QWidget()
-        left_panel.setFixedWidth(340)
+        left_panel.setFixedWidth(345)
         left_layout = QVBoxLayout(left_panel)
 
-        # 1) 외형 곡면 파라미터 그룹
+        # 1) 외형 곡면 파라미터
         grp_shape = QGroupBox("외형 곡면 · 치수 제어 (실시간)")
         form_shape = QFormLayout(grp_shape)
 
@@ -289,7 +486,7 @@ class RailcarConceptWindow(QMainWindow):
         sld_len.valueChanged.connect(lambda v: self._on_param_change("total_length", float(v), self.lbl_len, "mm"))
         form_shape.addRow("차량 전장:", self._wrap_slider(sld_len, self.lbl_len))
 
-        # 2) 실내 배치 파라미터 그룹
+        # 2) 실내 배치 파라미터
         grp_interior = QGroupBox("실내 좌석 자동 배열")
         form_int = QFormLayout(grp_interior)
 
@@ -304,7 +501,7 @@ class RailcarConceptWindow(QMainWindow):
         self.lbl_seat_count = QLabel("배치 좌석: - 석")
         form_int.addRow("배치 결과:", self.lbl_seat_count)
 
-        # 3) 외벽 표시 / 단면 컷 토글 그룹
+        # 3) 외벽 표시 / 단면 컷 토글
         grp_view = QGroupBox("외벽 투시 및 단면 컷 모드")
         vlay_view = QVBoxLayout(grp_view)
         self.view_btn_group = QButtonGroup(self)
@@ -323,12 +520,20 @@ class RailcarConceptWindow(QMainWindow):
             self.view_btn_group.addButton(rb)
             vlay_view.addWidget(rb)
 
+        # 4) 기본도 10장 DXF 내보내기 버튼
+        grp_export = QGroupBox("도면 출력 (기본도 10장)")
+        vlay_exp = QVBoxLayout(grp_export)
+        btn_export_dxf = QPushButton("기본도 10장 DXF 내보내기 (ezdxf)")
+        btn_export_dxf.setMinimumHeight(40)
+        btn_export_dxf.clicked.connect(self._on_export_dxf_clicked)
+        vlay_exp.addWidget(btn_export_dxf)
+
         left_layout.addWidget(grp_shape)
         left_layout.addWidget(grp_interior)
         left_layout.addWidget(grp_view)
+        left_layout.addWidget(grp_export)
         left_layout.addStretch()
 
-        # --- 우측 PyVistaQt 3D 뷰포트 ---
         self.plotter = QtInteractor(self)
         main_layout.addWidget(left_panel)
         main_layout.addWidget(self.plotter.interactor, 1)
@@ -365,10 +570,34 @@ class RailcarConceptWindow(QMainWindow):
         self.view_mode = mode
         self._update_all_geometry(reset_camera=False)
 
+    def _on_export_dxf_clicked(self):
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "기본도 10장 DXF 저장",
+            "railcar_basic_10_sheets.dxf",
+            "DXF Files (*.dxf)",
+        )
+        if not save_path:
+            return
+        try:
+            export_10_basic_drawings_dxf(self.params, save_path)
+            QMessageBox.information(
+                self,
+                "내보내기 완료",
+                f"기본도 10장(G-01 ~ G-10)이 성공적으로 저장되었습니다.\n\n경로: {save_path}",
+            )
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "패키지 필요",
+                "ezdxf 패키지가 설치되어 있지 않습니다.\n'pip install ezdxf' 실행 후 다시 시도해 주세요.",
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "내보내기 오류", f"DXF 생성 중 오류가 발생했습니다:\n{exc}")
+
     def _update_all_geometry(self, reset_camera: bool = False):
         p = self.params
 
-        # 1) 외형 Loft 메쉬 생성
         ext_grid = build_carbody_exterior_mesh(
             total_length=p["total_length"],
             cab_length=p["cab_length"],
@@ -380,7 +609,6 @@ class RailcarConceptWindow(QMainWindow):
         )
         ext_surf = ext_grid.extract_surface()
 
-        # 보기 모드에 따른 외벽 투명도 및 단면 클리핑 적용
         opacity = 1.0
         if self.view_mode == "translucent":
             opacity = 0.28
@@ -401,7 +629,6 @@ class RailcarConceptWindow(QMainWindow):
             show_edges=False,
         )
 
-        # 2) 바닥 및 대차 매스 갱신
         underframe = build_floor_and_underframe_mesh(
             total_length=p["total_length"],
             cab_length=p["cab_length"],
@@ -410,7 +637,6 @@ class RailcarConceptWindow(QMainWindow):
         )
         self.plotter.add_mesh(underframe, name="underframe_bogie", color="#485460", smooth_shading=False)
 
-        # 3) 실내 좌석 자동 배열 갱신
         seats_mesh, seat_cnt = build_interior_seats_mesh(
             total_length=p["total_length"],
             cab_length=p["cab_length"],
