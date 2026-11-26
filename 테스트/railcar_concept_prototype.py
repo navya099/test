@@ -1,5 +1,5 @@
 """
-철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (운전실 전면·측면창 + 객실창 + 출입문 + 편성)
+철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (운전실 창문 파라미터화 · 객실창 · 출입문 · 편성)
 
 필수 패키지 설치 (Windows PowerShell / CMD):
     pip install PySide6 pyvista pyvistaqt numpy ezdxf
@@ -88,7 +88,6 @@ def compute_door_opening_boxes(
     door_count: int = 2,
     car_mode: str = "cab",
 ) -> list[tuple[float, float, float, float, float, float]]:
-    """6면체 바운딩 (x0, x1, y0, y1, z0, z1) 출입문 오프닝 목록 반환"""
     door_xs, _ = compute_door_positions(
         total_length, cab_length, door_pos_pct, door_count=door_count, car_mode=car_mode
     )
@@ -193,15 +192,19 @@ def compute_cab_window_boxes(
     floor_z: float,
     wall_height: float,
     roof_crown: float,
-    side_win_z_offset: float,
-    side_win_h: float,
+    cab_fw_start_pct: float,
+    cab_fw_len_pct: float,
+    cab_fw_width: float,
+    cab_fw_z_offset: float,
+    cab_sw_offset: float,
+    cab_sw_width: float,
+    cab_sw_height: float,
+    cab_sw_z_offset: float,
     car_mode: str = "cab",
 ) -> list[tuple[float, float, float, float, float, float]]:
     """
-    동력차(선두차 car_mode=='cab')인 경우
-    1) 전면 운전실 유리창(Front Windshield) 1개
-    2) 운전실 좌·우 측면창(Cab Side Windows) 2개
-    의 3D 바운딩 박스 목록을 반환한다.
+    동력차(선두차) 운전실 전면창(위치/길이/폭/하단높이) 및
+    운전실 옆창(위치/폭/높이/하단높이)의 3D 바운딩 박스 목록을 반환한다.
     """
     if car_mode != "cab":
         return []
@@ -209,23 +212,25 @@ def compute_cab_window_boxes(
     body_len = max(total_length - cab_length, 2000.0)
     boxes: list[tuple[float, float, float, float, float, float]] = []
 
-    # 1) 전면 운전실 창문 (선두부 경사면 중앙)
-    fw_x0 = body_len + cab_length * 0.18
-    fw_x1 = body_len + cab_length * 0.68
-    fw_y_half = min(width * 0.28, 860.0)
-    fw_z0 = floor_z + 1050.0
+    # 1) 전면 운전실 창문 (Front Windshield)
+    start_ratio = min(max(cab_fw_start_pct / 100.0, 0.05), 0.60)
+    end_ratio = min(start_ratio + max(cab_fw_len_pct / 100.0, 0.10), 0.92)
+    fw_x0 = body_len + cab_length * start_ratio
+    fw_x1 = body_len + cab_length * end_ratio
+    fw_y_half = min(cab_fw_width / 2.0, width * 0.36)
+    fw_z0 = floor_z + cab_fw_z_offset
     fw_z1 = floor_z + wall_height + roof_crown + 100.0
-    boxes.append((fw_x0, fw_x1, -fw_y_half, fw_y_half, fw_z0, fw_z1))
+    if fw_x1 > fw_x0 + 100.0 and fw_z1 > fw_z0 + 100.0:
+        boxes.append((fw_x0, fw_x1, -fw_y_half, fw_y_half, fw_z0, fw_z1))
 
-    # 2) 운전실 옆 창문 (선두부 시작 직후 좌/우 측벽)
-    cs_x0 = body_len + 120.0
-    cs_x1 = body_len + min(cab_length * 0.30, 1020.0)
-    cs_z0 = floor_z + side_win_z_offset + 60.0
-    cs_z1 = min(cs_z0 + min(side_win_h * 0.85, 720.0), floor_z + wall_height - 200.0)
-    if cs_x1 > cs_x0 + 200.0 and cs_z1 > cs_z0 + 150.0:
+    # 2) 운전실 옆 창문 (Cab Side Windows: 좌/우)
+    cs_x0 = body_len + cab_sw_offset
+    cs_x1 = min(cs_x0 + cab_sw_width, body_len + cab_length * 0.72)
+    cs_z0 = floor_z + cab_sw_z_offset
+    cs_z1 = min(cs_z0 + cab_sw_height, floor_z + wall_height - 160.0)
+    if cs_x1 > cs_x0 + 180.0 and cs_z1 > cs_z0 + 150.0:
         y_lim = width * 0.9
-        y_inner = width * 0.26
-        # 좌측(-Y) / 우측(+Y) 운전실 옆창
+        y_inner = width * 0.24
         boxes.append((cs_x0, cs_x1, -y_lim, -y_inner, cs_z0, cs_z1))
         boxes.append((cs_x0, cs_x1, y_inner, y_lim, cs_z0, cs_z1))
 
@@ -387,10 +392,6 @@ def cutout_openings_and_extract_cab_glass(
     opening_boxes: list[tuple[float, float, float, float, float, float]],
     cab_win_boxes: list[tuple[float, float, float, float, float, float]],
 ) -> tuple[pv.PolyData, pv.PolyData]:
-    """
-    차체 외피에서 출입문·객실창·운전실창 오프닝을 모두 관통해 뚫고,
-    운전실 전면/측면 창문 자리에서 파낸 곡면 조각을 그대로 곡면 유리창 메쉬로 반환한다.
-    """
     cab_glass_parts = []
     for box in cab_win_boxes:
         patch = ext_surf.clip_box(bounds=box, invert=False)
@@ -726,7 +727,9 @@ def _create_car_blocks_from_3d(
     )
     cab_win_boxes = compute_cab_window_boxes(
         total_len, cab_len, width, floor_z, wall_height, roof_crown,
-        side_win_z_offset, side_win_h, car_mode=mode
+        params["cab_fw_start_pct"], params["cab_fw_len_pct"], params["cab_fw_width"], params["cab_fw_z_offset"],
+        params["cab_sw_offset"], params["cab_sw_width"], params["cab_sw_height"], params["cab_sw_z_offset"],
+        car_mode=mode
     )
     ext_closed = grid_to_closed_surface(grid, X, Y, Z, close_front=(mode == "coach"))
     ext_surf, cab_glass = cutout_openings_and_extract_cab_glass(
@@ -752,7 +755,6 @@ def _create_car_blocks_from_3d(
     cant_line = [(float(X[i, cant_idx]), float(Z[i, cant_idx])) for i in range(X.shape[0])]
     blk_side.add_lwpolyline(cant_line, dxfattribs={"layer": "CAR_BODY"})
 
-    # 객실 측면 창문 + 동력차 운전실 옆 창문 DXF 반영
     for wx0, wx1, _, _, wz0, wz1 in win_boxes:
         blk_side.add_lwpolyline(
             [(wx0, wz0), (wx1, wz0), (wx1, wz1), (wx0, wz1)],
@@ -928,9 +930,8 @@ def export_10_basic_drawings_dxf(
         pts_yz = [(float(Y[ci, j] + front_offset_x), float(Z[ci, j] + 35000.0)) for j in range(X.shape[1])]
         msp.add_lwpolyline(pts_yz, dxfattribs={"layer": "CAR_BODY"})
     _write_pv_slice_to_dxf(msp, uf_mesh.slice(normal=(1, 0, 0), origin=(bogie_xs[0], 0, 0)), 1, 2, front_offset_x, 35000.0, "BOGIE")
-    # 정면도 운전실 유리창 외곽선 투영
     if car_mode == "cab" and cab_glass.n_points > 0:
-        b = cab_glass.bounds  # xmin, xmax, ymin, ymax, zmin, zmax
+        b = cab_glass.bounds
         msp.add_lwpolyline(
             [(b[2] + front_offset_x, b[4] + 35000.0), (b[3] + front_offset_x, b[4] + 35000.0),
              (b[3] + front_offset_x, b[5] + 35000.0), (b[2] + front_offset_x, b[5] + 35000.0)],
@@ -986,7 +987,7 @@ def export_10_basic_drawings_dxf(
 class RailcarConceptWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (운전실 전면·옆창 + 객실창 + 출입문)")
+        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (운전실·객실 창문·출입문 파라미터)")
         self.resize(1460, 920)
 
         self.params = {
@@ -1011,6 +1012,15 @@ class RailcarConceptWindow(QMainWindow):
             "side_win_w": 1150.0,
             "side_win_h": 850.0,
             "side_win_z_offset": 850.0,
+            # 운전실 전면창 & 옆창 파라미터
+            "cab_fw_start_pct": 18.0,
+            "cab_fw_len_pct": 48.0,
+            "cab_fw_width": 1650.0,
+            "cab_fw_z_offset": 1050.0,
+            "cab_sw_offset": 120.0,
+            "cab_sw_width": 850.0,
+            "cab_sw_height": 680.0,
+            "cab_sw_z_offset": 900.0,
         }
         self.car_mode = "cab"
         self.door_count = 2
@@ -1031,7 +1041,7 @@ class RailcarConceptWindow(QMainWindow):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(395)
+        scroll.setFixedWidth(400)
 
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
@@ -1077,6 +1087,19 @@ class RailcarConceptWindow(QMainWindow):
         self._add_slider_row(form_shape, "cab_length", "선두부 길이:", 2000, 7500, "mm")
         self._add_slider_row(form_shape, "width", "차체 폭:", 2600, 3400, "mm")
         self._add_slider_row(form_shape, "total_length", "차량 전장:", 15000, 26000, "mm")
+
+        # 운전실 창문 (동력차 전용) 제어 그룹
+        self.grp_cab_win = QGroupBox("운전실 창문 제어 (동력차 전용)")
+        form_cwin = QFormLayout(self.grp_cab_win)
+
+        self._add_slider_row(form_cwin, "cab_fw_start_pct", "전면창 시작위치:", 5, 50, "%")
+        self._add_slider_row(form_cwin, "cab_fw_len_pct", "전면창 길이(크기):", 15, 65, "%")
+        self._add_slider_row(form_cwin, "cab_fw_width", "전면창 폭:", 700, 2200, "mm")
+        self._add_slider_row(form_cwin, "cab_fw_z_offset", "전면창 하단높이:", 700, 1450, "mm")
+        self._add_slider_row(form_cwin, "cab_sw_offset", "옆창 시작위치:", 50, 1000, "mm")
+        self._add_slider_row(form_cwin, "cab_sw_width", "옆창 폭:", 350, 1500, "mm")
+        self._add_slider_row(form_cwin, "cab_sw_height", "옆창 높이:", 350, 1100, "mm")
+        self._add_slider_row(form_cwin, "cab_sw_z_offset", "옆창 하단높이:", 600, 1250, "mm")
 
         grp_swin = QGroupBox("측면 객실 창문 타공 (실시간)")
         form_swin = QFormLayout(grp_swin)
@@ -1167,7 +1190,7 @@ class RailcarConceptWindow(QMainWindow):
 
         grp_export = QGroupBox("도면 출력 (기본도 10장)")
         vlay_exp = QVBoxLayout(grp_export)
-        btn_export_dxf = QPushButton("기본도 10장 DXF 내보내기 (창문·편성 포함)")
+        btn_export_dxf = QPushButton("기본도 10장 DXF 내보내기 (전체 파라미터 반영)")
         btn_export_dxf.setMinimumHeight(40)
         btn_export_dxf.clicked.connect(self._on_export_dxf_clicked)
         vlay_exp.addWidget(btn_export_dxf)
@@ -1175,6 +1198,7 @@ class RailcarConceptWindow(QMainWindow):
         left_layout.addWidget(grp_mode)
         left_layout.addWidget(grp_preset)
         left_layout.addWidget(grp_shape)
+        left_layout.addWidget(self.grp_cab_win)
         left_layout.addWidget(grp_swin)
         left_layout.addWidget(grp_door)
         left_layout.addWidget(grp_bogie_int)
@@ -1230,6 +1254,7 @@ class RailcarConceptWindow(QMainWindow):
         self.sliders["nose_exp"][0].setEnabled(is_cab)
         self.sliders["cab_length"][0].setEnabled(is_cab)
         self.sliders["bogie_front_margin"][0].setEnabled(is_cab)
+        self.grp_cab_win.setEnabled(is_cab)
         self._update_all_geometry(reset_camera=False)
 
     def _on_door_count_change(self, count: int):
@@ -1275,7 +1300,7 @@ class RailcarConceptWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "내보내기 완료",
-                f"운전실 창문과 출입문 오프닝이 반영된 기본도 10장이 저장되었습니다.\n\n경로: {save_path}",
+                f"운전실·객실 창문과 출입문이 반영된 기본도 10장이 저장되었습니다.\n\n경로: {save_path}",
             )
         except ImportError:
             QMessageBox.critical(
@@ -1334,12 +1359,17 @@ class RailcarConceptWindow(QMainWindow):
             floor_z=p["floor_z"],
             wall_height=p["wall_height"],
             roof_crown=p["roof_crown"],
-            side_win_z_offset=p["side_win_z_offset"],
-            side_win_h=p["side_win_h"],
+            cab_fw_start_pct=p["cab_fw_start_pct"],
+            cab_fw_len_pct=p["cab_fw_len_pct"],
+            cab_fw_width=p["cab_fw_width"],
+            cab_fw_z_offset=p["cab_fw_z_offset"],
+            cab_sw_offset=p["cab_sw_offset"],
+            cab_sw_width=p["cab_sw_width"],
+            cab_sw_height=p["cab_sw_height"],
+            cab_sw_z_offset=p["cab_sw_z_offset"],
             car_mode=mode,
         )
         ext_closed = grid_to_closed_surface(grid, X, Y, Z, close_front=(mode == "coach"))
-        # 객실창 + 출입문 + (동력차 시) 운전실 전면·옆창 모두 관통하고 운전실 곡면 유리 추출
         ext, cab_glass = cutout_openings_and_extract_cab_glass(
             ext_closed, win_boxes + door_boxes, cab_win_boxes
         )
