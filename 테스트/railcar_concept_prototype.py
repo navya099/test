@@ -1,5 +1,5 @@
 """
-철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (선두차 + 객차 모드 + 4량 편성 + 기본도 10장 DXF)
+철도차량 디자인 콘셉트용 3D 파라메트릭 스튜디오 (출입문·창문 분리 + 선두차/객차 + 4량 편성 + 기본도 10장 DXF)
 
 필수 패키지 설치 (Windows PowerShell / CMD):
     pip install PySide6 pyvista pyvistaqt numpy ezdxf
@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 
 
 # =============================================================================
-# 1. 지오메트리 & 좌석/대차 좌표 계산 엔진 (선두차 cab / 중간 객차 coach 지원)
+# 1. 지오메트리 & 좌석/대차/출입문 좌표 계산 엔진
 # =============================================================================
 def _superellipse_profile(t: float, exp_p: float, round_q: float = 2.4) -> float:
     t = min(max(t, 0.0), 1.0)
@@ -50,7 +50,6 @@ def compute_bogie_positions(
     bogie_front_margin: float,
     car_mode: str = "cab",
 ) -> list[float]:
-    """전위/후위 대차 X 중심 좌표 계산 (객차 모드는 양단 대칭 배치 지원)"""
     x_rear = min(max(bogie_rear_x, 1400.0), total_length * 0.45)
     if car_mode == "coach":
         x_front = max(total_length - x_rear, x_rear + 3000.0)
@@ -60,22 +59,36 @@ def compute_bogie_positions(
     return [x_rear, x_front]
 
 
+def compute_door_positions(
+    total_length: float,
+    cab_length: float,
+    door_pos_pct: float,
+    car_mode: str = "cab",
+) -> tuple[list[float], float]:
+    """출입문 설치 X 좌표 2개소(양단 대칭 비율)와 유효 객실 길이를 반환한다."""
+    effective_len = total_length if car_mode == "coach" else max(total_length - cab_length, 2000.0)
+    ratio = min(max(door_pos_pct / 100.0, 0.10), 0.40)
+    door_xs = [effective_len * ratio, effective_len * (1.0 - ratio)]
+    return door_xs, effective_len
+
+
 def compute_seat_positions(
     total_length: float,
     cab_length: float,
     width: float,
     seat_pitch: float,
+    door_width: float,
+    door_pos_pct: float,
     car_mode: str = "cab",
 ) -> tuple[list[tuple[float, float, float]], float]:
-    """선두차/객차 모드에 맞춰 출입문 간섭을 피한 좌석 중심 좌표 (x, y, depth) 계산"""
-    effective_len = total_length if car_mode == "coach" else max(total_length - cab_length, 2000.0)
-    door_centers = [effective_len * 0.25, effective_len * 0.75]
-    door_clearance = 1500.0
+    """출입문 위치(door_pos_pct) 및 출입문 폭(door_width)과 간섭하지 않도록 좌석 자동 배열"""
+    door_centers, effective_len = compute_door_positions(total_length, cab_length, door_pos_pct, car_mode)
+    door_clearance = door_width + 260.0  # 도어 포켓 및 승하차 여유 폭
 
     raw_zones = [
-        (800.0, door_centers[0] - door_clearance / 2.0),
+        (700.0, door_centers[0] - door_clearance / 2.0),
         (door_centers[0] + door_clearance / 2.0, door_centers[1] - door_clearance / 2.0),
-        (door_centers[1] + door_clearance / 2.0, effective_len - 800.0),
+        (door_centers[1] + door_clearance / 2.0, effective_len - 700.0),
     ]
 
     aisle_half = 320.0
@@ -115,10 +128,6 @@ def build_carbody_exterior_grid(
     nx_body: int = 16,
     nu: int = 37,
 ) -> tuple[pv.StructuredGrid, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    car_mode == 'cab': 객실부 + 유선형 선두부 Loft
-    car_mode == 'coach': 전장 전체가 동일 횡단면인 중간 객차(M/T)
-    """
     if car_mode == "coach":
         x_stations = np.linspace(0.0, total_length, nx_body + 4)
         body_length = total_length
@@ -202,7 +211,6 @@ def grid_to_closed_surface(
     Z: np.ndarray,
     close_front: bool = False,
 ) -> pv.PolyData:
-    """외피 표면에 후단(X=0) 마개 및 객차 모드 시 전단(X=L) 마개를 결합"""
     ext_surf = grid.extract_surface()
 
     rear_pts = np.column_stack([X[0, :], Y[0, :], Z[0, :]])
@@ -217,6 +225,80 @@ def grid_to_closed_surface(
         closed = closed.merge(front_cap)
 
     return closed
+
+
+def build_doors_and_windows_mesh(
+    total_length: float,
+    cab_length: float,
+    width: float,
+    floor_z: float,
+    wall_height: float,
+    side_bulge: float,
+    door_width: float,
+    door_height: float,
+    door_pos_pct: float,
+    door_win_w: float,
+    door_win_h: float,
+    car_mode: str = "cab",
+) -> tuple[pv.PolyData, pv.PolyData]:
+    """
+    분리된 출입문 도어 리프(Frame) 메쉬와 내부 유리창(Glass) 메쉬를 생성한다.
+    측면 배부름(side_bulge)에 맞춰 도어 위치 Y를 외피 측벽에 밀착시킨다.
+    """
+    door_xs, _ = compute_door_positions(total_length, cab_length, door_pos_pct, car_mode)
+
+    # 유효 창 크기 및 도어 높이 안전 클램핑
+    eff_door_h = min(door_height, wall_height - 100.0)
+    eff_win_w = min(door_win_w, door_width - 180.0)
+    eff_win_h = min(door_win_h, eff_door_h - 280.0)
+
+    # 측벽 허리선 부근의 외측 Y 좌표
+    y_wall = (width / 2.0) + max(side_bulge * 0.65, 0.0)
+    door_z0 = floor_z + 60.0
+    door_z1 = door_z0 + eff_door_h
+
+    # 도어 내부 창문 Z 범위 (도어 상단 기준 적정 여백)
+    win_z1 = door_z1 - 140.0
+    win_z0 = max(win_z1 - eff_win_h, door_z0 + 180.0)
+
+    door_meshes = []
+    win_meshes = []
+
+    for dx in door_xs:
+        for side_sign in (-1.0, 1.0):
+            y_in = side_sign * (y_wall - 15.0)
+            y_out = side_sign * (y_wall + 25.0)
+            y_min, y_max = min(y_in, y_out), max(y_in, y_out)
+
+            # 도어 패널(양개형 중앙 분할선 표현을 위해 좌/우 2짝으로 생성)
+            leaf_gap = 12.0
+            half_dw = door_width / 2.0
+            for leaf_sign in (-1.0, 1.0):
+                if leaf_sign < 0:
+                    lx0, lx1 = dx - half_dw, dx - leaf_gap
+                else:
+                    lx0, lx1 = dx + leaf_gap, dx + half_dw
+                leaf_box = pv.Box(bounds=(lx0, lx1, y_min, y_max, door_z0, door_z1))
+                door_meshes.append(leaf_box)
+
+                # 각 도어 리프 내부의 창문 유리
+                leaf_cx = (lx0 + lx1) / 2.0
+                half_ww = min(eff_win_w / 2.0, (lx1 - lx0) / 2.0 - 45.0)
+                if half_ww > 40.0 and win_z1 > win_z0 + 50.0:
+                    wy_in = side_sign * (y_wall - 20.0)
+                    wy_out = side_sign * (y_wall + 32.0)
+                    win_box = pv.Box(
+                        bounds=(
+                            leaf_cx - half_ww, leaf_cx + half_ww,
+                            min(wy_in, wy_out), max(wy_in, wy_out),
+                            win_z0, win_z1,
+                        )
+                    )
+                    win_meshes.append(win_box)
+
+    doors_merged = door_meshes[0].merge(door_meshes[1:]) if door_meshes else pv.PolyData()
+    wins_merged = win_meshes[0].merge(win_meshes[1:]) if win_meshes else pv.PolyData()
+    return doors_merged, wins_merged
 
 
 def build_floor_and_underframe_mesh(
@@ -266,10 +348,12 @@ def build_interior_seats_mesh(
     width: float,
     floor_z: float,
     seat_pitch: float,
+    door_width: float,
+    door_pos_pct: float,
     car_mode: str = "cab",
 ) -> tuple[pv.PolyData, int]:
     positions, effective_len = compute_seat_positions(
-        total_length, cab_length, width, seat_pitch, car_mode=car_mode
+        total_length, cab_length, width, seat_pitch, door_width, door_pos_pct, car_mode=car_mode
     )
 
     seat_meshes = []
@@ -349,7 +433,6 @@ def _write_pv_slice_to_dxf(
 
 
 def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
-    """선두차(cab) 또는 객차(coach)의 3D 메쉬에서 측면·평면 블록을 생성해 DXF에 등록"""
     total_len = params["total_length"]
     cab_len = params["cab_length"]
     width = params["width"]
@@ -363,6 +446,11 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
     bogie_rear_x = params["bogie_rear_x"]
     bogie_front_margin = params["bogie_front_margin"]
     seat_pitch = params["seat_pitch"]
+    door_width = params["door_width"]
+    door_height = params["door_height"]
+    door_pos_pct = params["door_pos_pct"]
+    door_win_w = params["door_win_w"]
+    door_win_h = params["door_win_h"]
 
     grid, X, Y, Z = build_carbody_exterior_grid(
         total_len, cab_len, width, floor_z, wall_height, roof_crown, nose_exp, side_bulge, skirt_taper, car_mode=mode
@@ -371,13 +459,15 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
     uf_mesh = build_floor_and_underframe_mesh(
         total_len, floor_z, bogie_rear_x, bogie_front_margin, skirt_taper, X, Y, car_mode=mode
     )
-    seats_mesh, _ = build_interior_seats_mesh(total_len, cab_len, width, floor_z, seat_pitch, car_mode=mode)
+    seats_mesh, _ = build_interior_seats_mesh(
+        total_len, cab_len, width, floor_z, seat_pitch, door_width, door_pos_pct, car_mode=mode
+    )
 
-    eff_len = total_len if mode == "coach" else max(total_len - cab_len, 2000.0)
+    door_xs, eff_len = compute_door_positions(total_len, cab_len, door_pos_pct, mode)
     bogie_xs = compute_bogie_positions(total_len, bogie_rear_x, bogie_front_margin, car_mode=mode)
     mid_u = X.shape[1] // 2
 
-    # 측면 블록
+    # 측면 블록 (출입문 + 내부 창문 파라미터 정확 반영)
     blk_side = doc.blocks.new(name=f"{block_prefix}_SIDE")
     top_profile = [(float(X[i, mid_u]), float(Z[i, mid_u])) for i in range(X.shape[0])]
     bot_profile = [(float(X[i, 0]), float(Z[i, 0])) for i in reversed(range(X.shape[0]))]
@@ -387,13 +477,34 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
     cant_line = [(float(X[i, cant_idx]), float(Z[i, cant_idx])) for i in range(X.shape[0])]
     blk_side.add_lwpolyline(cant_line, dxfattribs={"layer": "CAR_BODY"})
 
-    for dx in (eff_len * 0.25, eff_len * 0.75):
+    eff_door_h = min(door_height, wall_height - 100.0)
+    eff_win_w = min(door_win_w, door_width - 180.0)
+    eff_win_h = min(door_win_h, eff_door_h - 280.0)
+    dz0 = floor_z + 60.0
+    dz1 = dz0 + eff_door_h
+    wz1 = dz1 - 140.0
+    wz0 = max(wz1 - eff_win_h, dz0 + 180.0)
+
+    for dx in door_xs:
+        half_dw = door_width / 2.0
+        # 출입문 외곽 + 중앙 분할선
         blk_side.add_lwpolyline(
-            [(dx - 650, floor_z + 100), (dx + 650, floor_z + 100),
-             (dx + 650, min(floor_z + 1950, cant_z - 100)), (dx - 650, min(floor_z + 1950, cant_z - 100))],
+            [(dx - half_dw, dz0), (dx + half_dw, dz0), (dx + half_dw, dz1), (dx - half_dw, dz1)],
             close=True,
-            dxfattribs={"layer": "CAR_BODY"},
+            dxfattribs={"layer": "DOORS"},
         )
+        blk_side.add_line((dx, dz0), (dx, dz1), dxfattribs={"layer": "DOORS"})
+        # 도어 좌/우 리프 내부 창문
+        for leaf_sign in (-1.0, 1.0):
+            lcx = dx + leaf_sign * (half_dw / 2.0)
+            hw = min(eff_win_w / 2.0, half_dw / 2.0 - 45.0)
+            if hw > 40.0 and wz1 > wz0 + 50.0:
+                blk_side.add_lwpolyline(
+                    [(lcx - hw, wz0), (lcx + hw, wz0), (lcx + hw, wz1), (lcx - hw, wz1)],
+                    close=True,
+                    dxfattribs={"layer": "DOOR_GLASS"},
+                )
+
     for bx in bogie_xs:
         blk_side.add_lwpolyline(
             [(bx - 1300, 200), (bx + 1300, 200), (bx + 1300, max(floor_z - 150, 500)), (bx - 1300, max(floor_z - 150, 500))],
@@ -422,6 +533,16 @@ def _create_car_blocks_from_3d(doc, params: dict, mode: str, block_prefix: str):
     blk_plan.add_lwpolyline(plan_top + plan_bot, close=True, dxfattribs={"layer": "CAR_BODY"})
     blk_plan.add_line((0.0, 0.0), (total_len, 0.0), dxfattribs={"layer": "CAR_CENTER"})
 
+    # 평면 출입문 개구부 마커
+    hw_plan = width / 2.0
+    for dx in door_xs:
+        for side_s in (-1.0, 1.0):
+            blk_plan.add_line(
+                (dx - door_width / 2.0, side_s * hw_plan),
+                (dx + door_width / 2.0, side_s * hw_plan),
+                dxfattribs={"layer": "DOORS"},
+            )
+
     plan_seats_slice = seats_mesh.slice(normal=(0, 0, 1), origin=(0, 0, floor_z + 400.0))
     _write_pv_slice_to_dxf(blk_plan, plan_seats_slice, axis_u=0, axis_v=1, layer="INTERIOR")
 
@@ -438,10 +559,12 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
     layer_defs = {
         "CAR_BODY": {"color": 7},
         "CAR_CENTER": {"color": 1, "linetype": "CENTER"},
+        "DOORS": {"color": 30},
+        "DOOR_GLASS": {"color": 140},
         "BOGIE": {"color": 4},
         "INTERIOR": {"color": 3},
         "ROOF_EQUIP": {"color": 5},
-        "UNDER_EQUIP": {"color": 30},
+        "UNDER_EQUIP": {"color": 42},
         "GAUGE_LIMIT": {"color": 6, "linetype": "DASHED"},
         "DIM": {"color": 2},
         "VIEWPORTS": {"color": 8},
@@ -455,11 +578,9 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
     wall_height = params["wall_height"]
     roof_crown = params["roof_crown"]
 
-    # 선두차(MC)와 중간 객차(M) 블록 모두 생성하여 G-01 편성도 완성
     mc_data = _create_car_blocks_from_3d(doc, params, "cab", "BLK_CAR_MC")
     coach_data = _create_car_blocks_from_3d(doc, params, "coach", "BLK_CAR_M")
 
-    # 단일 차량 도면(G-02~G-10)은 현재 선택된 모드 기준
     active_prefix = "BLK_CAR_M" if car_mode == "coach" else "BLK_CAR_MC"
     ext_surf, uf_mesh, seats_mesh, X, Y, Z, bogie_xs, eff_len = (
         coach_data if car_mode == "coach" else mc_data
@@ -471,18 +592,16 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
     blk_tb.add_attdef("DWG_NO", (600, 44), dxfattribs={"height": 6})
     blk_tb.add_attdef("DWG_TITLE", (600, 20), dxfattribs={"height": 4.5})
 
-    # [구역 A: Y=0] 4량 완전체 편성도 (Mc1(역방향) - M1 - M2 - Mc2(정방향))
     car_pitch = total_len + 500.0
     consist_plan = [
-        ("BLK_CAR_MC_SIDE", total_len, -1),  # 1호차 선두차 (좌측 선두)
-        ("BLK_CAR_M_SIDE", 0.0, 1),          # 2호차 중간 객차
-        ("BLK_CAR_M_SIDE", 0.0, 1),          # 3호차 중간 객차
-        ("BLK_CAR_MC_SIDE", 0.0, 1),         # 4호차 선두차 (우측 선두)
+        ("BLK_CAR_MC_SIDE", total_len, -1),
+        ("BLK_CAR_M_SIDE", 0.0, 1),
+        ("BLK_CAR_M_SIDE", 0.0, 1),
+        ("BLK_CAR_MC_SIDE", 0.0, 1),
     ]
     for i, (blk_name, local_shift, xscale) in enumerate(consist_plan):
         msp.add_blockref(blk_name, insert=(i * car_pitch + local_shift, 0.0), dxfattribs={"xscale": xscale})
 
-    # [구역 B: Y=15000 / 23000] 선택 차량 입면 + 평면
     msp.add_blockref(f"{active_prefix}_SIDE", insert=(0.0, 15000.0))
     msp.add_blockref(f"{active_prefix}_PLAN", insert=(0.0, 23000.0))
     msp.add_linear_dim(
@@ -494,7 +613,6 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
         dimstyle="Standard", dxfattribs={"layer": "DIM"}
     ).render()
 
-    # [구역 C] 횡단면도 (3D Slice)
     sec_x = eff_len * 0.55
     _write_pv_slice_to_dxf(msp, ext_surf.slice(normal=(1, 0, 0), origin=(sec_x, 0, 0)), 1, 2, 0.0, 35000.0, "CAR_BODY")
     _write_pv_slice_to_dxf(msp, uf_mesh.slice(normal=(1, 0, 0), origin=(sec_x, 0, 0)), 1, 2, 0.0, 35000.0, "BOGIE")
@@ -504,7 +622,6 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
         close=True, dxfattribs={"layer": "GAUGE_LIMIT"}
     )
 
-    # [구역 D] 정면도 (3D 등고선)
     front_offset_x = 15000.0
     start_idx = max(X.shape[0] - 20, 0)
     for ci in np.linspace(start_idx, X.shape[0] - 1, 6, dtype=int):
@@ -512,7 +629,6 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
         msp.add_lwpolyline(pts_yz, dxfattribs={"layer": "CAR_BODY"})
     _write_pv_slice_to_dxf(msp, uf_mesh.slice(normal=(1, 0, 0), origin=(bogie_xs[0], 0, 0)), 1, 2, front_offset_x, 35000.0, "BOGIE")
 
-    # [구역 E] 종단면도 (3D Slice)
     _write_pv_slice_to_dxf(msp, ext_surf.slice(normal=(0, 1, 0), origin=(0, 0, 0)), 0, 2, 0.0, 48000.0, "CAR_BODY")
     _write_pv_slice_to_dxf(msp, uf_mesh.slice(normal=(0, 1, 0), origin=(0, 0, 0)), 0, 2, 0.0, 48000.0, "BOGIE")
     _write_pv_slice_to_dxf(msp, seats_mesh.slice(normal=(0, 1, 0), origin=(0, 480.0, 0)), 0, 2, 0.0, 48000.0, "INTERIOR")
@@ -531,7 +647,7 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
         ("G-06_종단면도", "DWG-G-06", f"{mode_tag} 종단면도 - 3D Slice (1:50)", (car_cx, 50000.0), 50.0, ["ROOF_EQUIP", "UNDER_EQUIP"]),
         ("G-07_지붕하부기기배치도", "DWG-G-07", f"{mode_tag} 지붕 및 하부 기기 배치도 (1:50)", (car_cx, 17000.0), 50.0, ["INTERIOR"]),
         ("G-08_대차일반배치도", "DWG-G-08", "대차 일반배치도 (1:15)", (bogie_xs[0], 15700.0), 15.0, ["INTERIOR", "ROOF_EQUIP"]),
-        ("G-09_출입문창문배치도", "DWG-G-09", f"{mode_tag} 출입문 및 측면 입면 배치도 (1:40)", (car_cx, 17200.0), 40.0, ["INTERIOR", "ROOF_EQUIP", "UNDER_EQUIP"]),
+        ("G-09_출입문창문배치도", "DWG-G-09", f"{mode_tag} 출입문 및 창문 배치도 (1:40)", (car_cx, 17200.0), 40.0, ["INTERIOR", "ROOF_EQUIP", "UNDER_EQUIP"]),
         ("G-10_차량한계검토도", "DWG-G-10", "차량한계 및 3D 단면 검토도 (1:20)", (0.0, sec_cy), 20.0, []),
     ]
 
@@ -562,8 +678,8 @@ def export_10_basic_drawings_dxf(params: dict, car_mode: str, output_path: str) 
 class RailcarConceptWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (선두차 · 객차 · 4량 편성)")
-        self.resize(1440, 900)
+        self.setWindowTitle("철도차량 디자인 콘셉트 3D 스튜디오 (출입문 분리 · 선두차/객차 · 편성)")
+        self.resize(1460, 920)
 
         self.params = {
             "total_length": 20000.0,
@@ -578,9 +694,15 @@ class RailcarConceptWindow(QMainWindow):
             "bogie_rear_x": 3200.0,
             "bogie_front_margin": 5500.0,
             "seat_pitch": 920.0,
+            # 출입문 & 내부 창문 파라미터
+            "door_width": 1300.0,
+            "door_height": 1900.0,
+            "door_pos_pct": 25.0,
+            "door_win_w": 420.0,
+            "door_win_h": 950.0,
         }
-        self.car_mode = "cab"          # "cab" (선두차) | "coach" (중간 객차)
-        self.show_consist = False      # 4량 편성(Mc-M-M-Mc) 3D 미리보기 여부
+        self.car_mode = "cab"
+        self.show_consist = False
         self.view_mode = "solid"
         self.sliders: dict[str, tuple[QSlider, QLabel, str, float]] = {}
 
@@ -595,7 +717,7 @@ class RailcarConceptWindow(QMainWindow):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(385)
+        scroll.setFixedWidth(390)
 
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
@@ -645,7 +767,17 @@ class RailcarConceptWindow(QMainWindow):
         self._add_slider_row(form_shape, "width", "차체 폭:", 2600, 3400, "mm")
         self._add_slider_row(form_shape, "total_length", "차량 전장:", 15000, 26000, "mm")
 
-        # 3) 대차 위치 및 실내 좌석 배치
+        # 3) 출입문 및 내부 창문 파라미터 그룹 (분리)
+        grp_door = QGroupBox("출입문 및 내부 창문 제어 (실시간)")
+        form_door = QFormLayout(grp_door)
+
+        self._add_slider_row(form_door, "door_width", "출입문 폭:", 900, 1800, "mm")
+        self._add_slider_row(form_door, "door_height", "출입문 높이:", 1650, 2200, "mm")
+        self._add_slider_row(form_door, "door_pos_pct", "출입문 위치(비율):", 12, 36, "%")
+        self._add_slider_row(form_door, "door_win_w", "내부 창문 폭:", 200, 700, "mm")
+        self._add_slider_row(form_door, "door_win_h", "내부 창문 높이:", 400, 1350, "mm")
+
+        # 4) 대차 위치 및 실내 좌석 배치
         grp_bogie_int = QGroupBox("대차 위치 · 실내 좌석 배치")
         form_bi = QFormLayout(grp_bogie_int)
 
@@ -663,7 +795,7 @@ class RailcarConceptWindow(QMainWindow):
         self.lbl_seat_count = QLabel("배치 좌석: - 석")
         form_bi.addRow("배치 결과:", self.lbl_seat_count)
 
-        # 4) 외벽 표시 / 단면 컷 토글
+        # 5) 외벽 표시 / 단면 컷 토글
         grp_view = QGroupBox("외벽 투시 및 단면 컷 모드")
         vlay_view = QVBoxLayout(grp_view)
         self.view_btn_group = QButtonGroup(self)
@@ -682,10 +814,10 @@ class RailcarConceptWindow(QMainWindow):
             self.view_btn_group.addButton(rb)
             vlay_view.addWidget(rb)
 
-        # 5) 기본도 10장 DXF 내보내기
+        # 6) 기본도 10장 DXF 내보내기
         grp_export = QGroupBox("도면 출력 (기본도 10장)")
         vlay_exp = QVBoxLayout(grp_export)
-        btn_export_dxf = QPushButton("기본도 10장 DXF 내보내기 (편성도 포함)")
+        btn_export_dxf = QPushButton("기본도 10장 DXF 내보내기 (편성·출입문 포함)")
         btn_export_dxf.setMinimumHeight(40)
         btn_export_dxf.clicked.connect(self._on_export_dxf_clicked)
         vlay_exp.addWidget(btn_export_dxf)
@@ -693,6 +825,7 @@ class RailcarConceptWindow(QMainWindow):
         left_layout.addWidget(grp_mode)
         left_layout.addWidget(grp_preset)
         left_layout.addWidget(grp_shape)
+        left_layout.addWidget(grp_door)
         left_layout.addWidget(grp_bogie_int)
         left_layout.addWidget(grp_view)
         left_layout.addWidget(grp_export)
@@ -777,7 +910,7 @@ class RailcarConceptWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "내보내기 완료",
-                f"선두차+객차 편성도가 반영된 기본도 10장(G-01 ~ G-10)이 저장되었습니다.\n\n경로: {save_path}",
+                f"선두차+객차 및 출입문이 반영된 기본도 10장(G-01 ~ G-10)이 저장되었습니다.\n\n경로: {save_path}",
             )
         except ImportError:
             QMessageBox.critical(
@@ -819,50 +952,66 @@ class RailcarConceptWindow(QMainWindow):
             width=p["width"],
             floor_z=p["floor_z"],
             seat_pitch=p["seat_pitch"],
+            door_width=p["door_width"],
+            door_pos_pct=p["door_pos_pct"],
             car_mode=mode,
         )
-        return ext, uf, seats, seat_cnt
+        doors, door_wins = build_doors_and_windows_mesh(
+            total_length=p["total_length"],
+            cab_length=p["cab_length"],
+            width=p["width"],
+            floor_z=p["floor_z"],
+            wall_height=p["wall_height"],
+            side_bulge=p["side_bulge"],
+            door_width=p["door_width"],
+            door_height=p["door_height"],
+            door_pos_pct=p["door_pos_pct"],
+            door_win_w=p["door_win_w"],
+            door_win_h=p["door_win_h"],
+            car_mode=mode,
+        )
+        return ext, uf, seats, seat_cnt, doors, door_wins
 
     def _update_all_geometry(self, reset_camera: bool = False):
         p = self.params
 
         if self.show_consist:
-            # 4량 편성 (Mc1(180도 회전) - M1 - M2 - Mc2)
-            mc_ext, mc_uf, mc_seats, mc_cnt = self._build_single_car_meshes("cab")
-            m_ext, m_uf, m_seats, m_cnt = self._build_single_car_meshes("coach")
+            mc_ext, mc_uf, mc_seats, mc_cnt, mc_doors, mc_wins = self._build_single_car_meshes("cab")
+            m_ext, m_uf, m_seats, m_cnt, m_doors, m_wins = self._build_single_car_meshes("coach")
 
             car_pitch = p["total_length"] + 500.0
             cars_spec = [
-                (mc_ext, mc_uf, mc_seats, True, 0.0),
-                (m_ext, m_uf, m_seats, False, car_pitch),
-                (m_ext, m_uf, m_seats, False, car_pitch * 2.0),
-                (mc_ext, mc_uf, mc_seats, False, car_pitch * 3.0),
+                (mc_ext, mc_uf, mc_seats, mc_doors, mc_wins, True, 0.0),
+                (m_ext, m_uf, m_seats, m_doors, m_wins, False, car_pitch),
+                (m_ext, m_uf, m_seats, m_doors, m_wins, False, car_pitch * 2.0),
+                (mc_ext, mc_uf, mc_seats, mc_doors, mc_wins, False, car_pitch * 3.0),
             ]
-            ext_list, uf_list, seat_list = [], [], []
-            for c_ext, c_uf, c_seats, flip, x_off in cars_spec:
-                e_copy = c_ext.copy()
-                u_copy = c_uf.copy()
-                s_copy = c_seats.copy()
-                if flip:
-                    # X=0..total_length 를 X축 반전 후 x=total_length 만큼 이동
-                    for m in (e_copy, u_copy, s_copy):
-                        if m.n_points > 0:
-                            m.points[:, 0] = p["total_length"] - m.points[:, 0]
-                for m in (e_copy, u_copy, s_copy):
+            ext_list, uf_list, seat_list, door_list, win_list = [], [], [], [], []
+            for c_ext, c_uf, c_seats, c_doors, c_wins, flip, x_off in cars_spec:
+                e_copy, u_copy, s_copy = c_ext.copy(), c_uf.copy(), c_seats.copy()
+                d_copy, w_copy = c_doors.copy(), c_wins.copy()
+                for m in (e_copy, u_copy, s_copy, d_copy, w_copy):
                     if m.n_points > 0:
+                        if flip:
+                            m.points[:, 0] = p["total_length"] - m.points[:, 0]
                         m.translate((x_off, 0.0, 0.0), inplace=True)
                 ext_list.append(e_copy)
                 uf_list.append(u_copy)
                 if s_copy.n_points > 0:
                     seat_list.append(s_copy)
+                if d_copy.n_points > 0:
+                    door_list.append(d_copy)
+                if w_copy.n_points > 0:
+                    win_list.append(w_copy)
 
             ext_surf = ext_list[0].merge(ext_list[1:])
             underframe = uf_list[0].merge(uf_list[1:])
             seats_mesh = seat_list[0].merge(seat_list[1:]) if seat_list else pv.PolyData()
-            total_seats = mc_cnt * 2 + m_cnt * 2
-            self.lbl_seat_count.setText(f"편성 총 {total_seats} 석 (4량)")
+            doors_mesh = door_list[0].merge(door_list[1:]) if door_list else pv.PolyData()
+            wins_mesh = win_list[0].merge(win_list[1:]) if win_list else pv.PolyData()
+            self.lbl_seat_count.setText(f"편성 총 {mc_cnt * 2 + m_cnt * 2} 석 (4량)")
         else:
-            ext_surf, underframe, seats_mesh, seat_cnt = self._build_single_car_meshes(self.car_mode)
+            ext_surf, underframe, seats_mesh, seat_cnt, doors_mesh, wins_mesh = self._build_single_car_meshes(self.car_mode)
             suffix = "객실 전용" if self.car_mode == "coach" else "운전실 콘솔 포함"
             self.lbl_seat_count.setText(f"{seat_cnt} 석 ({suffix})")
 
@@ -871,9 +1020,17 @@ class RailcarConceptWindow(QMainWindow):
             opacity = 0.28
         elif self.view_mode == "clip_y":
             ext_surf = ext_surf.clip(normal=(0, 1, 0), origin=(0, 0, 0), invert=True)
+            if doors_mesh.n_points > 0:
+                doors_mesh = doors_mesh.clip(normal=(0, 1, 0), origin=(0, 0, 0), invert=True)
+            if wins_mesh.n_points > 0:
+                wins_mesh = wins_mesh.clip(normal=(0, 1, 0), origin=(0, 0, 0), invert=True)
         elif self.view_mode == "clip_x":
             cut_x = (p["total_length"] - p["cab_length"]) * 0.55 if not self.show_consist else p["total_length"] * 1.5
             ext_surf = ext_surf.clip(normal=(1, 0, 0), origin=(cut_x, 0, 0), invert=True)
+            if doors_mesh.n_points > 0:
+                doors_mesh = doors_mesh.clip(normal=(1, 0, 0), origin=(cut_x, 0, 0), invert=True)
+            if wins_mesh.n_points > 0:
+                wins_mesh = wins_mesh.clip(normal=(1, 0, 0), origin=(cut_x, 0, 0), invert=True)
 
         self.plotter.add_mesh(
             ext_surf,
@@ -886,6 +1043,15 @@ class RailcarConceptWindow(QMainWindow):
             show_edges=False,
         )
         self.plotter.add_mesh(underframe, name="underframe_bogie", color="#485460", smooth_shading=False)
+
+        if doors_mesh.n_points > 0:
+            self.plotter.add_mesh(
+                doors_mesh, name="car_doors", color="#9fb3c8", metallic=0.4, roughness=0.35, opacity=opacity
+            )
+        if wins_mesh.n_points > 0:
+            self.plotter.add_mesh(
+                wins_mesh, name="door_windows", color="#38bdf8", opacity=0.72, smooth_shading=False
+            )
         if seats_mesh.n_points > 0:
             self.plotter.add_mesh(seats_mesh, name="interior_seats", color="#2b6cb0", smooth_shading=False)
 
