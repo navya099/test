@@ -54,6 +54,7 @@ def compute_seat_positions(
 ) -> tuple[list[tuple[float, float, float]], float]:
     """
     차체 치수와 출입문 간섭을 고려한 좌석 중심 좌표 (x, y, seat_depth) 목록을 계산한다.
+    외벽 스커트·측벽 내측 여유를 확보해 좌석이 외벽을 관통하지 않도록 폭을 제한한다.
     """
     body_len = max(total_length - cab_length, 2000.0)
     door_centers = [body_len * 0.25, body_len * 0.75]
@@ -66,7 +67,8 @@ def compute_seat_positions(
     ]
 
     aisle_half = 320.0
-    seat_depth = max(min((width * 0.44 - aisle_half), 950.0), 480.0)
+    # 외벽 내측 여유(약 11% 마진)를 두어 좌석 끝단이 외피를 뚫고 나오지 않게 함
+    seat_depth = max(min((width * 0.39 - aisle_half), 880.0), 420.0)
     y_left = -(aisle_half + seat_depth / 2.0)
     y_right = +(aisle_half + seat_depth / 2.0)
 
@@ -132,10 +134,10 @@ def build_carbody_exterior_mesh(
     nx_cab: int = 32,
     nx_body: int = 16,
     nu: int = 36,
-) -> pv.StructuredGrid:
+) -> pv.PolyData:
     """
-    KTX/ITX 스타일의 둥근 반타원 노즈와 수평 스커트 라인을 갖는 차체 외피 StructuredGrid 생성.
-    하부 스커트가 바닥판 아래까지 내려와 감싸므로 정면 하단으로 내부가 노출되지 않는다.
+    KTX/ITX 스타일의 둥근 반타원 노즈와 수평 스커트 라인을 갖는 차체 외피 생성.
+    후면(X=0) 격벽까지 포함해 360도 어느 각도에서도 속이 비어 보이지 않게 마감한다.
     """
     body_length = max(total_length - cab_length, 2000.0)
     x_body = np.linspace(0.0, body_length, nx_body, endpoint=False)
@@ -163,7 +165,6 @@ def build_carbody_exterior_mesh(
         w_scale = _superellipse_profile(t, exp_p=nose_exp, round_q=2.6)
         h_scale = _superellipse_profile(t, exp_p=max(nose_exp * 0.9, 1.1), round_q=2.2)
 
-        # 하부 스커트가 바닥판(floor_z - 120)까지 감싸도록 유지하며 끝단에서만 범퍼 높이로 마감
         curr_floor_z = (floor_z - 120.0) + (bumper_z - (floor_z - 120.0)) * (t ** 8.0)
         curr_top_z = bumper_z + (floor_z + total_h - bumper_z) * h_scale
 
@@ -201,7 +202,14 @@ def build_carbody_exterior_mesh(
         Y[i, :] = y_row
         Z[i, :] = z_row
 
-    return pv.StructuredGrid(X, Y, Z)
+    ext_surf = pv.StructuredGrid(X, Y, Z).extract_surface()
+
+    # 후단부(X=0) 폐단면 마개 추가
+    rear_pts = np.column_stack([X[0, :], Y[0, :], Z[0, :]])
+    rear_faces = np.hstack([[len(rear_pts)], np.arange(len(rear_pts))])
+    rear_cap = pv.PolyData(rear_pts, rear_faces).triangulate()
+
+    return ext_surf.merge(rear_cap)
 
 
 def build_floor_and_underframe_mesh(
@@ -211,16 +219,16 @@ def build_floor_and_underframe_mesh(
     floor_z: float,
     nose_exp: float,
 ) -> pv.PolyData:
-    """선두부 내측에 완전히 수납되는 테이퍼형 객실 바닥판 + 디자인 비례용 대차 매스 2기 생성"""
+    """외벽 스커트 하단 폭과 틈새 없이 맞물리는 바닥판 + 디자인 비례용 대차 매스 2기 생성"""
     body_len = max(total_length - cab_length, 2000.0)
 
     _, plan_half_pts = compute_nose_profile_curves(
         total_length, cab_length, width, floor_z, 3150.0, 580.0, nose_exp, n_pts=18
     )
-    scale_inner = 0.78
+    # 스커트 최하단 반폭(0.92)과 맞춰 바닥판이 외벽과 틈새 없이 밀착되도록 설정
+    scale_inner = 0.90
     half_inner = (width / 2.0) * scale_inner
 
-    # 끝단 직전(마지막 2점 제외)까지만 바닥판 연장하여 외피 밖 돌출 방지
     taper_pts = [(x, y * scale_inner) for x, y in plan_half_pts[:-2]]
     poly_2d = (
         [(0.0, half_inner)]
@@ -228,9 +236,9 @@ def build_floor_and_underframe_mesh(
         + [(x, -y) for x, y in reversed(taper_pts)]
         + [(0.0, -half_inner)]
     )
-    pts_3d = np.array([[x, y, floor_z - 110.0] for x, y in poly_2d], dtype=float)
+    pts_3d = np.array([[x, y, floor_z - 120.0] for x, y in poly_2d], dtype=float)
     faces = np.hstack([[len(pts_3d)], np.arange(len(pts_3d))])
-    floor_poly = pv.PolyData(pts_3d, faces).triangulate().extrude((0.0, 0.0, 110.0), capping=True)
+    floor_poly = pv.PolyData(pts_3d, faces).triangulate().extrude((0.0, 0.0, 120.0), capping=True)
 
     bogie_x_positions = [3200.0, max(body_len - 1800.0, 6500.0)]
     meshes = [floor_poly]
@@ -639,7 +647,7 @@ class RailcarConceptWindow(QMainWindow):
     def _update_all_geometry(self, reset_camera: bool = False):
         p = self.params
 
-        ext_grid = build_carbody_exterior_mesh(
+        ext_surf = build_carbody_exterior_mesh(
             total_length=p["total_length"],
             cab_length=p["cab_length"],
             width=p["width"],
@@ -648,7 +656,6 @@ class RailcarConceptWindow(QMainWindow):
             roof_crown=p["roof_crown"],
             nose_exp=p["nose_exp"],
         )
-        ext_surf = ext_grid.extract_surface()
 
         opacity = 1.0
         if self.view_mode == "translucent":
