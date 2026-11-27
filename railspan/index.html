@@ -129,8 +129,9 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <label>시작점 X (m)<input type="number" step="any" min="-2000000" max="2000000" name="site_x" placeholder="시작 측점"></label>
 <label>시작점 Y (m)<input type="number" step="any" min="-2000000" max="2000000" name="site_y" placeholder="0"></label>
 <label>진행 방위각 (°)<input type="number" step="any" min="0" max="360" name="azimuth" placeholder="90"></label>
+<label>IFC 좌표계 EPSG 코드<input type="number" step="1" min="1" max="999999" name="epsg" placeholder="예: 5179"></label>
 </div>
-<p class="muted">X는 동쪽, Y는 북쪽입니다. 방위각은 북쪽에서 시계 방향으로 입력하세요. 지장물은 입력된 좌표에 고정됩니다.</p>
+<p class="muted">X는 동쪽, Y는 북쪽입니다. 방위각은 북쪽에서 시계 방향으로 입력하세요. 지장물은 입력된 좌표에 고정됩니다. EPSG를 입력하면 IFC 내보내기 때 미터 단위 투영좌표계인지 확인합니다.</p>
 </details>
 <details><summary>평면 선형 및 캔트</summary>
 <div class="pair">
@@ -254,7 +255,7 @@ const dimensions = ['slab_thickness','girder_depth','cap_depth','bearing_height'
   'foundation_length','foundation_width'];
 const accessorySides = ['rail_side','walkway_side','drain_side'];
 const accessoryDimensions = ['railing_height','walkway_width','drain_diameter','drain_drop','drain_inset'];
-const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys,...dimensions,...accessoryDimensions,'site_x','site_y','azimuth'];
+const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys,...dimensions,...accessoryDimensions,'site_x','site_y','azimuth','epsg'];
 let defaults = {};
 const projectVersion = 2;
 const cableDefaults = {tower_height:'', cable_planes:2, cable_count:4, anchor_start_pct:25, anchor_end_pct:85};

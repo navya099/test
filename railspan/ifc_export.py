@@ -32,6 +32,22 @@ def triangulate(segments):
     return [tuple(map(float, point)) for point in vertices], triangles
 
 
+def projected_crs_name(epsg):
+    from pyproj import CRS
+    from pyproj.exceptions import CRSError
+
+    try:
+        crs = CRS.from_epsg(epsg)
+    except CRSError as error:
+        raise ValueError(f"EPSG:{epsg} 좌표계를 찾을 수 없습니다.") from error
+    axes = crs.axis_info
+    if (not crs.is_projected or len(axes) != 2
+            or {axis.direction for axis in axes} != {"east", "north"}
+            or any(axis.unit_conversion_factor != 1 for axis in axes)):
+        raise ValueError(f"EPSG:{epsg}는 동·북 방향의 미터 단위 투영좌표계여야 합니다.")
+    return f"EPSG:{epsg}"
+
+
 def export_ifc(model, ifc):
     file = ifc.file(schema="IFC4")
     create = file.create_entity
@@ -43,6 +59,16 @@ def export_ifc(model, ifc):
     body = create("IfcGeometricRepresentationSubContext", ContextIdentifier="Body",
                   ContextType="Model", ParentContext=context, TargetView="MODEL_VIEW")
     metre = create("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
+    epsg = model["alignment"].get("epsg")
+    eastings = northings = 0.
+    if epsg is not None:
+        crs = create("IfcProjectedCRS", Name=projected_crs_name(epsg), MapUnit=metre)
+        location = model["alignment"]["placement"]
+        eastings, northings = float(location["site_x"]), float(location["site_y"])
+        # The generated vertices are already oriented to grid east and north.
+        create("IfcMapConversion", SourceCRS=context, TargetCRS=crs,
+               Eastings=eastings, Northings=northings, OrthogonalHeight=0.,
+               XAxisAbscissa=1., XAxisOrdinate=0., Scale=1.)
     project = create("IfcProject", GlobalId=guid(), Name="Railspan | " + model["kind"],
                      RepresentationContexts=[context],
                      UnitsInContext=create("IfcUnitAssignment", Units=[metre]))
@@ -60,6 +86,8 @@ def export_ifc(model, ifc):
             segments = [vertices for _, _, vertices in
                         untransformed.cells(item, None, follow_profile=False)]
         vertices, coordinates = triangulate(segments)
+        if epsg is not None:
+            vertices = [(x-eastings, y-northings, z) for x,y,z in vertices]
         points = create("IfcCartesianPointList3D", CoordList=vertices)
         mesh = create("IfcTriangulatedFaceSet", Coordinates=points, CoordIndex=coordinates,
                       Closed=True)

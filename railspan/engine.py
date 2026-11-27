@@ -322,6 +322,12 @@ def generate(config):
     girder_bottom = girder_top - dimensions["girder_depth"]
     profile = validate_profile(config.get("profile", []), "종단 선형", *elevations, extent=(start, end))
     curves, curve_inputs = build_vertical_curves(config.get("vertical_curves", []), profile)
+    epsg = config.get("epsg")
+    if epsg is not None:
+        epsg = number(epsg, 1, 999999)
+        if epsg != int(epsg):
+            raise ValueError("EPSG 코드는 정수로 입력하세요.")
+        epsg = int(epsg)
     site_placement = {}
     for key, default, low, high in (("site_x", start, -2e6, 2e6),
                                     ("site_y", 0, -2e6, 2e6),
@@ -614,5 +620,5 @@ def generate(config):
             "dimensions": dimensions, "accessories": accessories, "arch": arch, "cables": cables,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile,
                           "vertical_curves": curve_inputs, "cant_profile": cant_points,
-                          "plan_segments": plan_rows, "placement": site_placement},
+                          "plan_segments": plan_rows, "placement": site_placement, "epsg": epsg},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}

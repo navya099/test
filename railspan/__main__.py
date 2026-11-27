@@ -65,7 +65,15 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(400, {"error": str(error)})
             return
         if exporting:
-            self.reply(200, export_ifc(result, ifcopenshell), "application/x-step")
+            try:
+                content = export_ifc(result, ifcopenshell)
+            except ImportError:
+                self.json_reply(503, {"error": "EPSG를 포함해 내보내려면 python -m pip install -r railspan/requirements-ifc.txt 를 실행하세요."})
+                return
+            except ValueError as error:
+                self.json_reply(400, {"error": str(error)})
+                return
+            self.reply(200, content, "application/x-step")
         else:
             self.json_reply(200, result)
 
