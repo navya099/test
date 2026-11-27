@@ -124,6 +124,14 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <textarea name="ground_profile" rows="5" placeholder="0, 2&#10;55, -1&#10;110, 3"></textarea>
 </label>
 </details>
+<details><summary>현장 좌표 배치</summary>
+<div class="pair">
+<label>시작점 X (m)<input type="number" step="any" min="-2000000" max="2000000" name="site_x" placeholder="시작 측점"></label>
+<label>시작점 Y (m)<input type="number" step="any" min="-2000000" max="2000000" name="site_y" placeholder="0"></label>
+<label>진행 방위각 (°)<input type="number" step="any" min="0" max="360" name="azimuth" placeholder="90"></label>
+</div>
+<p class="muted">X는 동쪽, Y는 북쪽입니다. 방위각은 북쪽에서 시계 방향으로 입력하세요. 지장물은 입력된 좌표에 고정됩니다.</p>
+</details>
 <details><summary>평면 선형 및 캔트</summary>
 <div class="pair">
 <label>기본 반경 (m)<input type="number" step="any" name="curve_radius" required></label>
@@ -169,7 +177,7 @@ td button{padding:3px 6px}.alternative-actions{white-space:nowrap}.alternative-a
 <input type="file" id="obstacleFile" accept=".csv,text/csv" hidden>
 </div>
 <p id="importStatus" class="muted" role="status"></p>
-<p class="muted">가져온 CSV는 지장물 목록을 교체합니다. 유형·개별 이격·수직 이격 방식은 예제 CSV에서 설정할 수 있습니다. 좌표는 시작점 접선 좌표계의 X·Y·표고(m)입니다. 곡선 구간에서도 지장물 좌표는 고정됩니다.</p>
+<p class="muted">가져온 CSV는 지장물 목록을 교체합니다. 유형·개별 이격·수직 이격 방식은 예제 CSV에서 설정할 수 있습니다. X·Y·표고(m)는 교량 배치와 같은 좌표 기준을 사용하세요. 현장 좌표 배치를 비우면 기존 시작점 접선 좌표계를 사용합니다.</p>
 <textarea name="obstacles" rows="11" aria-label="지장물 JSON"></textarea>
 </details>
 <p><button class="primary">모델 생성 및 검토</button></p>
@@ -246,7 +254,7 @@ const dimensions = ['slab_thickness','girder_depth','cap_depth','bearing_height'
   'foundation_length','foundation_width'];
 const accessorySides = ['rail_side','walkway_side','drain_side'];
 const accessoryDimensions = ['railing_height','walkway_width','drain_diameter','drain_drop','drain_inset'];
-const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys,...dimensions,...accessoryDimensions];
+const keys = ['start','width','deck','ground','rise','tracks','clearance','length','nominal',...defaultKeys,...dimensions,...accessoryDimensions,'site_x','site_y','azimuth'];
 let defaults = {};
 const projectVersion = 2;
 const cableDefaults = {tower_height:'', cable_planes:2, cable_count:4, anchor_start_pct:25, anchor_end_pct:85};
@@ -345,6 +353,8 @@ async function generate(data){
     const hasCurve = plan.length ? plan.some(row => row.slice(1).some(r => r !== 0)) : radius !== 0;
     const route = plan.length ? '평면 선형 ' + plan.length + '구간' : radius ? (radius < 0 ? '좌곡선 R ' : '우곡선 R ') + Math.abs(radius) + ' m' : '직선';
     el('modelTitle').textContent = model.kind + ' · ' + (model.stations.length-1) + '경간 · ' + Number(model.length.toFixed(3)) + ' m · ' + route + (model.alignment.profile.length ? ' · 종단 입력' : '');
+    const {site_x,site_y,azimuth} = model.alignment.placement;
+    if(site_x !== model.stations[0] || site_y !== 0 || azimuth !== 90) el('modelTitle').textContent += ' · 현장 배치';
     if(plan.some(row => row.length === 3)) el('modelTitle').textContent += ' · 완화곡선';
     if(hasCurve && model.alignment.cant_profile.length) el('modelTitle').textContent += ' · 가변 캔트';
     el('status').textContent = model.missing.length ? '판정 불가 · ' + model.missing.join(', ') : '곡선·종단·캔트 및 선형 부재의 외접 상자 판정은 간섭 후보입니다.';
@@ -675,9 +685,12 @@ function draw(){
   ctx.scale(dpi,dpi);
   if(!result || !w || !h) return;
   const visible = result.objects.filter(o => o.role === 'bridge' || (o.role === 'gauge' ? gauge : context));
-  const origin = result.stations[0];
-  const project = ([x,y,z]) => {
-    x -= origin;
+  const {site_x,site_y,azimuth} = result.alignment.placement;
+  const heading = (90-azimuth)*Math.PI/180;
+  const cosine = Math.cos(heading), sine = Math.sin(heading);
+  const project = ([worldX,worldY,z]) => {
+    const dx = worldX-site_x, dy = worldY-site_y;
+    const x = dx*cosine+dy*sine, y = -dx*sine+dy*cosine;
     const u = x*Math.cos(az)-y*Math.sin(az), v = x*Math.sin(az)+y*Math.cos(az);
     return [u, v*Math.sin(tilt)-z*Math.cos(tilt), v*Math.cos(tilt)+z*Math.sin(tilt)];
   };

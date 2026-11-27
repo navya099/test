@@ -322,7 +322,15 @@ def generate(config):
     girder_bottom = girder_top - dimensions["girder_depth"]
     profile = validate_profile(config.get("profile", []), "종단 선형", *elevations, extent=(start, end))
     curves, curve_inputs = build_vertical_curves(config.get("vertical_curves", []), profile)
-    alignment = Alignment(start, radius, cant, deck, profile, curves, cant_profile=cant_points, plan_rows=plan_rows)
+    site_placement = {}
+    for key, default, low, high in (("site_x", start, -2e6, 2e6),
+                                    ("site_y", 0, -2e6, 2e6),
+                                    ("azimuth", 90, 0, 360)):
+        value = config.get(key)
+        site_placement[key] = default if value is None else number(value, low, high)
+    site_placement["azimuth"] %= 360
+    alignment = Alignment(start, radius, cant, deck, profile, curves,
+                          cant_profile=cant_points, plan_rows=plan_rows, **site_placement)
     curved = alignment.has_curve
     zero_cant = set()
     for segment in alignment.plan:
@@ -503,12 +511,17 @@ def generate(config):
                            clearance_mode=obstacle.get("clearance_mode", "spatial"))
 
     cells_by_id = {}
-    if curved or profile:
+    if curved or profile or alignment.rotated or alignment.translated:
         for item in objects:
             if item["role"] == "obstacle":
                 continue
             follows = item["group"] not in ("foundation", "pier", "bearing") and item["id"] not in tower_ids
-            if not curved and not follows:
+            if not (curved or alignment.rotated or (profile and follows)):
+                if alignment.translated:
+                    for key in ("min", "max"):
+                        item[key] = alignment.point(item[key], follow_profile=False)
+                    if "axis" in item:
+                        item["axis"] = [alignment.point(point, follow_profile=False) for point in item["axis"]]
                 continue
             cells = list(alignment.cells(item, track_centers.get(item["id"]), follow_profile=follows))
             item["mesh"] = [cell[2] for cell in cells]
@@ -601,5 +614,5 @@ def generate(config):
             "dimensions": dimensions, "accessories": accessories, "arch": arch, "cables": cables,
             "alignment": {"curve_radius": radius, "cant_mm": cant, "profile": profile,
                           "vertical_curves": curve_inputs, "cant_profile": cant_points,
-                          "plan_segments": plan_rows},
+                          "plan_segments": plan_rows, "placement": site_placement},
             "missing": [] if obstacles else ["외부 지장물 데이터 미입력"]}

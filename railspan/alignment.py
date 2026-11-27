@@ -42,8 +42,15 @@ class StationProfile:
 
 
 class Alignment:
-    def __init__(self, start, radius, cant_mm, deck, profile=(), curves=(), *, cant_profile=(), plan_rows=()):
+    def __init__(self, start, radius, cant_mm, deck, profile=(), curves=(), *,
+                 cant_profile=(), plan_rows=(), site_x=None, site_y=0, azimuth=90):
         self.start = start
+        self.site_x = start if site_x is None else site_x
+        self.site_y = site_y
+        heading = math.radians(90 - azimuth)
+        self.cosine, self.sine = math.cos(heading), math.sin(heading)
+        self.rotated = azimuth != 90
+        self.translated = self.site_x != start or site_y != 0
         self.center_offset = -radius  # Positive Y points left in the tangent frame.
         self.plan = build_plan(start, plan_rows)
         self.plan_breaks = tuple(segment.start for segment in self.plan[1:])
@@ -78,18 +85,24 @@ class Alignment:
         segment = self.segment_at(station)
         if segment:
             x, y, _ = segment.frame(station, offset)
-            return [x, y, z]
-        if not self.center_offset:
-            return [station, offset, z]
-        angle = (station - self.start) / self.center_offset
-        return [
-            self.start + (self.center_offset - offset) * math.sin(angle),
-            2 * self.center_offset * math.sin(angle / 2) ** 2 + offset * math.cos(angle),
-            z,
-        ]
+        elif self.center_offset:
+            angle = (station - self.start) / self.center_offset
+            x = self.start + (self.center_offset - offset) * math.sin(angle)
+            y = 2 * self.center_offset * math.sin(angle / 2) ** 2 + offset * math.cos(angle)
+        else:
+            x, y = station, offset
+        if self.rotated or self.translated:
+            along = x - self.start
+            return [self.site_x + along * self.cosine - y * self.sine,
+                    self.site_y + along * self.sine + y * self.cosine, z]
+        return [x, y, z]
 
     def station_at(self, vertex):
         x, y, _ = vertex
+        if self.rotated or self.translated:
+            dx, dy = x - self.site_x, y - self.site_y
+            x = self.start + dx * self.cosine + dy * self.sine
+            y = -dx * self.sine + dy * self.cosine
         if self.plan and self.has_curve:
             return min(segment.nearest(x, y) for segment in self.plan)[1]
         if not self.center_offset or self.plan:
