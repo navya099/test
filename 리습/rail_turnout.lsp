@@ -777,7 +777,8 @@
   success
 )
 
-(defun c:RAILFAN (/ template sample lead front selection a b axis direction radius clearance trim plans)
+(defun c:RAILFAN (/ template sample lead front selection a b axis project direction elevation
+                    elevation-tolerance radius clearance trim plans)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
     ((not (setq template (rr:choose-calibration))))
@@ -785,13 +786,24 @@
     ((not (and (rr:layer-open-p (getvar "CLAYER"))
                (rr:sample-layer-open-p sample)))
      (rr:msg "Unlock/thaw the current layer and the sample layer (layer 0 for the library)."))
-    ((not (setq lead (rr:line "\nSelect the common diagonal lead LINE: "))))
-    ((not (setq front (rr:point "\nPick the forward endpoint of the common lead: "))))
+    ((not (setq lead (rr:pick "\nSelect the common diagonal lead LINE: " "LINE"))))
     ((progn
        (setq a (cdr (assoc 10 lead))
              b (cdr (assoc 11 lead))
              axis (rr:unit (rr:sub b a))
-             direction (- (rr:dot (rr:sub front a) axis) (* 0.5 (distance a b))))
+             elevation-tolerance 0.001)
+       (not axis))
+     (rr:msg "The lead LINE must have a nonzero length in the WCS XY plane."))
+    ((and (setq project (not (equal (caddr a) (caddr b) elevation-tolerance)))
+          (progn
+            (rr:msg (strcat "Lead endpoint elevations differ (Z="
+                            (rtos (caddr a) 2 8) ", Z=" (rtos (caddr b) 2 8) ")."))
+            (initget "Project Cancel")
+            (not (equal "Project" (getkword "\nUse the lead's XY projection at the yard track elevation? [Project/Cancel] <Cancel>: ")))))
+     (rr:msg "No tracks changed."))
+    ((not (setq front (rr:point "\nPick the forward endpoint of the common lead: "))))
+    ((progn
+       (setq direction (- (rr:dot (rr:sub front a) axis) (* 0.5 (distance (rr:flat a) (rr:flat b)))))
        (<= (abs direction) rr:tol))
      (rr:msg "Pick one end of the lead to set the forward direction."))
     ((not (progn
@@ -800,6 +812,13 @@
     ((ssmemb (cdr (assoc -1 lead)) selection)
      (rr:msg "Select only the target tracks in the selection set."))
     (T
+      (setq elevation (caddr (cdr (assoc 10 (entget (ssname selection 0))))))
+      ;; Ignore tiny lead-only Z differences that may be rounded away in Properties.
+      (if (or project
+              (and (equal (caddr a) elevation elevation-tolerance)
+                   (equal (caddr b) elevation elevation-tolerance)))
+        (setq a (list (car a) (cadr a) elevation)
+              b (list (car b) (cadr b) elevation)))
       (initget 6)
       (setq radius (getreal (strcat "\nCurve radius in drawing units "
                                     (if rr:last-radius (strcat "<" (rtos rr:last-radius 2 6) ">")
