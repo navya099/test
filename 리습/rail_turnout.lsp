@@ -3,6 +3,7 @@
 ;;; RAILYARD offsets tracks.
 ;;; RAILTURN connects parallel tracks. RAILFAN connects a diagonal lead to multiple tracks.
 ;;; RAILCROSS and RAILSCISSORS build single and double crossovers.
+;;; RAILSIDING builds a single siding that returns to the same track.
 
 (vl-load-com)
 
@@ -981,5 +982,156 @@
 (defun c:RAILCROSS () (rr:cross-command nil))
 (defun c:RAILSCISSORS () (rr:cross-command T))
 
-(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN, RAILCROSS, RAILSCISSORS.")
+(defun rr:siding-end (template datum forward target-start target-end radius mirror
+                      / sample-datum sample-forward pi-point tip matrix branch fillet quarter-turn)
+  (setq sample-datum (cdr (assoc 'origin template))
+        sample-forward (cdr (assoc 'forward template))
+        pi-point (cdr (assoc 'pi template))
+        tip (cdr (assoc 'tip template)))
+  (if mirror
+    (setq pi-point (rr:reflect-point pi-point sample-datum sample-forward)
+          tip (rr:reflect-point tip sample-datum sample-forward)))
+  (setq matrix (rr:matrix sample-datum datum (- (rr:angle forward) (rr:angle sample-forward)))
+        pi-point (rr:transform-point matrix pi-point)
+        tip (rr:transform-point matrix tip)
+        branch (rr:unit (rr:sub tip pi-point)))
+  (if branch
+    (progn
+      (setq fillet (rr:track-fillet tip branch target-start target-end forward radius))
+      (if (eq (type fillet) 'STR)
+        fillet
+        (progn
+          ;; Bulge is the tangent of one quarter of the signed arc angle.
+          (setq quarter-turn (/ (atan (rr:cross branch forward) (rr:dot branch forward)) 4.0))
+          (list matrix pi-point tip fillet (/ (sin quarter-turn) (cos quarter-turn)))
+        )
+      )
+    )
+    "The turnout needs a usable branch direction."
+  )
+)
+
+(defun rr:siding-plan (template a b start end spacing radius first-mirror second-mirror
+                       / forward offset near far first second first-curve second-curve)
+  (setq forward (rr:unit (rr:sub end start))
+        offset (rr:scale (rr:left forward) spacing)
+        near (rr:add start offset)
+        far (rr:add end offset))
+  (cond
+    ((> (abs (rr:cross (cdr (assoc 'forward template))
+                      (rr:sub (cdr (assoc 'pi template)) (cdr (assoc 'origin template))))) rr:tol)
+     "The sample PI must lie on its main axis. Register the sample again with RAILSETUP.")
+    ((eq (type (setq first (rr:siding-end template start forward near far radius first-mirror))) 'STR)
+     (strcat "Start turnout: " first))
+    ((eq (type (setq second (rr:siding-end template end (rr:scale forward -1.0)
+                                          near far radius second-mirror))) 'STR)
+     (strcat "End turnout: " second))
+    ((not (rr:within-track-span-p (list (cadr first) (caddr first) (cadr second) (caddr second)) a b))
+     "A turnout extends beyond the main track LINE.")
+    (T
+      (setq first-curve (nth 3 first)
+            second-curve (nth 3 second))
+      (if (<= (rr:dot (rr:sub (cadr second-curve) (cadr first-curve)) forward) rr:tol)
+        "There is no straight siding between the curves. Increase the start-to-end distance."
+        (list (car first) (car second)
+              (list (cadr first) (car first-curve) (cadr first-curve)
+                    (cadr second-curve) (car second-curve) (cadr second))
+              (nth 4 first) (- (nth 4 second)))
+      )
+    )
+  )
+)
+
+(defun rr:draw-siding (space sample plan layer first-mirror second-mirror
+                       / points coords array polyline)
+  (rr:place-block space sample (car plan) layer first-mirror)
+  (rr:place-block space sample (cadr plan) layer second-mirror)
+  (setq points (caddr plan)
+        coords (apply 'append (mapcar '(lambda (p) (list (car p) (cadr p))) points))
+        array (vlax-make-safearray vlax-vbDouble (cons 0 (1- (length coords)))))
+  (vlax-safearray-fill array coords)
+  (setq polyline (rr:new-on-layer (vla-AddLightWeightPolyline space array) layer))
+  (vla-put-Normal polyline (vlax-3d-point '(0.0 0.0 1.0)))
+  (vla-put-Elevation polyline (caddr (car points)))
+  (vla-SetBulge polyline 1 (nth 3 plan))
+  (vla-SetBulge polyline 3 (nth 4 plan))
+  T
+)
+
+(defun rr:siding-radius (/ fallback radius)
+  (setq fallback (if rr:last-radius rr:last-radius (getvar "FILLETRAD")))
+  (if (<= fallback rr:tol) (setq fallback nil))
+  (setq radius (rr:positive-real
+    (strcat "\nSiding curve radius in drawing units"
+            (if fallback (strcat " <" (rtos fallback 2 6) ">") "") ": ")))
+  (if (not radius) (setq radius fallback))
+  (if (and radius (> radius rr:tol)) radius (rr:msg "Enter a positive siding curve radius."))
+)
+
+(defun rr:apply-siding (a b start end spacing / hand template sample layer axis branch opposite
+                        first-mirror second-mirror radius plan)
+  (setq hand (if (> spacing 0.0) "Left" "Right")
+        layer (getvar "CLAYER"))
+  (cond
+    ((not (setq template (rr:choose-turnout hand))))
+    ((not (setq sample (rr:registered-sample template))))
+    ((not (and (rr:layer-open-p layer) (rr:sample-layer-open-p sample)))
+     (rr:msg "Unlock/thaw the current layer and the sample layer (layer 0 for the library)."))
+    ((not
+       (or (listp sample)
+           (progn
+             (initget "Yes No")
+             (equal "Yes" (getkword "\nMirror one sample copy for the return turnout? [Yes/No] <No>: ")))))
+     (rr:msg "The siding uses both turnout hands. No tracks changed."))
+    ((not (setq radius (rr:siding-radius))))
+    (T
+      (setq axis (rr:cross-mirror-axis template)
+            branch (rr:sub (cdr (assoc 'tip template)) (cdr (assoc 'pi template)))
+            opposite (< (* spacing (rr:cross (cdr (assoc 'forward template)) branch)) 0.0)
+            first-mirror (if opposite axis)
+            second-mirror (if (not opposite) axis)
+            plan (rr:siding-plan template a b start end spacing radius first-mirror second-mirror))
+      (cond
+        ((eq (type plan) 'STR) (rr:msg plan))
+        ((rr:edit 'rr:draw-siding (list sample plan layer first-mirror second-mirror))
+         (setq rr:last-radius radius)
+         (rr:msg "Siding created with two turnouts and one polyline."))
+      )
+    )
+  )
+)
+
+(defun c:RAILSIDING (/ main a b axis length first-point last-point first-station last-station
+                     start end side signed-side spacing)
+  (cond
+    ((not (rr:model-p)) (rr:msg "Switch to model space."))
+    ((not (setq main (rr:line "\nSelect the main track LINE: "))))
+    ((not (setq first-point (rr:point "\nPick the start turnout datum on the main track: "))))
+    ((not (setq last-point (rr:point "\nPick the end turnout datum on the main track: "))))
+    (T
+      (setq a (cdr (assoc 10 main))
+            b (cdr (assoc 11 main))
+            length (distance a b)
+            axis (rr:unit (rr:sub b a))
+            first-station (rr:dot (rr:sub first-point a) axis)
+            last-station (rr:dot (rr:sub last-point a) axis)
+            start (rr:add a (rr:scale axis first-station))
+            end (rr:add a (rr:scale axis last-station)))
+      (cond
+        ((not (and (rr:between first-station length) (rr:between last-station length)))
+         (rr:msg "Both turnout datums must lie within the main track LINE."))
+        ((<= (distance start end) rr:tol) (rr:msg "Pick different start and end locations."))
+        ((not (setq side (rr:point "\nPick the side of the main track for the siding: "))))
+        ((<= (abs (setq signed-side (rr:cross (rr:unit (rr:sub end start)) (rr:sub side start)))) rr:tol)
+         (rr:msg "Pick a point to either side of the main track."))
+        ((not (setq spacing (rr:positive-real "\nSiding centerline spacing in drawing units: "))))
+        ((<= spacing rr:tol) (rr:msg "Track spacing is too small."))
+        (T (rr:apply-siding a b start end (if (< signed-side 0.0) (- spacing) spacing)))
+      )
+    )
+  )
+  (princ)
+)
+
+(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN, RAILCROSS, RAILSCISSORS, RAILSIDING.")
 (princ)
