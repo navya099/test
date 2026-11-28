@@ -1101,7 +1101,7 @@
   )
 )
 
-(defun c:RAILSIDING (/ main a b axis length first-point last-point first-station last-station
+(defun c:RAILSIDING (/ main a b axis track-length first-point last-point first-station last-station
                      start end side signed-side spacing)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
@@ -1111,14 +1111,14 @@
     (T
       (setq a (cdr (assoc 10 main))
             b (cdr (assoc 11 main))
-            length (distance a b)
+            track-length (distance a b)
             axis (rr:unit (rr:sub b a))
             first-station (rr:dot (rr:sub first-point a) axis)
             last-station (rr:dot (rr:sub last-point a) axis)
             start (rr:add a (rr:scale axis first-station))
             end (rr:add a (rr:scale axis last-station)))
       (cond
-        ((not (and (rr:between first-station length) (rr:between last-station length)))
+        ((not (and (rr:between first-station track-length) (rr:between last-station track-length)))
          (rr:msg "Both turnout datums must lie within the main track LINE."))
         ((<= (distance start end) rr:tol) (rr:msg "Pick different start and end locations."))
         ((not (setq side (rr:point "\nPick the side of the main track for the siding: "))))
