@@ -8,6 +8,16 @@
 (setq rr:tol 1e-6
       rr:angle-tol 1e-7)
 
+;; Name, datum-to-PI length, PI-to-tip run (metres), and divergence (D M S).
+(setq rr:standards
+  '(("F8"   12.144 14.170 7  9 10)
+    ("F10"  14.655 17.147 5 43 29)
+    ("F12"  17.363 20.514 4 46 19)
+    ("F15"  21.249 25.910 3 49  6)
+    ("F18.5" 32.774 35.199 3  5 39)
+    ("F26"  45.412 46.541 2  7 59)
+    ("F46"  45.105 81.971 1 18 46)))
+
 (defun rr:add (a b) (mapcar '+ a b))
 (defun rr:sub (a b) (mapcar '- a b))
 (defun rr:scale (v n) (mapcar '(lambda (x) (* x n)) v))
@@ -131,16 +141,67 @@
   (princ)
 )
 
-(defun rr:choose-calibration (/ record label answer choices)
+(defun rr:library-template (spec hand scale / lead run radians rise label)
+  (setq label (car spec)
+        lead (* scale (cadr spec))
+        run (* scale (caddr spec))
+        radians (* (/ pi 180.0)
+                   (+ (nth 3 spec) (/ (nth 4 spec) 60.0) (/ (nth 5 spec) 3600.0)))
+        rise (* run (/ (sin radians) (cos radians))))
+  (list (cons 'standard label)
+        (cons 'origin '(0.0 0.0 0.0))
+        (cons 'forward '(1.0 0.0 0.0))
+        (cons 'pi (list lead 0.0 0.0))
+        (cons 'tip (list (+ lead run) (if (equal hand "Left") rise (- rise)) 0.0)))
+)
+
+(defun rr:library-scale (/ scale fallback)
+  (setq fallback
+    (cond (rr:last-library-scale)
+          ((cdr (assoc (getvar "INSUNITS") '((4 . 1000.0) (5 . 100.0) (6 . 1.0)))))))
+  (setq scale (rr:positive-real
+    (strcat "\nDrawing units per metre" (if fallback (strcat " <" (rtos fallback 2 8) ">") "") ": ")))
+  (if (not scale) (setq scale fallback))
+  (cond
+    ((not scale) (rr:msg "Enter the number of drawing units per metre to use the standard library."))
+    ((<= (* scale 12.144) rr:tol) (rr:msg "The drawing scale is too small."))
+    (T (setq rr:last-library-scale scale))
+  )
+)
+
+(defun rr:library-choice (answer / spec hand scale candidate)
+  (cond
+    ((setq spec (assoc answer rr:standards))
+     (initget "Left Right")
+     (setq hand (getkword "\nStandard turnout hand [Left/Right] <Right>: ")))
+    (T
+     (foreach candidate rr:standards
+       (cond
+         ((equal answer (strcat "STD-" (car candidate) "-L")) (setq spec candidate hand "Left"))
+         ((equal answer (strcat "STD-" (car candidate) "-R")) (setq spec candidate hand "Right")))))
+  )
+  (cond
+    ((not spec) (rr:msg "Turnout name not found."))
+    ((setq scale (rr:library-scale))
+     (setq rr:last-calibration (strcat "STD-" (car spec) (if (equal hand "Left") "-L" "-R")))
+     (rr:library-template spec hand scale))
+  )
+)
+
+(defun rr:choose-calibration (/ record label answer choices default-name)
   (foreach record rr:calibrations
     (setq label (car record)
           choices (if choices (strcat choices ", " label) label))
   )
-  (setq answer (getstring T (strcat "\nCalibration (" choices ") <" rr:last-calibration ">: ")))
-  (if (= answer "") (setq answer rr:last-calibration))
+  (setq default-name (if rr:last-calibration rr:last-calibration "F8")
+        answer (getstring T
+          (strcat "\nTurnout [F8/F10/F12/F15/F18.5/F26/F46]"
+                  (if choices (strcat " or registered (" choices ")") "")
+                  " <" default-name ">: ")))
+  (if (= answer "") (setq answer default-name))
   (if (setq record (assoc (strcase answer) rr:calibrations))
     (progn (setq rr:last-calibration (car record)) (cdr record))
-    (rr:msg "Calibration name not found.")
+    (rr:library-choice (strcase answer))
   )
 )
 
@@ -193,8 +254,7 @@
   object
 )
 
-(defun rr:draw-block (space name label origin pi-point tip layer
-                      / zero block lead mark mark-x tick x top label-point lettering insert data)
+(defun rr:define-block (name label pi-point tip / zero block lead mark mark-x tick x top label-point lettering)
   (setq zero '(0.0 0.0 0.0)
         block (vla-Add (vla-get-Blocks (rr:doc)) (vlax-3d-point zero) name)
         rr:new (cons block rr:new)
@@ -219,10 +279,46 @@
   (setq lettering (rr:block-graphic (vla-AddText block label label-point (* 0.18 lead))))
   (vla-put-Alignment lettering 10) ; acAlignmentMiddleCenter
   (vla-put-TextAlignmentPoint lettering label-point)
-  (setq insert (rr:new-on-layer
-                 (vla-InsertBlock space (vlax-3d-point origin) name 1.0 1.0 1.0 0.0) layer)
+  block
+)
+
+(defun rr:insert-block (space name origin layer)
+  (rr:new-on-layer
+    (vla-InsertBlock space (vlax-3d-point origin) name 1.0 1.0 1.0 0.0) layer)
+)
+
+(defun rr:draw-block (space name label origin pi-point tip layer / insert data)
+  (rr:define-block name label pi-point tip)
+  (setq insert (rr:insert-block space name origin layer)
         data (entget (vlax-vla-object->ename insert)))
   (if data data (rr:msg "Could not read the generated block reference."))
+)
+
+(defun rr:standard-block-name (template mirror / label pi-point tip base entry name index)
+  (setq label (cdr (assoc 'standard template))
+        pi-point (cdr (assoc 'pi template))
+        tip (cdr (assoc 'tip template)))
+  (if mirror (setq tip (list (car tip) (- (cadr tip)) 0.0)))
+  (setq base (strcat "RAILLIB_" (vl-string-translate "." "_" label)
+                     (if (> (cadr tip) 0.0) "_L" "_R"))
+        entry (assoc base rr:library-blocks))
+  (if (and entry
+           (equal pi-point (nth 3 entry))
+           (equal tip (nth 4 entry))
+           (equal (tblobjname "BLOCK" (cadr entry)) (caddr entry)))
+    (cadr entry)
+    (progn
+      (setq name base index 1)
+      (while (tblsearch "BLOCK" name)
+        (setq index (1+ index)
+              name (strcat base "_" (itoa index))))
+      (rr:define-block name label pi-point tip)
+      (setq rr:library-blocks
+        (cons (list base name (tblobjname "BLOCK" name) pi-point tip)
+              (if entry (vl-remove entry rr:library-blocks) rr:library-blocks)))
+      name
+    )
+  )
 )
 
 (defun rr:positive-real (message)
@@ -409,12 +505,15 @@
 )
 
 (defun rr:draw-turn (space sample matrix pi-point target fillet radius trim-code layer mirror-axis / object copy)
-  (setq object (vlax-ename->vla-object sample)
-        copy (if mirror-axis
-               (vla-Mirror object (vlax-3d-point (car mirror-axis))
-                                  (vlax-3d-point (cadr mirror-axis)))
-               (vla-Copy object))
-        rr:new (cons copy rr:new))
+  (if (listp sample)
+    (setq copy (rr:insert-block space (rr:standard-block-name sample mirror-axis) '(0.0 0.0 0.0) layer))
+    (setq object (vlax-ename->vla-object sample)
+          copy (if mirror-axis
+                 (vla-Mirror object (vlax-3d-point (car mirror-axis))
+                                    (vlax-3d-point (cadr mirror-axis)))
+                 (vla-Copy object))
+          rr:new (cons copy rr:new))
+  )
   (vla-TransformBy copy (vlax-tmatrix matrix))
   (rr:new-line space pi-point (car fillet) layer)
   (if (caddr fillet)
@@ -453,8 +552,8 @@
      (rr:msg "Pick the forward direction along the source track."))
     ((not (and (rr:layer-open-p (getvar "CLAYER"))
                (rr:layer-open-p layer)
-               (rr:layer-open-p (cdr (assoc 8 (entget sample))))))
-     (rr:msg "Unlock/thaw the current, target, and sample block layers."))
+               (rr:sample-layer-open-p sample)))
+     (rr:msg "Unlock/thaw the current and target layers, and the sample layer (layer 0 for the library)."))
     (T
       (initget 6)
       (setq radius
@@ -495,18 +594,23 @@
 )
 
 (defun rr:registered-sample (template / sample data)
-  (if (and (setq sample (handent (cdr (assoc 'handle template))))
-           (setq data (entget sample))
-           (equal (rr:pose data) (cdr (assoc 'pose template)) rr:tol))
-    sample
-    (rr:msg "The sample block changed or was erased. Register it again with RAILSETUP.")
+  (cond
+    ((assoc 'standard template) template)
+    ((and (setq sample (handent (cdr (assoc 'handle template))))
+          (setq data (entget sample))
+          (equal (rr:pose data) (cdr (assoc 'pose template)) rr:tol))
+     sample)
+    (T (rr:msg "The sample block changed or was erased. Register it again with RAILSETUP."))
   )
+)
+
+(defun rr:sample-layer-open-p (sample)
+  (rr:layer-open-p (if (listp sample) "0" (cdr (assoc 8 (entget sample)))))
 )
 
 (defun c:RAILTURN (/ template sample source target position facing)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
-    ((not rr:calibrations) (rr:msg "Run RAILSETUP first."))
     ((not (setq template (rr:choose-calibration))))
     ((not (setq sample (rr:registered-sample template))))
     ((not (setq source (rr:line "\nSelect the source track LINE: "))))
@@ -649,12 +753,11 @@
 (defun c:RAILFAN (/ template sample lead front selection a b axis direction radius clearance trim plans)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
-    ((not rr:calibrations) (rr:msg "Run RAILSETUP first."))
     ((not (setq template (rr:choose-calibration))))
     ((not (setq sample (rr:registered-sample template))))
     ((not (and (rr:layer-open-p (getvar "CLAYER"))
-               (rr:layer-open-p (cdr (assoc 8 (entget sample))))))
-     (rr:msg "Unlock/thaw the current and sample block layers."))
+               (rr:sample-layer-open-p sample)))
+     (rr:msg "Unlock/thaw the current layer and the sample layer (layer 0 for the library)."))
     ((not (setq lead (rr:line "\nSelect the common diagonal lead LINE: "))))
     ((not (setq front (rr:point "\nPick the forward endpoint of the common lead: "))))
     ((progn
