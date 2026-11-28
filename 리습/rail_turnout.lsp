@@ -230,7 +230,29 @@
   (getreal message)
 )
 
-(defun c:RAILMAKE (/ layer label hand default-name name lead run ratio origin pi-point tip branch sample)
+(defun rr:turnout-rise (run / mode degrees radians ratio)
+  (initget "Ratio Angle")
+  (setq mode (getkword "\nSpecify divergence by [Ratio/Angle] <Ratio>: "))
+  (if (equal mode "Angle")
+    (progn
+      (while (and (setq degrees (rr:positive-real "\nDivergence angle from the main axis in degrees: "))
+                  (>= degrees 90.0))
+        (rr:msg "Enter an angle greater than 0 and less than 90 degrees.")
+      )
+      (if degrees
+        (progn
+          (setq radians (* degrees (/ pi 180.0)))
+          (* run (/ (sin radians) (cos radians)))
+        )
+      )
+    )
+    (if (setq ratio (rr:positive-real "\nDivergence 1:N, enter N (e.g. 8): "))
+      (/ run ratio)
+    )
+  )
+)
+
+(defun c:RAILMAKE (/ layer label hand default-name name lead run rise origin pi-point tip branch sample)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
     ((not (and (rr:layer-open-p (setq layer (getvar "CLAYER"))) (rr:layer-open-p "0")))
@@ -250,17 +272,17 @@
          (rr:msg "That block already exists. Use RAILSETUP on it or choose a new name."))
         ((not (setq lead (rr:positive-real "\nDistance along the main axis from datum to PI: "))))
         ((not (setq run (rr:positive-real "\nPI to branch tip, measured along the main axis: "))))
-        ((not (setq ratio (rr:positive-real "\nDivergence 1:N, enter N (e.g. 8): "))))
         ((or (<= lead rr:tol) (<= run rr:tol))
          (rr:msg "The main-axis lengths are too small."))
+        ((not (setq rise (rr:turnout-rise run))))
         ((not (setq origin (rr:point "\nPick an insertion point for the sample block: "))))
         (T
           (setq pi-point (list lead 0.0 0.0)
-                tip (list (+ lead run) (/ (if (equal hand "Left") run (- run)) ratio) 0.0)
+                tip (list (+ lead run) (if (equal hand "Left") rise (- rise)) 0.0)
                 branch (rr:unit (rr:sub (rr:add origin tip) (rr:add origin pi-point))))
           (cond
             ((not (and branch (> (car branch) 0.0) (> (abs (cadr branch)) rr:angle-tol)))
-             (rr:msg "The input lengths or ratio do not produce a usable divergence."))
+             (rr:msg "The input lengths or divergence do not produce a usable branch direction."))
             ((setq sample (rr:edit 'rr:draw-block (list name label origin pi-point tip layer)))
              (rr:register name sample origin '(1.0 0.0 0.0) (rr:add origin pi-point) (rr:add origin tip))
              (rr:msg (strcat "Created and registered " rr:last-calibration ". Use RAILTURN or RAILFAN.")))
