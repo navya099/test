@@ -149,16 +149,20 @@
                    (+ (nth 3 spec) (/ (nth 4 spec) 60.0) (/ (nth 5 spec) 3600.0)))
         rise (* run (/ (sin radians) (cos radians))))
   (list (cons 'standard label)
+        (cons 'scale scale)
         (cons 'origin '(0.0 0.0 0.0))
         (cons 'forward '(1.0 0.0 0.0))
         (cons 'pi (list lead 0.0 0.0))
         (cons 'tip (list (+ lead run) (if (equal hand "Left") rise (- rise)) 0.0)))
 )
 
+(defun rr:drawing-scale ()
+  (cond (rr:last-library-scale)
+        ((cdr (assoc (getvar "INSUNITS") '((4 . 1000.0) (5 . 100.0) (6 . 1.0))))))
+)
+
 (defun rr:library-scale (/ scale fallback)
-  (setq fallback
-    (cond (rr:last-library-scale)
-          ((cdr (assoc (getvar "INSUNITS") '((4 . 1000.0) (5 . 100.0) (6 . 1.0)))))))
+  (setq fallback (rr:drawing-scale))
   (setq scale (rr:positive-real
     (strcat "\nDrawing units per metre" (if fallback (strcat " <" (rtos fallback 2 8) ">") "") ": ")))
   (if (not scale) (setq scale fallback))
@@ -254,29 +258,36 @@
   object
 )
 
-(defun rr:define-block (name label pi-point tip / zero block lead mark mark-x tick x top label-point lettering)
+(defun rr:block-sizes (scale)
+  (list (* 2.3 scale) (* 2.0 scale) scale)
+)
+
+(defun rr:define-block (name label pi-point tip sizes
+                       / zero block lead mark mark-x height half-tick radius x top label-point lettering)
   (setq zero '(0.0 0.0 0.0)
         block (vla-Add (vla-get-Blocks (rr:doc)) (vlax-3d-point zero) name)
         rr:new (cons block rr:new)
         lead (car pi-point)
         mark-x (* 0.245 lead)
         mark (list mark-x 0.0 0.0)
-        tick (* 0.0825 lead)
+        height (car sizes)
+        half-tick (* 0.5 (cadr sizes))
+        radius (caddr sizes)
         top (list (car tip) 0.0 0.0)
-        label-point (vlax-3d-point (list lead (* -0.21 lead) 0.0)))
+        label-point (vlax-3d-point (list lead (- (+ half-tick (* 0.65 height))) 0.0)))
   (rr:block-graphic (vla-AddLine block (vlax-3d-point zero) (vlax-3d-point pi-point)))
   (foreach x (list 0.0 mark-x lead)
     (rr:block-graphic
-      (vla-AddLine block (vlax-3d-point (list x (- tick) 0.0))
-                         (vlax-3d-point (list x tick 0.0))))
+      (vla-AddLine block (vlax-3d-point (list x (- half-tick) 0.0))
+                         (vlax-3d-point (list x half-tick 0.0))))
   )
-  (rr:block-graphic (vla-AddCircle block (vlax-3d-point mark) tick))
+  (rr:block-graphic (vla-AddCircle block (vlax-3d-point mark) radius))
   ;; Repeating the last corner creates a triangular, filled 2D solid.
   (rr:block-graphic
     (vla-AddSolid block (vlax-3d-point pi-point) (vlax-3d-point top)
               (vlax-3d-point tip) (vlax-3d-point tip)))
   (rr:block-graphic (vla-AddLine block (vlax-3d-point pi-point) (vlax-3d-point tip)))
-  (setq lettering (rr:block-graphic (vla-AddText block label label-point (* 0.18 lead))))
+  (setq lettering (rr:block-graphic (vla-AddText block label label-point height)))
   (vla-put-Alignment lettering 10) ; acAlignmentMiddleCenter
   (vla-put-TextAlignmentPoint lettering label-point)
   block
@@ -287,17 +298,19 @@
     (vla-InsertBlock space (vlax-3d-point origin) name 1.0 1.0 1.0 0.0) layer)
 )
 
-(defun rr:draw-block (space name label origin pi-point tip layer / insert data)
-  (rr:define-block name label pi-point tip)
+(defun rr:draw-block (space name label origin pi-point tip layer / scale insert data)
+  (setq scale (rr:drawing-scale))
+  (rr:define-block name label pi-point tip (rr:block-sizes (if scale scale 1.0)))
   (setq insert (rr:insert-block space name origin layer)
         data (entget (vlax-vla-object->ename insert)))
   (if data data (rr:msg "Could not read the generated block reference."))
 )
 
-(defun rr:standard-block-name (template mirror / label pi-point tip base entry name index)
+(defun rr:standard-block-name (template mirror / label pi-point tip sizes base entry name index)
   (setq label (cdr (assoc 'standard template))
         pi-point (cdr (assoc 'pi template))
-        tip (cdr (assoc 'tip template)))
+        tip (cdr (assoc 'tip template))
+        sizes (rr:block-sizes (cdr (assoc 'scale template))))
   (if mirror (setq tip (list (car tip) (- (cadr tip)) 0.0)))
   (setq base (strcat "RAILLIB_" (vl-string-translate "." "_" label)
                      (if (> (cadr tip) 0.0) "_L" "_R"))
@@ -305,6 +318,7 @@
   (if (and entry
            (equal pi-point (nth 3 entry))
            (equal tip (nth 4 entry))
+           (equal sizes (nth 5 entry))
            (equal (tblobjname "BLOCK" (cadr entry)) (caddr entry)))
     (cadr entry)
     (progn
@@ -312,9 +326,9 @@
       (while (tblsearch "BLOCK" name)
         (setq index (1+ index)
               name (strcat base "_" (itoa index))))
-      (rr:define-block name label pi-point tip)
+      (rr:define-block name label pi-point tip sizes)
       (setq rr:library-blocks
-        (cons (list base name (tblobjname "BLOCK" name) pi-point tip)
+        (cons (list base name (tblobjname "BLOCK" name) pi-point tip sizes)
               (if entry (vl-remove entry rr:library-blocks) rr:library-blocks)))
       name
     )
