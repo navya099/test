@@ -1,5 +1,6 @@
 ;;; Railroad yard drafting for Windows AutoCAD with AutoLISP and ActiveX.
-;;; RAILSETUP registers a sample. RAILYARD offsets tracks. RAILTURN connects tracks.
+;;; RAILSETUP registers a sample. RAILYARD offsets tracks.
+;;; RAILTURN connects parallel tracks. RAILFAN connects a diagonal lead to multiple tracks.
 
 (vl-load-com)
 
@@ -58,18 +59,18 @@
   )
 )
 
-(defun rr:line (message / data a b)
-  (if (setq data (rr:pick message "LINE"))
-    (progn
-      (setq a (cdr (assoc 10 data))
-            b (cdr (assoc 11 data)))
-      (if (and (equal (caddr a) (caddr b) rr:tol)
-               (rr:unit (rr:sub b a)))
-        data
-        (rr:msg "Select a nonzero horizontal LINE.")
-      )
-    )
+(defun rr:line-data (data / a b)
+  (setq a (cdr (assoc 10 data))
+        b (cdr (assoc 11 data)))
+  (if (and (equal (caddr a) (caddr b) rr:tol)
+           (rr:unit (rr:sub b a)))
+    data
+    (rr:msg "Select a nonzero horizontal LINE.")
   )
+)
+
+(defun rr:line (message / data)
+  (if (setq data (rr:pick message "LINE")) (rr:line-data data))
 )
 
 (defun rr:point (message / point)
@@ -139,7 +140,7 @@
 )
 
 ;; Edits run without input after validation. Roll back created objects on a COM error.
-(defun rr:edit (action args / doc space rr:new result object)
+(defun rr:edit (action args / doc space rr:new rr:changed result original object restored)
   (setq doc (rr:doc)
         space (vla-get-ModelSpace doc)
         result (vl-catch-all-apply 'vla-StartUndoMark (list doc)))
@@ -148,9 +149,17 @@
     (progn
       (setq result (vl-catch-all-apply action (cons space args)))
       (if (or (null result) (vl-catch-all-error-p result))
-        (foreach object rr:new
-          (if (vl-catch-all-error-p (vl-catch-all-apply 'vla-Delete (list object)))
-            (rr:msg "Could not remove a generated object. Use UNDO to roll back this edit.")
+        (progn
+          (foreach original rr:changed
+            (setq restored (vl-catch-all-apply 'entmod (list original)))
+            (if (or (null restored) (vl-catch-all-error-p restored))
+              (rr:msg "Could not restore a target track. Use UNDO to roll back this edit.")
+            )
+          )
+          (foreach object rr:new
+            (if (vl-catch-all-error-p (vl-catch-all-apply 'vla-Delete (list object)))
+              (rr:msg "Could not remove a generated object. Use UNDO to roll back this edit.")
+            )
           )
         )
       )
@@ -226,11 +235,28 @@
           (list (car matrix) (cadr matrix) (caddr matrix)))
 )
 
+(defun rr:forward-axis (a b forward / axis)
+  (setq axis (rr:unit (rr:sub b a)))
+  (if (< (rr:dot axis forward) 0.0) (rr:scale axis -1.0) axis)
+)
+
+(defun rr:setback (branch target radius)
+  (/ (* radius (abs (rr:cross branch target))) (+ 1.0 (rr:dot branch target)))
+)
+
+(defun rr:target-fit (point cut-end kept-end direction)
+  (cond
+    ((not (rr:between (rr:dot (rr:sub point cut-end) direction) (distance cut-end kept-end)))
+     "The target tangent point lies outside the selected LINE.")
+    ((<= (distance point kept-end) rr:tol)
+     "No target track would remain in the forward direction.")
+  )
+)
+
 ;; The intersection uses infinite lines. Both tangent points must fit the real track pieces.
-(defun rr:fillet (tip branch target-start target-end forward radius
-                  / target length kept-end cut-end turn along setback joint first-point last-point center a b)
-  (setq target (rr:unit (rr:sub target-end target-start))
-        length (distance target-start target-end))
+(defun rr:track-fillet (tip branch target-start target-end forward radius
+                  / target kept-end cut-end turn along setback joint first-point last-point center a b problem)
+  (setq target (rr:unit (rr:sub target-end target-start)))
   (if (< (rr:dot target forward) 0.0)
     (setq target (rr:scale target -1.0)
           kept-end target-start
@@ -240,23 +266,18 @@
   )
   (setq turn (rr:cross branch target))
   (cond
-    ((> (abs (rr:cross forward target)) rr:angle-tol)
-     "Source and target tracks must be parallel.")
     ((or (<= (abs turn) rr:angle-tol) (<= (rr:dot branch target) 0.0))
      "The divergent line must approach the target at a forward angle.")
     (T
       (setq along (/ (rr:cross (rr:sub cut-end tip) target) turn)
-            setback (/ (* radius (abs turn)) (+ 1.0 (rr:dot branch target)))
+            setback (rr:setback branch target radius)
             joint (rr:add tip (rr:scale branch along))
             first-point (rr:sub joint (rr:scale branch setback))
             last-point (rr:add joint (rr:scale target setback)))
       (cond
         ((< (- along setback) (- rr:tol))
          "The radius or target side would put the first tangent point before the turnout tip.")
-        ((not (rr:between (rr:dot (rr:sub last-point cut-end) target) length))
-         "The target tangent point lies outside the selected LINE.")
-        ((<= (distance last-point kept-end) rr:tol)
-         "No target track would remain in the forward direction.")
+        ((setq problem (rr:target-fit last-point cut-end kept-end target)) problem)
         (T
           (setq center (rr:add first-point (rr:scale (rr:left branch) (if (> turn 0.0) radius (- radius))))
                 a (rr:angle (rr:sub first-point center))
@@ -268,17 +289,26 @@
   )
 )
 
+(defun rr:fillet (tip branch target-start target-end forward radius)
+  (if (> (abs (rr:cross forward (rr:forward-axis target-start target-end forward))) rr:angle-tol)
+    "Source and target tracks must be parallel."
+    (rr:track-fillet tip branch target-start target-end forward radius)
+  )
+)
+
 (defun rr:draw-turn (space sample matrix pi-point target fillet radius trim-code layer / copy)
   (setq copy (vla-Copy (vlax-ename->vla-object sample))
         rr:new (cons copy rr:new))
   (vla-TransformBy copy (vlax-tmatrix matrix))
   (rr:new-line space pi-point (car fillet) layer)
-  (rr:new-on-layer
-    (vla-AddArc space (vlax-3d-point (caddr fillet)) radius (nth 3 fillet) (nth 4 fillet))
-    layer)
+  (if (caddr fillet)
+    (rr:new-on-layer
+      (vla-AddArc space (vlax-3d-point (caddr fillet)) radius (nth 3 fillet) (nth 4 fillet))
+      layer)
+  )
   (if trim-code
     (if (entmod (subst (cons trim-code (cadr fillet)) (assoc trim-code target) target))
-      T
+      (progn (setq rr:changed (cons target rr:changed)) T)
       (rr:msg "Could not trim the target LINE.")
     )
     T
@@ -348,16 +378,21 @@
   )
 )
 
+(defun rr:registered-sample (template / sample data)
+  (if (and (setq sample (handent (cdr (assoc 'handle template))))
+           (setq data (entget sample))
+           (equal (rr:pose data) (cdr (assoc 'pose template)) rr:tol))
+    sample
+    (rr:msg "The sample block changed or was erased. Register it again with RAILSETUP.")
+  )
+)
+
 (defun c:RAILTURN (/ template sample source target position facing)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
     ((not rr:calibrations) (rr:msg "Run RAILSETUP first."))
     ((not (setq template (rr:choose-calibration))))
-    ((not
-       (and (setq sample (handent (cdr (assoc 'handle template))))
-            (entget sample)
-            (equal (rr:pose (entget sample)) (cdr (assoc 'pose template)) rr:tol)))
-     (rr:msg "The sample block changed or was erased. Register it again with RAILSETUP."))
+    ((not (setq sample (rr:registered-sample template))))
     ((not (setq source (rr:line "\nSelect the source track LINE: "))))
     ((not (setq position (rr:point "\nPick the turnout datum on the source track: "))))
     ((not (setq facing (rr:point "\nPick a point toward the turnout forward end: "))))
@@ -369,5 +404,157 @@
   (princ)
 )
 
-(prompt "\nRail drafting loaded. Commands: RAILSETUP, RAILYARD, RAILTURN.")
+;; At station zero, advance from the tip to the virtual intersection. Moving
+;; that point along the lead until it meets the target gives the turnout station.
+(defun rr:fan-geometry (lead-start lead-end pi-zero tip-zero start end radius clearance
+                        / forward target branch skew straight station length offset origin pi-point join problem fillet)
+  (setq forward (rr:unit (rr:sub lead-end lead-start))
+        target (rr:forward-axis start end forward)
+        branch (rr:unit (rr:sub tip-zero pi-zero))
+        skew (rr:cross forward target)
+        length (distance lead-start lead-end)
+        straight (<= (abs (rr:cross branch target)) rr:angle-tol))
+  (cond
+    ((<= (abs skew) rr:angle-tol)
+     "The lead must cross the target alignment at an angle.")
+    ((<= (rr:dot forward target) rr:angle-tol)
+     "The target needs a forward direction along the lead.")
+    ((< (* skew (rr:cross forward branch)) 0.0)
+     "Use the turnout handedness that branches toward the target direction.")
+    ((<= (rr:dot branch target) 0.0)
+     "The turnout branch angle must allow a tangent curve into the target.")
+    ((and (not straight) (<= radius rr:tol))
+     "Enter a positive curve radius for this turnout and target angle.")
+    (T
+      (setq offset (rr:scale branch (+ clearance (if straight 0.0 (rr:setback branch target radius))))
+            station (/ (rr:cross (rr:sub start (rr:add tip-zero offset)) target) skew))
+      (if (and (rr:between station length)
+               (rr:between (+ station (rr:dot (rr:sub pi-zero lead-start) forward)) length)
+               (rr:between (+ station (rr:dot (rr:sub tip-zero lead-start) forward)) length))
+        (progn
+          (setq offset (rr:scale forward station)
+                origin (rr:add lead-start offset)
+                pi-point (rr:add pi-zero offset)
+                fillet
+                (if straight
+                  (progn
+                    (setq join (rr:add (rr:add tip-zero offset) (rr:scale branch clearance))
+                          problem (if (> (rr:dot (rr:sub end start) target) 0.0)
+                                    (rr:target-fit join start end target)
+                                    (rr:target-fit join end start target)))
+                    (if problem problem (list join join nil))
+                  )
+                  (rr:track-fillet (rr:add tip-zero offset) branch start end forward radius)
+                ))
+          (if (eq (type fillet) 'STR) fillet (list origin pi-point fillet))
+        )
+        "The turnout datum, PI or tip projects outside the selected lead LINE."
+      )
+    )
+  )
+)
+
+(defun rr:plan-fan (template lead-start lead-end selection radius clearance trim
+                    / forward rotation datum matrix pi-zero tip-zero index data start end
+                      axis yard-axis layer result plans error-message)
+  (setq forward (rr:unit (rr:sub lead-end lead-start))
+        rotation (- (rr:angle forward) (rr:angle (cdr (assoc 'forward template))))
+        datum (cdr (assoc 'origin template))
+        matrix (rr:matrix datum lead-start rotation)
+        pi-zero (rr:transform-point matrix (cdr (assoc 'pi template)))
+        tip-zero (rr:transform-point matrix (cdr (assoc 'tip template)))
+        index 0)
+  (while (and (< index (sslength selection)) (not error-message))
+    (setq data (entget (ssname selection (+ 0.0 index)))
+          start (cdr (assoc 10 data))
+          end (cdr (assoc 11 data))
+          layer (cdr (assoc 8 data))
+          axis (rr:unit (rr:sub end start)))
+    (cond
+      ((not (and axis (rr:horizontal-p (list lead-start start end))))
+       (setq error-message "Select nonzero target LINEs at the same elevation as the lead."))
+      ((and yard-axis (> (abs (rr:cross yard-axis axis)) rr:angle-tol))
+       (setq error-message "The selected yard tracks must be parallel to each other."))
+      ((not (rr:layer-open-p layer))
+       (setq error-message "Unlock/thaw the target track layer."))
+      (T
+        (if (not yard-axis) (setq yard-axis axis))
+        (setq result (rr:fan-geometry lead-start lead-end pi-zero tip-zero start end radius clearance))
+        (if (eq (type result) 'STR)
+          (setq error-message result)
+          (setq plans (cons (list data (rr:matrix datum (car result) rotation)
+                                  (cadr result) (caddr result)
+                                  (if trim (if (> (rr:dot axis forward) 0.0) 10 11))
+                                  layer)
+                            plans))
+        )
+      )
+    )
+    (setq index (1+ index))
+  )
+  (if error-message
+    (rr:msg (strcat "Target [" (cdr (assoc 5 data)) "]: " error-message " No tracks changed."))
+    (reverse plans)
+  )
+)
+
+(defun rr:draw-fan (space sample plans radius / plan success)
+  (setq success T)
+  (while (and success plans)
+    (setq plan (car plans)
+          success (rr:draw-turn space sample (nth 1 plan) (nth 2 plan) (nth 0 plan)
+                                (nth 3 plan) radius (nth 4 plan) (nth 5 plan))
+          plans (cdr plans))
+  )
+  success
+)
+
+(defun c:RAILFAN (/ template sample lead front selection a b axis direction radius clearance trim plans)
+  (cond
+    ((not (rr:model-p)) (rr:msg "Switch to model space."))
+    ((not rr:calibrations) (rr:msg "Run RAILSETUP first."))
+    ((not (setq template (rr:choose-calibration))))
+    ((not (setq sample (rr:registered-sample template))))
+    ((not (and (rr:layer-open-p (getvar "CLAYER"))
+               (rr:layer-open-p (cdr (assoc 8 (entget sample))))))
+     (rr:msg "Unlock/thaw the current and sample block layers."))
+    ((not (setq lead (rr:line "\nSelect the common diagonal lead LINE: "))))
+    ((not (setq front (rr:point "\nPick the forward endpoint of the common lead: "))))
+    ((progn
+       (setq a (cdr (assoc 10 lead))
+             b (cdr (assoc 11 lead))
+             axis (rr:unit (rr:sub b a))
+             direction (- (rr:dot (rr:sub front a) axis) (* 0.5 (distance a b))))
+       (<= (abs direction) rr:tol))
+     (rr:msg "Pick one end of the lead to set the forward direction."))
+    ((not (progn
+            (prompt "\nSelect all target yard track LINEs, then press Enter.")
+            (setq selection (ssget '((0 . "LINE") (410 . "Model")))))))
+    ((ssmemb (cdr (assoc -1 lead)) selection)
+     (rr:msg "Select only the target tracks in the selection set."))
+    (T
+      (initget 6)
+      (setq radius (getreal (strcat "\nCurve radius in drawing units "
+                                    (if rr:last-radius (strcat "<" (rtos rr:last-radius 2 6) ">")
+                                      "<Straight only>")
+                                    ": ")))
+      (if (not radius) (setq radius (if rr:last-radius rr:last-radius 0.0)))
+      (initget 4)
+      (setq clearance (getreal "\nStraight length after each turnout tip <0>: "))
+      (initget "Trim Keep")
+      (setq trim (not (equal "Keep" (getkword "\nTarget tracks [Trim/Keep] <Trim>: "))))
+      (if (and (setq plans (rr:plan-fan template (if (> direction 0.0) a b) (if (> direction 0.0) b a)
+                                       selection radius (if clearance clearance 0.0) trim))
+               (rr:edit 'rr:draw-fan (list sample plans radius)))
+        (progn
+          (if (> radius rr:tol) (setq rr:last-radius radius))
+          (rr:msg (strcat (itoa (sslength selection)) " turnout connections created on the common lead."))
+        )
+      )
+    )
+  )
+  (princ)
+)
+
+(prompt "\nRail drafting loaded. Commands: RAILSETUP, RAILYARD, RAILTURN, RAILFAN.")
 (princ)
