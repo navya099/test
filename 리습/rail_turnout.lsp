@@ -2,7 +2,7 @@
 ;;; RAILMAKE creates a sample block. RAILSETUP registers an existing sample.
 ;;; RAILYARD offsets tracks.
 ;;; RAILTURN connects parallel tracks. RAILFAN connects a diagonal lead to multiple tracks.
-;;; RAILCROSS builds a crossover between two parallel tracks.
+;;; RAILCROSS and RAILSCISSORS build single and double crossovers.
 
 (vl-load-com)
 
@@ -887,7 +887,27 @@
   T
 )
 
-(defun rr:apply-cross (a b c d origin forward / hand template sample layer plan branch cross-side opposite mirror-axis)
+(defun rr:draw-scissors (space sample first-plan second-plan layer first-mirror second-mirror)
+  (rr:draw-cross space sample first-plan layer first-mirror)
+  (rr:draw-cross space sample second-plan layer second-mirror)
+)
+
+(defun rr:apply-scissors (template sample a b c d origin forward first-plan layer first-mirror sample-axis
+                          / second-origin second-plan second-mirror)
+  ;; Both upstream turnouts start at the same station, on opposite tracks.
+  (setq second-origin (rr:add c (rr:scale forward (rr:dot (rr:sub origin c) forward)))
+        second-mirror (if (not first-mirror) sample-axis)
+        second-plan (rr:cross-plan template c d a b second-origin forward second-mirror))
+  (cond
+    ((eq (type second-plan) 'STR)
+     (rr:msg (strcat "Other diagonal: " second-plan)))
+    ((rr:edit 'rr:draw-scissors (list sample first-plan second-plan layer first-mirror second-mirror))
+     (rr:msg "Scissors crossover created with four turnouts."))
+  )
+)
+
+(defun rr:apply-cross (a b c d origin forward scissors
+                       / hand template sample layer plan branch cross-side opposite sample-axis mirror-axis)
   (setq cross-side (rr:cross forward (rr:sub c origin))
         hand (if (> cross-side 0.0) "Left" "Right")
         layer (getvar "CLAYER"))
@@ -899,17 +919,25 @@
     (T
       (setq branch (rr:sub (cdr (assoc 'tip template)) (cdr (assoc 'pi template)))
             opposite (< (* cross-side (rr:cross (cdr (assoc 'forward template)) branch)) 0.0))
-      (if (and opposite
+      (if (and (or scissors opposite)
                (or (listp sample)
                    (progn
                      (initget "Yes No")
-                     (equal "Yes" (getkword "\nMirror the sample copies to fit the crossover? [Yes/No] <No>: ")))))
-        (setq mirror-axis (rr:cross-mirror-axis template)))
+                     (equal "Yes" (getkword
+                       (if scissors
+                         "\nMirror one pair of sample copies for the scissors crossover? [Yes/No] <No>: "
+                         "\nMirror the sample copies to fit the crossover? [Yes/No] <No>: "))))))
+        (setq sample-axis (rr:cross-mirror-axis template)))
+      (if opposite (setq mirror-axis sample-axis))
       (cond
+        ((and scissors (not sample-axis))
+         (rr:msg "The scissors crossover uses both turnout hands. No tracks changed."))
         ((and opposite (not mirror-axis))
          (rr:msg "Select a turnout that branches toward the second track. No tracks changed."))
         ((eq (type (setq plan (rr:cross-plan template a b c d origin forward mirror-axis))) 'STR)
          (rr:msg plan))
+        (scissors
+         (rr:apply-scissors template sample a b c d origin forward plan layer mirror-axis sample-axis))
         ((rr:edit 'rr:draw-cross (list sample plan layer mirror-axis))
          (rr:msg "Crossover created with two turnouts."))
       )
@@ -917,7 +945,7 @@
   )
 )
 
-(defun c:RAILCROSS (/ first second a b c d axis pick station origin direction facing)
+(defun rr:cross-command (scissors / first second a b c d axis pick station origin direction facing)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
     ((not (setq first (rr:line "\nSelect the first track LINE: "))))
@@ -942,7 +970,7 @@
                 facing (rr:dot (rr:sub direction origin) axis))
           (if (<= (abs facing) rr:tol)
             (rr:msg "Pick a point along the first track to set the forward direction.")
-            (rr:apply-cross a b c d origin (if (< facing 0.0) (rr:scale axis -1.0) axis)))
+            (rr:apply-cross a b c d origin (if (< facing 0.0) (rr:scale axis -1.0) axis) scissors))
         )
       )
     )
@@ -950,5 +978,8 @@
   (princ)
 )
 
-(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN, RAILCROSS.")
+(defun c:RAILCROSS () (rr:cross-command nil))
+(defun c:RAILSCISSORS () (rr:cross-command T))
+
+(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN, RAILCROSS, RAILSCISSORS.")
 (princ)
