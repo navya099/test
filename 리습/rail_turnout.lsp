@@ -2,6 +2,7 @@
 ;;; RAILMAKE creates a sample block. RAILSETUP registers an existing sample.
 ;;; RAILYARD offsets tracks.
 ;;; RAILTURN connects parallel tracks. RAILFAN connects a diagonal lead to multiple tracks.
+;;; RAILCROSS builds a crossover between two parallel tracks.
 
 (vl-load-com)
 
@@ -173,11 +174,13 @@
   )
 )
 
-(defun rr:library-choice (answer / spec hand scale candidate)
+(defun rr:library-choice (answer preferred-hand / spec hand scale candidate)
   (cond
     ((setq spec (assoc answer rr:standards))
-     (initget "Left Right")
-     (setq hand (getkword "\nStandard turnout hand [Left/Right] <Right>: ")))
+     (setq hand
+       (if preferred-hand
+         preferred-hand
+         (progn (initget "Left Right") (getkword "\nStandard turnout hand [Left/Right] <Right>: ")))))
     (T
      (foreach candidate rr:standards
        (cond
@@ -192,7 +195,7 @@
   )
 )
 
-(defun rr:choose-calibration (/ record label answer choices default-name)
+(defun rr:choose-turnout (preferred-hand / record label answer choices default-name)
   (foreach record rr:calibrations
     (setq label (car record)
           choices (if choices (strcat choices ", " label) label))
@@ -205,8 +208,12 @@
   (if (= answer "") (setq answer default-name))
   (if (setq record (assoc (strcase answer) rr:calibrations))
     (progn (setq rr:last-calibration (car record)) (cdr record))
-    (rr:library-choice (strcase answer))
+    (rr:library-choice (strcase answer) preferred-hand)
   )
+)
+
+(defun rr:choose-calibration ()
+  (rr:choose-turnout nil)
 )
 
 ;; Edits run without input after validation. Roll back created objects on a COM error.
@@ -518,7 +525,7 @@
   )
 )
 
-(defun rr:draw-turn (space sample matrix pi-point target fillet radius trim-code layer mirror-axis / object copy)
+(defun rr:place-block (space sample matrix layer mirror-axis / object copy)
   (if (listp sample)
     (setq copy (rr:insert-block space (rr:standard-block-name sample mirror-axis) '(0.0 0.0 0.0) layer))
     (setq object (vlax-ename->vla-object sample)
@@ -529,6 +536,11 @@
           rr:new (cons copy rr:new))
   )
   (vla-TransformBy copy (vlax-tmatrix matrix))
+  copy
+)
+
+(defun rr:draw-turn (space sample matrix pi-point target fillet radius trim-code layer mirror-axis)
+  (rr:place-block space sample matrix layer mirror-axis)
   (rr:new-line space pi-point (car fillet) layer)
   (if (caddr fillet)
     (rr:new-on-layer
@@ -810,5 +822,133 @@
   (princ)
 )
 
-(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN.")
+(defun rr:within-track-span-p (points start end / axis length)
+  (setq axis (rr:unit (rr:sub end start))
+        length (distance start end))
+  (vl-every '(lambda (point) (rr:between (rr:dot (rr:sub point start) axis) length)) points)
+)
+
+(defun rr:cross-plan (template a b c d origin forward mirror-axis
+                     / datum sample-forward local-pi local-tip rotation first-matrix first-pi first-tip
+                       branch lateral dist second-origin second-matrix second-pi second-tip)
+  (setq datum (cdr (assoc 'origin template))
+        sample-forward (cdr (assoc 'forward template))
+        local-pi (cdr (assoc 'pi template))
+        local-tip (cdr (assoc 'tip template)))
+  (if mirror-axis
+    (setq local-pi (rr:reflect-point local-pi datum sample-forward)
+          local-tip (rr:reflect-point local-tip datum sample-forward))
+  )
+  (setq rotation (- (rr:angle forward) (rr:angle sample-forward))
+        first-matrix (rr:matrix datum origin rotation)
+        first-pi (rr:transform-point first-matrix local-pi)
+        first-tip (rr:transform-point first-matrix local-tip)
+        branch (rr:unit (rr:sub first-tip first-pi))
+        lateral (rr:cross forward (rr:sub c first-pi)))
+  (cond
+    ((> (abs (rr:cross sample-forward (rr:sub local-pi datum))) rr:tol)
+     "The sample PI must lie on its main axis. Register the sample again with RAILSETUP.")
+    ((or (not branch) (<= (abs (rr:cross forward branch)) rr:angle-tol))
+     "The turnout needs a usable branch angle.")
+    (T
+      ;; The opposite turnout points back along the same diagonal, rotated 180 degrees.
+      (setq dist (/ lateral (rr:cross forward branch))
+            second-pi (rr:add first-pi (rr:scale branch dist))
+            second-origin (rr:add second-pi (rr:sub first-pi origin))
+            second-matrix (rr:matrix datum second-origin (+ rotation pi))
+            second-tip (rr:transform-point second-matrix local-tip))
+      (cond
+        ((< (rr:dot (rr:sub second-tip first-tip) branch) (- rr:tol))
+         "The track spacing is too small for two turnouts of this type.")
+        ((not (rr:within-track-span-p (list origin first-pi first-tip) a b))
+         "The first turnout extends beyond the first track LINE.")
+        ((not (rr:within-track-span-p (list second-origin second-pi second-tip) c d))
+         "The second turnout extends beyond the second track LINE.")
+        (T (list first-matrix second-matrix first-tip second-tip))
+      )
+    )
+  )
+)
+
+(defun rr:cross-mirror-axis (template / datum forward)
+  (setq datum (cdr (assoc 'origin template))
+        forward (cdr (assoc 'forward template)))
+  (list datum (rr:add datum (rr:scale forward
+                      (distance (cdr (assoc 'pi template)) (cdr (assoc 'tip template))))))
+)
+
+(defun rr:draw-cross (space sample plan layer mirror-axis / first-tip second-tip)
+  (rr:place-block space sample (car plan) layer mirror-axis)
+  (rr:place-block space sample (cadr plan) layer mirror-axis)
+  (setq first-tip (caddr plan)
+        second-tip (cadddr plan))
+  (if (> (distance first-tip second-tip) rr:tol)
+    (rr:new-line space first-tip second-tip layer))
+  T
+)
+
+(defun rr:apply-cross (a b c d origin forward / hand template sample layer plan branch cross-side opposite mirror-axis)
+  (setq cross-side (rr:cross forward (rr:sub c origin))
+        hand (if (> cross-side 0.0) "Left" "Right")
+        layer (getvar "CLAYER"))
+  (cond
+    ((not (setq template (rr:choose-turnout hand))))
+    ((not (setq sample (rr:registered-sample template))))
+    ((not (and (rr:layer-open-p layer) (rr:sample-layer-open-p sample)))
+     (rr:msg "Unlock/thaw the current layer and the sample layer (layer 0 for the library)."))
+    (T
+      (setq branch (rr:sub (cdr (assoc 'tip template)) (cdr (assoc 'pi template)))
+            opposite (< (* cross-side (rr:cross (cdr (assoc 'forward template)) branch)) 0.0))
+      (if (and opposite
+               (or (listp sample)
+                   (progn
+                     (initget "Yes No")
+                     (equal "Yes" (getkword "\nMirror the sample copies to fit the crossover? [Yes/No] <No>: ")))))
+        (setq mirror-axis (rr:cross-mirror-axis template)))
+      (cond
+        ((and opposite (not mirror-axis))
+         (rr:msg "Select a turnout that branches toward the second track. No tracks changed."))
+        ((eq (type (setq plan (rr:cross-plan template a b c d origin forward mirror-axis))) 'STR)
+         (rr:msg plan))
+        ((rr:edit 'rr:draw-cross (list sample plan layer mirror-axis))
+         (rr:msg "Crossover created with two turnouts."))
+      )
+    )
+  )
+)
+
+(defun c:RAILCROSS (/ first second a b c d axis pick station origin direction facing)
+  (cond
+    ((not (rr:model-p)) (rr:msg "Switch to model space."))
+    ((not (setq first (rr:line "\nSelect the first track LINE: "))))
+    ((not (setq second (rr:line "\nSelect the second parallel track LINE: "))))
+    ((equal (cdr (assoc -1 first)) (cdr (assoc -1 second))) (rr:msg "Select two different track LINEs."))
+    (T
+      (setq a (cdr (assoc 10 first)) b (cdr (assoc 11 first))
+            c (cdr (assoc 10 second)) d (cdr (assoc 11 second))
+            axis (rr:unit (rr:sub b a)))
+      (cond
+        ((not (rr:horizontal-p (list a b c d))) (rr:msg "Track elevations must match."))
+        ((> (abs (rr:cross axis (rr:unit (rr:sub d c)))) rr:angle-tol)
+         (rr:msg "The tracks must be parallel."))
+        ((<= (abs (rr:cross axis (rr:sub c a))) rr:tol)
+         (rr:msg "The tracks need a nonzero spacing."))
+        ((not (setq pick (rr:point "\nPick the first turnout datum on the first track: "))))
+        ((not (rr:between (setq station (rr:dot (rr:sub pick a) axis)) (distance a b)))
+         (rr:msg "Pick the datum within the first track LINE."))
+        ((not (setq direction (rr:point "\nPick toward the first turnout's forward end: "))))
+        (T
+          (setq origin (rr:add a (rr:scale axis station))
+                facing (rr:dot (rr:sub direction origin) axis))
+          (if (<= (abs facing) rr:tol)
+            (rr:msg "Pick a point along the first track to set the forward direction.")
+            (rr:apply-cross a b c d origin (if (< facing 0.0) (rr:scale axis -1.0) axis)))
+        )
+      )
+    )
+  )
+  (princ)
+)
+
+(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN, RAILCROSS.")
 (princ)
