@@ -3,7 +3,8 @@
 ;;; RAILYARD offsets tracks.
 ;;; RAILTURN connects parallel tracks. RAILFAN connects a diagonal lead to multiple tracks.
 ;;; RAILCROSS and RAILSCISSORS build single and double crossovers.
-;;; RAILSIDING builds a single siding that returns to the same track.
+;;; RAILSIDING builds a return or stub siding.
+;;; RAILPLACE places a turnout and draws its branch line.
 
 (vl-load-com)
 
@@ -1030,7 +1031,7 @@
   )
 )
 
-(defun rr:siding-plan (template a b start end spacing radius first-mirror second-mirror
+(defun rr:siding-plan (template a b start end spacing radius first-mirror second-mirror stub
                        / forward offset near far first second first-curve second-curve)
   (setq forward (rr:unit (rr:sub end start))
         offset (rr:scale (rr:left forward) spacing)
@@ -1042,11 +1043,18 @@
      "The sample PI must lie on its main axis. Register the sample again with RAILSETUP.")
     ((eq (type (setq first (rr:siding-end template start forward near far radius first-mirror))) 'STR)
      (strcat "Start turnout: " first))
+    ((not (rr:within-track-span-p (list (cadr first) (caddr first)) a b))
+     "The start turnout extends beyond the main track LINE.")
+    (stub
+     (setq first-curve (nth 3 first))
+     (list (car first) nil
+           (list (cadr first) (car first-curve) (cadr first-curve) far)
+           (nth 4 first) nil))
     ((eq (type (setq second (rr:siding-end template end (rr:scale forward -1.0)
                                           near far radius second-mirror))) 'STR)
      (strcat "End turnout: " second))
-    ((not (rr:within-track-span-p (list (cadr first) (caddr first) (cadr second) (caddr second)) a b))
-     "A turnout extends beyond the main track LINE.")
+    ((not (rr:within-track-span-p (list (cadr second) (caddr second)) a b))
+     "The end turnout extends beyond the main track LINE.")
     (T
       (setq first-curve (nth 3 first)
             second-curve (nth 3 second))
@@ -1064,7 +1072,7 @@
 (defun rr:draw-siding (space sample plan layer first-mirror second-mirror
                        / points coords array polyline)
   (rr:place-block space sample (car plan) layer first-mirror)
-  (rr:place-block space sample (cadr plan) layer second-mirror)
+  (if (cadr plan) (rr:place-block space sample (cadr plan) layer second-mirror))
   (setq points (caddr plan)
         coords (apply 'append (mapcar '(lambda (p) (list (car p) (cadr p))) points))
         array (vlax-make-safearray vlax-vbDouble (cons 0 (1- (length coords)))))
@@ -1073,7 +1081,7 @@
   (vla-put-Normal polyline (vlax-3d-point '(0.0 0.0 1.0)))
   (vla-put-Elevation polyline (caddr (car points)))
   (vla-SetBulge polyline 1 (nth 3 plan))
-  (vla-SetBulge polyline 3 (nth 4 plan))
+  (if (nth 4 plan) (vla-SetBulge polyline 3 (nth 4 plan)))
   T
 )
 
@@ -1087,7 +1095,7 @@
   (if (and radius (> radius rr:tol)) radius (rr:msg "Enter a positive siding curve radius."))
 )
 
-(defun rr:apply-siding (a b start end spacing / hand template sample layer axis branch opposite
+(defun rr:apply-siding (a b start end spacing stub / hand template sample layer axis branch opposite
                         first-mirror second-mirror radius plan)
   (setq hand (if (> spacing 0.0) "Left" "Right")
         layer (getvar "CLAYER"))
@@ -1096,37 +1104,46 @@
     ((not (setq sample (rr:registered-sample template))))
     ((not (and (rr:layer-open-p layer) (rr:sample-layer-open-p sample)))
      (rr:msg "Unlock/thaw the current layer and the sample layer (layer 0 for the library)."))
-    ((not
-       (or (listp sample)
-           (progn
-             (initget "Yes No")
-             (equal "Yes" (getkword "\nMirror one sample copy for the return turnout? [Yes/No] <No>: ")))))
-     (rr:msg "The siding uses both turnout hands. No tracks changed."))
+    ((progn
+       (setq branch (rr:sub (cdr (assoc 'tip template)) (cdr (assoc 'pi template)))
+             opposite (< (* spacing (rr:cross (cdr (assoc 'forward template)) branch)) 0.0))
+       (and (not (listp sample))
+            (or opposite (not stub))
+            (progn
+              (initget "Yes No")
+              (not (equal "Yes" (getkword
+                (if stub
+                  "\nMirror the sample copy toward the stub siding? [Yes/No] <No>: "
+                  "\nMirror one sample copy for the return siding? [Yes/No] <No>: ")))))))
+     (rr:msg "The selected siding needs a mirrored turnout. No tracks changed."))
     ((not (setq radius (rr:siding-radius))))
     (T
       (setq axis (rr:cross-mirror-axis template)
-            branch (rr:sub (cdr (assoc 'tip template)) (cdr (assoc 'pi template)))
-            opposite (< (* spacing (rr:cross (cdr (assoc 'forward template)) branch)) 0.0)
             first-mirror (if opposite axis)
-            second-mirror (if (not opposite) axis)
-            plan (rr:siding-plan template a b start end spacing radius first-mirror second-mirror))
+            second-mirror (if (and (not stub) (not opposite)) axis)
+            plan (rr:siding-plan template a b start end spacing radius first-mirror second-mirror stub))
       (cond
         ((eq (type plan) 'STR) (rr:msg plan))
         ((rr:edit 'rr:draw-siding (list sample plan layer first-mirror second-mirror))
          (setq rr:last-radius radius)
-         (rr:msg "Siding created with two turnouts and one polyline."))
+         (rr:msg (if stub "Stub siding created with one turnout and one polyline."
+                          "Siding created with two turnouts and one polyline.")))
       )
     )
   )
 )
 
-(defun c:RAILSIDING (/ main a b axis track-length first-point last-point first-station last-station
+(defun c:RAILSIDING (/ main a b axis track-length stub first-point last-point first-station last-station
                      start end side signed-side spacing)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
     ((not (setq main (rr:line "\nSelect the main track LINE: "))))
-    ((not (setq first-point (rr:point "\nPick the start turnout datum on the main track: "))))
-    ((not (setq last-point (rr:point "\nPick the end turnout datum on the main track: "))))
+    ((not (progn
+            (initget "Return Stub")
+            (setq stub (equal "Stub" (getkword "\nSiding layout [Return/Stub] <Return>: ")))
+            (setq first-point (rr:point "\nPick the start turnout datum on the main track: ")))))
+    ((not (setq last-point (rr:point (if stub "\nPick the siding end station on the main track: "
+                                             "\nPick the end turnout datum on the main track: ")))))
     (T
       (setq a (cdr (assoc 10 main))
             b (cdr (assoc 11 main))
@@ -1138,19 +1155,59 @@
             end (rr:add a (rr:scale axis last-station)))
       (cond
         ((not (and (rr:between first-station track-length) (rr:between last-station track-length)))
-         (rr:msg "Both turnout datums must lie within the main track LINE."))
+         (rr:msg "Both locations must lie within the main track LINE."))
         ((<= (distance start end) rr:tol) (rr:msg "Pick different start and end locations."))
         ((not (setq side (rr:point "\nPick the side of the main track for the siding: "))))
         ((<= (abs (setq signed-side (rr:cross (rr:unit (rr:sub end start)) (rr:sub side start)))) rr:tol)
          (rr:msg "Pick a point to either side of the main track."))
         ((not (setq spacing (rr:positive-real "\nSiding centerline spacing in drawing units: "))))
         ((<= spacing rr:tol) (rr:msg "Track spacing is too small."))
-        (T (rr:apply-siding a b start end (if (< signed-side 0.0) (- spacing) spacing)))
+        (T (rr:apply-siding a b start end (if (< signed-side 0.0) (- spacing) spacing) stub))
       )
     )
   )
   (princ)
 )
 
-(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN, RAILCROSS, RAILSCISSORS, RAILSIDING.")
+(defun rr:draw-placement (space sample matrix pi-point tip layer)
+  (rr:place-block space sample matrix layer nil)
+  (rr:new-line space pi-point tip layer)
+  T
+)
+
+(defun c:RAILPLACE (/ source position facing a b axis station origin direction
+                     template sample layer matrix pi-point tip)
+  (cond
+    ((not (rr:model-p)) (rr:msg "Switch to model space."))
+    ((not (setq source (rr:line "\nSelect the main track LINE: "))))
+    ((not (setq position (rr:point "\nPick the turnout datum on the main track: "))))
+    ((progn
+       (setq a (cdr (assoc 10 source))
+             b (cdr (assoc 11 source))
+             axis (rr:unit (rr:sub b a))
+             station (rr:dot (rr:sub position a) axis)
+             origin (rr:add a (rr:scale axis station)))
+       (not (rr:between station (distance a b))))
+     (rr:msg "Pick the datum within the main track LINE."))
+    ((not (setq facing (rr:point "\nPick toward the turnout's forward end: "))))
+    ((<= (abs (setq direction (rr:dot (rr:sub facing origin) axis))) rr:tol)
+     (rr:msg "Pick a point along the main track to set the forward direction."))
+    ((not (setq template (rr:choose-calibration))))
+    ((not (setq sample (rr:registered-sample template))))
+    ((not (and (rr:layer-open-p (setq layer (getvar "CLAYER"))) (rr:sample-layer-open-p sample)))
+     (rr:msg "Unlock/thaw the current layer and the sample layer (layer 0 for the library)."))
+    (T
+      (if (< direction 0.0) (setq axis (rr:scale axis -1.0)))
+      (setq matrix (rr:matrix (cdr (assoc 'origin template)) origin
+                              (- (rr:angle axis) (rr:angle (cdr (assoc 'forward template)))))
+            pi-point (rr:transform-point matrix (cdr (assoc 'pi template)))
+            tip (rr:transform-point matrix (cdr (assoc 'tip template))))
+      (if (rr:edit 'rr:draw-placement (list sample matrix pi-point tip layer))
+        (rr:msg "Turnout block and divergent LINE placed."))
+    )
+  )
+  (princ)
+)
+
+(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN, RAILCROSS, RAILSCISSORS, RAILSIDING, RAILPLACE.")
 (princ)
