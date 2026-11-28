@@ -60,17 +60,19 @@
   (and flags (= 0 (logand flags 5)))
 )
 
-(defun rr:pick (message class / selection data)
-  (if (setq selection (entsel message))
-    (progn
-      (setq data (entget (car selection)))
-      (if (and (= class (cdr (assoc 0 data)))
-               (= "MODEL" (strcase (cdr (assoc 410 data)))))
-        data
-        (rr:msg (strcat "Select a model-space " class " entity."))
-      )
+(defun rr:picked-data (selection class / data)
+  (if selection
+    (if (and (setq data (entget (car selection)))
+             (= class (cdr (assoc 0 data)))
+             (equal "MODEL" (strcase (cdr (assoc 410 data)))))
+      data
+      (rr:msg (strcat "Select a model-space " class " entity."))
     )
   )
+)
+
+(defun rr:pick (message class)
+  (rr:picked-data (entsel message) class)
 )
 
 (defun rr:line-data (data / a b)
@@ -1169,16 +1171,15 @@
   (princ)
 )
 
-(defun rr:draw-placement (space sample matrix pi-point tip layer)
-  (rr:place-block space sample matrix layer nil)
+(defun rr:draw-placement (space sample matrix pi-point tip layer mirror-axis)
+  (rr:place-block space sample matrix layer mirror-axis)
   (rr:new-line space pi-point tip layer)
   T
 )
 
-(defun c:RAILPLACE (/ source position facing a b axis station origin direction
+(defun rr:place-by-datum (/ source position facing a b axis station origin direction
                      template sample layer matrix pi-point tip)
   (cond
-    ((not (rr:model-p)) (rr:msg "Switch to model space."))
     ((not (setq source (rr:line "\nSelect the main track LINE: "))))
     ((not (setq position (rr:point "\nPick the turnout datum on the main track: "))))
     ((progn
@@ -1202,10 +1203,117 @@
                               (- (rr:angle axis) (rr:angle (cdr (assoc 'forward template)))))
             pi-point (rr:transform-point matrix (cdr (assoc 'pi template)))
             tip (rr:transform-point matrix (cdr (assoc 'tip template))))
-      (if (rr:edit 'rr:draw-placement (list sample matrix pi-point tip layer))
+      (if (rr:edit 'rr:draw-placement (list sample matrix pi-point tip layer nil))
         (rr:msg "Turnout block and divergent LINE placed."))
     )
   )
+  (princ)
+)
+
+(defun rr:pi-alignment (a b c d picked / main-axis branch-axis determinant intersection along)
+  (setq main-axis (rr:unit (rr:sub b a))
+        branch-axis (rr:unit (rr:sub d c))
+        determinant (rr:cross main-axis branch-axis))
+  (cond
+    ((not (rr:horizontal-p (list a b c d))) "The two track axes must be at the same elevation.")
+    ((<= (abs determinant) rr:angle-tol) "The selected axes are parallel and have no unique PI.")
+    ((<= (abs (rr:dot main-axis branch-axis)) rr:angle-tol)
+     "The turnout needs an acute divergence angle.")
+    (T
+      (setq intersection (rr:add a (rr:scale main-axis (/ (rr:cross (rr:sub c a) branch-axis) determinant)))
+            along (rr:dot (rr:sub picked intersection) branch-axis))
+      (if (<= (abs along) rr:tol)
+        "Select the branch LINE farther from the PI, in the turnout's forward direction."
+        (progn
+          (if (< along 0.0) (setq branch-axis (rr:scale branch-axis -1.0)))
+          (list intersection (rr:forward-axis a b branch-axis) branch-axis)))
+    )
+  )
+)
+
+(defun rr:divergence (forward branch)
+  (atan (abs (rr:cross forward branch)) (rr:dot forward branch))
+)
+
+(defun rr:confirm-pi-angle (track-angle turnout-angle)
+  (if (equal track-angle turnout-angle (/ pi 18000.0))
+    T
+    (progn
+      (rr:msg (strcat "Selected axes: " (rtos (* track-angle (/ 180.0 pi)) 2 6)
+                      " deg. Turnout: " (rtos (* turnout-angle (/ 180.0 pi)) 2 6) " deg."))
+      (initget "Main Cancel")
+      (equal "Main" (getkword "\nAngles differ. Align to the main axis only? [Main/Cancel] <Cancel>: ")))
+  )
+)
+
+(defun rr:apply-pi-placement (alignment / intersection forward branch side template sample layer
+                               sample-datum sample-forward pi-point tip template-branch opposite mirror-axis matrix)
+  (setq intersection (car alignment)
+        forward (cadr alignment)
+        branch (caddr alignment)
+        side (rr:cross forward branch)
+        layer (getvar "CLAYER"))
+  (rr:msg (strcat "Track divergence: " (rtos (* (rr:divergence forward branch) (/ 180.0 pi)) 2 6) " deg."))
+  (cond
+    ((not (setq template (rr:choose-turnout (if (> side 0.0) "Left" "Right")))))
+    ((not (setq sample (rr:registered-sample template))))
+    ((not (and (rr:layer-open-p layer) (rr:sample-layer-open-p sample)))
+     (rr:msg "Unlock/thaw the current layer and the sample layer (layer 0 for the library)."))
+    ((progn
+       (setq sample-datum (cdr (assoc 'origin template))
+             sample-forward (cdr (assoc 'forward template))
+             pi-point (cdr (assoc 'pi template))
+             tip (cdr (assoc 'tip template))
+             template-branch (rr:sub tip pi-point)
+             opposite (< (* side (rr:cross sample-forward template-branch)) 0.0))
+       (> (abs (rr:cross sample-forward (rr:sub pi-point sample-datum))) rr:tol))
+     (rr:msg "The sample PI must lie on its main axis. Register the sample again with RAILSETUP."))
+    ((not (rr:confirm-pi-angle (rr:divergence forward branch) (rr:divergence sample-forward template-branch)))
+     (rr:msg "No tracks changed."))
+    ((and opposite (not (listp sample))
+          (progn
+            (initget "Yes No")
+            (not (equal "Yes" (getkword "\nMirror the sample copy to match the branch side? [Yes/No] <No>: ")))))
+     (rr:msg "No tracks changed."))
+    (T
+      (if opposite
+        (setq mirror-axis (rr:cross-mirror-axis template)
+              pi-point (rr:reflect-point pi-point sample-datum sample-forward)
+              tip (rr:reflect-point tip sample-datum sample-forward)))
+      (setq matrix (rr:matrix pi-point intersection (- (rr:angle forward) (rr:angle sample-forward))))
+      (if (rr:edit 'rr:draw-placement
+            (list sample matrix intersection (rr:transform-point matrix tip) layer mirror-axis))
+        (rr:msg "Turnout block and divergent LINE placed at the PI."))
+    )
+  )
+)
+
+(defun rr:place-by-pi (/ main selection branch alignment)
+  (cond
+    ((not (setq main (rr:line "\nSelect the straight main track LINE: "))))
+    ((not (setq selection (entsel "\nSelect the straight branch LINE on the forward side of its PI: "))))
+    ((not (setq branch (rr:picked-data selection "LINE"))))
+    ((not (rr:line-data branch)))
+    ((equal (cdr (assoc -1 main)) (cdr (assoc -1 branch)))
+     (rr:msg "Select two different track LINEs."))
+    (T
+      (setq alignment (rr:pi-alignment (cdr (assoc 10 main)) (cdr (assoc 11 main))
+                                       (cdr (assoc 10 branch)) (cdr (assoc 11 branch))
+                                       (trans (cadr selection) 1 0)))
+      (if (eq (type alignment) 'STR)
+        (rr:msg alignment)
+        (rr:apply-pi-placement alignment)))
+  )
+)
+
+(defun c:RAILPLACE ()
+  (if (rr:model-p)
+    (progn
+      (initget "Datum PI")
+      (if (equal "PI" (getkword "\nTurnout placement [Datum/PI] <Datum>: "))
+        (rr:place-by-pi)
+        (rr:place-by-datum)))
+    (rr:msg "Switch to model space."))
   (princ)
 )
 
