@@ -1,5 +1,6 @@
 ;;; Railroad yard drafting for Windows AutoCAD with AutoLISP and ActiveX.
-;;; RAILSETUP registers a sample. RAILYARD offsets tracks.
+;;; RAILMAKE creates a sample block. RAILSETUP registers an existing sample.
+;;; RAILYARD offsets tracks.
 ;;; RAILTURN connects parallel tracks. RAILFAN connects a diagonal lead to multiple tracks.
 
 (vl-load-com)
@@ -86,7 +87,22 @@
   (mapcar '(lambda (code) (assoc code data)) '(2 10 41 42 43 50 70 71 210))
 )
 
-(defun c:RAILSETUP (/ sample label origin facing pi-point tip forward branch record previous)
+(defun rr:register (label sample origin forward pi-point tip / record previous)
+  (setq label (strcase label)
+        record (list label
+                     (cons 'handle (cdr (assoc 5 sample)))
+                     (cons 'pose (rr:pose sample))
+                     (cons 'origin origin)
+                     (cons 'forward forward)
+                     (cons 'pi pi-point)
+                     (cons 'tip tip))
+        previous (assoc label rr:calibrations)
+        rr:calibrations
+        (cons record (if previous (vl-remove previous rr:calibrations) rr:calibrations))
+        rr:last-calibration label)
+)
+
+(defun c:RAILSETUP (/ sample label origin facing pi-point tip forward branch)
   (cond
     ((not (rr:model-p)) (rr:msg "Switch to model space."))
     ((not (setq sample (rr:pick "\nSelect the sample turnout block: " "INSERT"))))
@@ -108,19 +124,8 @@
      (rr:msg "PI-to-tip must diverge in the chosen forward direction."))
     ((= "" (setq label (getstring T "\nCalibration name (e.g. F8-L): "))))
     (T
-      (setq label (strcase label)
-            record (list label
-                         (cons 'handle (cdr (assoc 5 sample)))
-                         (cons 'pose (rr:pose sample))
-                         (cons 'origin origin)
-                         (cons 'forward forward)
-                         (cons 'pi pi-point)
-                         (cons 'tip tip))
-            previous (assoc label rr:calibrations)
-            rr:calibrations
-            (cons record (if previous (vl-remove previous rr:calibrations) rr:calibrations))
-            rr:last-calibration label)
-      (rr:msg (strcat "Registered " label " for this drawing session."))
+      (rr:register label sample origin forward pi-point tip)
+      (rr:msg (strcat "Registered " rr:last-calibration " for this drawing session."))
     )
   )
   (princ)
@@ -180,6 +185,91 @@
 
 (defun rr:new-line (space a b layer)
   (rr:new-on-layer (vla-AddLine space (vlax-3d-point a) (vlax-3d-point b)) layer)
+)
+
+(defun rr:block-graphic (object)
+  (rr:new-on-layer object "0")
+  (vla-put-Color object 1)
+  object
+)
+
+(defun rr:draw-block (space name label origin pi-point tip layer
+                      / zero block lead mark mark-x tick x top label-point lettering insert data)
+  (setq zero '(0.0 0.0 0.0)
+        block (vla-Add (vla-get-Blocks (rr:doc)) (vlax-3d-point zero) name)
+        rr:new (cons block rr:new)
+        lead (car pi-point)
+        mark-x (* 0.245 lead)
+        mark (list mark-x 0.0 0.0)
+        tick (* 0.0825 lead)
+        top (list (car tip) 0.0 0.0)
+        label-point (vlax-3d-point (list lead (* -0.21 lead) 0.0)))
+  (rr:block-graphic (vla-AddLine block (vlax-3d-point zero) (vlax-3d-point pi-point)))
+  (foreach x (list 0.0 mark-x lead)
+    (rr:block-graphic
+      (vla-AddLine block (vlax-3d-point (list x (- tick) 0.0))
+                         (vlax-3d-point (list x tick 0.0))))
+  )
+  (rr:block-graphic (vla-AddCircle block (vlax-3d-point mark) tick))
+  ;; Repeating the last corner creates a triangular, filled 2D solid.
+  (rr:block-graphic
+    (vla-AddSolid block (vlax-3d-point pi-point) (vlax-3d-point top)
+              (vlax-3d-point tip) (vlax-3d-point tip)))
+  (rr:block-graphic (vla-AddLine block (vlax-3d-point pi-point) (vlax-3d-point tip)))
+  (setq lettering (rr:block-graphic (vla-AddText block label label-point (* 0.18 lead))))
+  (vla-put-Alignment lettering 10) ; acAlignmentMiddleCenter
+  (vla-put-TextAlignmentPoint lettering label-point)
+  (setq insert (rr:new-on-layer
+                 (vla-InsertBlock space (vlax-3d-point origin) name 1.0 1.0 1.0 0.0) layer)
+        data (entget (vlax-vla-object->ename insert)))
+  (if data data (rr:msg "Could not read the generated block reference."))
+)
+
+(defun rr:positive-real (message)
+  (initget 6)
+  (getreal message)
+)
+
+(defun c:RAILMAKE (/ layer label hand default-name name lead run ratio origin pi-point tip branch sample)
+  (cond
+    ((not (rr:model-p)) (rr:msg "Switch to model space."))
+    ((not (and (rr:layer-open-p (setq layer (getvar "CLAYER"))) (rr:layer-open-p "0")))
+     (rr:msg "Unlock/thaw the current layer and layer 0."))
+    (T
+      (setq label (getstring T "\nDisplayed turnout label <F8>: "))
+      (if (= label "") (setq label "F8"))
+      (initget "Left Right")
+      (setq hand (getkword "\nTurnout hand, looking forward along +X [Left/Right] <Right>: ")
+            default-name (strcat label (if (equal hand "Left") "-L" "-R"))
+            name (getstring T (strcat "\nBlock and calibration name <" default-name ">: ")))
+      (if (= name "") (setq name default-name))
+      (cond
+        ((not (and (snvalid name) (/= (substr name 1 1) "*")))
+         (rr:msg "Enter a valid named block name."))
+        ((tblsearch "BLOCK" name)
+         (rr:msg "That block already exists. Use RAILSETUP on it or choose a new name."))
+        ((not (setq lead (rr:positive-real "\nDistance along the main axis from datum to PI: "))))
+        ((not (setq run (rr:positive-real "\nPI to branch tip, measured along the main axis: "))))
+        ((not (setq ratio (rr:positive-real "\nDivergence 1:N, enter N (e.g. 8): "))))
+        ((or (<= lead rr:tol) (<= run rr:tol))
+         (rr:msg "The main-axis lengths are too small."))
+        ((not (setq origin (rr:point "\nPick an insertion point for the sample block: "))))
+        (T
+          (setq pi-point (list lead 0.0 0.0)
+                tip (list (+ lead run) (/ (if (equal hand "Left") run (- run)) ratio) 0.0)
+                branch (rr:unit (rr:sub (rr:add origin tip) (rr:add origin pi-point))))
+          (cond
+            ((not (and branch (> (car branch) 0.0) (> (abs (cadr branch)) rr:angle-tol)))
+             (rr:msg "The input lengths or ratio do not produce a usable divergence."))
+            ((setq sample (rr:edit 'rr:draw-block (list name label origin pi-point tip layer)))
+             (rr:register name sample origin '(1.0 0.0 0.0) (rr:add origin pi-point) (rr:add origin tip))
+             (rr:msg (strcat "Created and registered " rr:last-calibration ". Use RAILTURN or RAILFAN.")))
+          )
+        )
+      )
+    )
+  )
+  (princ)
 )
 
 (defun rr:draw-yard (space a b step count layer / i offset)
@@ -581,5 +671,5 @@
   (princ)
 )
 
-(prompt "\nRail drafting loaded. Commands: RAILSETUP, RAILYARD, RAILTURN, RAILFAN.")
+(prompt "\nRail drafting loaded. Commands: RAILMAKE, RAILSETUP, RAILYARD, RAILTURN, RAILFAN.")
 (princ)
